@@ -17,6 +17,5 @@ export async function checkPermissionForAddress(components: Pick<AppComponents, 
       }
   );
 
-  // TODO remove hardcoded address
-  return result.names.length > 0 || ethAddress === '0x69D30b1875d39E13A01AF73CCFED6d84839e84f2';
+  return result.names.length > 0;
 }
