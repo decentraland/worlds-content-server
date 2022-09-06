@@ -144,7 +144,7 @@ export async function deployEntity(
       bufferToStream(stringToUtf8Bytes(JSON.stringify(authChain)))
     )
 
-    const urn = `urn:decentraland:entity:${entityId}?baseUrl=https://sdk-content-server.decentraland.org/ipfs/`
+    const urn = `urn:decentraland:entity:${entityId}?baseUrl=https://worlds-content-server.decentraland.org/ipfs/`
 
     return {
       status: 200,
