@@ -76,7 +76,7 @@ export async function deployEntity(
     // validate that the signer has permissions to deploy this scene
     const hasPermission = await checkPermissionForAddress(ctx.components, signer)
     if (!hasPermission) {
-      return Error400(`Deployment failed: Your wallet has no permission to publish to this server.`)
+      return Error400(`Deployment failed: Your wallet has no permission to publish to this server because it doesn't own a Decentraland NAME.`)
     }
 
     // then validate that the entityId is valid

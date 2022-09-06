@@ -3,6 +3,7 @@ import { createServerComponent, createStatusCheckComponent } from "@well-known-c
 import { createLogComponent } from "@well-known-components/logger"
 import { createFetchComponent } from "./adapters/fetch"
 import { createMetricsComponent } from "@well-known-components/metrics"
+import { createSubgraphComponent } from "@well-known-components/thegraph-component";
 import { AppComponents, GlobalContext } from "./types"
 import { metricDeclarations } from "./metrics"
 import { metricDeclarations as theGraphMetricDeclarations } from '@well-known-components/thegraph-component'
@@ -12,9 +13,6 @@ import {
   createFolderBasedFileSystemContentStorage,
   createFsComponent,
 } from "@dcl/catalyst-storage"
-import {createSubgraphComponent} from "@well-known-components/thegraph-component";
-
-export const DEFAULT_MARKETPLACE_SUBGRAPH_URL = "https://api.thegraph.com/subgraphs/name/decentraland/marketplace";
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
@@ -36,7 +34,7 @@ export async function initComponents(): Promise<AppComponents> {
     ? await createAwsS3BasedFileSystemContentStorage({ fs, config }, bucket)
     : await createFolderBasedFileSystemContentStorage({ fs }, storageFolder)
 
-  const subGraphUrl = await config.getString("MARKETPLACE_SUBGRAPH_URL") || DEFAULT_MARKETPLACE_SUBGRAPH_URL
+  const subGraphUrl = await config.requireString("MARKETPLACE_SUBGRAPH_URL")
   const marketplaceSubGraph = await createSubgraphComponent(
       { config, logs, metrics, fetch },
       subGraphUrl

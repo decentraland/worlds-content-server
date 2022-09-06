@@ -3,7 +3,6 @@ import { ContentClient } from "dcl-catalyst-client"
 import { EntityType } from "@dcl/schemas"
 import { Authenticator } from "@dcl/crypto"
 import { createUnsafeIdentity } from "@dcl/crypto/dist/crypto"
-import { DEFAULT_MARKETPLACE_SUBGRAPH_URL } from "../../src/components";
 import { Response } from "node-fetch"
 import Sinon from "sinon"
 import { stringToUtf8Bytes } from "eth-connect"
@@ -53,7 +52,7 @@ test("deployment works", function ({ components, stubComponents }) {
     // Sign entity id
     const identity = await getIdentity()
 
-    fetch.fetch.withArgs(DEFAULT_MARKETPLACE_SUBGRAPH_URL).resolves(
+    fetch.fetch.withArgs(await config.requireString("MARKETPLACE_SUBGRAPH_URL")).resolves(
       new Response(JSON.stringify({
             data: {
               names: [
@@ -71,7 +70,7 @@ test("deployment works", function ({ components, stubComponents }) {
     // Deploy entity
     await contentClient.deployEntity({ files, entityId, authChain })
 
-    Sinon.assert.calledOnceWithMatch(fetch.fetch, DEFAULT_MARKETPLACE_SUBGRAPH_URL)
+    Sinon.assert.calledOnceWithMatch(fetch.fetch, await config.requireString("MARKETPLACE_SUBGRAPH_URL"))
 
     expect(await storage.exist(fileHash)).toEqual(true)
     expect(await storage.exist(entityId)).toEqual(true)
@@ -103,7 +102,7 @@ test("deployment doesnt work because of random key", function ({ components, stu
 
     const authChain = Authenticator.signPayload(identity.authChain, entityId)
 
-    fetch.fetch.withArgs(DEFAULT_MARKETPLACE_SUBGRAPH_URL).resolves(
+    fetch.fetch.withArgs(await config.requireString("MARKETPLACE_SUBGRAPH_URL")).resolves(
         new Response(JSON.stringify({
               data: {
                 names: []
@@ -114,7 +113,7 @@ test("deployment doesnt work because of random key", function ({ components, stu
 
     // Deploy entity
     await expect(() => contentClient.deployEntity({ files, entityId, authChain })).rejects.toThrowError(
-      "Deployment failed: Your wallet has no permission to publish to this server."
+      "Deployment failed: Your wallet has no permission to publish to this server because it doesn't own a Decentraland NAME."
     )
   })
 })
