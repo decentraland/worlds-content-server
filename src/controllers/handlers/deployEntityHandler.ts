@@ -155,8 +155,8 @@ export async function deployEntity(
       bufferToStream(stringToUtf8Bytes(JSON.stringify({ entityId: entityId })))
     )
 
-    const baseUrl = (await ctx.components.config.getString("HTTP_BASE_URL")
-        || `https://${ctx.url.host}`).toString()
+    const pathPrefix = ctx.url.pathname.substring(0, ctx.url.pathname.indexOf('/entities'))
+    const baseUrl = new URL(`${pathPrefix}`, `${ctx.url.protocol}//${ctx.url.host}`).toString()
 
     // send deployment notification over sns
     if (ctx.components.sns.arn) {
@@ -179,8 +179,9 @@ export async function deployEntity(
       })
     }
 
-    const worldUrl = `${baseUrl}/world/${names[0]}.dcl.eth`
-    const urn = `urn:decentraland:entity:${entityId}?baseUrl=${baseUrl}/ipfs`
+    const worldUrl = new URL(`${pathPrefix}/world/${names[0]}.dcl.eth`, baseUrl).toString()
+    const ipfsUrl = new URL(`${pathPrefix}/ipfs`, baseUrl).toString()
+    const urn = `urn:decentraland:entity:${entityId}?baseUrl=${ipfsUrl}`
 
     return {
       status: 200,

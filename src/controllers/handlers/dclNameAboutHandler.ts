@@ -33,10 +33,10 @@ export async function dclNameAboutHandler({
   }
   const sceneJson = JSON.parse((await streamToBuffer(await scene?.asStream())).toString())
 
-  const baseUrl = ((await config.getString("HTTP_BASE_URL")
-      || `https://${url.host}`).toString())
+  const pathPrefix = url.pathname.substring(0, url.pathname.indexOf('/world'))
+  const ipfsUrl = new URL(`${pathPrefix}/ipfs`, `${url.protocol}//${url.host}`).toString()
 
-  const urn = `urn:decentraland:entity:${entityId}?baseUrl=${baseUrl}/ipfs`
+  const urn = `urn:decentraland:entity:${entityId}?baseUrl=${ipfsUrl}`
 
   const networkId = await config.requireNumber("NETWORK_ID")
   const fixedAdapter = await config.requireString("COMMS_FIXED_ADAPTER")
