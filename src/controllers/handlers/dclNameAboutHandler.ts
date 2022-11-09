@@ -5,6 +5,7 @@ import {
   AboutResponse_SkyboxConfiguration
 } from "../../proto/http-endpoints.gen"
 import { streamToBuffer } from "@dcl/catalyst-storage/dist/content-item";
+import { buildUrl } from "../../logic/url-generation";
 
 export async function dclNameAboutHandler({
   params,
@@ -33,8 +34,7 @@ export async function dclNameAboutHandler({
   }
   const sceneJson = JSON.parse((await streamToBuffer(await scene?.asStream())).toString())
 
-  const pathPrefix = url.pathname.substring(0, url.pathname.indexOf('/world'))
-  const ipfsUrl = new URL(`${pathPrefix}/ipfs`, `${url.protocol}//${url.host}`).toString()
+  const ipfsUrl = buildUrl(url, '/world', `/ipfs`)
 
   const urn = `urn:decentraland:entity:${entityId}?baseUrl=${ipfsUrl}`
 
