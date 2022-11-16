@@ -75,7 +75,7 @@ test("deployment works", function ({ components, stubComponents }) {
     expect(await storage.exist(fileHash)).toEqual(true)
     expect(await storage.exist(entityId)).toEqual(true)
 
-    Sinon.assert.calledWithMatch(metrics.increment, "world_deployments_counter", {dcl_name: "my-super-name.dcl.eth"})
+    Sinon.assert.calledWithMatch(metrics.increment, "world_deployments_counter")
   })
 })
 

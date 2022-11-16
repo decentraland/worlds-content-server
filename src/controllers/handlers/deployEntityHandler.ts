@@ -158,7 +158,7 @@ export async function deployEntity(
     const baseUrl = (await ctx.components.config.getString("HTTP_BASE_URL")
         || `https://${ctx.url.host}`).toString()
 
-    ctx.components.metrics.increment('world_deployments_counter', {dcl_name: `${names[0]}.dcl.eth`})
+    ctx.components.metrics.increment('world_deployments_counter')
 
     // send deployment notification over sns
     if (ctx.components.sns.arn) {

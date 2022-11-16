@@ -5,7 +5,7 @@ export const metricDeclarations = {
   world_deployments_counter: {
     help: "Count world deployments",
     type: IMetricsComponent.CounterType,
-    labelNames: ["dcl_name"],
+    labelNames: [],
   },
 }
 
