@@ -21,6 +21,7 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
   // start ports: db, listeners, synchronizations, etc
   await startComponents()
 
+  // Migrate old name pointers to new one
   for await (const key of await components.storage.allFileIds()) {
     if (!key.startsWith('name-') && key.endsWith('.dcl.eth')) {
       const fileContent = await components.storage.retrieve(key)
