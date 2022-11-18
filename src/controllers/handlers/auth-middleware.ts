@@ -24,7 +24,8 @@ export async function createAuthMiddleware(components: Pick<AppComponents, 'conf
 
   return async function (context: IHttpServerComponent.DefaultContext, next: () => Promise<IHttpServerComponent.IResponse>): Promise<IHttpServerComponent.IResponse> {
     if (secret) {
-      const token = context.url.searchParams.get('access_token') || context.request.headers.get('access_token')
+      const token = context.url.searchParams.get('access_token') ||
+          context.request.headers.get('Authorization')?.substring(7) // Remove the "Bearer " part
       if (!token) {
         return notAllowedResponse('Not allowed. Missing access token.')
       }
