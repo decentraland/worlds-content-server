@@ -1,8 +1,8 @@
-import { ISubgraphComponent, Variables } from '@well-known-components/thegraph-component'
+import { ISubgraphComponent } from '@well-known-components/thegraph-component'
 
 export function createMockMarketplaceSubGraph(): ISubgraphComponent {
   return {
-    query<T>(query: string, variables: Variables | undefined, remainingAttempts: number | undefined): Promise<T> {
+    query<T>(): Promise<T> {
       return Promise.resolve({
         names: []
       } as T)
