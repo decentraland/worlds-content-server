@@ -80,6 +80,69 @@ test('deployment works', function ({ components, stubComponents }) {
   })
 })
 
+test('deployments works', function ({ components, stubComponents }) {
+  it('creates an entity and deploys it using specified name', async () => {
+    const { config, storage } = components
+    const { fetch, metrics } = stubComponents
+
+    const contentClient = new ContentClient({
+      contentUrl: `http://${await config.requireString('HTTP_SERVER_HOST')}:${await config.requireNumber(
+        'HTTP_SERVER_PORT'
+      )}`
+    })
+
+    const entityFiles = new Map<string, Uint8Array>()
+    entityFiles.set('abc.txt', stringToUtf8Bytes('asd'))
+    const fileHash = await hashV1(entityFiles.get('abc.txt'))
+
+    expect(await storage.exist(fileHash)).toEqual(false)
+
+    // Build the entity
+    const { files, entityId } = await contentClient.buildEntity({
+      type: EntityType.SCENE,
+      pointers: ['0,0'],
+      files: entityFiles,
+      metadata: {
+        worldConfiguration: {
+          dclName: 'just-do-it.dcl.eth'
+        }
+      }
+    })
+
+    // Sign entity id
+    const identity = await getIdentity()
+
+    fetch.fetch.withArgs(await config.requireString('MARKETPLACE_SUBGRAPH_URL')).resolves(
+      new Response(
+        JSON.stringify({
+          data: {
+            names: [
+              {
+                name: 'my-super-name'
+              },
+              {
+                name: 'just-do-it'
+              }
+            ]
+          }
+        })
+      )
+    )
+
+    const authChain = Authenticator.signPayload(identity.authChain, entityId)
+
+    // Deploy entity
+    await contentClient.deployEntity({ files, entityId, authChain })
+
+    Sinon.assert.calledOnceWithMatch(fetch.fetch, await config.requireString('MARKETPLACE_SUBGRAPH_URL'))
+
+    expect(await storage.exist(fileHash)).toEqual(true)
+    expect(await storage.exist(entityId)).toEqual(true)
+
+    Sinon.assert.calledWithMatch(metrics.increment, 'world_deployments_counter')
+  })
+})
+
 test('deployment doesnt work because of random key', function ({ components, stubComponents }) {
   it('fails deployment with ephemeral random key', async () => {
     const { config } = components
