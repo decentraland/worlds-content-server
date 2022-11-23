@@ -19,7 +19,7 @@ import { createStatusComponent } from './adapters/status'
 export async function initComponents(): Promise<AppComponents> {
   const config = await createDotEnvConfigComponent({ path: ['.env.default', '.env'] })
 
-  const logs = createLogComponent()
+  const logs = await createLogComponent({ config })
   const server = await createServerComponent<GlobalContext>({ config, logs }, { cors: {} })
   const statusChecks = await createStatusCheckComponent({ server, config })
   const fetch = await createFetchComponent()

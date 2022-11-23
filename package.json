@@ -18,7 +18,7 @@
     "eslint-config-prettier": "^8.5.0",
     "eslint-plugin-prettier": "^4.2.1",
     "@well-known-components/test-helpers": "^1.3.0",
-    "typescript": "^4.7.3"
+    "typescript": "^4.9.3"
   },
   "prettier": {
     "printWidth": 120,
@@ -36,10 +36,10 @@
     "@dcl/protocol": "^1.0.0-3205348640.commit-bd227bf",
     "@dcl/schemas": "^5.22.0",
     "@types/busboy": "^1.5.0",
-    "@well-known-components/env-config-provider": "^1.1.1",
-    "@well-known-components/http-server": "^1.1.1",
-    "@well-known-components/interfaces": "^1.1.1",
-    "@well-known-components/logger": "^1.1.0",
+    "@well-known-components/env-config-provider": "^1.2.0",
+    "@well-known-components/http-server": "^1.1.6",
+    "@well-known-components/interfaces": "^1.1.3",
+    "@well-known-components/logger": "^3.0.0",
     "@well-known-components/metrics": "^1.1.3",
     "@well-known-components/thegraph-component": "^1.3.0",
     "aws-sdk": "^2.1248.0",
