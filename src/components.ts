@@ -52,7 +52,7 @@ export async function initComponents(): Promise<AppComponents> {
     arn: snsArn
   }
 
-  const validator = createValidator({ config, logs, storage })
+  const validator = createValidator({ config, ethereumProvider, logs, storage })
 
   return {
     config,

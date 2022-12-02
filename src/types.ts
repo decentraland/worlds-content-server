@@ -13,13 +13,21 @@ import { HTTPProvider } from 'eth-connect'
 import { ISubgraphComponent } from '@well-known-components/thegraph-component'
 import { IStatusComponent } from './adapters/status'
 import { ValidationResult } from './logic/validations'
-import { Entity } from '@dcl/schemas'
+import { AuthChain, Entity } from '@dcl/schemas'
 
 export type GlobalContext = {
   components: BaseComponents
 }
 
 export type Validator = {
+  validateEntity: (entity: Entity) => ValidationResult
+  validateAuthChain: (authChain: AuthChain) => ValidationResult
+  validateSignature: (
+    entityId: string,
+    authChain: AuthChain,
+    dateToValidateExpirationInMillis?: number
+  ) => Promise<ValidationResult>
+  validateSigner: (signer: string) => ValidationResult
   validateSize: (entity: Entity, files: Map<string, Uint8Array>) => Promise<ValidationResult>
 }
 

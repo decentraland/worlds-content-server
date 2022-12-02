@@ -1,5 +1,7 @@
 import { AppComponents, Validator } from '../types'
-import { Entity } from '@dcl/schemas'
+import { AuthChain, Entity, EthAddress } from '@dcl/schemas'
+import { HTTPProvider } from 'eth-connect'
+import { Authenticator } from '@dcl/crypto'
 
 const maxSizeInMB = 15
 
@@ -8,7 +10,9 @@ export type ValidationResult = {
   errors: string[]
 }
 
-export const createValidator = (components: Pick<AppComponents, 'config' | 'logs' | 'storage'>): Validator => {
+export const createValidator = (
+  components: Pick<AppComponents, 'config' | 'ethereumProvider' | 'logs' | 'storage'>
+): Validator => {
   const logger = components.logs.getLogger('validator')
 
   const validateSize = async (entity: Entity, files: Map<string, Uint8Array>): Promise<ValidationResult> => {
@@ -63,7 +67,56 @@ export const createValidator = (components: Pick<AppComponents, 'config' | 'logs
     return totalSize
   }
 
+  const validateEntity = (entity: Entity): ValidationResult => {
+    const result = Entity.validate(entity)
+    return {
+      ok: () => result,
+      errors: Entity.validate.errors?.map((error) => error.message || '') || []
+    }
+  }
+
+  const validateAuthChain = (authChain: AuthChain): ValidationResult => {
+    const result = AuthChain.validate(authChain)
+    if (!result) {
+      console.dir(authChain)
+      console.dir(AuthChain.validate.errors)
+    }
+    return {
+      ok: () => result,
+      errors: AuthChain.validate.errors?.map((error) => error.message || '') || []
+    }
+  }
+
+  const validateSigner = (signer: string): ValidationResult => {
+    const result = EthAddress.validate(signer)
+    return {
+      ok: () => result,
+      errors: EthAddress.validate.errors?.map((error) => error.message || '') || []
+    }
+  }
+
+  const validateSignature = async (
+    entityId: string,
+    authChain: AuthChain,
+    dateToValidateExpirationInMillis?: number
+  ): Promise<ValidationResult> => {
+    const result = await Authenticator.validateSignature(
+      entityId,
+      authChain,
+      components.ethereumProvider,
+      dateToValidateExpirationInMillis
+    )
+    return {
+      ok: () => result.ok,
+      errors: result.message ? [result.message] : []
+    }
+  }
+
   return {
+    validateEntity,
+    validateAuthChain,
+    validateSignature,
+    validateSigner,
     validateSize
   }
 }

@@ -98,26 +98,20 @@ export async function deployEntity(
     const entityId = requireString(ctx.formData.fields.entityId.value)
     const authChain = extractAuthChain(ctx)
 
-    if (!AuthChain.validate(authChain)) {
-      console.dir(authChain)
-      console.dir(AuthChain.validate.errors)
-      return Error400('Deployment failed: Invalid auth chain ')
+    const validationResult2 = await ctx.components.validator.validateAuthChain(authChain)
+    if (!validationResult2.ok()) {
+      return Error400(`Deployment failed: Invalid auth chain: ${validationResult2.errors.join(', ')}`)
     }
 
     const signer = authChain[0].payload
-    if (!EthAddress.validate(signer)) {
-      return Error400('Deployment failed: Invalid auth chain ')
+    const validationResult3 = await ctx.components.validator.validateSigner(signer)
+    if (!validationResult3.ok()) {
+      return Error400(`Deployment failed: Invalid auth chain: ${validationResult3.errors.join(', ')}`)
     }
 
-    // first validate auth chain
-    const validAuthChain = await Authenticator.validateSignature(
-      entityId,
-      authChain,
-      ctx.components.ethereumProvider,
-      10
-    )
-    if (!validAuthChain.ok) {
-      return Error400('Deployment failed: Invalid auth chain ' + validAuthChain.message)
+    const validationResult4 = await ctx.components.validator.validateSignature(entityId, authChain, 10)
+    if (!validationResult4.ok()) {
+      return Error400(`Deployment failed: Invalid auth chain: ${validationResult4.errors.join(', ')}`)
     }
 
     // validate that the signer has permissions to deploy this scene. TheGraph only responds to lower cased addresses
@@ -152,8 +146,9 @@ export async function deployEntity(
       timestamp: Date.now(), // this is not part of the published entity
       ...JSON.parse(entityRaw)
     }
-    if (!Entity.validate(entity)) {
-      return Error400('Deployment failed: Invalid entity schema')
+    const validationResult1 = await ctx.components.validator.validateEntity(entity)
+    if (!validationResult1.ok()) {
+      return Error400(`Deployment failed: Invalid entity schema: ${validationResult1.errors.join(', ')}`)
     }
 
     // then validate all files are part of the entity
