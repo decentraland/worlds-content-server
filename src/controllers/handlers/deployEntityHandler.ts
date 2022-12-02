@@ -13,9 +13,6 @@ import {
 } from '../../logic/check-permissions'
 import { SNS } from 'aws-sdk'
 import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
-import { validateSize } from '../../logic/validations'
-import busboy from 'busboy'
-import ILogger = ILoggerComponent.ILogger
 
 export function requireString(val: string): string {
   if (typeof val !== 'string') throw new Error('A string was expected')
@@ -82,7 +79,7 @@ async function storeEntity(
 export async function deployEntity(
   ctx: FormDataContext &
     HandlerContextWithPath<
-      'config' | 'ethereumProvider' | 'logs' | 'marketplaceSubGraph' | 'metrics' | 'storage' | 'sns',
+      'config' | 'ethereumProvider' | 'logs' | 'marketplaceSubGraph' | 'metrics' | 'storage' | 'sns' | 'validator',
       '/entities'
     >
 ): Promise<IHttpServerComponent.IResponse> {
@@ -195,7 +192,7 @@ export async function deployEntity(
       theFiles.set(filesKey, ctx.formData.files[filesKey].value)
     }
 
-    const validationResult = await validateSize(ctx.components, entity, theFiles)
+    const validationResult = await ctx.components.validator.validateSize(entity, theFiles)
     if (!validationResult.ok()) {
       return Error400(`Deployment failed: ${validationResult.errors.join(', ')}`)
     }

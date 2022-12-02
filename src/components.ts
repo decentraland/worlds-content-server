@@ -14,6 +14,7 @@ import {
   createFsComponent
 } from '@dcl/catalyst-storage'
 import { createStatusComponent } from './adapters/status'
+import { createValidator } from './logic/validations'
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
@@ -51,6 +52,8 @@ export async function initComponents(): Promise<AppComponents> {
     arn: snsArn
   }
 
+  const validator = createValidator({ config, logs, storage })
+
   return {
     config,
     logs,
@@ -62,6 +65,7 @@ export async function initComponents(): Promise<AppComponents> {
     storage,
     marketplaceSubGraph,
     sns,
-    status
+    status,
+    validator
   }
 }

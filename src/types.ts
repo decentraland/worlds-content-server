@@ -12,9 +12,15 @@ import { MockedStorage } from '@dcl/catalyst-storage/dist/MockedStorage'
 import { HTTPProvider } from 'eth-connect'
 import { ISubgraphComponent } from '@well-known-components/thegraph-component'
 import { IStatusComponent } from './adapters/status'
+import { ValidationResult } from './logic/validations'
+import { Entity } from '@dcl/schemas'
 
 export type GlobalContext = {
   components: BaseComponents
+}
+
+export type Validator = {
+  validateSize: (entity: Entity, files: Map<string, Uint8Array>) => Promise<ValidationResult>
 }
 
 // components used in every environment
@@ -29,6 +35,7 @@ export type BaseComponents = {
   marketplaceSubGraph: ISubgraphComponent
   status: IStatusComponent
   sns: SnsComponent
+  validator: Validator
 }
 
 export type SnsComponent = { arn?: string }
