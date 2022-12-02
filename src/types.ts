@@ -20,6 +20,19 @@ export type GlobalContext = {
 }
 
 export type Validator = {
+  validateDeployment: (
+    entity: Entity,
+    entityRaw: string,
+    authChain: AuthChain,
+    uploadedFiles: Map<string, Uint8Array>,
+    contentHashesInStorage: Map<string, boolean>
+  ) => Promise<ValidationResult>
+  validateFiles: (
+    entity: Entity,
+    uploadedFiles: Map<string, Uint8Array>,
+    contentHashesInStorage: Map<string, boolean>
+  ) => Promise<ValidationResult>
+  validateEntityId: (entityId: string, entityRaw: string) => Promise<ValidationResult>
   validateEntity: (entity: Entity) => ValidationResult
   validateAuthChain: (authChain: AuthChain) => ValidationResult
   validateSignature: (
@@ -28,7 +41,7 @@ export type Validator = {
     dateToValidateExpirationInMillis?: number
   ) => Promise<ValidationResult>
   validateSigner: (signer: string) => ValidationResult
-  validateSize: (entity: Entity, files: Map<string, Uint8Array>) => Promise<ValidationResult>
+  validateSize: (entity: Entity, uploadedFiles: Map<string, Uint8Array>) => Promise<ValidationResult>
 }
 
 // components used in every environment

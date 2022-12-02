@@ -1,9 +1,7 @@
-import { AuthChain, AuthLink, Entity, EthAddress, IPFSv2 } from '@dcl/schemas'
+import { AuthChain, AuthLink, Entity } from '@dcl/schemas'
 import { IHttpServerComponent, ILoggerComponent } from '@well-known-components/interfaces'
 import { FormDataContext } from '../../logic/multipart'
 import { AppComponents, HandlerContextWithPath } from '../../types'
-import { Authenticator } from '@dcl/crypto'
-import { hashV1 } from '@dcl/hashing'
 import { bufferToStream } from '@dcl/catalyst-storage/dist/content-item'
 import { stringToUtf8Bytes } from 'eth-connect'
 import {
@@ -26,7 +24,7 @@ export function extractAuthChain(ctx: FormDataContext): AuthChain {
 
   // find the biggest index
   for (const i in ctx.formData.fields) {
-    const regexResult = /authChain\[(\d+)\]/.exec(i)
+    const regexResult = /authChain\[(\d+)]/.exec(i)
     if (regexResult) {
       biggestIndex = Math.max(biggestIndex, +regexResult[1])
     }
@@ -97,21 +95,35 @@ export async function deployEntity(
   try {
     const entityId = requireString(ctx.formData.fields.entityId.value)
     const authChain = extractAuthChain(ctx)
-
-    const validationResult2 = await ctx.components.validator.validateAuthChain(authChain)
-    if (!validationResult2.ok()) {
-      return Error400(`Deployment failed: Invalid auth chain: ${validationResult2.errors.join(', ')}`)
-    }
-
     const signer = authChain[0].payload
-    const validationResult3 = await ctx.components.validator.validateSigner(signer)
-    if (!validationResult3.ok()) {
-      return Error400(`Deployment failed: Invalid auth chain: ${validationResult3.errors.join(', ')}`)
+
+    const entityRaw = ctx.formData.files[entityId].value.toString()
+
+    const entity: Entity = {
+      id: entityId, // this is not part of the published entity
+      timestamp: Date.now(), // this is not part of the published entity
+      ...JSON.parse(entityRaw)
     }
 
-    const validationResult4 = await ctx.components.validator.validateSignature(entityId, authChain, 10)
-    if (!validationResult4.ok()) {
-      return Error400(`Deployment failed: Invalid auth chain: ${validationResult4.errors.join(', ')}`)
+    const uploadedFiles: Map<string, Uint8Array> = new Map()
+    for (const filesKey in ctx.formData.files) {
+      uploadedFiles.set(filesKey, ctx.formData.files[filesKey].value)
+    }
+
+    const allContentHashesInStorage = await ctx.components.storage.existMultiple(
+      Array.from(new Set(entity.content!.map(($) => $.hash)))
+    )
+
+    // then validate that the entity is valid
+    const validationResult = await ctx.components.validator.validateDeployment(
+      entity,
+      entityRaw,
+      authChain,
+      uploadedFiles,
+      allContentHashesInStorage
+    )
+    if (!validationResult.ok()) {
+      return Error400(`Deployment failed: ${validationResult.errors.join(', ')}`)
     }
 
     // validate that the signer has permissions to deploy this scene. TheGraph only responds to lower cased addresses
@@ -123,7 +135,7 @@ export async function deployEntity(
       )
     }
 
-    const sceneJson = JSON.parse(ctx.formData.files[entityId].value.toString())
+    const sceneJson = JSON.parse(entityRaw)
     if (!allowedToUseSpecifiedDclName(names, sceneJson)) {
       return Error400(
         `Deployment failed: Your wallet has no permission to publish to this server because it doesn't own Decentraland NAME "${sceneJson.metadata.worldConfiguration?.dclName}". Check scene.json to select a different name.`
@@ -132,65 +144,7 @@ export async function deployEntity(
 
     // determine the name to use for deploying the world
     const deploymentDclName = determineDclNameToUse(names, sceneJson)
-
     logger.debug(`Deployment for scene "${entityId}" under dcl name "${deploymentDclName}.dcl.eth"`)
-
-    // then validate that the entityId is valid
-    const entityRaw = ctx.formData.files[entityId].value.toString()
-    if ((await hashV1(stringToUtf8Bytes(entityRaw))) != entityId) {
-      return Error400('Deployment failed: Invalid entity hash')
-    }
-    // then validate that the entity is valid
-    const entity: Entity = {
-      id: entityId, // this is not part of the published entity
-      timestamp: Date.now(), // this is not part of the published entity
-      ...JSON.parse(entityRaw)
-    }
-    const validationResult1 = await ctx.components.validator.validateEntity(entity)
-    if (!validationResult1.ok()) {
-      return Error400(`Deployment failed: Invalid entity schema: ${validationResult1.errors.join(', ')}`)
-    }
-
-    // then validate all files are part of the entity
-    for (const hash in ctx.formData.files) {
-      // detect extra file
-      if (!entity.content!.some(($) => $.hash == hash) && hash !== entityId) {
-        return Error400(`Deployment failed: Extra file detected ${hash}`)
-      }
-      // only new hashes
-      if (!IPFSv2.validate(hash)) {
-        return Error400('Deployment failed: Only CIDv1 are allowed for content files')
-      }
-      // hash the file
-      if ((await hashV1(ctx.formData.files[hash].value)) !== hash) {
-        return Error400("Deployment failed: The hashed file doesn't match the provided content")
-      }
-    }
-
-    const allContentHashes = Array.from(new Set(entity.content!.map(($) => $.hash)))
-    const allContentHashesInStorage = await ctx.components.storage.existMultiple(allContentHashes)
-
-    // then ensure that all missing files are uploaded
-    for (const file of entity.content!) {
-      const isFilePresent = ctx.formData.files[file.hash] || allContentHashesInStorage.get(file.hash)
-      if (!isFilePresent) {
-        return Error400(
-          `Deployment failed: The file ${file.hash} (${file.file}) is neither present in the storage or in the provided entity`
-        )
-      }
-    }
-
-    // TODO: run proper validations
-
-    const theFiles: Map<string, Uint8Array> = new Map()
-    for (const filesKey in ctx.formData.files) {
-      theFiles.set(filesKey, ctx.formData.files[filesKey].value)
-    }
-
-    const validationResult = await ctx.components.validator.validateSize(entity, theFiles)
-    if (!validationResult.ok()) {
-      return Error400(`Deployment failed: ${validationResult.errors.join(', ')}`)
-    }
 
     // Store the entity
     await storeEntity(
@@ -198,7 +152,7 @@ export async function deployEntity(
       entity,
       allContentHashesInStorage,
       logger,
-      theFiles,
+      uploadedFiles,
       entityRaw,
       authChain,
       deploymentDclName

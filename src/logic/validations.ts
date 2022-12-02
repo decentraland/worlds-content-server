@@ -1,7 +1,8 @@
 import { AppComponents, Validator } from '../types'
-import { AuthChain, Entity, EthAddress } from '@dcl/schemas'
-import { HTTPProvider } from 'eth-connect'
+import { AuthChain, Entity, EthAddress, IPFSv2 } from '@dcl/schemas'
+import { stringToUtf8Bytes } from 'eth-connect'
 import { Authenticator } from '@dcl/crypto'
+import { hashV1 } from '@dcl/hashing'
 
 const maxSizeInMB = 15
 
@@ -11,10 +12,44 @@ export type ValidationResult = {
 }
 
 export const createValidator = (
-  components: Pick<AppComponents, 'config' | 'ethereumProvider' | 'logs' | 'storage'>
+  components: Pick<AppComponents, 'config' | 'ethereumProvider' | 'storage'>
 ): Validator => {
-  const logger = components.logs.getLogger('validator')
+  const validateFiles = async (
+    entity: Entity,
+    uploadedFiles: Map<string, Uint8Array>,
+    contentHashesInStorage: Map<string, boolean>
+  ): Promise<ValidationResult> => {
+    const errors: string[] = []
 
+    // validate all files are part of the entity
+    for (const hash in uploadedFiles) {
+      // detect extra file
+      if (!entity.content!.some(($) => $.hash == hash) && hash !== entity.id) {
+        errors.push(`Extra file detected ${hash}`)
+      }
+      // only new hashes
+      if (!IPFSv2.validate(hash)) {
+        errors.push(`Only CIDv1 are allowed for content files: ${hash}`)
+      }
+      // hash the file
+      if ((await hashV1(uploadedFiles.get(hash)!)) !== hash) {
+        errors.push(`The hashed file doesn't match the provided content: ${hash}`)
+      }
+    }
+
+    // then ensure that all missing files are uploaded
+    for (const file of entity.content!) {
+      const isFilePresent = uploadedFiles.has(file.hash) || contentHashesInStorage.get(file.hash)
+      if (!isFilePresent) {
+        errors.push(`The file ${file.hash} (${file.file}) is neither present in the storage or in the provided entity`)
+      }
+    }
+
+    return {
+      ok: () => errors.length === 0,
+      errors
+    }
+  }
   const validateSize = async (entity: Entity, files: Map<string, Uint8Array>): Promise<ValidationResult> => {
     const errors: string[] = []
     const maxSizeInBytes = maxSizeInMB * 1024 * 1024
@@ -75,6 +110,14 @@ export const createValidator = (
     }
   }
 
+  const validateEntityId = async (entityId: string, entityRaw: string): Promise<ValidationResult> => {
+    const result = (await hashV1(stringToUtf8Bytes(entityRaw))) === entityId
+    return {
+      ok: () => result,
+      errors: !result ? ['Invalid entity hash'] : []
+    }
+  }
+
   const validateAuthChain = (authChain: AuthChain): ValidationResult => {
     const result = AuthChain.validate(authChain)
     if (!result) {
@@ -112,9 +155,74 @@ export const createValidator = (
     }
   }
 
+  const validateDeployment = async (
+    entity: Entity,
+    entityRaw: string,
+    authChain: AuthChain,
+    uploadedFiles: Map<string, Uint8Array>,
+    contentHashesInStorage: Map<string, boolean>
+  ): Promise<ValidationResult> => {
+    {
+      const validationResult = await validateEntity(entity)
+      if (!validationResult.ok()) {
+        return validationResult
+      }
+    }
+
+    {
+      const validationResult = await validateAuthChain(authChain)
+      if (!validationResult.ok()) {
+        return validationResult
+      }
+    }
+
+    {
+      const validationResult = await validateSigner(authChain[0].payload)
+      if (!validationResult.ok()) {
+        return validationResult
+      }
+    }
+
+    {
+      const validationResult = await validateSignature(entity.id, authChain, 10)
+      if (!validationResult.ok()) {
+        return validationResult
+      }
+    }
+
+    {
+      const validationResult = await validateEntityId(entity.id, entityRaw)
+      if (!validationResult.ok()) {
+        return validationResult
+      }
+    }
+
+    {
+      const validationResult = await validateFiles(entity, uploadedFiles, contentHashesInStorage)
+      if (!validationResult.ok()) {
+        return validationResult
+      }
+    }
+
+    {
+      const validationResult = await validateSize(entity, uploadedFiles)
+      if (!validationResult.ok()) {
+        return validationResult
+      }
+    }
+
+    return {
+      ok: () => true,
+      errors: []
+    }
+  }
+
   return {
-    validateEntity,
+    validateDeployment,
     validateAuthChain,
+    validateEntity,
+    validateEntityId,
+    validateFiles,
     validateSignature,
     validateSigner,
     validateSize
