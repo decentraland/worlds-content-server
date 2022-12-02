@@ -98,11 +98,12 @@ export async function deployEntity(
     const signer = authChain[0].payload
 
     const entityRaw = ctx.formData.files[entityId].value.toString()
+    const sceneJson = JSON.parse(entityRaw)
 
     const entity: Entity = {
       id: entityId, // this is not part of the published entity
       timestamp: Date.now(), // this is not part of the published entity
-      ...JSON.parse(entityRaw)
+      ...sceneJson
     }
 
     const uploadedFiles: Map<string, Uint8Array> = new Map()
@@ -110,18 +111,17 @@ export async function deployEntity(
       uploadedFiles.set(filesKey, ctx.formData.files[filesKey].value)
     }
 
-    const allContentHashesInStorage = await ctx.components.storage.existMultiple(
+    const contentHashesInStorage = await ctx.components.storage.existMultiple(
       Array.from(new Set(entity.content!.map(($) => $.hash)))
     )
 
     // then validate that the entity is valid
-    const validationResult = await ctx.components.validator.validateDeployment(
+    const validationResult = await ctx.components.validator.validate({
       entity,
-      entityRaw,
+      files: uploadedFiles,
       authChain,
-      uploadedFiles,
-      allContentHashesInStorage
-    )
+      contentHashesInStorage
+    })
     if (!validationResult.ok()) {
       return Error400(`Deployment failed: ${validationResult.errors.join(', ')}`)
     }
@@ -135,7 +135,6 @@ export async function deployEntity(
       )
     }
 
-    const sceneJson = JSON.parse(entityRaw)
     if (!allowedToUseSpecifiedDclName(names, sceneJson)) {
       return Error400(
         `Deployment failed: Your wallet has no permission to publish to this server because it doesn't own Decentraland NAME "${sceneJson.metadata.worldConfiguration?.dclName}". Check scene.json to select a different name.`
@@ -150,7 +149,7 @@ export async function deployEntity(
     await storeEntity(
       ctx.components,
       entity,
-      allContentHashesInStorage,
+      contentHashesInStorage,
       logger,
       uploadedFiles,
       entityRaw,
@@ -204,7 +203,6 @@ export async function deployEntity(
       }
     }
   } catch (err: any) {
-    console.error(err)
     logger.error(err)
     throw err
   }

@@ -12,14 +12,36 @@ import { MockedStorage } from '@dcl/catalyst-storage/dist/MockedStorage'
 import { HTTPProvider } from 'eth-connect'
 import { ISubgraphComponent } from '@well-known-components/thegraph-component'
 import { IStatusComponent } from './adapters/status'
-import { ValidationResult } from './logic/validations'
 import { AuthChain, Entity } from '@dcl/schemas'
 
 export type GlobalContext = {
   components: BaseComponents
 }
 
-export type Validator = {
+export type DeploymentToValidate = {
+  entity: Entity
+  files: Map<string, Uint8Array>
+  authChain: AuthChain
+  contentHashesInStorage: Map<string, boolean>
+}
+
+export interface Validator {
+  validate(deployment: DeploymentToValidate): Promise<ValidationResult>
+}
+
+export type ValidationResult = {
+  ok: () => boolean
+  errors: string[]
+}
+
+export type Validation = {
+  validate: (
+    components: Pick<AppComponents, 'config' | 'ethereumProvider' | 'storage'>,
+    deployment: DeploymentToValidate
+  ) => ValidationResult | Promise<ValidationResult>
+}
+
+export type Validator2 = {
   validateDeployment: (
     entity: Entity,
     entityRaw: string,
