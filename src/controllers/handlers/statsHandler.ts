@@ -3,7 +3,7 @@ import { HandlerContextWithPath } from '../../types'
 export async function statsHandler({
   components: { config, storage }
 }: Pick<HandlerContextWithPath<'config' | 'storage', '/stats'>, 'components' | 'params' | 'url'>) {
-  const commitHash = await config.requireString('COMMIT_HASH')
+  const commitHash = await config.getString('COMMIT_HASH')
 
   const filtered = []
   for await (const key of await storage.allFileIds('name-')) {
