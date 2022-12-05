@@ -13,9 +13,11 @@ const createValidationResult = (errors: string[]) => {
   }
 }
 
+const OK = createValidationResult([])
+
 const validateFiles: Validation = {
   validate: async (
-    components: Pick<AppComponents, 'config' | 'ethereumProvider' | 'storage'>,
+    components: Pick<AppComponents, 'config' | 'dclNameChecker' | 'ethereumProvider' | 'storage'>,
     deployment: DeploymentToValidate
   ): Promise<ValidationResult> => {
     const errors: string[] = []
@@ -50,7 +52,7 @@ const validateFiles: Validation = {
 
 const validateSize: Validation = {
   validate: async (
-    components: Pick<AppComponents, 'config' | 'ethereumProvider' | 'storage'>,
+    components: Pick<AppComponents, 'config' | 'dclNameChecker' | 'ethereumProvider' | 'storage'>,
     deployment: DeploymentToValidate
   ): Promise<ValidationResult> => {
     const fetchContentFileSize = async (hash: string): Promise<number> => {
@@ -100,7 +102,7 @@ const validateSize: Validation = {
 
 const validateEntity: Validation = {
   validate: async (
-    components: Pick<AppComponents, 'config' | 'ethereumProvider' | 'storage'>,
+    components: Pick<AppComponents, 'config' | 'dclNameChecker' | 'ethereumProvider' | 'storage'>,
     deployment: DeploymentToValidate
   ): Promise<ValidationResult> => {
     Entity.validate(deployment.entity)
@@ -111,7 +113,7 @@ const validateEntity: Validation = {
 
 const validateEntityId: Validation = {
   validate: async (
-    components: Pick<AppComponents, 'config' | 'ethereumProvider' | 'storage'>,
+    components: Pick<AppComponents, 'config' | 'dclNameChecker' | 'ethereumProvider' | 'storage'>,
     deployment: DeploymentToValidate
   ): Promise<ValidationResult> => {
     const entityRaw = deployment.files.get(deployment.entity.id)!.toString()
@@ -123,7 +125,7 @@ const validateEntityId: Validation = {
 
 const validateAuthChain: Validation = {
   validate: async (
-    components: Pick<AppComponents, 'config' | 'ethereumProvider' | 'storage'>,
+    components: Pick<AppComponents, 'config' | 'dclNameChecker' | 'ethereumProvider' | 'storage'>,
     deployment: DeploymentToValidate
   ): Promise<ValidationResult> => {
     const result = AuthChain.validate(deployment.authChain)
@@ -138,7 +140,7 @@ const validateAuthChain: Validation = {
 
 const validateSigner: Validation = {
   validate: async (
-    components: Pick<AppComponents, 'config' | 'ethereumProvider' | 'storage'>,
+    components: Pick<AppComponents, 'config' | 'dclNameChecker' | 'ethereumProvider' | 'storage'>,
     deployment: DeploymentToValidate
   ): Promise<ValidationResult> => {
     const signer = deployment.authChain[0].payload
@@ -150,7 +152,7 @@ const validateSigner: Validation = {
 
 const validateSignature: Validation = {
   validate: async (
-    components: Pick<AppComponents, 'config' | 'ethereumProvider' | 'storage'>,
+    components: Pick<AppComponents, 'config' | 'dclNameChecker' | 'ethereumProvider' | 'storage'>,
     deployment: DeploymentToValidate
   ): Promise<ValidationResult> => {
     const result = await Authenticator.validateSignature(
@@ -164,6 +166,38 @@ const validateSignature: Validation = {
   }
 }
 
+const validateDclName: Validation = {
+  validate: async (
+    components: Pick<AppComponents, 'config' | 'dclNameChecker' | 'ethereumProvider' | 'storage'>,
+    deployment: DeploymentToValidate
+  ): Promise<ValidationResult> => {
+    // validate that the signer has permissions to deploy this scene. TheGraph only responds to lower cased addresses
+    const signer = deployment.authChain[0].payload
+    const names = await components.dclNameChecker.fetchNamesOwnedByAddress(signer)
+    const hasPermission = names.length > 0
+    if (!hasPermission) {
+      return createValidationResult([
+        `Deployment failed: Your wallet has no permission to publish to this server because it doesn't own a Decentraland NAME.`
+      ])
+    }
+
+    const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())
+    const worldSpecifiedName: string | undefined = sceneJson.metadata.worldConfiguration?.dclName
+
+    if (
+      worldSpecifiedName !== undefined &&
+      !names
+        .map((name) => name.toLowerCase())
+        .includes(worldSpecifiedName.substring(0, worldSpecifiedName.length - 8).toLowerCase())
+    )
+      return createValidationResult([
+        `Deployment failed: Your wallet has no permission to publish to this server because it doesn\'t own Decentraland NAME "${sceneJson.metadata.worldConfiguration?.dclName}". Check scene.json to select a different name.`
+      ])
+
+    return OK
+  }
+}
+
 const quickValidations: Validation[] = [
   validateEntityId,
   validateEntity,
@@ -173,12 +207,15 @@ const quickValidations: Validation[] = [
   validateFiles
 ]
 
-const slowValidations: Validation[] = [validateSize]
+const slowValidations: Validation[] = [validateSize, validateDclName]
 
+/**
+ * Run quick validations first and, if all pass, then go for the slow ones
+ */
 const validations: Validation[] = [...quickValidations, ...slowValidations]
 
 export const createValidator = (
-  components: Pick<AppComponents, 'config' | 'ethereumProvider' | 'storage'>
+  components: Pick<AppComponents, 'config' | 'dclNameChecker' | 'ethereumProvider' | 'storage'>
 ): Validator => ({
   async validate(deployment: DeploymentToValidate): Promise<ValidationResult> {
     for (const validation of validations) {
@@ -188,6 +225,6 @@ export const createValidator = (
       }
     }
 
-    return createValidationResult([])
+    return OK
   }
 })

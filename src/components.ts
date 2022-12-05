@@ -4,7 +4,7 @@ import { createLogComponent } from '@well-known-components/logger'
 import { createFetchComponent } from './adapters/fetch'
 import { createMetricsComponent } from '@well-known-components/metrics'
 import { createSubgraphComponent } from '@well-known-components/thegraph-component'
-import { AppComponents, GlobalContext, SnsComponent } from './types'
+import { AppComponents, GlobalContext, IDclNameChecker, SnsComponent } from './types'
 import { metricDeclarations } from './metrics'
 import { metricDeclarations as theGraphMetricDeclarations } from '@well-known-components/thegraph-component'
 import { HTTPProvider } from 'eth-connect'
@@ -15,6 +15,7 @@ import {
 } from '@dcl/catalyst-storage'
 import { createStatusComponent } from './adapters/status'
 import { createValidator } from './logic/validations'
+import { createDclNameChecker } from './logic/dcl-name-checker'
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
@@ -52,10 +53,13 @@ export async function initComponents(): Promise<AppComponents> {
     arn: snsArn
   }
 
-  const validator = createValidator({ config, ethereumProvider, storage })
+  const dclNameChecker: IDclNameChecker = createDclNameChecker({ logs, marketplaceSubGraph })
+
+  const validator = createValidator({ config, dclNameChecker, ethereumProvider, storage })
 
   return {
     config,
+    dclNameChecker,
     logs,
     server,
     statusChecks,

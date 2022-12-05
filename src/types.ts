@@ -12,7 +12,7 @@ import { MockedStorage } from '@dcl/catalyst-storage/dist/MockedStorage'
 import { HTTPProvider } from 'eth-connect'
 import { ISubgraphComponent } from '@well-known-components/thegraph-component'
 import { IStatusComponent } from './adapters/status'
-import { AuthChain, Entity } from '@dcl/schemas'
+import { AuthChain, Entity, EthAddress } from '@dcl/schemas'
 
 export type GlobalContext = {
   components: BaseComponents
@@ -36,39 +36,20 @@ export type ValidationResult = {
 
 export type Validation = {
   validate: (
-    components: Pick<AppComponents, 'config' | 'ethereumProvider' | 'storage'>,
+    components: Pick<AppComponents, 'config' | 'dclNameChecker' | 'ethereumProvider' | 'storage'>,
     deployment: DeploymentToValidate
   ) => ValidationResult | Promise<ValidationResult>
 }
 
-export type Validator2 = {
-  validateDeployment: (
-    entity: Entity,
-    entityRaw: string,
-    authChain: AuthChain,
-    uploadedFiles: Map<string, Uint8Array>,
-    contentHashesInStorage: Map<string, boolean>
-  ) => Promise<ValidationResult>
-  validateFiles: (
-    entity: Entity,
-    uploadedFiles: Map<string, Uint8Array>,
-    contentHashesInStorage: Map<string, boolean>
-  ) => Promise<ValidationResult>
-  validateEntityId: (entityId: string, entityRaw: string) => Promise<ValidationResult>
-  validateEntity: (entity: Entity) => ValidationResult
-  validateAuthChain: (authChain: AuthChain) => ValidationResult
-  validateSignature: (
-    entityId: string,
-    authChain: AuthChain,
-    dateToValidateExpirationInMillis?: number
-  ) => Promise<ValidationResult>
-  validateSigner: (signer: string) => ValidationResult
-  validateSize: (entity: Entity, uploadedFiles: Map<string, Uint8Array>) => Promise<ValidationResult>
+export type IDclNameChecker = {
+  fetchNamesOwnedByAddress(ethAddress: EthAddress): Promise<string[]>
+  determineDclNameToUse(names: string[], sceneJson: any): string
 }
 
 // components used in every environment
 export type BaseComponents = {
   config: IConfigComponent
+  dclNameChecker: IDclNameChecker
   logs: ILoggerComponent
   server: IHttpServerComponent<GlobalContext>
   fetch: IFetchComponent

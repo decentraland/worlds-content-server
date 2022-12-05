@@ -4,11 +4,6 @@ import { FormDataContext } from '../../logic/multipart'
 import { AppComponents, HandlerContextWithPath } from '../../types'
 import { bufferToStream } from '@dcl/catalyst-storage/dist/content-item'
 import { stringToUtf8Bytes } from 'eth-connect'
-import {
-  allowedToUseSpecifiedDclName,
-  determineDclNameToUse,
-  fetchNamesOwnedByAddress
-} from '../../logic/check-permissions'
 import { SNS } from 'aws-sdk'
 import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
 
@@ -77,7 +72,7 @@ async function storeEntity(
 export async function deployEntity(
   ctx: FormDataContext &
     HandlerContextWithPath<
-      'config' | 'ethereumProvider' | 'logs' | 'marketplaceSubGraph' | 'metrics' | 'storage' | 'sns' | 'validator',
+      'config' | 'ethereumProvider' | 'logs' | 'dclNameChecker' | 'metrics' | 'storage' | 'sns' | 'validator',
       '/entities'
     >
 ): Promise<IHttpServerComponent.IResponse> {
@@ -115,7 +110,7 @@ export async function deployEntity(
       Array.from(new Set(entity.content!.map(($) => $.hash)))
     )
 
-    // then validate that the entity is valid
+    // run all validations about the deployment
     const validationResult = await ctx.components.validator.validate({
       entity,
       files: uploadedFiles,
@@ -126,23 +121,9 @@ export async function deployEntity(
       return Error400(`Deployment failed: ${validationResult.errors.join(', ')}`)
     }
 
-    // validate that the signer has permissions to deploy this scene. TheGraph only responds to lower cased addresses
-    const names = await fetchNamesOwnedByAddress(ctx.components, signer.toLowerCase())
-    const hasPermission = names.length > 0
-    if (!hasPermission) {
-      return Error400(
-        `Deployment failed: Your wallet has no permission to publish to this server because it doesn't own a Decentraland NAME.`
-      )
-    }
-
-    if (!allowedToUseSpecifiedDclName(names, sceneJson)) {
-      return Error400(
-        `Deployment failed: Your wallet has no permission to publish to this server because it doesn't own Decentraland NAME "${sceneJson.metadata.worldConfiguration?.dclName}". Check scene.json to select a different name.`
-      )
-    }
-
     // determine the name to use for deploying the world
-    const deploymentDclName = determineDclNameToUse(names, sceneJson)
+    const names = await ctx.components.dclNameChecker.fetchNamesOwnedByAddress(signer)
+    const deploymentDclName = ctx.components.dclNameChecker.determineDclNameToUse(names, sceneJson)
     logger.debug(`Deployment for scene "${entityId}" under dcl name "${deploymentDclName}.dcl.eth"`)
 
     // Store the entity
