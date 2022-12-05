@@ -1,5 +1,6 @@
 import { AppComponents, IDclNameChecker } from '../types'
 import { EthAddress } from '@dcl/schemas'
+import LRU from 'lru-cache'
 
 type NamesResponse = {
   names: { name: string }[]
@@ -8,8 +9,10 @@ type NamesResponse = {
 export const createDclNameChecker = (
   components: Pick<AppComponents, 'logs' | 'marketplaceSubGraph'>
 ): IDclNameChecker => {
-  return {
-    async fetchNamesOwnedByAddress(ethAddress: EthAddress): Promise<string[]> {
+  const cache = new LRU<EthAddress, string[]>({
+    max: 100,
+    ttl: 1000 * 60 * 5, // cache for 5 minutes
+    fetchMethod: async (ethAddress: EthAddress): Promise<string[]> => {
       const result = await components.marketplaceSubGraph.query<NamesResponse>(
         `
       query FetchNames($ethAddress: String) {
@@ -26,6 +29,11 @@ export const createDclNameChecker = (
 
       components.logs.getLogger('check-permissions').debug(`Fetched names for address ${ethAddress}: ${names}`)
       return names
+    }
+  })
+  return {
+    async fetchNamesOwnedByAddress(ethAddress: EthAddress): Promise<string[]> {
+      return (await cache.fetch(ethAddress))!
     },
 
     determineDclNameToUse(names: string[], sceneJson: any): string {

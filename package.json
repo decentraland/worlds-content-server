@@ -46,6 +46,7 @@
     "busboy": "^1.6.0",
     "dcl-catalyst-client": "^13.0.15",
     "eth-connect": "^6.0.3",
+    "lru-cache": "^7.14.0",
     "ts-proto": "^1.135.0"
   }
 }
