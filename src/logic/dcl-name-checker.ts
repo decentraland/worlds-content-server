@@ -25,7 +25,7 @@ export const createDclNameChecker = (
         }
       )
 
-      const names = result.names.map(({ name }) => name)
+      const names = result.names.map(({ name }) => `${name}.dcl.eth`)
 
       components.logs.getLogger('check-permissions').debug(`Fetched names for address ${ethAddress}: ${names}`)
       return names
@@ -37,8 +37,7 @@ export const createDclNameChecker = (
     },
 
     determineDclNameToUse(names: string[], sceneJson: any): string {
-      const worldSpecifiedName: string | undefined = sceneJson.metadata.worldConfiguration?.dclName
-      return worldSpecifiedName?.substring(0, worldSpecifiedName?.length - 8) || names[0]
+      return sceneJson.metadata.worldConfiguration?.dclName || `${names[0]}`
     }
   }
 }

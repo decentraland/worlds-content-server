@@ -7,7 +7,7 @@ export async function statsHandler({
 
   const filtered = []
   for await (const key of await storage.allFileIds('name-')) {
-    if (key.endsWith('.dcl.eth')) filtered.push(key.substring(5)) // remove "name-" prefix
+    filtered.push(key.substring(5)) // remove "name-" prefix
   }
 
   return {

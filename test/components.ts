@@ -40,6 +40,7 @@ async function initComponents(): Promise<TestComponents> {
       config,
       storage,
       dclNameChecker,
+      limitsManager: components.limitsManager,
       ethereumProvider: components.ethereumProvider
     }),
     storage

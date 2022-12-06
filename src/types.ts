@@ -36,7 +36,7 @@ export type ValidationResult = {
 
 export type Validation = {
   validate: (
-    components: Pick<AppComponents, 'config' | 'dclNameChecker' | 'ethereumProvider' | 'storage'>,
+    components: Pick<AppComponents, 'config' | 'dclNameChecker' | 'ethereumProvider' | 'limitsManager' | 'storage'>,
     deployment: DeploymentToValidate
   ) => ValidationResult | Promise<ValidationResult>
 }
@@ -44,6 +44,12 @@ export type Validation = {
 export type IDclNameChecker = {
   fetchNamesOwnedByAddress(ethAddress: EthAddress): Promise<string[]>
   determineDclNameToUse(names: string[], sceneJson: any): string
+}
+
+export type ILimitsManager = {
+  getAllowSdk6For(worldName: string): boolean
+  getMaxAllowedParcelsFor(worldName: string): number
+  getMaxAllowedSizeInMbFor(worldName: string): number
 }
 
 // components used in every environment
@@ -57,6 +63,7 @@ export type BaseComponents = {
   ethereumProvider: HTTPProvider
   storage: IContentStorageComponent
   marketplaceSubGraph: ISubgraphComponent
+  limitsManager: ILimitsManager
   status: IStatusComponent
   sns: SnsComponent
   validator: Validator

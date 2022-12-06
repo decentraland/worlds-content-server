@@ -15,7 +15,7 @@ const OK = createValidationResult([])
 
 const validateFiles: Validation = {
   validate: async (
-    components: Pick<AppComponents, 'config' | 'dclNameChecker' | 'ethereumProvider' | 'storage'>,
+    components: Pick<AppComponents, 'config' | 'dclNameChecker' | 'ethereumProvider' | 'limitsManager' | 'storage'>,
     deployment: DeploymentToValidate
   ): Promise<ValidationResult> => {
     const errors: string[] = []
@@ -50,7 +50,7 @@ const validateFiles: Validation = {
 
 const validateSize: Validation = {
   validate: async (
-    components: Pick<AppComponents, 'config' | 'dclNameChecker' | 'ethereumProvider' | 'storage'>,
+    components: Pick<AppComponents, 'config' | 'dclNameChecker' | 'ethereumProvider' | 'limitsManager' | 'storage'>,
     deployment: DeploymentToValidate
   ): Promise<ValidationResult> => {
     const fetchContentFileSize = async (hash: string): Promise<number> => {
@@ -78,7 +78,12 @@ const validateSize: Validation = {
     }
 
     const maxSizeInMB = 15
-    const maxTotalSizeInMB = 200
+
+    const signer = deployment.authChain[0].payload
+    const names = await components.dclNameChecker.fetchNamesOwnedByAddress(signer)
+    const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())
+    const worldName = components.dclNameChecker.determineDclNameToUse(names, sceneJson)
+    const maxTotalSizeInMB = components.limitsManager.getMaxAllowedSizeInMbFor(worldName)
 
     const errors: string[] = []
     const maxSizeInBytes = maxSizeInMB * 1024 * 1024
@@ -87,15 +92,15 @@ const validateSize: Validation = {
       const totalSize = await calculateDeploymentSize(deployment.entity, deployment.files)
       if (totalSize > maxTotalSizeInMB * 1024 * 1024) {
         errors.push(
-          `The deployment is too big. The maximum total size allowed is ${maxSizeInMB} MB for scenes. You can upload up to ${
+          `The deployment is too big. The maximum total size allowed is ${maxTotalSizeInMB} MB for scenes. You can upload up to ${
             maxTotalSizeInMB * 1024 * 1024
           } bytes but you tried to upload ${totalSize}.`
         )
       }
-      const sizePerPointer = totalSize / deployment.entity.pointers.length
-      if (sizePerPointer > maxSizeInBytes) {
+      const sizePerParcel = totalSize / deployment.entity.pointers.length
+      if (sizePerParcel > maxSizeInBytes) {
         errors.push(
-          `The deployment is too big. The maximum allowed size per pointer is ${maxSizeInMB} MB for scenes. You can upload up to ${
+          `The deployment is too big. The maximum allowed size per parcel is ${maxSizeInMB} MB for scenes. You can upload up to ${
             deployment.entity.pointers.length * maxSizeInBytes
           } bytes but you tried to upload ${totalSize}.`
         )
@@ -110,7 +115,7 @@ const validateSize: Validation = {
 
 const validateEntity: Validation = {
   validate: async (
-    components: Pick<AppComponents, 'config' | 'dclNameChecker' | 'ethereumProvider' | 'storage'>,
+    components: Pick<AppComponents, 'config' | 'dclNameChecker' | 'ethereumProvider' | 'limitsManager' | 'storage'>,
     deployment: DeploymentToValidate
   ): Promise<ValidationResult> => {
     Entity.validate(deployment.entity)
@@ -121,7 +126,7 @@ const validateEntity: Validation = {
 
 const validateEntityId: Validation = {
   validate: async (
-    components: Pick<AppComponents, 'config' | 'dclNameChecker' | 'ethereumProvider' | 'storage'>,
+    components: Pick<AppComponents, 'config' | 'dclNameChecker' | 'ethereumProvider' | 'limitsManager' | 'storage'>,
     deployment: DeploymentToValidate
   ): Promise<ValidationResult> => {
     const entityRaw = deployment.files.get(deployment.entity.id)!.toString()
@@ -133,7 +138,7 @@ const validateEntityId: Validation = {
 
 const validateDeploymentTtl: Validation = {
   validate: async (
-    components: Pick<AppComponents, 'config' | 'dclNameChecker' | 'ethereumProvider' | 'storage'>,
+    components: Pick<AppComponents, 'config' | 'dclNameChecker' | 'ethereumProvider' | 'limitsManager' | 'storage'>,
     deployment: DeploymentToValidate
   ): Promise<ValidationResult> => {
     const ttl = Date.now() - deployment.entity.timestamp
@@ -149,7 +154,7 @@ const validateDeploymentTtl: Validation = {
 
 const validateAuthChain: Validation = {
   validate: async (
-    components: Pick<AppComponents, 'config' | 'dclNameChecker' | 'ethereumProvider' | 'storage'>,
+    components: Pick<AppComponents, 'config' | 'dclNameChecker' | 'ethereumProvider' | 'limitsManager' | 'storage'>,
     deployment: DeploymentToValidate
   ): Promise<ValidationResult> => {
     const result = AuthChain.validate(deployment.authChain)
@@ -164,7 +169,7 @@ const validateAuthChain: Validation = {
 
 const validateSigner: Validation = {
   validate: async (
-    components: Pick<AppComponents, 'config' | 'dclNameChecker' | 'ethereumProvider' | 'storage'>,
+    components: Pick<AppComponents, 'config' | 'dclNameChecker' | 'ethereumProvider' | 'limitsManager' | 'storage'>,
     deployment: DeploymentToValidate
   ): Promise<ValidationResult> => {
     const signer = deployment.authChain[0].payload
@@ -176,7 +181,7 @@ const validateSigner: Validation = {
 
 const validateSignature: Validation = {
   validate: async (
-    components: Pick<AppComponents, 'config' | 'dclNameChecker' | 'ethereumProvider' | 'storage'>,
+    components: Pick<AppComponents, 'config' | 'dclNameChecker' | 'ethereumProvider' | 'limitsManager' | 'storage'>,
     deployment: DeploymentToValidate
   ): Promise<ValidationResult> => {
     const result = await Authenticator.validateSignature(
@@ -192,7 +197,7 @@ const validateSignature: Validation = {
 
 const validateDclName: Validation = {
   validate: async (
-    components: Pick<AppComponents, 'config' | 'dclNameChecker' | 'ethereumProvider' | 'storage'>,
+    components: Pick<AppComponents, 'config' | 'dclNameChecker' | 'ethereumProvider' | 'limitsManager' | 'storage'>,
     deployment: DeploymentToValidate
   ): Promise<ValidationResult> => {
     // validate that the signer has permissions to deploy this scene. TheGraph only responds to lower cased addresses
@@ -210,13 +215,30 @@ const validateDclName: Validation = {
 
     if (
       worldSpecifiedName !== undefined &&
-      !names
-        .map((name) => name.toLowerCase())
-        .includes(worldSpecifiedName.substring(0, worldSpecifiedName.length - 8).toLowerCase())
+      !names.map((name) => name.toLowerCase()).includes(worldSpecifiedName.toLowerCase())
     )
       return createValidationResult([
         `Deployment failed: Your wallet has no permission to publish to this server because it doesn\'t own Decentraland NAME "${sceneJson.metadata.worldConfiguration?.dclName}". Check scene.json to select a different name.`
       ])
+
+    return OK
+  }
+}
+
+const validateSceneDimensions: Validation = {
+  validate: async (
+    components: Pick<AppComponents, 'config' | 'dclNameChecker' | 'ethereumProvider' | 'limitsManager' | 'storage'>,
+    deployment: DeploymentToValidate
+  ): Promise<ValidationResult> => {
+    const signer = deployment.authChain[0].payload
+    const names = await components.dclNameChecker.fetchNamesOwnedByAddress(signer)
+    const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())
+    const worldName = components.dclNameChecker.determineDclNameToUse(names, sceneJson)
+
+    const maxParcels = components.limitsManager.getMaxAllowedParcelsFor(worldName)
+    if (deployment.entity.pointers.length > maxParcels) {
+      return createValidationResult([`Max allowed scene dimensions is ${maxParcels} parcels.`])
+    }
 
     return OK
   }
@@ -229,6 +251,7 @@ const quickValidations: Validation[] = [
   validateSigner,
   validateSignature,
   validateDeploymentTtl,
+  validateSceneDimensions,
   validateFiles
 ]
 
@@ -240,7 +263,7 @@ const slowValidations: Validation[] = [validateSize, validateDclName]
 const validations: Validation[] = [...quickValidations, ...slowValidations]
 
 export const createValidator = (
-  components: Pick<AppComponents, 'config' | 'dclNameChecker' | 'ethereumProvider' | 'storage'>
+  components: Pick<AppComponents, 'config' | 'dclNameChecker' | 'ethereumProvider' | 'limitsManager' | 'storage'>
 ): Validator => ({
   async validate(deployment: DeploymentToValidate): Promise<ValidationResult> {
     for (const validation of validations) {
