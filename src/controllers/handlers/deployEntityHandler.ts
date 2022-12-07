@@ -122,8 +122,7 @@ export async function deployEntity(
     }
 
     // determine the name to use for deploying the world
-    const names = await ctx.components.dclNameChecker.fetchNamesOwnedByAddress(signer)
-    const worldName = ctx.components.dclNameChecker.determineDclNameToUse(names, sceneJson)
+    const worldName = (await ctx.components.dclNameChecker.determineDclNameToUse(signer, sceneJson))!
     logger.debug(`Deployment for scene "${entityId}" under dcl name "${worldName}"`)
 
     // Store the entity

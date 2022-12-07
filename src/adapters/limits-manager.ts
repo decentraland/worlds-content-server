@@ -1,4 +1,5 @@
 import { AppComponents, ILimitsManager } from '../types'
+import LRU from 'lru-cache'
 
 type WhitelistEntry = {
   max_parcels?: number
@@ -18,14 +19,19 @@ export async function createLimitsManagerComponent({
   const hardMaxSize = await config.requireNumber('MAX_SIZE')
   const hardAllowSdk6 = Boolean(await config.requireString('ALLOW_SDK6'))
 
-  let whitelist: Whitelist = {}
+  const cache = new LRU<any, Whitelist>({
+    max: 100,
+    ttl: 5 * 60 * 1000, // cache for 5 minutes
+    fetchMethod: async (_): Promise<Whitelist> => {
+      console.log('fetching whitelist config')
+      return await fetch
+        // .fetch('https://config.decentraland.org/worlds-whitelist.json')
+        .fetch('http://test.test/worlds-whitelist.json')
+        .then((data) => data.json() as unknown as Whitelist)
+    }
+  })
 
-  setInterval(async () => {
-    const response = await fetch
-      // .fetch('https://config.decentraland.org/worlds-whitelist.json')
-      .fetch('http://test.test/worlds-whitelist.json')
-      .then((data) => (whitelist = data.json() as unknown as Whitelist))
-  }, 10 * 1000)
+  const whitelist: Whitelist = (await cache.fetch('config'))!
 
   return {
     getAllowSdk6For(worldName: string): boolean {

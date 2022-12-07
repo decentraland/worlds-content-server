@@ -25,19 +25,22 @@ export const createDclNameChecker = (
         }
       )
 
-      const names = result.names.map(({ name }) => `${name}.dcl.eth`)
+      const names = result.names.map(({ name }) => `${name.toLowerCase()}.dcl.eth`)
 
       components.logs.getLogger('check-permissions').debug(`Fetched names for address ${ethAddress}: ${names}`)
       return names
     }
   })
-  return {
-    async fetchNamesOwnedByAddress(ethAddress: EthAddress): Promise<string[]> {
-      return (await cache.fetch(ethAddress))!
-    },
+  const fetchNamesOwnedByAddress = async (ethAddress: EthAddress): Promise<string[]> => {
+    return (await cache.fetch(ethAddress))!
+  }
+  const determineDclNameToUse = async (ethAddress: EthAddress, sceneJson: any): Promise<string | undefined> => {
+    const names = await fetchNamesOwnedByAddress(ethAddress)
+    return sceneJson.metadata.worldConfiguration?.dclName || `${names[0]}`
+  }
 
-    determineDclNameToUse(names: string[], sceneJson: any): string {
-      return sceneJson.metadata.worldConfiguration?.dclName || `${names[0]}`
-    }
+  return {
+    fetchNamesOwnedByAddress,
+    determineDclNameToUse
   }
 }

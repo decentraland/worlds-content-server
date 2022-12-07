@@ -3,11 +3,8 @@ import { IDclNameChecker } from '../src/types'
 
 export function createMockDclNameChecker(): IDclNameChecker {
   return {
-    determineDclNameToUse(names: string[], _sceneJson: any): string {
-      if (names.length > 0) {
-        return names[0]
-      }
-      throw Error("Can't use that name")
+    determineDclNameToUse(_ethAddress: EthAddress, _sceneJson: any): Promise<string> {
+      return Promise.resolve(undefined)
     },
     fetchNamesOwnedByAddress(_ethAddress: EthAddress): Promise<string[]> {
       return Promise.resolve([])
