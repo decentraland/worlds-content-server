@@ -47,9 +47,9 @@ export type IDclNameChecker = {
 }
 
 export type ILimitsManager = {
-  getAllowSdk6For(worldName: string): boolean
-  getMaxAllowedParcelsFor(worldName: string): number
-  getMaxAllowedSizeInMbFor(worldName: string): number
+  getAllowSdk6For(worldName: string): Promise<boolean>
+  getMaxAllowedParcelsFor(worldName: string): Promise<number>
+  getMaxAllowedSizeInMbFor(worldName: string): Promise<number>
 }
 
 // components used in every environment

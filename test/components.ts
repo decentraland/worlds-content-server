@@ -10,6 +10,8 @@ import { MockedStorage } from '@dcl/catalyst-storage/dist/MockedStorage'
 import { createMockMarketplaceSubGraph } from './marketplace-subgraph-mock'
 import { createMockDclNameChecker } from './dcl-name-checker-mock'
 import { createValidator } from '../src/logic/validations'
+import { createLimitsManagerComponent } from '../src/adapters/limits-manager'
+import { createFetchComponent } from '../src/adapters/fetch'
 
 /**
  * Behaves like Jest "describe" function, used to describe a test for a
@@ -31,16 +33,23 @@ async function initComponents(): Promise<TestComponents> {
   const storage = new MockedStorage()
 
   const dclNameChecker = createMockDclNameChecker()
+
+  const fetch = await createFetchComponent()
+
+  const limitsManager = await createLimitsManagerComponent({ config, fetch })
+
   return {
     ...components,
     localFetch: await createLocalFetchCompoment(config),
     marketplaceSubGraph: createMockMarketplaceSubGraph(),
     dclNameChecker,
+    fetch,
+    limitsManager,
     validator: createValidator({
       config,
       storage,
       dclNameChecker,
-      limitsManager: components.limitsManager,
+      limitsManager,
       ethereumProvider: components.ethereumProvider
     }),
     storage

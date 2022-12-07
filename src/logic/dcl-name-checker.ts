@@ -11,7 +11,7 @@ export const createDclNameChecker = (
 ): IDclNameChecker => {
   const cache = new LRU<EthAddress, string[]>({
     max: 100,
-    ttl: 1000 * 60 * 5, // cache for 5 minutes
+    ttl: 5 * 60 * 1000, // cache for 5 minutes
     fetchMethod: async (ethAddress: EthAddress): Promise<string[]> => {
       const result = await components.marketplaceSubGraph.query<NamesResponse>(
         `

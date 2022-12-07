@@ -82,7 +82,7 @@ const validateSize: Validation = {
     const signer = deployment.authChain[0].payload
     const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())
     const worldName = await components.dclNameChecker.determineDclNameToUse(signer, sceneJson)
-    const maxTotalSizeInMB = components.limitsManager.getMaxAllowedSizeInMbFor(worldName || '')
+    const maxTotalSizeInMB = await components.limitsManager.getMaxAllowedSizeInMbFor(worldName || '')
 
     const errors: string[] = []
     const maxSizeInBytes = maxSizeInMB * 1024 * 1024
@@ -233,7 +233,7 @@ const validateSceneDimensions: Validation = {
     const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())
     const worldName = await components.dclNameChecker.determineDclNameToUse(signer, sceneJson)
 
-    const maxParcels = components.limitsManager.getMaxAllowedParcelsFor(worldName || '')
+    const maxParcels = await components.limitsManager.getMaxAllowedParcelsFor(worldName || '')
     if (deployment.entity.pointers.length > maxParcels) {
       return createValidationResult([`Max allowed scene dimensions is ${maxParcels} parcels.`])
     }

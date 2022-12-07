@@ -17,30 +17,27 @@ export async function createLimitsManagerComponent({
 }: Pick<AppComponents, 'config' | 'fetch'>): Promise<ILimitsManager> {
   const hardMaxParcels = await config.requireNumber('MAX_PARCELS')
   const hardMaxSize = await config.requireNumber('MAX_SIZE')
-  const hardAllowSdk6 = Boolean(await config.requireString('ALLOW_SDK6'))
+  const hardAllowSdk6 = (await config.requireString('ALLOW_SDK6')) === 'true'
+  const whitelistUrl = await config.requireString('WHITELIST_URL')
 
   const cache = new LRU<any, Whitelist>({
-    max: 100,
-    ttl: 5 * 60 * 1000, // cache for 5 minutes
-    fetchMethod: async (_): Promise<Whitelist> => {
-      console.log('fetching whitelist config')
-      return await fetch
-        // .fetch('https://config.decentraland.org/worlds-whitelist.json')
-        .fetch('http://test.test/worlds-whitelist.json')
-        .then((data) => data.json() as unknown as Whitelist)
-    }
+    max: 1,
+    ttl: 10 * 60 * 1000, // cache for 5 minutes
+    fetchMethod: async (_): Promise<Whitelist> =>
+      await fetch.fetch(whitelistUrl).then((data) => data.json() as unknown as Whitelist)
   })
 
-  const whitelist: Whitelist = (await cache.fetch('config'))!
-
   return {
-    getAllowSdk6For(worldName: string): boolean {
+    async getAllowSdk6For(worldName: string): Promise<boolean> {
+      const whitelist = (await cache.fetch('config'))!
       return whitelist[worldName]?.allow_sdk6 || hardAllowSdk6
     },
-    getMaxAllowedParcelsFor(worldName: string): number {
+    async getMaxAllowedParcelsFor(worldName: string): Promise<number> {
+      const whitelist = (await cache.fetch('config'))!
       return whitelist[worldName]?.max_parcels || hardMaxParcels
     },
-    getMaxAllowedSizeInMbFor(worldName: string): number {
+    async getMaxAllowedSizeInMbFor(worldName: string): Promise<number> {
+      const whitelist = (await cache.fetch('config'))!
       return whitelist[worldName]?.max_size_in_mb || hardMaxSize
     }
   }
