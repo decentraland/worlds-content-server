@@ -38,6 +38,14 @@ async function initComponents(): Promise<TestComponents> {
 
   const limitsManager = await createLimitsManagerComponent({ config, fetch })
 
+  const validator = createValidator({
+    config,
+    storage,
+    dclNameChecker,
+    limitsManager,
+    ethereumProvider: components.ethereumProvider
+  })
+
   return {
     ...components,
     localFetch: await createLocalFetchCompoment(config),
@@ -45,13 +53,7 @@ async function initComponents(): Promise<TestComponents> {
     dclNameChecker,
     fetch,
     limitsManager,
-    validator: createValidator({
-      config,
-      storage,
-      dclNameChecker,
-      limitsManager,
-      ethereumProvider: components.ethereumProvider
-    }),
+    validator,
     storage
   }
 }

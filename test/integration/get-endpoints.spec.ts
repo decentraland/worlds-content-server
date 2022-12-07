@@ -19,3 +19,21 @@ test('consume content endpoints', function ({ components }) {
     }
   })
 })
+
+test('consume stats endpoint', function ({ components }) {
+  it('responds /stats works', async () => {
+    const { localFetch, storage } = components
+
+    storage.storage.set(
+      'name-some-name.dcl.eth',
+      stringToUtf8Bytes(JSON.stringify({ entityId: 'bafybeictjyqjlkgybfckczpuqlqo7xfhho3jpnep4wesw3ivaeeuqugc2y' }))
+    )
+
+    const r = await localFetch.fetch('/stats')
+    expect(r.status).toEqual(200)
+    expect(await r.json()).toEqual({
+      version: 'unknown',
+      deployed_names: ['some-name.dcl.eth']
+    })
+  })
+})
