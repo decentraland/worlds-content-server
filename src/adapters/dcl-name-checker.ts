@@ -36,7 +36,13 @@ export const createDclNameChecker = (
   }
   const determineDclNameToUse = async (ethAddress: EthAddress, sceneJson: any): Promise<string | undefined> => {
     const names = await fetchNamesOwnedByAddress(ethAddress)
-    return sceneJson.metadata.worldConfiguration?.dclName || `${names[0]}`
+    const requestedName = sceneJson.metadata.worldConfiguration?.dclName
+
+    if (requestedName && names.includes(requestedName)) {
+      return requestedName
+    }
+
+    return names[0]
   }
 
   return {

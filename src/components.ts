@@ -15,7 +15,7 @@ import {
 } from '@dcl/catalyst-storage'
 import { createStatusComponent } from './adapters/status'
 import { createValidator } from './logic/validations'
-import { createDclNameChecker } from './logic/dcl-name-checker'
+import { createDclNameChecker } from './adapters/dcl-name-checker'
 import { createLimitsManagerComponent } from './adapters/limits-manager'
 
 // Initialize all the components of the app

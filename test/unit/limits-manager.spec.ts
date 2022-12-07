@@ -1,5 +1,5 @@
 import { Request, Response } from 'node-fetch'
-import { createLimitsManagerComponent } from '../src/adapters/limits-manager'
+import { createLimitsManagerComponent } from '../../src/adapters/limits-manager'
 import { createConfigComponent } from '@well-known-components/env-config-provider'
 import { IFetchComponent } from '@well-known-components/http-server'
 
@@ -13,8 +13,8 @@ describe('limits manager', function () {
     })
 
     const fetch: IFetchComponent = {
-      fetch: async (_url: Request): Promise<Response> => {
-        return new Response(
+      fetch: async (_url: Request): Promise<Response> =>
+        new Response(
           JSON.stringify({
             'purchased.dcl.eth': {
               max_parcels: 44,
@@ -23,7 +23,6 @@ describe('limits manager', function () {
             }
           })
         )
-      }
     }
 
     const limitsManager = await createLimitsManagerComponent({
