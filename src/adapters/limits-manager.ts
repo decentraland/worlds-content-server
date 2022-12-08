@@ -13,8 +13,10 @@ type Whitelist = {
 
 export async function createLimitsManagerComponent({
   config,
-  fetch
-}: Pick<AppComponents, 'config' | 'fetch'>): Promise<ILimitsManager> {
+  fetch,
+  logs
+}: Pick<AppComponents, 'config' | 'fetch' | 'logs'>): Promise<ILimitsManager> {
+  const logger = logs.getLogger('limits-manager')
   const hardMaxParcels = await config.requireNumber('MAX_PARCELS')
   const hardMaxSize = await config.requireNumber('MAX_SIZE')
   const hardAllowSdk6 = (await config.requireString('ALLOW_SDK6')) === 'true'
@@ -22,9 +24,20 @@ export async function createLimitsManagerComponent({
 
   const cache = new LRU<any, Whitelist>({
     max: 1,
-    ttl: 10 * 60 * 1000, // cache for 5 minutes
-    fetchMethod: async (_): Promise<Whitelist> =>
-      await fetch.fetch(whitelistUrl).then((data) => data.json() as unknown as Whitelist)
+    ttl: 10 * 60 * 1000, // cache for 10 minutes
+    fetchMethod: async (_, staleValue): Promise<Whitelist> => {
+      return await fetch
+        .fetch(whitelistUrl)
+        .then(async (data) => (await data.json()) as unknown as Whitelist)
+        .catch((_: any) => {
+          logger.warn(
+            `Error fetching the whitelist: ${_.message}. Returning last known whitelist: ${JSON.stringify(
+              staleValue || {}
+            )}`
+          )
+          return staleValue || {}
+        })
+    }
   })
 
   return {

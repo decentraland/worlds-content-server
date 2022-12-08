@@ -2,6 +2,7 @@ import { Request, Response } from 'node-fetch'
 import { createLimitsManagerComponent } from '../../src/adapters/limits-manager'
 import { createConfigComponent } from '@well-known-components/env-config-provider'
 import { IFetchComponent } from '@well-known-components/http-server'
+import { createLogComponent } from '@well-known-components/logger'
 
 describe('limits manager', function () {
   it('fetches and updates config', async () => {
@@ -27,7 +28,8 @@ describe('limits manager', function () {
 
     const limitsManager = await createLimitsManagerComponent({
       config,
-      fetch
+      fetch,
+      logs: await createLogComponent({ config })
     })
 
     // When whitelisted

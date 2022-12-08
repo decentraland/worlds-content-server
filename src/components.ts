@@ -56,7 +56,7 @@ export async function initComponents(): Promise<AppComponents> {
 
   const dclNameChecker: IDclNameChecker = createDclNameChecker({ logs, marketplaceSubGraph })
 
-  const limitsManager = await createLimitsManagerComponent({ config, fetch })
+  const limitsManager = await createLimitsManagerComponent({ config, fetch, logs })
 
   const validator = createValidator({
     config,
