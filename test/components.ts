@@ -12,6 +12,7 @@ import { createMockDclNameChecker } from './dcl-name-checker-mock'
 import { createValidator } from '../src/logic/validations'
 import { createLimitsManagerComponent } from '../src/adapters/limits-manager'
 import { createFetchComponent } from '../src/adapters/fetch'
+import { createMockLimitsManagerComponent } from './limits-manager-mock'
 
 /**
  * Behaves like Jest "describe" function, used to describe a test for a
@@ -36,7 +37,7 @@ async function initComponents(): Promise<TestComponents> {
 
   const fetch = await createFetchComponent()
 
-  const limitsManager = await createLimitsManagerComponent({ config, fetch })
+  const limitsManager = createMockLimitsManagerComponent()
 
   const validator = createValidator({
     config,
