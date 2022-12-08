@@ -37,7 +37,8 @@ test('world about handler /world/:world_name/about', function ({ components }) {
       comms: {
         healthy: true,
         protocol: 'v3',
-        fixedAdapter: 'ws-room:room-service.test/rooms/bafybeictjyqjlkgybfckczpuqlqo7xfhho3jpnep4wesw3ivaeeuqugc2y'
+        fixedAdapter:
+          'ws-room:ws-room-service.decentraland.org/rooms/bafybeictjyqjlkgybfckczpuqlqo7xfhho3jpnep4wesw3ivaeeuqugc2y'
       }
     })
   })
