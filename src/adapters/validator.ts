@@ -12,114 +12,6 @@ const createValidationResult = (errors: string[]) => {
 
 const OK = createValidationResult([])
 
-export const validateFiles: Validation = {
-  validate: async (
-    components: Partial<ValidatorComponents>,
-    deployment: DeploymentToValidate
-  ): Promise<ValidationResult> => {
-    const errors: string[] = []
-
-    // validate all files are part of the entity
-    for (const hash in deployment.files) {
-      // detect extra file
-      if (!deployment.entity.content!.some(($) => $.hash == hash) && hash !== deployment.entity.id) {
-        errors.push(`Extra file detected ${hash}`)
-      }
-      // only new hashes
-      if (!IPFSv2.validate(hash)) {
-        errors.push(`Only CIDv1 are allowed for content files: ${hash}`)
-      }
-      // hash the file
-      if ((await hashV1(deployment.files.get(hash)!)) !== hash) {
-        errors.push(`The hashed file doesn't match the provided content: ${hash}`)
-      }
-    }
-
-    // then ensure that all missing files are uploaded
-    for (const file of deployment.entity.content!) {
-      const isFilePresent = deployment.files.has(file.hash) || deployment.contentHashesInStorage.get(file.hash)
-      if (!isFilePresent) {
-        errors.push(`The file ${file.hash} (${file.file}) is neither present in the storage or in the provided entity`)
-      }
-    }
-
-    return createValidationResult(errors)
-  }
-}
-
-export const validateSize: Validation = {
-  validate: async (
-    components: Pick<ValidatorComponents, 'dclNameChecker' | 'limitsManager' | 'storage'>,
-    deployment: DeploymentToValidate
-  ): Promise<ValidationResult> => {
-    const fetchContentFileSize = async (hash: string): Promise<number> => {
-      const content = await components.storage.retrieve(hash)
-      if (!content) {
-        throw Error(`Couldn't fetch content file with hash ${hash}`)
-      }
-
-      // Empty files are retrieved with size: null in aws-sdk
-      return content.size || 0
-    }
-
-    const calculateDeploymentSize = async (entity: Entity, files: Map<string, Uint8Array>): Promise<number> => {
-      let totalSize = 0
-      for (const hash of new Set(entity.content?.map((item) => item.hash) ?? [])) {
-        const uploadedFile = files.get(hash)
-        if (uploadedFile) {
-          totalSize += uploadedFile.byteLength
-        } else {
-          const contentSize = await fetchContentFileSize(hash)
-          totalSize += contentSize
-        }
-      }
-      return totalSize
-    }
-
-    const signer = deployment.authChain[0].payload
-    const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())
-    const worldName = await components.dclNameChecker.determineDclNameToUse(signer, sceneJson)
-    const maxTotalSizeInMB = await components.limitsManager.getMaxAllowedSizeInMbFor(worldName || '')
-
-    const errors: string[] = []
-    try {
-      const deploymentSize = await calculateDeploymentSize(deployment.entity, deployment.files)
-      if (deploymentSize > maxTotalSizeInMB * 1024 * 1024) {
-        errors.push(
-          `The deployment is too big. The maximum total size allowed is ${maxTotalSizeInMB} MB for scenes. You can upload up to ${
-            maxTotalSizeInMB * 1024 * 1024
-          } bytes but you tried to upload ${deploymentSize}.`
-        )
-      }
-    } catch (e: any) {
-      errors.push(e.message)
-    }
-
-    return createValidationResult(errors)
-  }
-}
-
-export const validateSdkVersion: Validation = {
-  validate: async (
-    components: Pick<ValidatorComponents, 'dclNameChecker' | 'limitsManager' | 'storage'>,
-    deployment: DeploymentToValidate
-  ): Promise<ValidationResult> => {
-    const signer = deployment.authChain[0].payload
-    const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())
-    const worldName = await components.dclNameChecker.determineDclNameToUse(signer, sceneJson)
-    const allowSdk6 = await components.limitsManager.getAllowSdk6For(worldName || '')
-
-    const sdkVersion = deployment.entity.metadata.runtimeVersion
-    // console.log({ sdkVersion, allowSdk6 })
-    if (sdkVersion !== '7' && !allowSdk6) {
-      return createValidationResult([
-        `Worlds are only supported on SDK 7. Please upgrade your scene to latest version of SDK.`
-      ])
-    }
-    return OK
-  }
-}
-
 export const validateEntity: Validation = {
   validate: async (
     components: Partial<ValidatorComponents>,
@@ -249,6 +141,114 @@ export const validateSceneDimensions: Validation = {
       return createValidationResult([`Max allowed scene dimensions is ${maxParcels} parcels.`])
     }
 
+    return OK
+  }
+}
+
+export const validateFiles: Validation = {
+  validate: async (
+    components: Partial<ValidatorComponents>,
+    deployment: DeploymentToValidate
+  ): Promise<ValidationResult> => {
+    const errors: string[] = []
+
+    // validate all files are part of the entity
+    for (const [hash, _] of deployment.files) {
+      // detect extra file
+      if (!deployment.entity.content!.some(($) => $.hash === hash) && hash !== deployment.entity.id) {
+        errors.push(`Extra file detected ${hash}`)
+      }
+      // only new hashes
+      if (!IPFSv2.validate(hash)) {
+        errors.push(`Only CIDv1 are allowed for content files: ${hash}`)
+      }
+      // hash the file
+      if ((await hashV1(deployment.files.get(hash)!)) !== hash) {
+        errors.push(`The hashed file doesn't match the provided content: ${hash}`)
+      }
+    }
+
+    // then ensure that all missing files are uploaded
+    for (const file of deployment.entity.content!) {
+      const isFilePresent = deployment.files.has(file.hash) || deployment.contentHashesInStorage.get(file.hash)
+      if (!isFilePresent) {
+        errors.push(`The file ${file.hash} (${file.file}) is neither present in the storage or in the provided entity`)
+      }
+    }
+
+    return createValidationResult(errors)
+  }
+}
+
+export const validateSize: Validation = {
+  validate: async (
+    components: Pick<ValidatorComponents, 'dclNameChecker' | 'limitsManager' | 'storage'>,
+    deployment: DeploymentToValidate
+  ): Promise<ValidationResult> => {
+    const fetchContentFileSize = async (hash: string): Promise<number> => {
+      const content = await components.storage.retrieve(hash)
+      if (!content) {
+        throw Error(`Couldn't fetch content file with hash ${hash}`)
+      }
+
+      // Empty files are retrieved with size: null in aws-sdk
+      return content.size || 0
+    }
+
+    const calculateDeploymentSize = async (entity: Entity, files: Map<string, Uint8Array>): Promise<number> => {
+      let totalSize = 0
+      for (const hash of new Set(entity.content?.map((item) => item.hash) ?? [])) {
+        const uploadedFile = files.get(hash)
+        if (uploadedFile) {
+          totalSize += uploadedFile.byteLength
+        } else {
+          const contentSize = await fetchContentFileSize(hash)
+          totalSize += contentSize
+        }
+      }
+      return totalSize
+    }
+
+    const signer = deployment.authChain[0].payload
+    const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())
+    const worldName = await components.dclNameChecker.determineDclNameToUse(signer, sceneJson)
+    const maxTotalSizeInMB = await components.limitsManager.getMaxAllowedSizeInMbFor(worldName || '')
+
+    const errors: string[] = []
+    try {
+      const deploymentSize = await calculateDeploymentSize(deployment.entity, deployment.files)
+      if (deploymentSize > maxTotalSizeInMB * 1024 * 1024) {
+        errors.push(
+          `The deployment is too big. The maximum total size allowed is ${maxTotalSizeInMB} MB for scenes. You can upload up to ${
+            maxTotalSizeInMB * 1024 * 1024
+          } bytes but you tried to upload ${deploymentSize}.`
+        )
+      }
+    } catch (e: any) {
+      errors.push(e.message)
+    }
+
+    return createValidationResult(errors)
+  }
+}
+
+export const validateSdkVersion: Validation = {
+  validate: async (
+    components: Pick<ValidatorComponents, 'dclNameChecker' | 'limitsManager' | 'storage'>,
+    deployment: DeploymentToValidate
+  ): Promise<ValidationResult> => {
+    const signer = deployment.authChain[0].payload
+    const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())
+    const worldName = await components.dclNameChecker.determineDclNameToUse(signer, sceneJson)
+    const allowSdk6 = await components.limitsManager.getAllowSdk6For(worldName || '')
+
+    const sdkVersion = deployment.entity.metadata.runtimeVersion
+    // console.log({ sdkVersion, allowSdk6 })
+    if (sdkVersion !== '7' && !allowSdk6) {
+      return createValidationResult([
+        `Worlds are only supported on SDK 7. Please upgrade your scene to latest version of SDK.`
+      ])
+    }
     return OK
   }
 }

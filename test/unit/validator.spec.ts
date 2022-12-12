@@ -6,6 +6,7 @@ import {
   validateDeploymentTtl,
   validateEntity,
   validateEntityId,
+  validateFiles,
   validateSceneDimensions,
   validateSignature,
   validateSigner
@@ -21,7 +22,7 @@ import { DeploymentBuilder } from 'dcl-catalyst-client'
 import { getIdentity } from '../utils'
 import { Authenticator, AuthIdentity } from '@dcl/crypto'
 import { IConfigComponent } from '@well-known-components/interfaces'
-import { hashV1 } from '@dcl/hashing'
+import { hashV0, hashV1 } from '@dcl/hashing'
 import { TextDecoder } from 'util'
 
 describe('validator', function () {
@@ -70,9 +71,9 @@ describe('validator', function () {
 
     const deployment = await createDeployment(identity.authChain)
 
-    const actual1 = await validator.validate(deployment)
-    expect(actual1.ok()).toBeTruthy()
-    expect(actual1.errors).toEqual([])
+    const result = await validator.validate(deployment)
+    expect(result.ok()).toBeTruthy()
+    expect(result.errors).toEqual([])
   })
 
   it('validateEntity with invalid entity', async () => {
@@ -81,9 +82,9 @@ describe('validator', function () {
     // make the entity invalid
     delete deployment.entity.type
 
-    const actual = await validateEntity.validate(components, deployment)
-    expect(actual.ok()).toBeFalsy()
-    expect(actual.errors).toContain("must have required property 'type'")
+    const result = await validateEntity.validate(components, deployment)
+    expect(result.ok()).toBeFalsy()
+    expect(result.errors).toContain("must have required property 'type'")
   })
 
   it('validateEntityId with entity id', async () => {
@@ -92,10 +93,10 @@ describe('validator', function () {
     // make the entity id invalid
     deployment.entity.id = 'bafkreie3yaomoex7orli7fumfwgk5abgels5o5fiauxfijzlzoiymqppdi'
 
-    const actual = await validateEntityId.validate(components, deployment)
-    expect(actual.ok()).toBeFalsy()
-    expect(actual.errors[0]).toContain(`Invalid entity hash: expected `)
-    expect(actual.errors[0]).toContain(`but got bafkreie3yaomoex7orli7fumfwgk5abgels5o5fiauxfijzlzoiymqppdi`)
+    const result = await validateEntityId.validate(components, deployment)
+    expect(result.ok()).toBeFalsy()
+    expect(result.errors[0]).toContain(`Invalid entity hash: expected `)
+    expect(result.errors[0]).toContain(`but got bafkreie3yaomoex7orli7fumfwgk5abgels5o5fiauxfijzlzoiymqppdi`)
   })
 
   it('validateDeploymentTtl with invalid deployment ttl', async () => {
@@ -107,10 +108,10 @@ describe('validator', function () {
       files: []
     })
 
-    const actual = await validateDeploymentTtl.validate(components, deployment)
-    expect(actual.ok()).toBeFalsy()
-    expect(actual.errors[0]).toContain('Deployment was created ')
-    expect(actual.errors[0]).toContain('secs ago. Max allowed: 10 secs.')
+    const result = await validateDeploymentTtl.validate(components, deployment)
+    expect(result.ok()).toBeFalsy()
+    expect(result.errors[0]).toContain('Deployment was created ')
+    expect(result.errors[0]).toContain('secs ago. Max allowed: 10 secs.')
   })
 
   it('validateAuthChain with invalid authChain', async () => {
@@ -119,9 +120,9 @@ describe('validator', function () {
     // Alter the authChain to make it fail
     deployment.authChain = []
 
-    const actual = await validateAuthChain.validate(components, deployment)
-    expect(actual.ok()).toBeFalsy()
-    expect(actual.errors).toContain('must NOT have fewer than 1 items')
+    const result = await validateAuthChain.validate(components, deployment)
+    expect(result.ok()).toBeFalsy()
+    expect(result.errors).toContain('must NOT have fewer than 1 items')
   })
 
   it('validateSigner with invalid signer', async () => {
@@ -130,9 +131,9 @@ describe('validator', function () {
     // Alter the signature to make it fail
     deployment.authChain[0].payload = 'Invalid'
 
-    const actual = await validateSigner.validate(components, deployment)
-    expect(actual.ok()).toBeFalsy()
-    expect(actual.errors).toContain('Invalid signer: Invalid')
+    const result = await validateSigner.validate(components, deployment)
+    expect(result.ok()).toBeFalsy()
+    expect(result.errors).toContain('Invalid signer: Invalid')
   })
 
   it('validateSignature with invalid signature', async () => {
@@ -141,9 +142,9 @@ describe('validator', function () {
     // Alter the signature to make it fail
     deployment.authChain = Authenticator.signPayload(identity.authChain, 'invalidId')
 
-    const actual = await validateSignature.validate(components, deployment)
-    expect(actual.ok()).toBeFalsy()
-    expect(actual.errors).toContain(
+    const result = await validateSignature.validate(components, deployment)
+    expect(result.ok()).toBeFalsy()
+    expect(result.errors).toContain(
       `ERROR: Invalid final authority. Expected: ${deployment.entity.id}. Current invalidId.`
     )
   })
@@ -155,9 +156,9 @@ describe('validator', function () {
     }
     const deployment = await createDeployment(identity.authChain)
 
-    const actual = await validateDclName.validate(alteredComponents, deployment)
-    expect(actual.ok()).toBeFalsy()
-    expect(actual.errors).toContain(
+    const result = await validateDclName.validate(alteredComponents, deployment)
+    expect(result.ok()).toBeFalsy()
+    expect(result.errors).toContain(
       "Deployment failed: Your wallet has no permission to publish to this server because it doesn't own a Decentraland NAME."
     )
   })
@@ -175,9 +176,9 @@ describe('validator', function () {
       files: []
     })
 
-    const actual = await validateDclName.validate(components, deployment)
-    expect(actual.ok()).toBeFalsy()
-    expect(actual.errors).toContain(
+    const result = await validateDclName.validate(components, deployment)
+    expect(result.ok()).toBeFalsy()
+    expect(result.errors).toContain(
       'Deployment failed: Your wallet has no permission to publish to this server because it doesn\'t own Decentraland NAME "different.dcl.eth". Check scene.json to select a different name.'
     )
   })
@@ -191,9 +192,37 @@ describe('validator', function () {
       files: []
     })
 
-    const actual = await validateSceneDimensions.validate(components, deployment)
-    expect(actual.ok()).toBeFalsy()
-    expect(actual.errors).toContain('Max allowed scene dimensions is 4 parcels.')
+    const result = await validateSceneDimensions.validate(components, deployment)
+    expect(result.ok()).toBeFalsy()
+    expect(result.errors).toContain('Max allowed scene dimensions is 4 parcels.')
+  })
+
+  it('validateFiles with errors', async () => {
+    const entityFiles = new Map<string, Uint8Array>()
+    entityFiles.set('abc.txt', Buffer.from(stringToUtf8Bytes('asd')))
+
+    const deployment = await createDeployment(identity.authChain)
+
+    // Alter the files to make it fail
+    deployment.files.set(await hashV1(Buffer.from('efg')), Buffer.from('efg'))
+    deployment.files.set(await hashV0(Buffer.from('igh')), Buffer.from('igh'))
+    deployment.entity.content.push({
+      file: 'def.txt',
+      hash: 'bafkreie3yaomoex7orli7fumfwgk5abgels5o5fiauxfijzlzoiymqppdi'
+    })
+
+    const result = await validateFiles.validate(components, deployment)
+    expect(result.ok()).toBeFalsy()
+    expect(result.errors).toContain('Extra file detected bafkreigu77uot3qljdv2oftqmer2ogd7glvohpolbz3whza6kmzgppmkkm')
+    expect(result.errors).toContain(
+      'Only CIDv1 are allowed for content files: QmPeE5zaej9HogrHRfS1NejWsTuh4qcFZCc4Q7LMnwdTMK'
+    )
+    expect(result.errors).toContain(
+      "The hashed file doesn't match the provided content: QmPeE5zaej9HogrHRfS1NejWsTuh4qcFZCc4Q7LMnwdTMK"
+    )
+    expect(result.errors).toContain(
+      'The file bafkreie3yaomoex7orli7fumfwgk5abgels5o5fiauxfijzlzoiymqppdi (def.txt) is neither present in the storage or in the provided entity'
+    )
   })
 })
 
@@ -210,7 +239,6 @@ async function createDeployment(identityAuthChain: AuthIdentity, entity?: any) {
     files: entityFiles
   }
   const { files, entityId } = await DeploymentBuilder.buildEntity(sceneJson)
-  // console.log(files)
   files.set(entityId, Buffer.from(files.get(entityId)))
 
   const authChain = Authenticator.signPayload(identityAuthChain, entityId)
