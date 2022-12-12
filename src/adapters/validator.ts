@@ -125,10 +125,10 @@ export const validateEntity: Validation = {
     components: Partial<ValidatorComponents>,
     deployment: DeploymentToValidate
   ): Promise<ValidationResult> => {
-    Entity.validate(deployment.entity)
-
-    // console.log(JSON.stringify(Entity.validate.errors, null, 2))
-    return createValidationResult(Entity.validate.errors?.map((error) => error.message || '') || [])
+    if (!Entity.validate(deployment.entity)) {
+      return createValidationResult(Entity.validate.errors?.map((error) => error.message || '') || [])
+    }
+    return OK
   }
 }
 
@@ -137,7 +137,7 @@ export const validateEntityId: Validation = {
     components: Partial<ValidatorComponents>,
     deployment: DeploymentToValidate
   ): Promise<ValidationResult> => {
-    const entityRaw = deployment.files.get(deployment.entity.id)!
+    const entityRaw = deployment.files.get(deployment.entity.id) || Buffer.from([])
     const result = (await hashV1(entityRaw)) === deployment.entity.id
 
     return createValidationResult(
@@ -167,13 +167,11 @@ export const validateAuthChain: Validation = {
     components: Partial<ValidatorComponents>,
     deployment: DeploymentToValidate
   ): Promise<ValidationResult> => {
-    const result = AuthChain.validate(deployment.authChain)
-    if (!result) {
-      console.dir(deployment.authChain)
-      console.dir(AuthChain.validate.errors)
+    if (!AuthChain.validate(deployment.authChain)) {
+      return createValidationResult(AuthChain.validate.errors?.map((error) => error.message || '') || [])
     }
 
-    return createValidationResult(AuthChain.validate.errors?.map((error) => error.message || '') || [])
+    return OK
   }
 }
 
@@ -183,9 +181,11 @@ export const validateSigner: Validation = {
     deployment: DeploymentToValidate
   ): Promise<ValidationResult> => {
     const signer = deployment.authChain[0].payload
-    EthAddress.validate(signer)
+    if (!EthAddress.validate(signer)) {
+      return createValidationResult([`Invalid signer: ${signer}`])
+    }
 
-    return createValidationResult(EthAddress.validate.errors?.map((error) => error.message || '') || [])
+    return OK
   }
 }
 
