@@ -1,4 +1,4 @@
-import { ILimitsManager } from '../src/types'
+import { ILimitsManager } from '../../src/types'
 
 export function createMockLimitsManagerComponent(): ILimitsManager {
   const whitelist = {

@@ -14,7 +14,7 @@ import {
   createFsComponent
 } from '@dcl/catalyst-storage'
 import { createStatusComponent } from './adapters/status'
-import { createValidator } from './logic/validations'
+import { createValidator } from './adapters/validator'
 import { createDclNameChecker } from './adapters/dcl-name-checker'
 import { createLimitsManagerComponent } from './adapters/limits-manager'
 

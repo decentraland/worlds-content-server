@@ -7,12 +7,11 @@ import { main } from '../src/service'
 import { TestComponents } from '../src/types'
 import { initComponents as originalInitComponents } from '../src/components'
 import { MockedStorage } from '@dcl/catalyst-storage/dist/MockedStorage'
-import { createMockMarketplaceSubGraph } from './marketplace-subgraph-mock'
-import { createMockDclNameChecker } from './dcl-name-checker-mock'
-import { createValidator } from '../src/logic/validations'
-import { createLimitsManagerComponent } from '../src/adapters/limits-manager'
+import { createMockMarketplaceSubGraph } from './mocks/marketplace-subgraph-mock'
+import { createMockDclNameChecker } from './mocks/dcl-name-checker-mock'
+import { createValidator } from '../src/adapters/validator'
 import { createFetchComponent } from '../src/adapters/fetch'
-import { createMockLimitsManagerComponent } from './limits-manager-mock'
+import { createMockLimitsManagerComponent } from './mocks/limits-manager-mock'
 
 /**
  * Behaves like Jest "describe" function, used to describe a test for a

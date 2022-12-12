@@ -34,9 +34,14 @@ export type ValidationResult = {
   errors: string[]
 }
 
+export type ValidatorComponents = Pick<
+  AppComponents,
+  'config' | 'dclNameChecker' | 'ethereumProvider' | 'limitsManager' | 'storage'
+>
+
 export type Validation = {
   validate: (
-    components: Pick<AppComponents, 'config' | 'dclNameChecker' | 'ethereumProvider' | 'limitsManager' | 'storage'>,
+    components: ValidatorComponents,
     deployment: DeploymentToValidate
   ) => ValidationResult | Promise<ValidationResult>
 }

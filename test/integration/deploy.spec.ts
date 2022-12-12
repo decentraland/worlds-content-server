@@ -2,26 +2,10 @@ import { test } from '../components'
 import { ContentClient } from 'dcl-catalyst-client'
 import { EntityType } from '@dcl/schemas'
 import { Authenticator } from '@dcl/crypto'
-import { createUnsafeIdentity } from '@dcl/crypto/dist/crypto'
 import Sinon from 'sinon'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { hashV1 } from '@dcl/hashing'
-
-async function getIdentity() {
-  const ephemeralIdentity = createUnsafeIdentity()
-  const realAccount = createUnsafeIdentity()
-
-  const authChain = await Authenticator.initializeAuthChain(
-    realAccount.address,
-    ephemeralIdentity,
-    10,
-    async (message) => {
-      return Authenticator.createSignature(realAccount, message)
-    }
-  )
-
-  return { authChain, realAccount, ephemeralIdentity }
-}
+import { getIdentity } from '../utils'
 
 test('deployment works', function ({ components, stubComponents }) {
   it('creates an entity and deploys it', async () => {
