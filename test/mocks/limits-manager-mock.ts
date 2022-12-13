@@ -17,7 +17,7 @@ export function createMockLimitsManagerComponent(): ILimitsManager {
       return whitelist[worldName]?.max_parcels || 4
     },
     async getMaxAllowedSizeInMbFor(worldName: string): Promise<number> {
-      return whitelist[worldName]?.max_size_in_mb || 60
+      return whitelist[worldName]?.max_size_in_mb || 10
     }
   }
 }

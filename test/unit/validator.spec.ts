@@ -8,8 +8,10 @@ import {
   validateEntityId,
   validateFiles,
   validateSceneDimensions,
+  validateSdkVersion,
   validateSignature,
-  validateSigner
+  validateSigner,
+  validateSize
 } from '../../src/adapters/validator'
 import { MockedStorage } from '@dcl/catalyst-storage/dist/MockedStorage'
 import { IContentStorageComponent } from '@dcl/catalyst-storage'
@@ -24,6 +26,7 @@ import { Authenticator, AuthIdentity } from '@dcl/crypto'
 import { IConfigComponent } from '@well-known-components/interfaces'
 import { hashV0, hashV1 } from '@dcl/hashing'
 import { TextDecoder } from 'util'
+import { bufferToStream } from '@dcl/catalyst-storage/dist/content-item'
 
 describe('validator', function () {
   let config: IConfigComponent
@@ -37,12 +40,6 @@ describe('validator', function () {
 
   beforeEach(async () => {
     config = await createConfigComponent({
-      // MAX_PARCELS: '4',
-      // MAX_SIZE: '200',
-      // ALLOW_SDK6: 'false',
-      // WHITELIST_URL: 'http://localhost/whitelist.json',
-      HTTP_SERVER_HOST: '0.0.0.0',
-      HTTP_SERVER_PORT: '4500',
       DEPLOYMENT_TTL: '10000'
     })
     storage = new MockedStorage()
@@ -224,6 +221,53 @@ describe('validator', function () {
       'The file bafkreie3yaomoex7orli7fumfwgk5abgels5o5fiauxfijzlzoiymqppdi (def.txt) is neither present in the storage or in the provided entity'
     )
   })
+
+  it('validateSize with errors', async () => {
+    const fileContent = Buffer.from(
+      Array(10 * 1024 * 1024)
+        .fill(0)
+        .map((_) => Math.floor(Math.random() * 255))
+    )
+    const entityFiles = new Map<string, Uint8Array>()
+    entityFiles.set('abc.txt', Buffer.from(stringToUtf8Bytes('asd')))
+    entityFiles.set('file-1.txt', fileContent) // Big file to make validation fail
+
+    const deployment = await createDeployment(identity.authChain, {
+      type: EntityType.SCENE,
+      pointers: ['0,0'],
+      timestamp: Date.now(),
+      metadata: {},
+      files: entityFiles
+    })
+
+    // Remove one of the uploaded files and put it directly into storage
+    deployment.files.delete(await hashV1(Buffer.from('asd')))
+    await storage.storeStream(await hashV1(Buffer.from('asd')), bufferToStream(Buffer.from(stringToUtf8Bytes('asd'))))
+
+    const result = await validateSize.validate(components, deployment)
+    expect(result.ok()).toBeFalsy()
+    expect(result.errors).toContain(
+      'The deployment is too big. The maximum total size allowed is 10 MB for scenes. You can upload up to 10485760 bytes but you tried to upload 10485763.'
+    )
+  })
+
+  it('validateSdkVersion with errors', async () => {
+    const deployment = await createDeployment(identity.authChain, {
+      type: EntityType.SCENE,
+      pointers: ['0,0'],
+      timestamp: Date.now(),
+      metadata: {
+        runtimeVersion: '6'
+      },
+      files: []
+    })
+
+    const result = await validateSdkVersion.validate(components, deployment)
+    expect(result.ok()).toBeFalsy()
+    expect(result.errors).toContain(
+      'Worlds are only supported on SDK 7. Please upgrade your scene to latest version of SDK.'
+    )
+  })
 })
 
 async function createDeployment(identityAuthChain: AuthIdentity, entity?: any) {
@@ -235,7 +279,7 @@ async function createDeployment(identityAuthChain: AuthIdentity, entity?: any) {
     type: EntityType.SCENE,
     pointers: ['0,0'],
     timestamp: Date.now(),
-    metadata: {},
+    metadata: { runtimeVersion: '7' },
     files: entityFiles
   }
   const { files, entityId } = await DeploymentBuilder.buildEntity(sceneJson)

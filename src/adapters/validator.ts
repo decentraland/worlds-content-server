@@ -243,12 +243,12 @@ export const validateSdkVersion: Validation = {
     const allowSdk6 = await components.limitsManager.getAllowSdk6For(worldName || '')
 
     const sdkVersion = deployment.entity.metadata.runtimeVersion
-    // console.log({ sdkVersion, allowSdk6 })
     if (sdkVersion !== '7' && !allowSdk6) {
       return createValidationResult([
         `Worlds are only supported on SDK 7. Please upgrade your scene to latest version of SDK.`
       ])
     }
+
     return OK
   }
 }
