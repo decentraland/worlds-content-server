@@ -102,11 +102,10 @@ export const validateDclName: Validation = {
     components: Pick<ValidatorComponents, 'dclNameChecker'>,
     deployment: DeploymentToValidate
   ): Promise<ValidationResult> => {
-    // validate that the signer has permissions to deploy this scene. TheGraph only responds to lower cased addresses
+    // validate that the signer has permissions to deploy this scene.
     const signer = deployment.authChain[0].payload
     const names = await components.dclNameChecker.fetchNamesOwnedByAddress(signer)
-    const hasPermission = names.length > 0
-    if (!hasPermission) {
+    if (names.length === 0) {
       return createValidationResult([
         `Deployment failed: Your wallet has no permission to publish to this server because it doesn't own a Decentraland NAME.`
       ])
@@ -270,11 +269,11 @@ const slowValidations: Validation[] = [validateSize, validateDclName]
 /**
  * Run quick validations first and, if all pass, then go for the slow ones
  */
-const validator: Validation[] = [...quickValidations, ...slowValidations]
+const allValidations: Validation[] = [...quickValidations, ...slowValidations]
 
 export const createValidator = (components: ValidatorComponents): Validator => ({
   async validate(deployment: DeploymentToValidate): Promise<ValidationResult> {
-    for (const validation of validator) {
+    for (const validation of allValidations) {
       const result = await validation.validate(components, deployment)
       if (!result.ok()) {
         return result

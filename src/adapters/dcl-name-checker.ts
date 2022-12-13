@@ -32,7 +32,8 @@ export const createDclNameChecker = (
     }
   })
   const fetchNamesOwnedByAddress = async (ethAddress: EthAddress): Promise<string[]> => {
-    return (await cache.fetch(ethAddress))!
+    // TheGraph only responds to lower cased addresses
+    return (await cache.fetch(ethAddress.toLowerCase()))!
   }
   const determineDclNameToUse = async (ethAddress: EthAddress, sceneJson: any): Promise<string | undefined> => {
     const names = await fetchNamesOwnedByAddress(ethAddress)
