@@ -22,6 +22,7 @@ export async function createLimitsManagerComponent({
   const hardAllowSdk6 = (await config.requireString('ALLOW_SDK6')) === 'true'
   const whitelistUrl = await config.requireString('WHITELIST_URL')
 
+  const CONFIG_KEY = 'config'
   const cache = new LRU<any, Whitelist>({
     max: 1,
     ttl: 10 * 60 * 1000, // cache for 10 minutes
@@ -42,15 +43,15 @@ export async function createLimitsManagerComponent({
 
   return {
     async getAllowSdk6For(worldName: string): Promise<boolean> {
-      const whitelist = (await cache.fetch('config'))!
+      const whitelist = (await cache.fetch(CONFIG_KEY))!
       return whitelist[worldName]?.allow_sdk6 || hardAllowSdk6
     },
     async getMaxAllowedParcelsFor(worldName: string): Promise<number> {
-      const whitelist = (await cache.fetch('config'))!
+      const whitelist = (await cache.fetch(CONFIG_KEY))!
       return whitelist[worldName]?.max_parcels || hardMaxParcels
     },
     async getMaxAllowedSizeInMbFor(worldName: string): Promise<number> {
-      const whitelist = (await cache.fetch('config'))!
+      const whitelist = (await cache.fetch(CONFIG_KEY))!
       return whitelist[worldName]?.max_size_in_mb || hardMaxSize
     }
   }
