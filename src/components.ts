@@ -17,6 +17,7 @@ import { createStatusComponent } from './adapters/status'
 import { createValidator } from './adapters/validator'
 import { createDclNameChecker } from './adapters/dcl-name-checker'
 import { createLimitsManagerComponent } from './adapters/limits-manager'
+import { createWorldsManagerComponent } from './adapters/worlds-manager'
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
@@ -66,6 +67,7 @@ export async function initComponents(): Promise<AppComponents> {
     storage
   })
 
+  const worldsManager = await createWorldsManagerComponent({ logs, storage })
   return {
     config,
     dclNameChecker,
@@ -80,6 +82,7 @@ export async function initComponents(): Promise<AppComponents> {
     limitsManager,
     sns,
     status,
-    validator
+    validator,
+    worldsManager
   }
 }
