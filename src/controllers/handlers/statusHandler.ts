@@ -31,8 +31,8 @@ export async function createStatusHandler({
       status: 200,
       body: {
         commitHash,
-        worlds_count: deployedWorlds.length,
-        deployed_names: showWorlds ? deployedWorlds : undefined
+        worldsCount: deployedWorlds.length,
+        deployedWorlds: showWorlds ? deployedWorlds : undefined
       }
     }
   }
