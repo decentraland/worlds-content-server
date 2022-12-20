@@ -18,7 +18,6 @@ import { createValidator } from './adapters/validator'
 import { createDclNameChecker } from './adapters/dcl-name-checker'
 import { createLimitsManagerComponent } from './adapters/limits-manager'
 import { createWorldsManagerComponent } from './adapters/worlds-manager'
-import { log } from 'util'
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
