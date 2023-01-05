@@ -99,7 +99,7 @@ export const validateSignature: Validation = {
     deployment: DeploymentToValidate
   ): Promise<ValidationResult> => {
     const result = await Authenticator.validateSignature(
-      deployment.entity.id,
+      JSON.stringify({ entityId: deployment.entity.id, intent: 'dcl:worlds:deploy' }),
       deployment.authChain,
       components.ethereumProvider,
       10
