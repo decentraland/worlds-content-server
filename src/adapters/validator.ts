@@ -21,7 +21,7 @@ export const validateEntity: Validation = {
       return createValidationResult(Entity.validate.errors?.map((error) => error.message || '') || [])
     }
 
-    if (!deployment.entity.metadata.worldConfiguration) {
+    if (!deployment.entity.metadata.worldConfiguration?.dclName) {
       return createValidationResult([
         'scene.json needs to specify a worldConfiguration section with a valid dclName inside.'
       ])
