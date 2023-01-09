@@ -31,23 +31,17 @@ export const createDclNameChecker = (
       return names
     }
   })
-  const fetchNamesOwnedByAddress = async (ethAddress: EthAddress): Promise<string[]> => {
-    // TheGraph only responds to lower cased addresses
-    return (await cache.fetch(ethAddress.toLowerCase()))!
-  }
-  const determineDclNameToUse = async (ethAddress: EthAddress, sceneJson: any): Promise<string | undefined> => {
-    const names = await fetchNamesOwnedByAddress(ethAddress)
-    const requestedName = sceneJson.metadata.worldConfiguration?.dclName
 
-    if (requestedName && names.includes(requestedName)) {
-      return requestedName
+  const checkPermission = async (ethAddress: EthAddress, dclName: string): Promise<boolean> => {
+    if (dclName.length === 0) {
+      return false
     }
 
-    return names[0]
+    const names = (await cache.fetch(ethAddress.toLowerCase()))!
+    return names.includes(dclName.toLowerCase())
   }
 
   return {
-    fetchNamesOwnedByAddress,
-    determineDclNameToUse
+    checkPermission
   }
 }

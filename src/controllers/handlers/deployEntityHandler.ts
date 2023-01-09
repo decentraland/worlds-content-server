@@ -90,7 +90,6 @@ export async function deployEntity(
   try {
     const entityId = requireString(ctx.formData.fields.entityId.value)
     const authChain = extractAuthChain(ctx)
-    const signer = authChain[0].payload
 
     const entityRaw = ctx.formData.files[entityId].value.toString()
     const sceneJson = JSON.parse(entityRaw)
@@ -122,7 +121,7 @@ export async function deployEntity(
     }
 
     // determine the name to use for deploying the world
-    const worldName = (await ctx.components.dclNameChecker.determineDclNameToUse(signer, sceneJson))!
+    const worldName = sceneJson.metadata.worldConfiguration.dclName
     logger.debug(`Deployment for scene "${entityId}" under dcl name "${worldName}"`)
 
     // Store the entity

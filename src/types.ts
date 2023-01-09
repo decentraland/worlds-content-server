@@ -47,8 +47,7 @@ export type Validation = {
 }
 
 export type IDclNameChecker = {
-  fetchNamesOwnedByAddress(ethAddress: EthAddress): Promise<string[]>
-  determineDclNameToUse(ethAddress: EthAddress, sceneJson: any): Promise<string | undefined>
+  checkPermission(ethAddress: EthAddress, dclName: string): Promise<boolean>
 }
 
 export type ILimitsManager = {

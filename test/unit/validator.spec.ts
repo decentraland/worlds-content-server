@@ -101,7 +101,7 @@ describe('validator', function () {
       type: EntityType.SCENE,
       pointers: ['0,0'],
       timestamp: Date.parse('2022-11-01T00:00:00Z'),
-      metadata: {},
+      metadata: { worldConfiguration: { dclName: 'whatever.dcl.eth' } },
       files: []
     })
 
@@ -146,20 +146,6 @@ describe('validator', function () {
     )
   })
 
-  it('validateDclName with no dcl name', async () => {
-    const alteredComponents = {
-      ...components,
-      dclNameChecker: createMockDclNameChecker()
-    }
-    const deployment = await createDeployment(identity.authChain)
-
-    const result = await validateDclName.validate(alteredComponents, deployment)
-    expect(result.ok()).toBeFalsy()
-    expect(result.errors).toContain(
-      "Deployment failed: Your wallet has no permission to publish to this server because it doesn't own a Decentraland NAME."
-    )
-  })
-
   it('validateDclName with no ownership of requested dcl name', async () => {
     const deployment = await createDeployment(identity.authChain, {
       type: EntityType.SCENE,
@@ -176,7 +162,7 @@ describe('validator', function () {
     const result = await validateDclName.validate(components, deployment)
     expect(result.ok()).toBeFalsy()
     expect(result.errors).toContain(
-      'Deployment failed: Your wallet has no permission to publish to this server because it doesn\'t own Decentraland NAME "different.dcl.eth". Check scene.json to select a different name.'
+      'Deployment failed: Your wallet has no permission to publish to this server because it doesn\'t own Decentraland NAME "different.dcl.eth". Check scene.json to select a name you own.'
     )
   })
 
@@ -185,7 +171,11 @@ describe('validator', function () {
       type: EntityType.SCENE,
       pointers: ['0,0', '0,1', '1,0', '1,1', '1,2'],
       timestamp: Date.now(),
-      metadata: {},
+      metadata: {
+        worldConfiguration: {
+          dclName: 'whatever.dcl.eth'
+        }
+      },
       files: []
     })
 
@@ -236,7 +226,11 @@ describe('validator', function () {
       type: EntityType.SCENE,
       pointers: ['0,0'],
       timestamp: Date.now(),
-      metadata: {},
+      metadata: {
+        worldConfiguration: {
+          dclName: 'whatever.dcl.eth'
+        }
+      },
       files: entityFiles
     })
 
@@ -257,7 +251,10 @@ describe('validator', function () {
       pointers: ['0,0'],
       timestamp: Date.now(),
       metadata: {
-        runtimeVersion: '6'
+        runtimeVersion: '6',
+        worldConfiguration: {
+          dclName: 'whatever.dcl.eth'
+        }
       },
       files: []
     })
@@ -279,7 +276,7 @@ async function createDeployment(identityAuthChain: AuthIdentity, entity?: any) {
     type: EntityType.SCENE,
     pointers: ['0,0'],
     timestamp: Date.now(),
-    metadata: { runtimeVersion: '7' },
+    metadata: { runtimeVersion: '7', worldConfiguration: { dclName: 'whatever.dcl.eth' } },
     files: entityFiles
   }
   const { files, entityId } = await DeploymentBuilder.buildEntity(sceneJson)

@@ -2,23 +2,9 @@ import { EthAddress } from '@dcl/schemas'
 import { IDclNameChecker } from '../../src/types'
 
 export function createMockDclNameChecker(names?: string[]): IDclNameChecker {
-  const fetchNamesOwnedByAddress = async (_ethAddress: EthAddress): Promise<string[]> => {
-    return Promise.resolve(names || [])
-  }
-
-  const determineDclNameToUse = async (ethAddress: EthAddress, sceneJson: any): Promise<string> => {
-    const names = await fetchNamesOwnedByAddress(ethAddress)
-    const requestedName = sceneJson.metadata.worldConfiguration?.dclName
-
-    if (requestedName && names.includes(requestedName)) {
-      return requestedName
-    }
-
-    return names[0]
-  }
-
+  const checkPermission = async (_ethAddress: EthAddress, dclName: string): Promise<boolean> =>
+    names && dclName.length > 0 && names.map((name) => name.toLowerCase()).includes(dclName.toLowerCase())
   return {
-    determineDclNameToUse,
-    fetchNamesOwnedByAddress
+    checkPermission
   }
 }
