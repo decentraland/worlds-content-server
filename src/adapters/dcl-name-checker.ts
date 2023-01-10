@@ -32,13 +32,13 @@ export const createDclNameChecker = (
     }
   })
 
-  const checkPermission = async (ethAddress: EthAddress, dclName: string): Promise<boolean> => {
-    if (dclName.length === 0) {
+  const checkPermission = async (ethAddress: EthAddress, worldName: string): Promise<boolean> => {
+    if (worldName.length === 0) {
       return false
     }
 
     const names = (await cache.fetch(ethAddress.toLowerCase()))!
-    return names.includes(dclName.toLowerCase())
+    return names.includes(worldName.toLowerCase())
   }
 
   return {

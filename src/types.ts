@@ -47,7 +47,7 @@ export type Validation = {
 }
 
 export type IDclNameChecker = {
-  checkPermission(ethAddress: EthAddress, dclName: string): Promise<boolean>
+  checkPermission(ethAddress: EthAddress, worldName: string): Promise<boolean>
 }
 
 export type ILimitsManager = {

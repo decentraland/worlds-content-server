@@ -21,9 +21,9 @@ export const validateEntity: Validation = {
       return createValidationResult(Entity.validate.errors?.map((error) => error.message || '') || [])
     }
 
-    if (!deployment.entity.metadata.worldConfiguration?.dclName) {
+    if (!deployment.entity.metadata.worldConfiguration?.name) {
       return createValidationResult([
-        'scene.json needs to specify a worldConfiguration section with a valid dclName inside.'
+        'scene.json needs to specify a worldConfiguration section with a valid name inside.'
       ])
     }
     return OK
@@ -110,7 +110,7 @@ export const validateDclName: Validation = {
   ): Promise<ValidationResult> => {
     // validate that the signer has permissions to deploy this scene.
     const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())
-    const worldSpecifiedName = sceneJson.metadata.worldConfiguration.dclName
+    const worldSpecifiedName = sceneJson.metadata.worldConfiguration.name
     const signer = deployment.authChain[0].payload
 
     const hasPermission = await components.dclNameChecker.checkPermission(signer, worldSpecifiedName)
@@ -130,7 +130,7 @@ export const validateSceneDimensions: Validation = {
     deployment: DeploymentToValidate
   ): Promise<ValidationResult> => {
     const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())
-    const worldName = sceneJson.metadata.worldConfiguration.dclName
+    const worldName = sceneJson.metadata.worldConfiguration.name
 
     const maxParcels = await components.limitsManager.getMaxAllowedParcelsFor(worldName || '')
     if (deployment.entity.pointers.length > maxParcels) {
@@ -206,7 +206,7 @@ export const validateSize: Validation = {
     }
 
     const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())
-    const worldName = sceneJson.metadata.worldConfiguration.dclName
+    const worldName = sceneJson.metadata.worldConfiguration.name
     const maxTotalSizeInMB = await components.limitsManager.getMaxAllowedSizeInMbFor(worldName || '')
 
     const errors: string[] = []
@@ -233,7 +233,7 @@ export const validateSdkVersion: Validation = {
     deployment: DeploymentToValidate
   ): Promise<ValidationResult> => {
     const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())
-    const worldName = sceneJson.metadata.worldConfiguration.dclName
+    const worldName = sceneJson.metadata.worldConfiguration.name
     const allowSdk6 = await components.limitsManager.getAllowSdk6For(worldName || '')
 
     const sdkVersion = deployment.entity.metadata.runtimeVersion

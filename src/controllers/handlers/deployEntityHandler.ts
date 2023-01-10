@@ -121,8 +121,8 @@ export async function deployEntity(
     }
 
     // determine the name to use for deploying the world
-    const worldName = sceneJson.metadata.worldConfiguration.dclName
-    logger.debug(`Deployment for scene "${entityId}" under dcl name "${worldName}"`)
+    const worldName = sceneJson.metadata.worldConfiguration.name
+    logger.debug(`Deployment for scene "${entityId}" under world name "${worldName}"`)
 
     // Store the entity
     await storeEntity(

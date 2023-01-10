@@ -31,7 +31,7 @@ test('deployment works', function ({ components, stubComponents }) {
       files: entityFiles,
       metadata: {
         worldConfiguration: {
-          dclName: 'my-super-name.dcl.eth'
+          name: 'my-super-name.dcl.eth'
         }
       }
     })
@@ -85,7 +85,7 @@ test('deployment with failed validation', function ({ components, stubComponents
       files: entityFiles,
       metadata: {
         worldConfiguration: {
-          dclName: 'just-do-it.dcl.eth'
+          name: 'just-do-it.dcl.eth'
         }
       }
     })
@@ -153,7 +153,7 @@ test('deployment with failed validation', function ({ components, stubComponents
 
     // Deploy entity
     await expect(() => contentClient.deployEntity({ files, entityId, authChain })).rejects.toThrow(
-      'Deployment failed: scene.json needs to specify a worldConfiguration section with a valid dclName inside.'
+      'Deployment failed: scene.json needs to specify a worldConfiguration section with a valid name inside.'
     )
 
     Sinon.assert.notCalled(dclNameChecker.checkPermission)
