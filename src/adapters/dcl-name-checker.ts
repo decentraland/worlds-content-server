@@ -1,4 +1,4 @@
-import { AppComponents, IDclNameChecker } from '../types'
+import { AppComponents, IWorldNamePermissionChecker } from '../types'
 import { EthAddress } from '@dcl/schemas'
 import LRU from 'lru-cache'
 
@@ -8,7 +8,7 @@ type NamesResponse = {
 
 export const createDclNameChecker = (
   components: Pick<AppComponents, 'logs' | 'marketplaceSubGraph'>
-): IDclNameChecker => {
+): IWorldNamePermissionChecker => {
   const cache = new LRU<EthAddress, string[]>({
     max: 100,
     ttl: 5 * 60 * 1000, // cache for 5 minutes

@@ -72,7 +72,7 @@ async function storeEntity(
 export async function deployEntity(
   ctx: FormDataContext &
     HandlerContextWithPath<
-      'config' | 'ethereumProvider' | 'logs' | 'dclNameChecker' | 'metrics' | 'storage' | 'sns' | 'validator',
+      'config' | 'ethereumProvider' | 'logs' | 'namePermissionChecker' | 'metrics' | 'storage' | 'sns' | 'validator',
       '/entities'
     >
 ): Promise<IHttpServerComponent.IResponse> {

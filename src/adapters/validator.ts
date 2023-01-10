@@ -21,6 +21,12 @@ export const validateEntity: Validation = {
       return createValidationResult(Entity.validate.errors?.map((error) => error.message || '') || [])
     }
 
+    if (deployment.entity.metadata.worldConfiguration?.dclName) {
+      return createValidationResult([
+        '`dclName` in scene.json was renamed to `name`. Please update your scene.json accordingly.'
+      ])
+    }
+
     if (!deployment.entity.metadata.worldConfiguration?.name) {
       return createValidationResult([
         'scene.json needs to specify a worldConfiguration section with a valid name inside.'
@@ -105,18 +111,17 @@ export const validateSignature: Validation = {
 
 export const validateDclName: Validation = {
   validate: async (
-    components: Pick<ValidatorComponents, 'dclNameChecker'>,
+    components: Pick<ValidatorComponents, 'namePermissionChecker'>,
     deployment: DeploymentToValidate
   ): Promise<ValidationResult> => {
-    // validate that the signer has permissions to deploy this scene.
     const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())
     const worldSpecifiedName = sceneJson.metadata.worldConfiguration.name
     const signer = deployment.authChain[0].payload
 
-    const hasPermission = await components.dclNameChecker.checkPermission(signer, worldSpecifiedName)
+    const hasPermission = await components.namePermissionChecker.checkPermission(signer, worldSpecifiedName)
     if (!hasPermission) {
       return createValidationResult([
-        `Deployment failed: Your wallet has no permission to publish to this server because it doesn\'t own Decentraland NAME "${worldSpecifiedName}". Check scene.json to select a name you own.`
+        `Deployment failed: Your wallet has no permission to publish this scene because it does not have permission to deploy under "${worldSpecifiedName}". Check scene.json to select a name you own.`
       ])
     }
 
@@ -126,7 +131,7 @@ export const validateDclName: Validation = {
 
 export const validateSceneDimensions: Validation = {
   validate: async (
-    components: Pick<ValidatorComponents, 'dclNameChecker' | 'limitsManager'>,
+    components: Pick<ValidatorComponents, 'limitsManager'>,
     deployment: DeploymentToValidate
   ): Promise<ValidationResult> => {
     const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())
@@ -178,7 +183,7 @@ export const validateFiles: Validation = {
 
 export const validateSize: Validation = {
   validate: async (
-    components: Pick<ValidatorComponents, 'dclNameChecker' | 'limitsManager' | 'storage'>,
+    components: Pick<ValidatorComponents, 'limitsManager' | 'storage'>,
     deployment: DeploymentToValidate
   ): Promise<ValidationResult> => {
     const fetchContentFileSize = async (hash: string): Promise<number> => {
@@ -229,7 +234,7 @@ export const validateSize: Validation = {
 
 export const validateSdkVersion: Validation = {
   validate: async (
-    components: Pick<ValidatorComponents, 'dclNameChecker' | 'limitsManager' | 'storage'>,
+    components: Pick<ValidatorComponents, 'limitsManager' | 'storage'>,
     deployment: DeploymentToValidate
   ): Promise<ValidationResult> => {
     const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())
@@ -261,9 +266,6 @@ const quickValidations: Validation[] = [
 
 const slowValidations: Validation[] = [validateSize, validateDclName]
 
-/**
- * Run quick validations first and, if all pass, then go for the slow ones
- */
 const allValidations: Validation[] = [...quickValidations, ...slowValidations]
 
 export const createValidator = (components: ValidatorComponents): Validator => ({

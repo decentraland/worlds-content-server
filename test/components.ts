@@ -42,7 +42,7 @@ async function initComponents(): Promise<TestComponents> {
   const validator = createValidator({
     config,
     storage,
-    dclNameChecker,
+    namePermissionChecker: dclNameChecker,
     limitsManager,
     ethereumProvider: components.ethereumProvider
   })
@@ -52,7 +52,7 @@ async function initComponents(): Promise<TestComponents> {
     ...components,
     localFetch: await createLocalFetchCompoment(config),
     marketplaceSubGraph: createMockMarketplaceSubGraph(),
-    dclNameChecker,
+    namePermissionChecker: dclNameChecker,
     fetch,
     limitsManager,
     validator,

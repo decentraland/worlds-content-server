@@ -1,7 +1,7 @@
 import { EthAddress } from '@dcl/schemas'
-import { IDclNameChecker } from '../../src/types'
+import { IWorldNamePermissionChecker } from '../../src/types'
 
-export function createMockDclNameChecker(names?: string[]): IDclNameChecker {
+export function createMockDclNameChecker(names?: string[]): IWorldNamePermissionChecker {
   const checkPermission = async (_ethAddress: EthAddress, worldName: string): Promise<boolean> => {
     if (worldName.length === 0) {
       return false

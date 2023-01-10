@@ -36,7 +36,7 @@ export type ValidationResult = {
 
 export type ValidatorComponents = Pick<
   AppComponents,
-  'config' | 'dclNameChecker' | 'ethereumProvider' | 'limitsManager' | 'storage'
+  'config' | 'namePermissionChecker' | 'ethereumProvider' | 'limitsManager' | 'storage'
 >
 
 export type Validation = {
@@ -46,7 +46,7 @@ export type Validation = {
   ) => ValidationResult | Promise<ValidationResult>
 }
 
-export type IDclNameChecker = {
+export type IWorldNamePermissionChecker = {
   checkPermission(ethAddress: EthAddress, worldName: string): Promise<boolean>
 }
 
@@ -64,7 +64,7 @@ export type IWorldsManager = {
 // components used in every environment
 export type BaseComponents = {
   config: IConfigComponent
-  dclNameChecker: IDclNameChecker
+  namePermissionChecker: IWorldNamePermissionChecker
   logs: ILoggerComponent
   server: IHttpServerComponent<GlobalContext>
   fetch: IFetchComponent
