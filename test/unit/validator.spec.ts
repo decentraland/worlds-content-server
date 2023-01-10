@@ -19,7 +19,7 @@ import { DeploymentToValidate, IWorldNamePermissionChecker, ILimitsManager, Vali
 import { HTTPProvider, stringToUtf8Bytes } from 'eth-connect'
 import { EntityType } from '@dcl/schemas'
 import { createMockLimitsManagerComponent } from '../mocks/limits-manager-mock'
-import { createMockDclNameChecker } from '../mocks/dcl-name-checker-mock'
+import { createMockNamePermissionChecker } from '../mocks/dcl-name-checker-mock'
 import { DeploymentBuilder } from 'dcl-catalyst-client'
 import { getIdentity } from '../utils'
 import { Authenticator, AuthIdentity } from '@dcl/crypto'
@@ -34,7 +34,7 @@ describe('validator', function () {
   let ethereumProvider: HTTPProvider
   let fetch
   let limitsManager: ILimitsManager
-  let dclNameChecker: IWorldNamePermissionChecker
+  let worldNamePermissionChecker: IWorldNamePermissionChecker
   let identity
   let components: ValidatorComponents
 
@@ -51,7 +51,7 @@ describe('validator', function () {
 
     ethereumProvider = new HTTPProvider('http://localhost', fetch)
     limitsManager = createMockLimitsManagerComponent()
-    dclNameChecker = createMockDclNameChecker(['whatever.dcl.eth'])
+    worldNamePermissionChecker = createMockNamePermissionChecker(['whatever.dcl.eth'])
 
     identity = await getIdentity()
     components = {
@@ -59,7 +59,7 @@ describe('validator', function () {
       storage,
       limitsManager,
       ethereumProvider,
-      namePermissionChecker: dclNameChecker
+      namePermissionChecker: worldNamePermissionChecker
     }
   })
 
