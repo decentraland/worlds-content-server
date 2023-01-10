@@ -101,7 +101,7 @@ describe('validator', function () {
       type: EntityType.SCENE,
       pointers: ['0,0'],
       timestamp: Date.parse('2022-11-01T00:00:00Z'),
-      metadata: { worldConfiguration: { dclName: 'whatever.dcl.eth' } },
+      metadata: { worldConfiguration: { name: 'whatever.dcl.eth' } },
       files: []
     })
 
@@ -153,7 +153,7 @@ describe('validator', function () {
       timestamp: Date.now(),
       metadata: {
         worldConfiguration: {
-          dclName: 'different.dcl.eth'
+          name: 'different.dcl.eth'
         }
       },
       files: []
@@ -173,7 +173,7 @@ describe('validator', function () {
       timestamp: Date.now(),
       metadata: {
         worldConfiguration: {
-          dclName: 'whatever.dcl.eth'
+          name: 'whatever.dcl.eth'
         }
       },
       files: []
@@ -228,7 +228,7 @@ describe('validator', function () {
       timestamp: Date.now(),
       metadata: {
         worldConfiguration: {
-          dclName: 'whatever.dcl.eth'
+          name: 'whatever.dcl.eth'
         }
       },
       files: entityFiles
@@ -253,7 +253,7 @@ describe('validator', function () {
       metadata: {
         runtimeVersion: '6',
         worldConfiguration: {
-          dclName: 'whatever.dcl.eth'
+          name: 'whatever.dcl.eth'
         }
       },
       files: []
@@ -276,7 +276,7 @@ async function createDeployment(identityAuthChain: AuthIdentity, entity?: any) {
     type: EntityType.SCENE,
     pointers: ['0,0'],
     timestamp: Date.now(),
-    metadata: { runtimeVersion: '7', worldConfiguration: { dclName: 'whatever.dcl.eth' } },
+    metadata: { runtimeVersion: '7', worldConfiguration: { name: 'whatever.dcl.eth' } },
     files: entityFiles
   }
   const { files, entityId } = await DeploymentBuilder.buildEntity(sceneJson)
