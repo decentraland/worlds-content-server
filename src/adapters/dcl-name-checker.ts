@@ -9,6 +9,9 @@ type NamesResponse = {
 export const createDclNameChecker = (
   components: Pick<AppComponents, 'logs' | 'marketplaceSubGraph'>
 ): IWorldNamePermissionChecker => {
+  const logger = components.logs.getLogger('check-permissions')
+  logger.info('Using TheGraph DclNameChecker')
+
   const cache = new LRU<EthAddress, string[]>({
     max: 100,
     ttl: 5 * 60 * 1000, // cache for 5 minutes
@@ -27,7 +30,7 @@ export const createDclNameChecker = (
 
       const names = result.names.map(({ name }) => `${name.toLowerCase()}.dcl.eth`)
 
-      components.logs.getLogger('check-permissions').debug(`Fetched names for address ${ethAddress}: ${names}`)
+      logger.debug(`Fetched names for address ${ethAddress}: ${names}`)
       return names
     }
   })
