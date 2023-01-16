@@ -14,12 +14,19 @@ export const createOnChainDclNameChecker = async (
   const checker = (await factory.at(checkerContracts[networkName])) as any
 
   const checkPermission = async (ethAddress: EthAddress, worldName: string): Promise<boolean> => {
-    if (worldName.length === 0) {
+    if (worldName.length === 0 || !worldName.endsWith('.dcl.eth')) {
       return false
     }
 
     const registrar = registrarContracts[networkName]
-    const hasPermission = checker.checkName(ethAddress, registrar, worldName, undefined)
+    console.log({
+      networkName,
+      contract: checkerContracts[networkName],
+      registrar: registrarContracts[networkName],
+      name: worldName.replace('.dcl.eth', '')
+    })
+
+    const hasPermission = await checker.checkName(ethAddress, registrar, worldName.replace('.dcl.eth', ''), 16420260)
 
     logger.debug(`Checking name ${worldName} for address ${ethAddress}: ${hasPermission}`)
 
