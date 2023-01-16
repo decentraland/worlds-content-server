@@ -15,10 +15,9 @@ import {
 } from '@dcl/catalyst-storage'
 import { createStatusComponent } from './adapters/status'
 import { createValidator } from './adapters/validator'
-import { createDclNameChecker } from './adapters/dcl-name-checker'
+import { createDclNameChecker, createOnChainDclNameChecker } from './adapters/dcl-name-checker'
 import { createLimitsManagerComponent } from './adapters/limits-manager'
 import { createWorldsManagerComponent } from './adapters/worlds-manager'
-import { createOnChainDclNameChecker } from './adapters/on-chain-dcl-name-checker'
 
 async function determineNameValidator(
   components: Pick<AppComponents, 'config' | 'ethereumProvider' | 'logs' | 'marketplaceSubGraph'>
