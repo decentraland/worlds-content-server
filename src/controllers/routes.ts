@@ -6,6 +6,7 @@ import { availableContentHandler, getContentFile, headContentFile } from './hand
 import { deployEntity } from './handlers/deployEntityHandler'
 import { dclNameAboutHandler } from './handlers/dclNameAboutHandler'
 import { statusHandler } from './handlers/statusHandler'
+import { commsAdapterHandler } from './handlers/commsAdapterHandler'
 
 // We return the entire router because it will be easier to test than a whole server
 export async function setupRouter(_globalContext: GlobalContext): Promise<Router<GlobalContext>> {
@@ -27,6 +28,8 @@ export async function setupRouter(_globalContext: GlobalContext): Promise<Router
   router.get('/contents/:hashId', getContentFile)
 
   router.get('/status', statusHandler)
+
+  router.post('/get-comms-adapter/:roomId', commsAdapterHandler)
 
   return router
 }
