@@ -52,7 +52,7 @@ export async function dclNameAboutHandler({
     enabled: sceneJson.metadata.worldConfiguration?.minimapVisible || false
   }
   if (sceneJson.metadata.worldConfiguration?.minimapVisible) {
-    // TODO We may need allow the scene creator to specify these values
+    // TODO We may need to allow the scene creator to specify these values
     minimap.dataImage = 'https://api.decentraland.org/v1/minimap.png'
     minimap.estateImage = 'https://api.decentraland.org/v1/estatemap.png'
   }
@@ -96,7 +96,6 @@ async function resolveFixedAdapter(config: IConfigComponent, entityId: string, s
   if (sceneJson.metadata.worldConfiguration?.fixedAdapter === 'offline:offline') {
     return 'offline:offline'
   }
-  const s = `signed-login:${baseUrl}/get-comms-adapter/${entityId}`
-  console.log(`Resolving fixed adapter to: ${s}`)
-  return s
+
+  return `signed-login:${baseUrl}/get-comms-adapter/${entityId}`
 }

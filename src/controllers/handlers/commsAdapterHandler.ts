@@ -1,21 +1,21 @@
 import { HandlerContextWithPath } from '../../types'
 import { IHttpServerComponent } from '@well-known-components/interfaces'
+import { DecentralandSignatureContext } from 'decentraland-crypto-middleware/lib/types'
 
 export async function commsAdapterHandler(
-  context: HandlerContextWithPath<'config' | 'worldsManager', '/get-comms-adapter/:roomId'>
+  context: HandlerContextWithPath<'commsResolver', '/get-comms-adapter/:roomId'> & DecentralandSignatureContext<any>
 ): Promise<IHttpServerComponent.IResponse> {
-  const { config } = context.components
-  const roomId = context.params.roomId
+  const {
+    components: { commsResolver }
+  } = context
 
-  const fixedAdapter = await config.requireString('COMMS_FIXED_ADAPTER')
-  const fixedAdapterPrefix = fixedAdapter.substring(0, fixedAdapter.lastIndexOf('/'))
-
-  console.log(`Resolving comms adapter to: ${fixedAdapterPrefix}/${roomId}`)
+  const fixedAdapter = await commsResolver.resolveComms(context.verification?.auth || '', context.params.roomId)
+  console.log(`Resolving comms adapter to: ${fixedAdapter}`)
 
   return {
     status: 200,
     body: {
-      fixedAdapter: `${fixedAdapterPrefix}/${roomId}`
+      fixedAdapter
     }
   }
 }
