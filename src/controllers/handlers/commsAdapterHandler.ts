@@ -9,7 +9,7 @@ export async function commsAdapterHandler(
     components: { commsResolver }
   } = context
 
-  const fixedAdapter = await commsResolver.resolveComms(context.verification?.auth || '', context.params.roomId)
+  const fixedAdapter = await commsResolver.resolveComms(context.verification!.auth, context.params.roomId)
   console.log(`Resolving comms adapter to: ${fixedAdapter}`)
 
   return {
