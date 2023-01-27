@@ -15,12 +15,6 @@ test('comms adapter handler /get-comms-adapter/:roomId', function ({ components 
     const identity = await getIdentity()
 
     const path = '/get-comms-adapter/myRoom'
-
-    const additionalMetadata = {
-      intent: 'dcl:explorer:comms-handshake',
-      signer: 'dcl:explorer',
-      isGuest: 'false'
-    }
     const actualInit = {
       method: 'POST',
       headers: {
@@ -29,7 +23,9 @@ test('comms adapter handler /get-comms-adapter/:roomId', function ({ components 
           path,
           {
             origin: 'https://play.decentraland.org',
-            ...additionalMetadata
+            intent: 'dcl:explorer:comms-handshake',
+            signer: 'dcl:explorer',
+            isGuest: 'false'
           },
           (payload) =>
             Authenticator.signPayload(
