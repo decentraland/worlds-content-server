@@ -26,8 +26,6 @@ export async function createWorldsManagerComponent({
     }
   })
 
-  async function updateDeployedWorldMetadata(worldName: string, entity: Entity): Promise<void> {}
-
   async function getDeployedWorldsNames(): Promise<string[]> {
     return (await cache.fetch(WORLDS_KEY))!
   }
