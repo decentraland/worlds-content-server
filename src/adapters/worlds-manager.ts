@@ -1,6 +1,5 @@
 import { AppComponents, IWorldsManager } from '../types'
 import LRU from 'lru-cache'
-import { Entity } from '@dcl/schemas'
 import { streamToBuffer } from '@dcl/catalyst-storage/dist/content-item'
 
 export async function createWorldsManagerComponent({
