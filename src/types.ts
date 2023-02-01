@@ -4,7 +4,7 @@ import type {
   ILoggerComponent,
   IHttpServerComponent,
   IBaseComponent,
-  IMetricsComponent,
+  IMetricsComponent
 } from '@well-known-components/interfaces'
 import { metricDeclarations } from './metrics'
 import { IContentStorageComponent } from '@dcl/catalyst-storage'

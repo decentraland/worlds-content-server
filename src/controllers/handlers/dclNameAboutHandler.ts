@@ -2,7 +2,7 @@ import { HandlerContextWithPath } from '../../types'
 import {
   AboutResponse,
   AboutResponse_MinimapConfiguration,
-  AboutResponse_SkyboxConfiguration,
+  AboutResponse_SkyboxConfiguration
 } from '@dcl/protocol/out-js/decentraland/bff/http_endpoints.gen'
 import { streamToBuffer } from '@dcl/catalyst-storage/dist/content-item'
 import { IConfigComponent } from '@well-known-components/interfaces'
@@ -10,7 +10,7 @@ import { IConfigComponent } from '@well-known-components/interfaces'
 export async function dclNameAboutHandler({
   params,
   url,
-  components: { config, status, storage, worldsManager },
+  components: { config, status, storage, worldsManager }
 }: Pick<
   HandlerContextWithPath<'config' | 'status' | 'storage' | 'worldsManager', '/world/:world_name/about'>,
   'components' | 'params' | 'url'
@@ -19,7 +19,7 @@ export async function dclNameAboutHandler({
   if (!entityId) {
     return {
       status: 404,
-      body: `World "${params.world_name}" has no scene deployed.`,
+      body: `World "${params.world_name}" has no scene deployed.`
     }
   }
 
@@ -27,7 +27,7 @@ export async function dclNameAboutHandler({
   if (!scene) {
     return {
       status: 404,
-      body: `Scene "${entityId}" not deployed in this server.`,
+      body: `Scene "${entityId}" not deployed in this server.`
     }
   }
   const sceneJson = JSON.parse((await streamToBuffer(await scene?.asStream())).toString())
@@ -45,7 +45,7 @@ export async function dclNameAboutHandler({
   const lambdasStatus = await status.getLambdasStatus()
 
   const minimap: AboutResponse_MinimapConfiguration = {
-    enabled: sceneJson.metadata.worldConfiguration?.minimapVisible || false,
+    enabled: sceneJson.metadata.worldConfiguration?.minimapVisible || false
   }
   if (sceneJson.metadata.worldConfiguration?.minimapVisible) {
     // TODO We may need to allow the scene creator to specify these values
@@ -54,7 +54,7 @@ export async function dclNameAboutHandler({
   }
 
   const skybox: AboutResponse_SkyboxConfiguration = {
-    fixedHour: sceneJson.metadata.worldConfiguration?.skybox,
+    fixedHour: sceneJson.metadata.worldConfiguration?.skybox
   }
 
   const healthy = contentStatus.healthy && lambdasStatus.healthy
@@ -67,26 +67,26 @@ export async function dclNameAboutHandler({
       scenesUrn: [urn],
       minimap,
       skybox,
-      realmName: params.world_name,
+      realmName: params.world_name
     },
     content: {
       healthy: contentStatus.healthy,
-      publicUrl: contentStatus.publicUrl,
+      publicUrl: contentStatus.publicUrl
     },
     lambdas: {
       healthy: lambdasStatus.healthy,
-      publicUrl: lambdasStatus.publicUrl,
+      publicUrl: lambdasStatus.publicUrl
     },
     comms: {
       healthy: true,
       protocol: 'v3',
-      fixedAdapter: fixedAdapter,
-    },
+      fixedAdapter: fixedAdapter
+    }
   }
 
   return {
     status: 200,
-    body,
+    body
   }
 }
 

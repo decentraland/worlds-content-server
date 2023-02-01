@@ -24,7 +24,7 @@ import { createInMemoryStorage } from '@dcl/catalyst-storage'
  */
 export const test = createRunner<TestComponents>({
   main,
-  initComponents,
+  initComponents
 })
 
 async function initComponents(): Promise<TestComponents> {
@@ -45,7 +45,7 @@ async function initComponents(): Promise<TestComponents> {
     storage,
     namePermissionChecker,
     limitsManager,
-    ethereumProvider: components.ethereumProvider,
+    ethereumProvider: components.ethereumProvider
   })
   const status = createMockStatusComponent()
 
@@ -61,6 +61,6 @@ async function initComponents(): Promise<TestComponents> {
     validator,
     status,
     storage,
-    worldsManager,
+    worldsManager
   }
 }

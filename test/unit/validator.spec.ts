@@ -11,7 +11,7 @@ import {
   validateSdkVersion,
   validateSignature,
   validateSigner,
-  validateSize,
+  validateSize
 } from '../../src/adapters/validator'
 import { createInMemoryStorage, IContentStorageComponent } from '@dcl/catalyst-storage'
 import { DeploymentToValidate, IWorldNamePermissionChecker, ILimitsManager, ValidatorComponents } from '../../src/types'
@@ -39,13 +39,13 @@ describe('validator', function () {
 
   beforeEach(async () => {
     config = createConfigComponent({
-      DEPLOYMENT_TTL: '10000',
+      DEPLOYMENT_TTL: '10000'
     })
     storage = createInMemoryStorage()
     fetch = {
       fetch: (_url: string, _params: { body?: any; method?: string; mode?: string; headers?: any }): Promise<any> => {
         return Promise.resolve({})
-      },
+      }
     }
 
     ethereumProvider = new HTTPProvider('http://localhost', fetch)
@@ -58,7 +58,7 @@ describe('validator', function () {
       storage,
       limitsManager,
       ethereumProvider,
-      namePermissionChecker: worldNamePermissionChecker,
+      namePermissionChecker: worldNamePermissionChecker
     }
   })
 
@@ -89,7 +89,7 @@ describe('validator', function () {
       pointers: ['0,0'],
       timestamp: Date.parse('2022-11-01T00:00:00Z'),
       metadata: { worldConfiguration: { dclName: 'whatever.dcl.eth' } },
-      files: [],
+      files: []
     })
 
     const result = await validateEntity.validate(components, deployment)
@@ -117,7 +117,7 @@ describe('validator', function () {
       pointers: ['0,0'],
       timestamp: Date.parse('2022-11-01T00:00:00Z'),
       metadata: { worldConfiguration: { name: 'whatever.dcl.eth' } },
-      files: [],
+      files: []
     })
 
     const result = await validateDeploymentTtl.validate(components, deployment)
@@ -168,10 +168,10 @@ describe('validator', function () {
       timestamp: Date.now(),
       metadata: {
         worldConfiguration: {
-          name: 'different.dcl.eth',
-        },
+          name: 'different.dcl.eth'
+        }
       },
-      files: [],
+      files: []
     })
 
     const result = await validateDclName.validate(components, deployment)
@@ -188,10 +188,10 @@ describe('validator', function () {
       timestamp: Date.now(),
       metadata: {
         worldConfiguration: {
-          name: 'whatever.dcl.eth',
-        },
+          name: 'whatever.dcl.eth'
+        }
       },
-      files: [],
+      files: []
     })
 
     const result = await validateSceneDimensions.validate(components, deployment)
@@ -210,7 +210,7 @@ describe('validator', function () {
     deployment.files.set(await hashV0(Buffer.from('igh')), Buffer.from('igh'))
     deployment.entity.content.push({
       file: 'def.txt',
-      hash: 'bafkreie3yaomoex7orli7fumfwgk5abgels5o5fiauxfijzlzoiymqppdi',
+      hash: 'bafkreie3yaomoex7orli7fumfwgk5abgels5o5fiauxfijzlzoiymqppdi'
     })
 
     const result = await validateFiles.validate(components, deployment)
@@ -243,10 +243,10 @@ describe('validator', function () {
       timestamp: Date.now(),
       metadata: {
         worldConfiguration: {
-          name: 'whatever.dcl.eth',
-        },
+          name: 'whatever.dcl.eth'
+        }
       },
-      files: entityFiles,
+      files: entityFiles
     })
 
     // Remove one of the uploaded files and put it directly into storage
@@ -268,10 +268,10 @@ describe('validator', function () {
       metadata: {
         runtimeVersion: '6',
         worldConfiguration: {
-          name: 'whatever.dcl.eth',
-        },
+          name: 'whatever.dcl.eth'
+        }
       },
-      files: [],
+      files: []
     })
 
     const result = await validateSdkVersion.validate(components, deployment)
@@ -292,7 +292,7 @@ async function createDeployment(identityAuthChain: AuthIdentity, entity?: any) {
     pointers: ['0,0'],
     timestamp: Date.now(),
     metadata: { runtimeVersion: '7', worldConfiguration: { name: 'whatever.dcl.eth' } },
-    files: entityFiles,
+    files: entityFiles
   }
   const { files, entityId } = await DeploymentBuilder.buildEntity(sceneJson)
   files.set(entityId, Buffer.from(files.get(entityId)))
@@ -304,14 +304,14 @@ async function createDeployment(identityAuthChain: AuthIdentity, entity?: any) {
 
   const finalEntity = {
     id: entityId,
-    ...JSON.parse(new TextDecoder().decode(files.get(entityId))),
+    ...JSON.parse(new TextDecoder().decode(files.get(entityId)))
   }
 
   const deployment: DeploymentToValidate = {
     entity: finalEntity,
     files,
     authChain,
-    contentHashesInStorage,
+    contentHashesInStorage
   }
   return deployment
 }
