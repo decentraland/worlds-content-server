@@ -6,7 +6,6 @@ import { createLocalFetchCompoment, createRunner } from '@well-known-components/
 import { main } from '../src/service'
 import { TestComponents } from '../src/types'
 import { initComponents as originalInitComponents } from '../src/components'
-import { MockedStorage } from '@dcl/catalyst-storage/dist/MockedStorage'
 import { createMockMarketplaceSubGraph } from './mocks/marketplace-subgraph-mock'
 import { createMockNamePermissionChecker } from './mocks/dcl-name-checker-mock'
 import { createValidator } from '../src/adapters/validator'
@@ -14,6 +13,7 @@ import { createFetchComponent } from '../src/adapters/fetch'
 import { createMockLimitsManagerComponent } from './mocks/limits-manager-mock'
 import { createWorldsManagerComponent } from '../src/adapters/worlds-manager'
 import { createMockStatusComponent } from './mocks/status-mock'
+import { createInMemoryStorage } from '@dcl/catalyst-storage'
 
 /**
  * Behaves like Jest "describe" function, used to describe a test for a
@@ -24,7 +24,7 @@ import { createMockStatusComponent } from './mocks/status-mock'
  */
 export const test = createRunner<TestComponents>({
   main,
-  initComponents
+  initComponents,
 })
 
 async function initComponents(): Promise<TestComponents> {
@@ -32,7 +32,7 @@ async function initComponents(): Promise<TestComponents> {
 
   const { config, logs } = components
 
-  const storage = new MockedStorage()
+  const storage = createInMemoryStorage()
 
   const namePermissionChecker = createMockNamePermissionChecker()
 
@@ -45,7 +45,7 @@ async function initComponents(): Promise<TestComponents> {
     storage,
     namePermissionChecker,
     limitsManager,
-    ethereumProvider: components.ethereumProvider
+    ethereumProvider: components.ethereumProvider,
   })
   const status = createMockStatusComponent()
 
@@ -61,6 +61,6 @@ async function initComponents(): Promise<TestComponents> {
     validator,
     status,
     storage,
-    worldsManager
+    worldsManager,
   }
 }

@@ -1,8 +1,8 @@
 import { HandlerContextWithPath } from '../../types'
-import { AboutResponse } from '../../proto/http-endpoints.gen'
+import { AboutResponse } from '@dcl/protocol/out-js/decentraland/bff/http_endpoints.gen'
 
 export async function aboutHandler({
-  components: { config, status }
+  components: { config, status },
 }: Pick<HandlerContextWithPath<'config' | 'status', '/about'>, 'components'>) {
   const networkId = await config.requireNumber('NETWORK_ID')
   const fixedAdapter = await config.requireString('COMMS_FIXED_ADAPTER')
@@ -13,34 +13,36 @@ export async function aboutHandler({
   const contentStatus = await status.getContentStatus()
   const lambdasStatus = await status.getLambdasStatus()
 
+  const healthy = contentStatus.healthy && lambdasStatus.healthy
   const body: AboutResponse = {
-    healthy: contentStatus.healthy && lambdasStatus.healthy,
+    healthy,
+    acceptingUsers: healthy,
     configurations: {
       networkId,
       globalScenesUrn: globalScenesURN ? globalScenesURN.split(' ') : [],
       scenesUrn: scenesURN.split(' '),
       minimap: {
-        enabled: true
+        enabled: true,
       },
-      skybox: {}
+      skybox: {},
     },
     content: {
       healthy: contentStatus.healthy,
-      publicUrl: contentStatus.publicUrl
+      publicUrl: contentStatus.publicUrl,
     },
     lambdas: {
       healthy: lambdasStatus.healthy,
-      publicUrl: lambdasStatus.publicUrl
+      publicUrl: lambdasStatus.publicUrl,
     },
     comms: {
       healthy: true,
       protocol: 'v3',
-      fixedAdapter
-    }
+      fixedAdapter,
+    },
   }
 
   return {
     status: 200,
-    body
+    body,
   }
 }
