@@ -23,7 +23,7 @@ export async function commsAdapterHandler(
     return {
       status: 400,
       body: {
-        message: 'Invalid room id requested'
+        message: 'Invalid room id requested.'
       }
     }
   }
