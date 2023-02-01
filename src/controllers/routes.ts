@@ -9,7 +9,6 @@ import { statusHandler } from './handlers/statusHandler'
 import { commsAdapterHandler } from './handlers/commsAdapterHandler'
 import { wellKnownComponents } from 'decentraland-crypto-middleware'
 
-// We return the entire router because it will be easier to test than a whole server
 export async function setupRouter(_globalContext: GlobalContext): Promise<Router<GlobalContext>> {
   const router = new Router<GlobalContext>()
 

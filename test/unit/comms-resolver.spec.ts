@@ -1,9 +1,9 @@
 import { createConfigComponent } from '@well-known-components/env-config-provider'
 import { IConfigComponent } from '@well-known-components/interfaces'
-import { createCommsResolverComponent } from '../../src/adapters/comms-resolver'
+import { createCommsAdapterComponent } from '../../src/adapters/comms-adapter'
 import { createLogComponent } from '@well-known-components/logger'
 
-describe('comms-resolver', function () {
+describe('comms-adapter', function () {
   describe('ws-room', function () {
     it('resolves ws-room when well configured', async () => {
       const config: IConfigComponent = await createConfigComponent({
@@ -12,9 +12,9 @@ describe('comms-resolver', function () {
       })
       const logs = await createLogComponent({ config })
 
-      const commsResolver = await createCommsResolverComponent({ config, logs })
+      const commsAdapter = await createCommsAdapterComponent({ config, logs })
 
-      expect(await commsResolver.resolveComms('0xA', 'my-room')).toBe(
+      expect(await commsAdapter.connectionString('0xA', 'my-room')).toBe(
         'ws-room:ws-room-service.decentraland.org/rooms/my-room'
       )
     })
@@ -25,7 +25,7 @@ describe('comms-resolver', function () {
       })
       const logs = await createLogComponent({ config })
 
-      await expect(createCommsResolverComponent({ config, logs })).rejects.toThrow(
+      await expect(createCommsAdapterComponent({ config, logs })).rejects.toThrow(
         'Configuration: string COMMS_FIXED_ADAPTER is required'
       )
     })
@@ -41,9 +41,9 @@ describe('comms-resolver', function () {
       })
       const logs = await createLogComponent({ config })
 
-      const commsResolver = await createCommsResolverComponent({ config, logs })
+      const commsAdapter = await createCommsAdapterComponent({ config, logs })
 
-      const adapter = await commsResolver.resolveComms('0xA', 'my-room')
+      const adapter = await commsAdapter.connectionString('0xA', 'my-room')
       expect(adapter).toContain('livekit:wss://livekit.dcl.org?access_token=')
     })
 
@@ -53,7 +53,7 @@ describe('comms-resolver', function () {
       })
       const logs = await createLogComponent({ config })
 
-      await expect(createCommsResolverComponent({ config, logs })).rejects.toThrow(
+      await expect(createCommsAdapterComponent({ config, logs })).rejects.toThrow(
         'Configuration: string LIVEKIT_HOST is required'
       )
     })
@@ -66,7 +66,7 @@ describe('comms-resolver', function () {
       })
       const logs = await createLogComponent({ config })
 
-      await expect(createCommsResolverComponent({ config, logs })).rejects.toThrow('Invalid comms adapter: other')
+      await expect(createCommsAdapterComponent({ config, logs })).rejects.toThrow('Invalid comms adapter: other')
     })
   })
 })
