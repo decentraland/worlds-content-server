@@ -14,8 +14,7 @@ import { createMockLimitsManagerComponent } from './mocks/limits-manager-mock'
 import { createWorldsManagerComponent } from '../src/adapters/worlds-manager'
 import { createMockStatusComponent } from './mocks/status-mock'
 import { createInMemoryStorage } from '@dcl/catalyst-storage'
-import { createCommsAdapterComponent } from "../src/adapters/comms-adapter";
-import { createMockCommsAdapterComponent } from "./mocks/comms-adapter-mock";
+import { createMockCommsAdapterComponent } from './mocks/comms-adapter-mock'
 
 /**
  * Behaves like Jest "describe" function, used to describe a test for a

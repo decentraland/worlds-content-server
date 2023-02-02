@@ -2,8 +2,8 @@ import { createConfigComponent } from '@well-known-components/env-config-provide
 import { IConfigComponent } from '@well-known-components/interfaces'
 import { createCommsAdapterComponent } from '../../src/adapters/comms-adapter'
 import { createLogComponent } from '@well-known-components/logger'
-import { IFetchComponent } from "@well-known-components/http-server";
-import { Request, Response } from "node-fetch";
+import { IFetchComponent } from '@well-known-components/http-server'
+import { Request, Response } from 'node-fetch'
 
 describe('comms-adapter', function () {
   describe('ws-room', function () {
@@ -16,8 +16,7 @@ describe('comms-adapter', function () {
       const logs = await createLogComponent({ config })
 
       const fetch: IFetchComponent = {
-        fetch: async (_url: Request): Promise<Response> =>
-            new Response(undefined)
+        fetch: async (_url: Request): Promise<Response> => new Response(undefined)
       }
 
       const commsAdapter = await createCommsAdapterComponent({ config, fetch, logs })
@@ -37,17 +36,19 @@ describe('comms-adapter', function () {
 
       const fetch: IFetchComponent = {
         fetch: async (_url: Request): Promise<Response> =>
-            new Response(JSON.stringify({
-              "commitHash": "unknown",
-              "users": 2,
-              "rooms": 1,
-              "details": [
+          new Response(
+            JSON.stringify({
+              commitHash: 'unknown',
+              users: 2,
+              rooms: 1,
+              details: [
                 {
-                  "roomName": "world-prd-mariano.dcl.eth",
-                  "count": 2
+                  roomName: 'world-prd-mariano.dcl.eth',
+                  count: 2
                 }
               ]
-            }))
+            })
+          )
       }
 
       const commsAdapter = await createCommsAdapterComponent({ config, fetch, logs })
@@ -55,10 +56,12 @@ describe('comms-adapter', function () {
       expect(await commsAdapter.status()).toMatchObject({
         rooms: 1,
         users: 2,
-        details: [{
+        details: [
+          {
             users: 2,
-            worldName: "mariano.dcl.eth"
-          }]
+            worldName: 'mariano.dcl.eth'
+          }
+        ]
       })
     })
 
@@ -70,8 +73,7 @@ describe('comms-adapter', function () {
       const logs = await createLogComponent({ config })
 
       const fetch: IFetchComponent = {
-        fetch: async (_url: Request): Promise<Response> =>
-            new Response(undefined)
+        fetch: async (_url: Request): Promise<Response> => new Response(undefined)
       }
 
       await expect(createCommsAdapterComponent({ config, fetch, logs })).rejects.toThrow(
@@ -92,8 +94,7 @@ describe('comms-adapter', function () {
       const logs = await createLogComponent({ config })
 
       const fetch: IFetchComponent = {
-        fetch: async (_url: Request): Promise<Response> =>
-            new Response(undefined)
+        fetch: async (_url: Request): Promise<Response> => new Response(undefined)
       }
 
       const commsAdapter = await createCommsAdapterComponent({ config, fetch, logs })
@@ -114,44 +115,45 @@ describe('comms-adapter', function () {
 
       const fetch: IFetchComponent = {
         fetch: async (_url: Request): Promise<Response> =>
-            new Response(JSON.stringify({
-              "rooms": [
+          new Response(
+            JSON.stringify({
+              rooms: [
                 {
-                  "name": "world-prd-mariano.dcl.eth",
-                  "num_participants": 2
+                  name: 'world-prd-mariano.dcl.eth',
+                  num_participants: 2
                 }
               ]
-            }))
+            })
+          )
       }
 
       const commsAdapter = await createCommsAdapterComponent({ config, fetch, logs })
 
       const adapter = await commsAdapter.status()
-      expect(adapter).toMatchObject(
+      expect(adapter).toMatchObject({
+        rooms: 1,
+        users: 2,
+        details: [
           {
-            rooms: 1,
             users: 2,
-            details: [{
-              users: 2,
-              worldName: "prd-mariano.dcl.eth"
-            }],
+            worldName: 'prd-mariano.dcl.eth'
           }
-      )
+        ]
+      })
     })
 
     it('refuses to initialize when misconfigured', async () => {
       const config: IConfigComponent = await createConfigComponent({
         COMMS_ADAPTER: 'livekit',
-        COMMS_ROOM_PREFIX: 'world-',
+        COMMS_ROOM_PREFIX: 'world-'
       })
       const logs = await createLogComponent({ config })
 
       const fetch: IFetchComponent = {
-        fetch: async (_url: Request): Promise<Response> =>
-            new Response(undefined)
+        fetch: async (_url: Request): Promise<Response> => new Response(undefined)
       }
 
-      await expect(createCommsAdapterComponent({ config,fetch, logs })).rejects.toThrow(
+      await expect(createCommsAdapterComponent({ config, fetch, logs })).rejects.toThrow(
         'Configuration: string LIVEKIT_HOST is required'
       )
     })
@@ -168,7 +170,7 @@ describe('comms-adapter', function () {
 
       const fetch: IFetchComponent = {
         fetch: async (_url: Request): Promise<Response> => {
-          throw Error("Failed to fetch comms status")
+          throw Error('Failed to fetch comms status')
         }
       }
       const commsAdapter = await createCommsAdapterComponent({ config, fetch, logs })
@@ -181,13 +183,12 @@ describe('comms-adapter', function () {
     it('refuses to initialize when misconfigured', async () => {
       const config: IConfigComponent = await createConfigComponent({
         COMMS_ADAPTER: 'other',
-        COMMS_ROOM_PREFIX: 'world-',
+        COMMS_ROOM_PREFIX: 'world-'
       })
       const logs = await createLogComponent({ config })
 
       const fetch: IFetchComponent = {
-        fetch: async (_url: Request): Promise<Response> =>
-            new Response(undefined)
+        fetch: async (_url: Request): Promise<Response> => new Response(undefined)
       }
 
       await expect(createCommsAdapterComponent({ config, fetch, logs })).rejects.toThrow('Invalid comms adapter: other')

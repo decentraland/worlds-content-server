@@ -1,9 +1,9 @@
 import { test } from '../components'
 import { storeJson } from '../utils'
 
-test('consume content endpoints', function ({components}) {
+test('consume content endpoints', function ({ components }) {
   it('responds /ipfs/:cid and works', async () => {
-    const {localFetch, storage} = components
+    const { localFetch, storage } = components
 
     {
       const r = await localFetch.fetch('/ipfs/bafybeictjyqjlkgybfckczpuqlqo7xfhho3jpnep4wesw3ivaeeuqugc2y')
@@ -20,9 +20,9 @@ test('consume content endpoints', function ({components}) {
   })
 })
 
-test('consume content endpoints', function ({components}) {
+test('consume content endpoints', function ({ components }) {
   it('responds HEAD /ipfs/:cid and works', async () => {
-    const {localFetch, storage} = components
+    const { localFetch, storage } = components
 
     {
       const r = await localFetch.fetch('/ipfs/bafybeictjyqjlkgybfckczpuqlqo7xfhho3jpnep4wesw3ivaeeuqugc2y', {
@@ -31,7 +31,7 @@ test('consume content endpoints', function ({components}) {
       expect(r.status).toEqual(404)
     }
 
-    await storeJson(storage,'bafybeictjyqjlkgybfckczpuqlqo7xfhho3jpnep4wesw3ivaeeuqugc2y', 'Hola')
+    await storeJson(storage, 'bafybeictjyqjlkgybfckczpuqlqo7xfhho3jpnep4wesw3ivaeeuqugc2y', 'Hola')
     {
       const r = await localFetch.fetch('/ipfs/bafybeictjyqjlkgybfckczpuqlqo7xfhho3jpnep4wesw3ivaeeuqugc2y', {
         method: 'HEAD'
@@ -42,7 +42,7 @@ test('consume content endpoints', function ({components}) {
   })
 })
 
-test('consume status endpoint', function ({components}) {
+test('consume status endpoint', function ({ components }) {
   it('responds /status works', async () => {
     const { localFetch, storage } = components
 
@@ -58,11 +58,11 @@ test('consume status endpoint', function ({components}) {
       expect(await r.json()).toMatchObject({
         commitHash: 'unknown',
         content: {
-          worldsCount: 1,
+          worldsCount: 1
         },
         comms: {
           rooms: 1,
-          users: 2,
+          users: 2
         }
       })
     }
@@ -80,27 +80,26 @@ test('consume status endpoint', function ({components}) {
         commitHash: 'unknown',
         content: {
           worldsCount: 1,
-          details: [
-            "some-name.dcl.eth",
-          ],
+          details: ['some-name.dcl.eth']
         },
         comms: {
           rooms: 1,
           users: 2,
-          details: [{
-            worldName: "mariano.dcl.eth",
-            users: 2
-          }]
+          details: [
+            {
+              worldName: 'mariano.dcl.eth',
+              users: 2
+            }
+          ]
         }
-
       })
     }
   })
 })
 
-test('consume about endpoint', function ({components}) {
+test('consume about endpoint', function ({ components }) {
   it('responds /about works', async () => {
-    const {localFetch} = components
+    const { localFetch } = components
 
     const r = await localFetch.fetch('/about')
     expect(r.status).toEqual(200)
@@ -111,11 +110,11 @@ test('consume about endpoint', function ({components}) {
         networkId: 5,
         globalScenesUrn: [],
         scenesUrn: [''],
-        minimap: {enabled: true},
+        minimap: { enabled: true },
         skybox: {}
       },
-      content: {healthy: true, publicUrl: 'https://peer.com/content'},
-      lambdas: {healthy: true, publicUrl: 'https://peer.com/lambdas'},
+      content: { healthy: true, publicUrl: 'https://peer.com/content' },
+      lambdas: { healthy: true, publicUrl: 'https://peer.com/lambdas' },
       comms: {
         fixedAdapter: 'ws-room:ws-room-service.decentraland.org/rooms/test-scene',
         healthy: true,
