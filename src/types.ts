@@ -51,7 +51,7 @@ export type IWorldNamePermissionChecker = {
 
 export type ContentStatus = {
   worldsCount: number
-  details?: { worldName: string }
+  details?: string[]
 }
 
 export type WorldStatus = { worldName: string; users: number }

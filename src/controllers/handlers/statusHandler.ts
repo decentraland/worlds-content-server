@@ -1,4 +1,4 @@
-import { HandlerContextWithPath } from '../../types'
+import { HandlerContextWithPath, StatusResponse } from '../../types'
 import { IHttpServerComponent } from '@well-known-components/interfaces'
 
 export async function statusHandler(
@@ -20,18 +20,20 @@ export async function statusHandler(
   const deployedWorlds = await worldsManager.getDeployedWorldsNames()
   const commsStatus = await commsAdapter.status()
 
+  const status: StatusResponse = {
+    commitHash,
+    content: {
+      worldsCount: deployedWorlds.length,
+      details: showDetails ? deployedWorlds : undefined
+    },
+    comms: {
+      ...commsStatus,
+      details: showDetails ? commsStatus.details : undefined
+    }
+  }
+
   return {
     status: 200,
-    body: {
-      commitHash,
-      content: {
-        worldsCount: deployedWorlds.length,
-        details: showDetails ? deployedWorlds : undefined
-      },
-      comms: {
-        ...commsStatus,
-        details: showDetails ? commsStatus.details : undefined
-      }
-    }
+    body: status
   }
 }
