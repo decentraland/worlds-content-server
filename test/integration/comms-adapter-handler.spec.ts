@@ -45,10 +45,10 @@ test('comms adapter handler /get-comms-adapter/:roomId', function ({ components 
 
     const r = await localFetch.fetch(path, actualInit)
 
+    expect(r.status).toEqual(200)
     expect(await r.json()).toEqual({
       fixedAdapter: 'ws-room:ws-room-service.decentraland.org/rooms/world-myRoom'
     })
-    expect(r.status).toEqual(200)
   })
 })
 
@@ -86,7 +86,7 @@ test('comms adapter handler /get-comms-adapter/:roomId', function ({ components 
 
     const r = await localFetch.fetch(path, actualInit)
 
-    // expect(r.status).toEqual(404)
+    expect(r.status).toEqual(404)
     expect(await r.json()).toEqual({ message: 'World "myRoom" does not exist.' })
   })
 })
