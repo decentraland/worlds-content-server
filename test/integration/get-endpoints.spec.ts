@@ -31,7 +31,7 @@ test('consume content endpoints', function ({components}) {
       expect(r.status).toEqual(404)
     }
 
-    await storeJson(storage, 'bafybeictjyqjlkgybfckczpuqlqo7xfhho3jpnep4wesw3ivaeeuqugc2y', 'Hola')
+    await storeJson(storage,'bafybeictjyqjlkgybfckczpuqlqo7xfhho3jpnep4wesw3ivaeeuqugc2y', 'Hola')
     {
       const r = await localFetch.fetch('/ipfs/bafybeictjyqjlkgybfckczpuqlqo7xfhho3jpnep4wesw3ivaeeuqugc2y', {
         method: 'HEAD'
@@ -42,25 +42,9 @@ test('consume content endpoints', function ({components}) {
   })
 })
 
-test('consume status endpoint', function ({components, stubComponents}) {
+test('consume status endpoint', function ({components}) {
   it('responds /status works', async () => {
-    const {localFetch, fetch, storage} = components
-    // const {  fetch } = stubComponents
-
-    // fetch.fetch = async (_url: Request): Promise<Response> => {
-    //   console.log("IN MOCK")
-    //   return new Response(JSON.stringify({
-    //     "commitHash": "b82c42f1d89221c655ee166417ee8323dcbde4b7",
-    //     "users": 2,
-    //     "rooms": 1,
-    //     "details": [
-    //       {
-    //         "roomName": "world-mariano.dcl.eth",
-    //         "count": 2
-    //       }
-    //     ]
-    //   }));
-    // }
+    const { localFetch, storage } = components
 
     await storeJson(storage, 'name-some-name.dcl.eth', {
       entityId: 'bafybeictjyqjlkgybfckczpuqlqo7xfhho3jpnep4wesw3ivaeeuqugc2y'
