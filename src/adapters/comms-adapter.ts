@@ -131,7 +131,7 @@ function cachingAdapter({ logs }: Pick<AppComponents, 'logs'>, wrappedAdapter: I
     ttl: 60 * 1000, // cache for 1 minutes
     fetchMethod: async (_, staleValue): Promise<CommsStatus> => {
       try {
-        return wrappedAdapter.status()
+        return await wrappedAdapter.status()
       } catch (_: any) {
         logger.warn(`Error retrieving comms status: ${_.message}`)
         return staleValue
