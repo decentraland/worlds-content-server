@@ -1,9 +1,9 @@
 import { test } from '../components'
 import { storeJson } from '../utils'
 
-test('consume content endpoints', function ({ components }) {
+test('consume content endpoints', function ({components}) {
   it('responds /ipfs/:cid and works', async () => {
-    const { localFetch, storage } = components
+    const {localFetch, storage} = components
 
     {
       const r = await localFetch.fetch('/ipfs/bafybeictjyqjlkgybfckczpuqlqo7xfhho3jpnep4wesw3ivaeeuqugc2y')
@@ -20,9 +20,9 @@ test('consume content endpoints', function ({ components }) {
   })
 })
 
-test('consume content endpoints', function ({ components }) {
+test('consume content endpoints', function ({components}) {
   it('responds HEAD /ipfs/:cid and works', async () => {
-    const { localFetch, storage } = components
+    const {localFetch, storage} = components
 
     {
       const r = await localFetch.fetch('/ipfs/bafybeictjyqjlkgybfckczpuqlqo7xfhho3jpnep4wesw3ivaeeuqugc2y', {
@@ -42,9 +42,25 @@ test('consume content endpoints', function ({ components }) {
   })
 })
 
-test('consume status endpoint', function ({ components }) {
+test('consume status endpoint', function ({components, stubComponents}) {
   it('responds /status works', async () => {
-    const { localFetch, storage } = components
+    const {localFetch, fetch, storage} = components
+    // const {  fetch } = stubComponents
+
+    // fetch.fetch = async (_url: Request): Promise<Response> => {
+    //   console.log("IN MOCK")
+    //   return new Response(JSON.stringify({
+    //     "commitHash": "b82c42f1d89221c655ee166417ee8323dcbde4b7",
+    //     "users": 2,
+    //     "rooms": 1,
+    //     "details": [
+    //       {
+    //         "roomName": "world-mariano.dcl.eth",
+    //         "count": 2
+    //       }
+    //     ]
+    //   }));
+    // }
 
     await storeJson(storage, 'name-some-name.dcl.eth', {
       entityId: 'bafybeictjyqjlkgybfckczpuqlqo7xfhho3jpnep4wesw3ivaeeuqugc2y'
@@ -55,9 +71,15 @@ test('consume status endpoint', function ({ components }) {
       const r = await localFetch.fetch('/status')
 
       expect(r.status).toEqual(200)
-      expect(await r.json()).toEqual({
+      expect(await r.json()).toMatchObject({
         commitHash: 'unknown',
-        worldsCount: 1
+        content: {
+          worldsCount: 1,
+        },
+        comms: {
+          rooms: 1,
+          users: 2,
+        }
       })
     }
 
@@ -70,18 +92,31 @@ test('consume status endpoint', function ({ components }) {
       })
 
       expect(r.status).toEqual(200)
-      expect(await r.json()).toEqual({
+      expect(await r.json()).toMatchObject({
         commitHash: 'unknown',
-        worldsCount: 1,
-        deployedWorlds: ['some-name.dcl.eth']
+        content: {
+          worldsCount: 1,
+          details: [
+            "some-name.dcl.eth",
+          ],
+        },
+        comms: {
+          rooms: 1,
+          users: 2,
+          details: [{
+            worldName: "mariano.dcl.eth",
+            users: 2
+          }]
+        }
+
       })
     }
   })
 })
 
-test('consume about endpoint', function ({ components }) {
+test('consume about endpoint', function ({components}) {
   it('responds /about works', async () => {
-    const { localFetch } = components
+    const {localFetch} = components
 
     const r = await localFetch.fetch('/about')
     expect(r.status).toEqual(200)
@@ -92,11 +127,11 @@ test('consume about endpoint', function ({ components }) {
         networkId: 5,
         globalScenesUrn: [],
         scenesUrn: [''],
-        minimap: { enabled: true },
+        minimap: {enabled: true},
         skybox: {}
       },
-      content: { healthy: true, publicUrl: 'https://peer.com/content' },
-      lambdas: { healthy: true, publicUrl: 'https://peer.com/lambdas' },
+      content: {healthy: true, publicUrl: 'https://peer.com/content'},
+      lambdas: {healthy: true, publicUrl: 'https://peer.com/lambdas'},
       comms: {
         fixedAdapter: 'ws-room:ws-room-service.decentraland.org/rooms/test-scene',
         healthy: true,

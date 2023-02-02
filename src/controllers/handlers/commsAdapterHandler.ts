@@ -20,6 +20,7 @@ export async function commsAdapterHandler(
   }
 
   const roomPrefix = await config.requireString('COMMS_ROOM_PREFIX')
+  console.log(roomPrefix)
   if (!context.params.roomId.startsWith(roomPrefix)) {
     return {
       status: 400,

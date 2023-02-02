@@ -46,8 +46,6 @@ export async function initComponents(): Promise<AppComponents> {
     logger.warn('No secret defined, deployed worlds will not be returned.')
   }
 
-  const commsAdapter: ICommsAdapter = await createCommsAdapterComponent({ config, logs })
-
   const server = await createServerComponent<GlobalContext>({ config, logs }, { cors: {} })
   const statusChecks = await createStatusCheckComponent({ server, config })
   const fetch = await createFetchComponent()
@@ -55,6 +53,8 @@ export async function initComponents(): Promise<AppComponents> {
     { ...metricDeclarations, ...theGraphMetricDeclarations },
     { server, config }
   )
+
+  const commsAdapter: ICommsAdapter = await createCommsAdapterComponent({ config, fetch, logs })
 
   const rpcUrl = await config.requireString('RPC_URL')
   const ethereumProvider = new HTTPProvider(rpcUrl, fetch)
@@ -99,7 +99,7 @@ export async function initComponents(): Promise<AppComponents> {
   const worldsManager = await createWorldsManagerComponent({ logs, storage })
 
   return {
-    commsAdapter: commsAdapter,
+    commsAdapter,
     config,
     namePermissionChecker,
     logs,

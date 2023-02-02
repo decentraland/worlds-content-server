@@ -49,8 +49,28 @@ export type IWorldNamePermissionChecker = {
   checkPermission(ethAddress: EthAddress, worldName: string): Promise<boolean>
 }
 
+export type ContentStatus = {
+  worldsCount: number
+  details?: { worldName: string }
+}
+
+export type WorldStatus = { worldName: string; users: number }
+
+export type CommsStatus = {
+  users: number
+  rooms: number
+  details?: WorldStatus[]
+}
+
+export type StatusResponse = {
+  commitHash: string
+  content: ContentStatus
+  comms: CommsStatus
+}
+
 export type ICommsAdapter = {
   connectionString(ethAddress: EthAddress, roomId: string): Promise<string>
+  status(): Promise<CommsStatus>
 }
 
 export type ILimitsManager = {
