@@ -29,8 +29,8 @@ export async function setupRouter(_globalContext: GlobalContext): Promise<Router
   router.head('/contents/:hashId', headContentFile)
   router.get('/contents/:hashId', getContentFile)
 
-  router.get('/acl', getAclHandler)
-  router.post('/acl', postAclHandler)
+  router.get('/acl/:world_name', getAclHandler)
+  router.post('/acl/:world_name', postAclHandler)
 
   router.get('/status', statusHandler)
 

@@ -1,4 +1,4 @@
-import { AppComponents, IWorldsManager } from '../types'
+import { AppComponents, IWorldsManager, WorldMetadata } from '../types'
 import LRU from 'lru-cache'
 import { streamToBuffer } from '@dcl/catalyst-storage/dist/content-item'
 import { Entity } from '@dcl/schemas'
@@ -23,6 +23,17 @@ export async function createWorldsManagerComponent({
         logger.warn(`Error retrieving worlds from storage: ${_.message}`)
         return staleValue
       }
+    }
+  })
+  const worldsCache = new LRU<string, WorldMetadata>({
+    max: 100,
+    ttl: 10 * 60 * 1000, // cache for 10 minutes
+    fetchMethod: async (worldName, staleValue): Promise<WorldMetadata | undefined> => {
+      const content = await storage.retrieve(`name-${worldName.toLowerCase()}`)
+      if (!content) {
+        return staleValue
+      }
+      return JSON.parse((await streamToBuffer(await content.asStream())).toString())
     }
   })
 
@@ -55,14 +66,17 @@ export async function createWorldsManagerComponent({
     }
   }
 
+  async function getMetadataForWorld(worldName: string): Promise<WorldMetadata | undefined> {
+    return await worldsCache.fetch(worldName)
+  }
+
   async function getEntityIdForWorld(worldName: string): Promise<string | undefined> {
-    const content = await storage.retrieve(`name-${worldName.toLowerCase()}`)
+    const content = await worldsCache.fetch(worldName)
     if (!content) {
       return undefined
     }
 
-    const buffer = await streamToBuffer(await content?.asStream())
-    const { entityId } = JSON.parse(buffer.toString())
+    const { entityId } = content
 
     return entityId
   }
@@ -70,6 +84,7 @@ export async function createWorldsManagerComponent({
   return {
     getDeployedWorldsNames,
     getDeployedWorldsCount,
+    getMetadataForWorld,
     getEntityIdForWorld,
     getEntityForWorld
   }

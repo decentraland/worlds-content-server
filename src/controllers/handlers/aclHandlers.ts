@@ -1,30 +1,40 @@
 import { IHttpServerComponent } from '@well-known-components/interfaces'
-import { HandlerContextWithPath } from '../../types'
+import { AccessControlList, HandlerContextWithPath } from '../../types'
 
 export async function getAclHandler(
-  ctx: HandlerContextWithPath<
-    'config' | 'logs' | 'namePermissionChecker' | 'metrics' | 'storage' | 'sns' | 'validator',
-    '/acl'
-  >
+  ctx: HandlerContextWithPath<'worldsManager', '/acl/:world_name'>
 ): Promise<IHttpServerComponent.IResponse> {
-  const logger = ctx.components.logs.getLogger('deploy')
-  try {
+  const worldMetadata = await ctx.components.worldsManager.getMetadataForWorld(ctx.params.world_name)
+  if (!worldMetadata) {
+    return {
+      status: 404,
+      body: `World "${ctx.params.world_name}" not deployed in this server.`
+    }
+  }
+
+  if (!worldMetadata.acl) {
     return {
       status: 200,
       body: {
-        acl: {}
-      }
+        resource: ctx.params.world_name,
+        allowed: []
+      } as AccessControlList
     }
-  } catch (err: any) {
-    logger.error(err)
-    throw err
+  }
+
+  // Get the last element of the auth chain. The payload must contain the AccessControlList
+  const acl: AccessControlList = JSON.parse(worldMetadata.acl.slice(-1).pop()!.payload)
+
+  return {
+    status: 200,
+    body: acl
   }
 }
 
 export async function postAclHandler(
   ctx: HandlerContextWithPath<
     'config' | 'logs' | 'namePermissionChecker' | 'metrics' | 'storage' | 'sns' | 'validator',
-    '/acl'
+    '/acl/:world_name'
   >
 ): Promise<IHttpServerComponent.IResponse> {
   const logger = ctx.components.logs.getLogger('deploy')
