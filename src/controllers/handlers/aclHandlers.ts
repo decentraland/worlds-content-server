@@ -25,6 +25,8 @@ export async function getAclHandler(
   // Get the last element of the auth chain. The payload must contain the AccessControlList
   const acl: AccessControlList = JSON.parse(worldMetadata.acl.slice(-1).pop()!.payload)
 
+  // TODO check that the ACL was signed by the wallet that currently owns the world, or else return empty
+
   return {
     status: 200,
     body: acl
