@@ -9,7 +9,7 @@ import { statusHandler } from './handlers/statusHandler'
 import { commsAdapterHandler } from './handlers/commsAdapterHandler'
 import { wellKnownComponents } from 'decentraland-crypto-middleware'
 import { activeEntitiesHandler } from './handlers/activeEntities'
-import { getAclHandler } from './handlers/getAclHandler'
+import { getAclHandler, postAclHandler } from './handlers/aclHandlers'
 
 export async function setupRouter(_globalContext: GlobalContext): Promise<Router<GlobalContext>> {
   const router = new Router<GlobalContext>()
@@ -30,6 +30,7 @@ export async function setupRouter(_globalContext: GlobalContext): Promise<Router
   router.get('/contents/:hashId', getContentFile)
 
   router.get('/acl', getAclHandler)
+  router.post('/acl', postAclHandler)
 
   router.get('/status', statusHandler)
 
