@@ -34,7 +34,7 @@ test('acl handler GET /acl/:world_name', function ({ components }) {
 })
 
 test('acl handler GET /acl/:world_name', function ({ components }) {
-  it('returns acl from auth-chain when acl exists', async () => {
+  it('returns an empty list of allowed when existing acl is no longer the world owner', async () => {
     const { localFetch, storage } = components
 
     const delegatedIdentity = await getIdentity()
@@ -46,6 +46,35 @@ test('acl handler GET /acl/:world_name', function ({ components }) {
       entityId: 'bafkreiax5plaxze77tnjbnozga7dsbefdh53horza4adf2xjzxo3k5i4xq',
       acl: Authenticator.signPayload(ownerIdentity.authChain, payload)
     })
+
+    const r = await localFetch.fetch('/acl/my-world.dcl.eth')
+
+    expect(r.status).toBe(200)
+    expect(await r.json()).toEqual({
+      resource: 'my-world.dcl.eth',
+      allowed: []
+    })
+  })
+})
+
+test('acl handler GET /acl/:world_name', function ({ components, stubComponents }) {
+  it('returns acl from auth-chain when acl exists', async () => {
+    const { localFetch, storage } = components
+    const { namePermissionChecker } = stubComponents
+
+    const delegatedIdentity = await getIdentity()
+    const ownerIdentity = await getIdentity()
+
+    const payload = `{"resource":"my-world.dcl.eth","allowed":["${delegatedIdentity.realAccount.address}"]}`
+
+    await storeJson(storage, 'name-my-world.dcl.eth', {
+      entityId: 'bafkreiax5plaxze77tnjbnozga7dsbefdh53horza4adf2xjzxo3k5i4xq',
+      acl: Authenticator.signPayload(ownerIdentity.authChain, payload)
+    })
+
+    namePermissionChecker.checkPermission
+      .withArgs(ownerIdentity.authChain.authChain[0].payload, 'my-world.dcl.eth')
+      .resolves(true)
 
     const r = await localFetch.fetch('/acl/my-world.dcl.eth')
 
