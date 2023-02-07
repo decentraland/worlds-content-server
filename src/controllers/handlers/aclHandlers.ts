@@ -62,7 +62,7 @@ export async function postAclHandler(
   }
 
   const authChain = (await ctx.request.json()) as AuthChain
-  if (!authChain || !Array.isArray(authChain)) {
+  if (!AuthChain.validate(authChain)) {
     return {
       status: 400,
       body: {
