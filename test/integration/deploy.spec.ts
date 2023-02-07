@@ -40,7 +40,7 @@ test('deployment works', function ({ components, stubComponents }) {
     const identity = await getIdentity()
 
     namePermissionChecker.checkPermission
-      .withArgs(identity.authChain.authChain[0].payload, 'my-super-name.dcl.eth')
+      .withArgs(identity.authChain.authChain[0].payload.toLowerCase(), 'my-super-name.dcl.eth')
       .resolves(true)
 
     const authChain = Authenticator.signPayload(identity.authChain, entityId)
@@ -50,7 +50,7 @@ test('deployment works', function ({ components, stubComponents }) {
 
     Sinon.assert.calledWith(
       namePermissionChecker.checkPermission,
-      identity.authChain.authChain[0].payload,
+      identity.authChain.authChain[0].payload.toLowerCase(),
       'my-super-name.dcl.eth'
     )
 
@@ -94,7 +94,7 @@ test('deployment with failed validation', function ({ components, stubComponents
     const identity = await getIdentity()
 
     namePermissionChecker.checkPermission
-      .withArgs(identity.authChain.authChain[0].payload, 'just-do-it.dcl.eth')
+      .withArgs(identity.authChain.authChain[0].payload.toLowerCase(), 'just-do-it.dcl.eth')
       .resolves(false)
 
     const authChain = Authenticator.signPayload(identity.authChain, entityId)
@@ -106,7 +106,7 @@ test('deployment with failed validation', function ({ components, stubComponents
 
     Sinon.assert.calledWith(
       namePermissionChecker.checkPermission,
-      identity.authChain.authChain[0].payload,
+      identity.authChain.authChain[0].payload.toLowerCase(),
       'just-do-it.dcl.eth'
     )
 
@@ -146,7 +146,7 @@ test('deployment with failed validation', function ({ components, stubComponents
     const identity = await getIdentity()
 
     namePermissionChecker.checkPermission
-      .withArgs(identity.authChain.authChain[0].payload, 'my-super-name.dcl.eth')
+      .withArgs(identity.authChain.authChain[0].payload.toLowerCase(), 'my-super-name.dcl.eth')
       .resolves(false)
 
     const authChain = Authenticator.signPayload(identity.authChain, entityId)

@@ -7,7 +7,7 @@ import { stringToUtf8Bytes } from 'eth-connect'
 import { SNS } from 'aws-sdk'
 import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
 
-export function requireString(val: string): string {
+export function requireString(val: string | null | undefined): string {
   if (typeof val !== 'string') throw new Error('A string was expected')
   return val
 }
