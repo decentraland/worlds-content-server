@@ -146,7 +146,7 @@ test('deployment with failed validation', function ({ components, stubComponents
     const identity = await getIdentity()
 
     namePermissionChecker.checkPermission
-      .withArgs(identity.authChain.authChain[0].payload.toLowerCase(), 'my-super-name.dcl.eth')
+      .withArgs(identity.authChain.authChain[0].payload, 'my-super-name.dcl.eth')
       .resolves(false)
 
     const authChain = Authenticator.signPayload(identity.authChain, entityId)
