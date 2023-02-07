@@ -1,5 +1,6 @@
 import { IHttpServerComponent } from '@well-known-components/interfaces'
 import { AccessControlList, HandlerContextWithPath } from '../../types'
+import { AuthChain } from '@dcl/schemas'
 
 export async function getAclHandler(
   ctx: HandlerContextWithPath<'namePermissionChecker' | 'worldsManager', '/acl/:world_name'>
@@ -44,21 +45,40 @@ export async function getAclHandler(
 }
 
 export async function postAclHandler(
-  ctx: HandlerContextWithPath<
-    'config' | 'logs' | 'namePermissionChecker' | 'metrics' | 'storage' | 'sns' | 'validator',
-    '/acl/:world_name'
-  >
+  ctx: HandlerContextWithPath<'namePermissionChecker' | 'worldsManager', '/acl/:world_name'>
 ): Promise<IHttpServerComponent.IResponse> {
-  const logger = ctx.components.logs.getLogger('deploy')
-  try {
+  const { namePermissionChecker, worldsManager } = ctx.components
+
+  const worldName = ctx.params.world_name
+
+  const worldMetadata = await worldsManager.getMetadataForWorld(worldName)
+  if (!worldMetadata) {
     return {
-      status: 200,
+      status: 404,
       body: {
-        acl: {}
+        message: `World "${worldName}" not deployed in this server.`
       }
     }
-  } catch (err: any) {
-    logger.error(err)
-    throw err
+  }
+
+  // TODO Store the ACL together with the entity
+  const authChain = (await ctx.request.json()) as AuthChain
+
+  const permission = await namePermissionChecker.checkPermission(authChain[0].payload, worldName)
+  if (!permission) {
+    return {
+      status: 403,
+      body: {
+        message: `Your wallet does not own "${worldName}", you can not set access control lists for it.`
+      }
+    }
+  }
+
+  const acl = JSON.parse(authChain.slice(-1).pop()!.payload)
+  await worldsManager.storeAcl(acl)
+
+  return {
+    status: 200,
+    body: acl
   }
 }
