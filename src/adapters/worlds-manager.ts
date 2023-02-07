@@ -84,11 +84,7 @@ export async function createWorldsManagerComponent({
 
   async function storeAcl(acl: AccessControlList): Promise<void> {
     const content = await worldsCache.fetch(acl.resource)
-    if (!content) {
-      return undefined
-    }
-
-    const { entityId } = content
+    const { entityId } = content!
 
     await storage.storeStream(
       `name-${acl.resource}`,
