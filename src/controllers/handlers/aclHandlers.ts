@@ -1,6 +1,6 @@
 import { IHttpServerComponent } from '@well-known-components/interfaces'
 import { AccessControlList, HandlerContextWithPath } from '../../types'
-import { AuthChain } from '@dcl/schemas'
+import { AuthChain, EthAddress } from '@dcl/schemas'
 
 export async function getAclHandler(
   ctx: HandlerContextWithPath<'namePermissionChecker' | 'worldsManager', '/acl/:world_name'>
@@ -81,7 +81,29 @@ export async function postAclHandler(
     }
   }
 
-  const acl = JSON.parse(authChain.slice(-1).pop()!.payload)
+  const acl = JSON.parse(authChain[authChain.length - 1].payload)
+  if (acl.resource !== worldName) {
+    return {
+      status: 400,
+      body: {
+        message: `Provided acl is for world "${acl.resource}"  but you are trying to set acl for world ${worldName}.`
+      }
+    }
+  }
+
+  if (
+    !acl.allowed ||
+    !Array.isArray(acl.allowed) ||
+    !acl.allowed.every((address: string) => EthAddress.validate(address))
+  ) {
+    return {
+      status: 400,
+      body: {
+        message: `Provided acl is invalid. allowed is missing or not an array of addresses.`
+      }
+    }
+  }
+
   await worldsManager.storeAcl(acl)
 
   return {

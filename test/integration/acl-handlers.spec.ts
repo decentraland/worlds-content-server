@@ -131,6 +131,70 @@ test('acl handler POST /acl/:world_name', function ({ components, stubComponents
 })
 
 test('acl handler POST /acl/:world_name', function ({ components, stubComponents }) {
+  it('fails when resource is different than requested world', async () => {
+    const { localFetch, storage } = components
+    const { namePermissionChecker } = stubComponents
+
+    const identity = await getIdentity()
+    const delegatedIdentity = await getIdentity()
+
+    const payload = `{"resource":"another-world.dcl.eth","allowed":["${delegatedIdentity.realAccount.address}"]}`
+
+    await storeJson(storage, 'name-my-world.dcl.eth', {
+      entityId: 'bafkreiax5plaxze77tnjbnozga7dsbefdh53horza4adf2xjzxo3k5i4xq'
+    })
+
+    namePermissionChecker.checkPermission
+      .withArgs(identity.authChain.authChain[0].payload, 'my-world.dcl.eth')
+      .resolves(true)
+
+    const acl = Authenticator.signPayload(identity.authChain, payload)
+
+    const r = await localFetch.fetch('/acl/my-world.dcl.eth', {
+      body: JSON.stringify(acl),
+      method: 'POST'
+    })
+
+    expect(r.status).toEqual(400)
+    expect(await r.json()).toEqual({
+      message: `Provided acl is for world "another-world.dcl.eth"  but you are trying to set acl for world my-world.dcl.eth.`
+    })
+  })
+})
+
+test('acl handler POST /acl/:world_name', function ({ components, stubComponents }) {
+  it('fails when invalid acl', async () => {
+    const { localFetch, storage } = components
+    const { namePermissionChecker } = stubComponents
+
+    const identity = await getIdentity()
+    const delegatedIdentity = await getIdentity()
+
+    const payload = `{"resource":"my-world.dcl.eth","allowed":{"something":"${delegatedIdentity.realAccount.address}"}}`
+
+    await storeJson(storage, 'name-my-world.dcl.eth', {
+      entityId: 'bafkreiax5plaxze77tnjbnozga7dsbefdh53horza4adf2xjzxo3k5i4xq'
+    })
+
+    namePermissionChecker.checkPermission
+      .withArgs(identity.authChain.authChain[0].payload, 'my-world.dcl.eth')
+      .resolves(true)
+
+    const acl = Authenticator.signPayload(identity.authChain, payload)
+
+    const r = await localFetch.fetch('/acl/my-world.dcl.eth', {
+      body: JSON.stringify(acl),
+      method: 'POST'
+    })
+
+    expect(r.status).toEqual(400)
+    expect(await r.json()).toEqual({
+      message: `Provided acl is invalid. allowed is missing or not an array of addresses.`
+    })
+  })
+})
+
+test('acl handler POST /acl/:world_name', function ({ components, stubComponents }) {
   it('fails when signer wallet does not own world name', async () => {
     const { localFetch, storage } = components
     const { namePermissionChecker } = stubComponents
