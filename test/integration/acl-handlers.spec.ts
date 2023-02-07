@@ -163,6 +163,33 @@ test('acl handler POST /acl/:world_name', function ({ components, stubComponents
 })
 
 test('acl handler POST /acl/:world_name', function ({ components, stubComponents }) {
+  it('fails invalid payload sent', async () => {
+    const { localFetch, storage } = components
+    const { namePermissionChecker } = stubComponents
+
+    const identity = await getIdentity()
+
+    await storeJson(storage, 'name-my-world.dcl.eth', {
+      entityId: 'bafkreiax5plaxze77tnjbnozga7dsbefdh53horza4adf2xjzxo3k5i4xq'
+    })
+
+    namePermissionChecker.checkPermission
+      .withArgs(identity.authChain.authChain[0].payload, 'my-world.dcl.eth')
+      .resolves(false)
+
+    const r = await localFetch.fetch('/acl/my-world.dcl.eth', {
+      body: JSON.stringify({}),
+      method: 'POST'
+    })
+
+    expect(r.status).toEqual(400)
+    expect(await r.json()).toEqual({
+      message: `Invalid payload received. Need to be a valid AuthChain.`
+    })
+  })
+})
+
+test('acl handler POST /acl/:world_name', function ({ components }) {
   it('fails when the world name does not exist', async () => {
     const { localFetch } = components
 

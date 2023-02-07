@@ -61,8 +61,15 @@ export async function postAclHandler(
     }
   }
 
-  // TODO Store the ACL together with the entity
   const authChain = (await ctx.request.json()) as AuthChain
+  if (!authChain || !Array.isArray(authChain)) {
+    return {
+      status: 400,
+      body: {
+        message: `Invalid payload received. Need to be a valid AuthChain.`
+      }
+    }
+  }
 
   const permission = await namePermissionChecker.checkPermission(authChain[0].payload, worldName)
   if (!permission) {
