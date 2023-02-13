@@ -18,6 +18,10 @@ COPY package.json /app/package.json
 COPY yarn.lock /app/yarn.lock
 RUN yarn install --frozen-lockfile
 
+# Make commit hash available to application
+ARG COMMIT_HASH
+RUN echo "COMMIT_HASH=$COMMIT_HASH" >> .env
+
 # build the app
 COPY . /app
 RUN yarn test
@@ -25,9 +29,6 @@ RUN yarn build
 
 # remove devDependencies, keep only used dependencies
 RUN yarn install --prod --frozen-lockfile
-
-ARG COMMIT_HASH
-RUN echo "COMMIT_HASH=$COMMIT_HASH" >> .env
 
 ########################## END OF BUILD STAGE ##########################
 
