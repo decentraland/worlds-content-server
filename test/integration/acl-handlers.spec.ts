@@ -88,7 +88,7 @@ test('acl handler GET /acl/:world_name', function ({ components, stubComponents 
 })
 
 test('acl handler POST /acl/:world_name', function ({ components, stubComponents }) {
-  it('works all is correct', async () => {
+  it('works when all is correct', async () => {
     const { localFetch, storage } = components
     const { namePermissionChecker } = stubComponents
 
@@ -105,8 +105,8 @@ test('acl handler POST /acl/:world_name', function ({ components, stubComponents
 
     const payload = `{"resource":"my-world.dcl.eth","allowed":["${delegatedIdentity.realAccount.address}"]}`
 
-    const acl = Authenticator.signPayload(identity.authChain, payload)
-
+    const signature = Authenticator.createSignature(identity.realAccount, payload)
+    const acl = Authenticator.createSimpleAuthChain(payload, identity.realAccount.address, signature)
     const r = await localFetch.fetch('/acl/my-world.dcl.eth', {
       body: JSON.stringify(acl),
       method: 'POST'
@@ -122,10 +122,7 @@ test('acl handler POST /acl/:world_name', function ({ components, stubComponents
     const stored = JSON.parse((await streamToBuffer(await content.asStream())).toString())
     expect(stored).toMatchObject({
       entityId: 'bafkreiax5plaxze77tnjbnozga7dsbefdh53horza4adf2xjzxo3k5i4xq',
-      acl: {
-        resource: 'my-world.dcl.eth',
-        allowed: [delegatedIdentity.realAccount.address]
-      }
+      acl
     })
   })
 })
@@ -157,7 +154,8 @@ test('acl handler POST /acl/:world_name', function ({ components, stubComponents
 
     expect(r.status).toEqual(400)
     expect(await r.json()).toEqual({
-      message: `Provided acl is for world "another-world.dcl.eth"  but you are trying to set acl for world my-world.dcl.eth.`
+      message:
+        'Provided acl is for world "another-world.dcl.eth" but you are trying to set acl for world my-world.dcl.eth.'
     })
   })
 })

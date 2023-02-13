@@ -86,7 +86,7 @@ export async function postAclHandler(
     return {
       status: 400,
       body: {
-        message: `Provided acl is for world "${acl.resource}"  but you are trying to set acl for world ${worldName}.`
+        message: `Provided acl is for world "${acl.resource}" but you are trying to set acl for world ${worldName}.`
       }
     }
   }
@@ -104,7 +104,7 @@ export async function postAclHandler(
     }
   }
 
-  await worldsManager.storeAcl(acl)
+  await worldsManager.storeAcl(worldName, authChain)
 
   return {
     status: 200,

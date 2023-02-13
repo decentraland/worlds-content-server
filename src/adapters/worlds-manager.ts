@@ -1,7 +1,7 @@
-import { AccessControlList, AppComponents, IWorldsManager, WorldMetadata } from '../types'
+import { AppComponents, IWorldsManager, WorldMetadata } from '../types'
 import LRU from 'lru-cache'
 import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage/dist/content-item'
-import { Entity } from '@dcl/schemas'
+import { AuthChain, Entity } from '@dcl/schemas'
 import { stringToUtf8Bytes } from 'eth-connect'
 
 export async function createWorldsManagerComponent({
@@ -82,12 +82,12 @@ export async function createWorldsManagerComponent({
     return entityId
   }
 
-  async function storeAcl(acl: AccessControlList): Promise<void> {
-    const content = await worldsCache.fetch(acl.resource)
+  async function storeAcl(worldName: string, acl: AuthChain): Promise<void> {
+    const content = await worldsCache.fetch(worldName)
     const { entityId } = content!
 
     await storage.storeStream(
-      `name-${acl.resource}`,
+      `name-${worldName}`,
       bufferToStream(
         stringToUtf8Bytes(
           JSON.stringify({
@@ -97,7 +97,7 @@ export async function createWorldsManagerComponent({
         )
       )
     )
-    worldsCache.delete(`name-${acl.resource}`)
+    worldsCache.delete(worldName)
   }
 
   return {
