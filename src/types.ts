@@ -96,7 +96,6 @@ export type IWorldsManager = {
   getMetadataForWorld(worldName: string): Promise<WorldMetadata | undefined>
   getEntityIdForWorld(worldName: string): Promise<string | undefined>
   getEntityForWorld(worldName: string): Promise<Entity | undefined>
-  allowedByAcl(worldName: string, address: EthAddress): Promise<boolean>
   storeAcl(worldName: string, acl: AuthChain): Promise<void>
 }
 

@@ -1,14 +1,13 @@
-import { AccessControlList, AppComponents, IWorldsManager, WorldMetadata } from '../types'
+import { AppComponents, IWorldsManager, WorldMetadata } from '../types'
 import LRU from 'lru-cache'
 import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage/dist/content-item'
-import { AuthChain, Entity, EthAddress } from '@dcl/schemas'
+import { AuthChain, Entity } from '@dcl/schemas'
 import { stringToUtf8Bytes } from 'eth-connect'
 
 export async function createWorldsManagerComponent({
   logs,
-  namePermissionChecker,
   storage
-}: Pick<AppComponents, 'logs' | 'storage' | 'namePermissionChecker'>): Promise<IWorldsManager> {
+}: Pick<AppComponents, 'logs' | 'storage'>): Promise<IWorldsManager> {
   const logger = logs.getLogger('worlds-manager')
   const WORLDS_KEY = 'worlds'
   const cache = new LRU<string, string[]>({
@@ -83,25 +82,6 @@ export async function createWorldsManagerComponent({
     return entityId
   }
 
-  async function allowedByAcl(worldName: string, address: EthAddress): Promise<boolean> {
-    const worldMetadata = await getMetadataForWorld(worldName)
-    if (!worldMetadata || !worldMetadata.acl) {
-      // No acl -> no permission
-      return false
-    }
-
-    const acl = JSON.parse(worldMetadata.acl.slice(-1).pop()!.payload) as AccessControlList
-    const isAllowed = acl.allowed.some((allowedAddress) => allowedAddress.toLowerCase() === address.toLowerCase())
-    if (!isAllowed) {
-      // There is acl but requested address is not included in the allowed ones
-      return false
-    }
-
-    // The acl allows permissions, finally check that the signer of the acl still owns the world
-    const aclSigner = worldMetadata.acl[0].payload
-    return namePermissionChecker.checkPermission(aclSigner, worldName)
-  }
-
   async function storeAcl(worldName: string, acl: AuthChain): Promise<void> {
     const content = await worldsCache.fetch(worldName)
     const { entityId } = content!
@@ -126,7 +106,6 @@ export async function createWorldsManagerComponent({
     getMetadataForWorld,
     getEntityIdForWorld,
     getEntityForWorld,
-    allowedByAcl,
     storeAcl
   }
 }

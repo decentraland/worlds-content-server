@@ -43,7 +43,7 @@ async function initComponents(): Promise<TestComponents> {
 
   const commsAdapter = createMockCommsAdapterComponent()
 
-  const worldsManager = await createWorldsManagerComponent({ logs, namePermissionChecker, storage })
+  const worldsManager = await createWorldsManagerComponent({ logs, storage })
 
   const validator = createValidator({
     config,

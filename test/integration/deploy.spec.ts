@@ -42,7 +42,7 @@ test('deployment works', function ({ components, stubComponents }) {
 
     namePermissionChecker.checkPermission
       .withArgs(identity.authChain.authChain[0].payload, 'my-super-name.dcl.eth')
-      .resolves(false)
+      .resolves(true)
 
     const authChain = Authenticator.signPayload(identity.authChain, entityId)
 
@@ -63,7 +63,7 @@ test('deployment works', function ({ components, stubComponents }) {
 })
 
 test('deployment works when not owner but has permission', function ({ components, stubComponents }) {
-  it.only('creates an entity and deploys it', async () => {
+  it('creates an entity and deploys it', async () => {
     const { config, storage } = components
     const { namePermissionChecker, metrics } = stubComponents
 

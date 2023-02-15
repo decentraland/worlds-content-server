@@ -62,7 +62,6 @@ describe('validator', function () {
     worldNamePermissionChecker = createMockNamePermissionChecker(['whatever.dcl.eth'])
     worldsManager = await createWorldsManagerComponent({
       logs: await createLogComponent({ config }),
-      namePermissionChecker: worldNamePermissionChecker,
       storage
     })
 
