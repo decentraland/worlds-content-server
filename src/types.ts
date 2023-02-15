@@ -45,7 +45,7 @@ export type ValidationResult = {
 
 export type ValidatorComponents = Pick<
   AppComponents,
-  'config' | 'namePermissionChecker' | 'ethereumProvider' | 'limitsManager' | 'storage'
+  'config' | 'namePermissionChecker' | 'ethereumProvider' | 'limitsManager' | 'storage' | 'worldsManager'
 >
 
 export type Validation = (
@@ -96,6 +96,7 @@ export type IWorldsManager = {
   getMetadataForWorld(worldName: string): Promise<WorldMetadata | undefined>
   getEntityIdForWorld(worldName: string): Promise<string | undefined>
   getEntityForWorld(worldName: string): Promise<Entity | undefined>
+  allowedByAcl(worldName: string, address: EthAddress): Promise<boolean>
   storeAcl(worldName: string, acl: AuthChain): Promise<void>
 }
 

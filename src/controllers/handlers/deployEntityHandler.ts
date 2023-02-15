@@ -77,7 +77,6 @@ export async function deployEntity(
     >
 ): Promise<IHttpServerComponent.IResponse> {
   const logger = ctx.components.logs.getLogger('deploy')
-  const sns = new SNS()
 
   const Error400 = (message: string) => {
     logger.warn(message)
@@ -149,6 +148,7 @@ export async function deployEntity(
         },
         contentServerUrls: [baseUrl]
       }
+      const sns = new SNS()
       const receipt = await sns
         .publish({
           TopicArn: ctx.components.sns.arn,

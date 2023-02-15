@@ -97,8 +97,8 @@ export const validateSignature: Validation = async (
   return createValidationResult(result.message ? [result.message] : [])
 }
 
-export const validateDclName: Validation = async (
-  components: Pick<ValidatorComponents, 'namePermissionChecker'>,
+export const validateDeploymentPermission: Validation = async (
+  components: Pick<ValidatorComponents, 'namePermissionChecker' | 'worldsManager'>,
   deployment: DeploymentToValidate
 ): Promise<ValidationResult> => {
   const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())
@@ -107,9 +107,12 @@ export const validateDclName: Validation = async (
 
   const hasPermission = await components.namePermissionChecker.checkPermission(signer, worldSpecifiedName)
   if (!hasPermission) {
-    return createValidationResult([
-      `Deployment failed: Your wallet has no permission to publish this scene because it does not have permission to deploy under "${worldSpecifiedName}". Check scene.json to select a name you own.`
-    ])
+    const allowedByAcl = await components.worldsManager.allowedByAcl(worldSpecifiedName, signer)
+    if (!allowedByAcl) {
+      return createValidationResult([
+        `Deployment failed: Your wallet has no permission to publish this scene because it does not have permission to deploy under "${worldSpecifiedName}". Check scene.json to select a name that either you own or you were given permission to deploy.`
+      ])
+    }
   }
 
   return OK
@@ -242,7 +245,7 @@ const quickValidations: Validation[] = [
   // validateSdkVersion TODO re-enable (and test) once SDK7 is ready
 ]
 
-const slowValidations: Validation[] = [validateSize, validateDclName]
+const slowValidations: Validation[] = [validateSize, validateDeploymentPermission]
 
 const allValidations: Validation[] = [...quickValidations, ...slowValidations]
 

@@ -101,7 +101,7 @@ test('deployment with failed validation', function ({ components, stubComponents
 
     // Deploy entity
     await expect(() => contentClient.deployEntity({ files, entityId, authChain })).rejects.toThrow(
-      'Your wallet has no permission to publish this scene because it does not have permission to deploy under "just-do-it.dcl.eth". Check scene.json to select a name you own.'
+      'Your wallet has no permission to publish this scene because it does not have permission to deploy under "just-do-it.dcl.eth". Check scene.json to select a name that either you own or you were given permission to deploy.'
     )
 
     Sinon.assert.calledWith(
