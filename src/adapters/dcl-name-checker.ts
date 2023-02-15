@@ -20,13 +20,13 @@ export const createDclNameChecker = (
     fetchMethod: async (worldName: string): Promise<string | undefined> => {
       /*
       DCL owners are case-sensitive, so when searching by dcl name in TheGraph we
-      need to do a case-insensitive search because the worldName provided here
-      may not be in the exact same case of the name. There are several methods
-      suffixed _nocase, but not for equality, so this is a bit hackish, but it works.
+      need to do a case-insensitive search because the worldName provided as fetch key
+      may not be in the exact same case of the registered name. There are several methods
+      suffixed _nocase, but not one for equality, so this is a bit hackish, but it works.
        */
       const result = await components.marketplaceSubGraph.query<NamesResponse>(
         `
-        query FetchOwnerForWorld($worldName: String) {
+        query FetchOwnerForDclName($worldName: String) {
           nfts(
             where: {name_starts_with_nocase: $worldName, name_ends_with_nocase: $worldName, category: ens}
             orderBy: name
