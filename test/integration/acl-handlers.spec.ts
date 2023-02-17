@@ -4,13 +4,16 @@ import { Authenticator } from '@dcl/crypto'
 import { streamToBuffer } from '@dcl/catalyst-storage/dist/content-item'
 
 test('acl handler GET /acl/:world_name', function ({ components }) {
-  it('returns an error when world does not exists', async () => {
+  it('returns an error when world does not exist', async () => {
     const { localFetch } = components
 
     const r = await localFetch.fetch('/acl/my-world.dcl.eth')
 
-    expect(r.status).toBe(404)
-    expect(await r.text()).toEqual('World "my-world.dcl.eth" not deployed in this server.')
+    expect(r.status).toBe(200)
+    expect(await r.json()).toMatchObject({
+      resource: 'my-world.dcl.eth',
+      allowed: []
+    })
   })
 })
 

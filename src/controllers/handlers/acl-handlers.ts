@@ -10,14 +10,7 @@ export async function getAclHandler(
   const worldName = ctx.params.world_name
 
   const worldMetadata = await worldsManager.getMetadataForWorld(worldName)
-  if (!worldMetadata) {
-    return {
-      status: 404,
-      body: `World "${worldName}" not deployed in this server.`
-    }
-  }
-
-  if (!worldMetadata.acl) {
+  if (!worldMetadata || !worldMetadata.acl) {
     return {
       status: 200,
       body: {
