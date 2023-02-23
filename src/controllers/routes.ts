@@ -32,7 +32,7 @@ export async function setupRouter(_globalContext: GlobalContext): Promise<Router
 
   router.get('/status', statusHandler)
 
-  router.use('/get-comms-adapter/:roomId', wellKnownComponents({}))
+  // router.use('/get-comms-adapter/:roomId', wellKnownComponents({}))
   router.post('/get-comms-adapter/:roomId', commsAdapterHandler)
   return router
 }
