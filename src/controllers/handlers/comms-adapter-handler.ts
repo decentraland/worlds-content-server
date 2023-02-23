@@ -15,7 +15,7 @@ export async function commsAdapterHandler(
   const path1 = new URL(baseUrl + context.url.pathname)
 
   try {
-    await verify(context.request.method, path1.pathname, context.request.headers.raw(), {})
+    context.verification = await verify(context.request.method, path1.pathname, context.request.headers.raw(), {})
   } catch (e) {
     return {
       status: 401,
