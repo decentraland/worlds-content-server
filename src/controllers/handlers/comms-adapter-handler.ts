@@ -20,6 +20,7 @@ export async function commsAdapterHandler(
     return {
       status: 401,
       body: {
+        ok: false,
         message: 'Access denied, invalid request'
       }
     }

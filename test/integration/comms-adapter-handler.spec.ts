@@ -171,7 +171,7 @@ test('comms adapter handler /get-comms-adapter/:roomId', function ({ components 
 
     expect(r.status).toEqual(401)
     expect(await r.json()).toEqual({
-      message: 'Invalid Auth Chain',
+      message: 'Access denied, invalid request',
       ok: false
     })
   })
