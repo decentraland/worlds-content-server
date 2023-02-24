@@ -12,10 +12,10 @@ export async function commsAdapterHandler(
   } = context
 
   const baseUrl = ((await config.getString('HTTP_BASE_URL')) || `https://${context.url.host}`).toString()
-  const path1 = new URL(baseUrl + context.url.pathname)
+  const path = new URL(baseUrl + context.url.pathname)
 
   try {
-    context.verification = await verify(context.request.method, path1.pathname, context.request.headers.raw(), {})
+    context.verification = await verify(context.request.method, path.pathname, context.request.headers.raw(), {})
   } catch (e) {
     return {
       status: 401,
