@@ -21,7 +21,7 @@ export async function commsAdapterHandler(
       status: 401,
       body: {
         ok: false,
-        message: 'Access denied, invalid request'
+        message: 'Access denied, invalid signed-fetch request'
       }
     }
   }

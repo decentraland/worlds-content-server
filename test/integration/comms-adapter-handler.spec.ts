@@ -171,7 +171,7 @@ test('comms adapter handler /get-comms-adapter/:roomId', function ({ components 
 
     expect(r.status).toEqual(401)
     expect(await r.json()).toEqual({
-      message: 'Access denied, invalid request',
+      message: 'Access denied, invalid signed-fetch request',
       ok: false
     })
   })
