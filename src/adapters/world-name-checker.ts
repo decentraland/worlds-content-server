@@ -8,7 +8,7 @@ type NamesResponse = {
   nfts: { name: string; owner: { id: string } }[]
 }
 
-export const createDclNameChecker = (
+export const createTheGraphDclNameChecker = (
   components: Pick<AppComponents, 'logs' | 'marketplaceSubGraph'>
 ): IWorldNamePermissionChecker => {
   const logger = components.logs.getLogger('check-permissions')
@@ -95,5 +95,42 @@ export const createOnChainDclNameChecker = async (
 
   return {
     checkPermission
+  }
+}
+
+export const createEndpointNameChecker = async (
+  components: Pick<AppComponents, 'config' | 'logs' | 'fetch'>
+): Promise<IWorldNamePermissionChecker> => {
+  const logger = components.logs.getLogger('check-permissions')
+  logger.info('Using Endpoint NameChecker')
+
+  const nameCheckUrl = await components.config.requireString('ENDPOINT_NAME_CHECKER_BASE_URL')
+
+  return {
+    checkPermission: async (ethAddress: EthAddress, worldName: string): Promise<boolean> => {
+      if (worldName.length === 0 || ethAddress.length === 0) {
+        return false
+      }
+      return (
+        (await components.fetch
+          .fetch(nameCheckUrl, {
+            method: 'POST'
+          })
+          .then((response) => response.json())) === true
+      )
+    }
+  }
+}
+
+export const createNoOpNameChecker = async (
+  components: Pick<AppComponents, 'logs'>
+): Promise<IWorldNamePermissionChecker> => {
+  const logger = components.logs.getLogger('check-permissions')
+  logger.info('Using NoOp NameChecker')
+
+  return {
+    checkPermission: async (ethAddress: EthAddress, worldName: string): Promise<boolean> => {
+      return !(worldName.length === 0 || ethAddress.length === 0)
+    }
   }
 }
