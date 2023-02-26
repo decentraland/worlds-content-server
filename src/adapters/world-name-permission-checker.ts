@@ -130,13 +130,11 @@ export const createEndpointNameChecker = async (
       if (worldName.length === 0 || ethAddress.length === 0) {
         return false
       }
-      return (
-        (await components.fetch
-          .fetch(nameCheckUrl, {
-            method: 'POST'
-          })
-          .then((response) => response.json())) === true
-      )
+      return await components.fetch
+        .fetch(nameCheckUrl, {
+          method: 'POST'
+        })
+        .then((response) => response.json())
     }
   }
 }
