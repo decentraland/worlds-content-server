@@ -190,9 +190,7 @@ describe('name checker: noop', function () {
       LOG_LEVEL: 'DEBUG'
     })
     logs = await createLogComponent({ config })
-    permissionChecker = await createNoOpNameChecker({
-      logs
-    })
+    permissionChecker = await createNoOpNameChecker()
   })
 
   it('when permission asked for invalid name returns false', async () => {

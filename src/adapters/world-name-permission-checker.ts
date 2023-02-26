@@ -11,16 +11,21 @@ type NamesResponse = {
 export async function createWorldNamePermissionChecker(
   components: Pick<AppComponents, 'config' | 'ethereumProvider' | 'fetch' | 'logs' | 'marketplaceSubGraph'>
 ): Promise<IWorldNamePermissionChecker> {
+  const logger = components.logs.getLogger('check-permissions')
   const nameValidatorStrategy = await components.config.requireString('NAME_VALIDATOR')
   switch (nameValidatorStrategy) {
     case 'DCL_NAME_CHECKER':
+      logger.info('Using TheGraph DclNameChecker')
       return createTheGraphDclNameChecker(components)
     case 'ON_CHAIN_DCL_NAME_CHECKER':
+      logger.info('Using OnChain DclNameChecker')
       return await createOnChainDclNameChecker(components)
     case 'ENDPOINT_NAME_CHECKER':
+      logger.info('Using Endpoint NameChecker')
       return await createEndpointNameChecker(components)
     case 'NOOP_NAME_CHECKER':
-      return await createNoOpNameChecker(components)
+      logger.info('Using NoOp NameChecker')
+      return await createNoOpNameChecker()
 
     // Add more name validator strategies as needed here
   }
@@ -31,7 +36,6 @@ export const createTheGraphDclNameChecker = (
   components: Pick<AppComponents, 'logs' | 'marketplaceSubGraph'>
 ): IWorldNamePermissionChecker => {
   const logger = components.logs.getLogger('check-permissions')
-  logger.info('Using TheGraph DclNameChecker')
 
   const cache = new LRU<string, string | undefined>({
     max: 100,
@@ -89,7 +93,6 @@ export const createOnChainDclNameChecker = async (
   components: Pick<AppComponents, 'config' | 'logs' | 'ethereumProvider'>
 ): Promise<IWorldNamePermissionChecker> => {
   const logger = components.logs.getLogger('check-permissions')
-  logger.info('Using OnChain DclNameChecker')
   const networkId = await components.config.requireString('NETWORK_ID')
   const networkName = networkId === '1' ? 'mainnet' : 'goerli'
   const factory = new ContractFactory(new RequestManager(components.ethereumProvider), checkerAbi)
@@ -120,9 +123,6 @@ export const createOnChainDclNameChecker = async (
 export const createEndpointNameChecker = async (
   components: Pick<AppComponents, 'config' | 'logs' | 'fetch'>
 ): Promise<IWorldNamePermissionChecker> => {
-  const logger = components.logs.getLogger('check-permissions')
-  logger.info('Using Endpoint NameChecker')
-
   const nameCheckUrl = await components.config.requireString('ENDPOINT_NAME_CHECKER_BASE_URL')
 
   return {
@@ -141,12 +141,7 @@ export const createEndpointNameChecker = async (
   }
 }
 
-export const createNoOpNameChecker = async (
-  components: Pick<AppComponents, 'logs'>
-): Promise<IWorldNamePermissionChecker> => {
-  const logger = components.logs.getLogger('check-permissions')
-  logger.info('Using NoOp NameChecker')
-
+export const createNoOpNameChecker = async (): Promise<IWorldNamePermissionChecker> => {
   return {
     checkPermission: async (ethAddress: EthAddress, worldName: string): Promise<boolean> => {
       return !(worldName.length === 0 || ethAddress.length === 0)
