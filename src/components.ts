@@ -3,10 +3,12 @@ import { createServerComponent, createStatusCheckComponent } from '@well-known-c
 import { createLogComponent } from '@well-known-components/logger'
 import { createFetchComponent } from './adapters/fetch'
 import { createMetricsComponent } from '@well-known-components/metrics'
-import { createSubgraphComponent } from '@well-known-components/thegraph-component'
-import { AppComponents, GlobalContext, ICommsAdapter, IWorldNamePermissionChecker, SnsComponent } from './types'
+import {
+  createSubgraphComponent,
+  metricDeclarations as theGraphMetricDeclarations
+} from '@well-known-components/thegraph-component'
+import { AppComponents, GlobalContext, ICommsAdapter, SnsComponent } from './types'
 import { metricDeclarations } from './metrics'
-import { metricDeclarations as theGraphMetricDeclarations } from '@well-known-components/thegraph-component'
 import { HTTPProvider } from 'eth-connect'
 import {
   createAwsS3BasedFileSystemContentStorage,
@@ -15,34 +17,10 @@ import {
 } from '@dcl/catalyst-storage'
 import { createStatusComponent } from './adapters/status'
 import { createValidator } from './adapters/validator'
-import {
-  createTheGraphDclNameChecker,
-  createOnChainDclNameChecker,
-  createNoOpNameChecker,
-  createEndpointNameChecker
-} from './adapters/world-name-checker'
+import { createWorldNamePermissionChecker } from './adapters/world-name-permission-checker'
 import { createLimitsManagerComponent } from './adapters/limits-manager'
 import { createWorldsManagerComponent } from './adapters/worlds-manager'
 import { createCommsAdapterComponent } from './adapters/comms-adapter'
-
-async function determineNameValidator(
-  components: Pick<AppComponents, 'config' | 'ethereumProvider' | 'fetch' | 'logs' | 'marketplaceSubGraph'>
-) {
-  const nameValidatorStrategy = await components.config.requireString('NAME_VALIDATOR')
-  switch (nameValidatorStrategy) {
-    case 'DCL_NAME_CHECKER':
-      return createTheGraphDclNameChecker(components)
-    case 'ON_CHAIN_DCL_NAME_CHECKER':
-      return await createOnChainDclNameChecker(components)
-    case 'ENDPOINT_NAME_CHECKER':
-      return await createEndpointNameChecker(components)
-    case 'NOOP_NAME_CHECKER':
-      return await createNoOpNameChecker(components)
-
-    // Add more name validator strategies as needed here
-  }
-  throw Error(`Invalid nameValidatorStrategy selected: ${nameValidatorStrategy}`)
-}
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
@@ -88,7 +66,7 @@ export async function initComponents(): Promise<AppComponents> {
     arn: snsArn
   }
 
-  const namePermissionChecker: IWorldNamePermissionChecker = await determineNameValidator({
+  const namePermissionChecker = await createWorldNamePermissionChecker({
     config,
     ethereumProvider,
     fetch,

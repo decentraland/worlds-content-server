@@ -8,6 +8,25 @@ type NamesResponse = {
   nfts: { name: string; owner: { id: string } }[]
 }
 
+export async function createWorldNamePermissionChecker(
+  components: Pick<AppComponents, 'config' | 'ethereumProvider' | 'fetch' | 'logs' | 'marketplaceSubGraph'>
+): Promise<IWorldNamePermissionChecker> {
+  const nameValidatorStrategy = await components.config.requireString('NAME_VALIDATOR')
+  switch (nameValidatorStrategy) {
+    case 'DCL_NAME_CHECKER':
+      return createTheGraphDclNameChecker(components)
+    case 'ON_CHAIN_DCL_NAME_CHECKER':
+      return await createOnChainDclNameChecker(components)
+    case 'ENDPOINT_NAME_CHECKER':
+      return await createEndpointNameChecker(components)
+    case 'NOOP_NAME_CHECKER':
+      return await createNoOpNameChecker(components)
+
+    // Add more name validator strategies as needed here
+  }
+  throw Error(`Invalid nameValidatorStrategy selected: ${nameValidatorStrategy}`)
+}
+
 export const createTheGraphDclNameChecker = (
   components: Pick<AppComponents, 'logs' | 'marketplaceSubGraph'>
 ): IWorldNamePermissionChecker => {

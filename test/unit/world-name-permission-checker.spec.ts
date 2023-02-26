@@ -5,7 +5,7 @@ import {
   createNoOpNameChecker,
   createOnChainDclNameChecker,
   createTheGraphDclNameChecker
-} from '../../src/adapters/world-name-checker'
+} from '../../src/adapters/world-name-permission-checker'
 import { createLogComponent } from '@well-known-components/logger'
 import { IConfigComponent, ILoggerComponent } from '@well-known-components/interfaces'
 import { getIdentity } from '../utils'
@@ -26,7 +26,7 @@ describe('dcl name checker: TheGraph', function () {
   })
 
   it('when permission asked for invalid name returns false', async () => {
-    const dclNameChecker = createTheGraphDclNameChecker({
+    const permissionChecker = createTheGraphDclNameChecker({
       logs,
       marketplaceSubGraph: {
         query: async (_query: string, _variables?: Variables, _remainingAttempts?: number): Promise<any> => ({
@@ -35,11 +35,11 @@ describe('dcl name checker: TheGraph', function () {
       }
     })
 
-    await expect(dclNameChecker.checkPermission('0xb', '')).resolves.toBeFalsy()
+    await expect(permissionChecker.checkPermission('0xb', '')).resolves.toBeFalsy()
   })
 
   it('when no names returned from TheGraph returns false', async () => {
-    const dclNameChecker = createTheGraphDclNameChecker({
+    const permissionChecker = createTheGraphDclNameChecker({
       logs,
       marketplaceSubGraph: {
         query: async (_query: string, _variables?: Variables, _remainingAttempts?: number): Promise<any> => ({
@@ -48,11 +48,11 @@ describe('dcl name checker: TheGraph', function () {
       }
     })
 
-    await expect(dclNameChecker.checkPermission('0xb', 'my-super-name.dcl.eth')).resolves.toBeFalsy()
+    await expect(permissionChecker.checkPermission('0xb', 'my-super-name.dcl.eth')).resolves.toBeFalsy()
   })
 
   it('when requested name is returned from TheGraph returns true', async () => {
-    const dclNameChecker = createTheGraphDclNameChecker({
+    const permissionChecker = createTheGraphDclNameChecker({
       logs,
       marketplaceSubGraph: {
         query: async (_query: string, _variables?: Variables, _remainingAttempts?: number): Promise<any> => ({
@@ -68,7 +68,7 @@ describe('dcl name checker: TheGraph', function () {
       }
     })
 
-    await expect(dclNameChecker.checkPermission('0xb', 'my-super-name.dcl.eth')).resolves.toBeTruthy()
+    await expect(permissionChecker.checkPermission('0xb', 'my-super-name.dcl.eth')).resolves.toBeTruthy()
   })
 })
 
@@ -85,17 +85,17 @@ describe('dcl name checker: on-chain', function () {
   })
 
   it.each(['', 'name'])('when permission asked for invalid name returns false', async (name) => {
-    const dclNameChecker = await createOnChainDclNameChecker({
+    const permissionChecker = await createOnChainDclNameChecker({
       config,
       logs,
       ethereumProvider: createHttpProviderMock()
     })
 
-    await expect(dclNameChecker.checkPermission('0xb', name)).resolves.toBeFalsy()
+    await expect(permissionChecker.checkPermission('0xb', name)).resolves.toBeFalsy()
   })
 
   it('when on chain validation returns false', async () => {
-    const dclNameChecker = await createOnChainDclNameChecker({
+    const permissionChecker = await createOnChainDclNameChecker({
       config,
       logs,
       ethereumProvider: createHttpProviderMock({
@@ -107,11 +107,11 @@ describe('dcl name checker: on-chain', function () {
 
     const identity = await getIdentity()
     const address = identity.authChain.authChain[0].payload
-    await expect(dclNameChecker.checkPermission(address, 'my-super-name.dcl.eth')).resolves.toBeFalsy()
+    await expect(permissionChecker.checkPermission(address, 'my-super-name.dcl.eth')).resolves.toBeFalsy()
   })
 
   it('when on chain validation returns true', async () => {
-    const dclNameChecker = await createOnChainDclNameChecker({
+    const permissionChecker = await createOnChainDclNameChecker({
       config,
       logs,
       ethereumProvider: createHttpProviderMock({
@@ -123,7 +123,7 @@ describe('dcl name checker: on-chain', function () {
 
     const identity = await getIdentity()
     const address = identity.authChain.authChain[0].payload
-    await expect(dclNameChecker.checkPermission(address, 'my-super-name.dcl.eth')).resolves.toBeTruthy()
+    await expect(permissionChecker.checkPermission(address, 'my-super-name.dcl.eth')).resolves.toBeTruthy()
   })
 })
 
@@ -183,29 +183,29 @@ describe('name checker: endpoint', function () {
 describe('name checker: noop', function () {
   let logs: ILoggerComponent
   let config: IConfigComponent
-  let noOpNameChecker: IWorldNamePermissionChecker
+  let permissionChecker: IWorldNamePermissionChecker
 
   beforeEach(async () => {
     config = createConfigComponent({
       LOG_LEVEL: 'DEBUG'
     })
     logs = await createLogComponent({ config })
-    noOpNameChecker = await createNoOpNameChecker({
+    permissionChecker = await createNoOpNameChecker({
       logs
     })
   })
 
   it('when permission asked for invalid name returns false', async () => {
-    await expect(noOpNameChecker.checkPermission('0xb', '')).resolves.toBeFalsy()
+    await expect(permissionChecker.checkPermission('0xb', '')).resolves.toBeFalsy()
   })
 
   it('when permission asked for invalid address returns false', async () => {
-    await expect(noOpNameChecker.checkPermission('', 'anything')).resolves.toBeFalsy()
+    await expect(permissionChecker.checkPermission('', 'anything')).resolves.toBeFalsy()
   })
 
   it('when valid name and address it returns true', async () => {
     const identity = await getIdentity()
     const address = identity.authChain.authChain[0].payload
-    await expect(noOpNameChecker.checkPermission(address, 'my-super-name.dcl.eth')).resolves.toBeTruthy()
+    await expect(permissionChecker.checkPermission(address, 'my-super-name.dcl.eth')).resolves.toBeTruthy()
   })
 })
