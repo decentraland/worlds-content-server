@@ -14,7 +14,7 @@ export async function createWorldNamePermissionChecker(
   const logger = components.logs.getLogger('check-permissions')
   const nameValidatorStrategy = await components.config.requireString('NAME_VALIDATOR')
   switch (nameValidatorStrategy) {
-    case 'DCL_NAME_CHECKER':
+    case 'THE_GRAPH_DCL_NAME_CHECKER':
       logger.info('Using TheGraph DclNameChecker')
       return createTheGraphDclNameChecker(components)
     case 'ON_CHAIN_DCL_NAME_CHECKER':
@@ -132,7 +132,11 @@ export const createEndpointNameChecker = async (
       }
       return await components.fetch
         .fetch(nameCheckUrl, {
-          method: 'POST'
+          method: 'POST',
+          body: JSON.stringify({
+            worldName: worldName,
+            ethAddress: ethAddress
+          })
         })
         .then((response) => response.json())
     }
