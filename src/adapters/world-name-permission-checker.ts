@@ -32,9 +32,9 @@ export async function createWorldNamePermissionChecker(
   throw Error(`Invalid nameValidatorStrategy selected: ${nameValidatorStrategy}`)
 }
 
-export const createTheGraphDclNameChecker = (
+export async function createTheGraphDclNameChecker(
   components: Pick<AppComponents, 'logs' | 'marketplaceSubGraph'>
-): IWorldNamePermissionChecker => {
+): Promise<IWorldNamePermissionChecker> {
   const logger = components.logs.getLogger('check-permissions')
 
   const cache = new LRU<string, string | undefined>({
@@ -89,9 +89,9 @@ export const createTheGraphDclNameChecker = (
   }
 }
 
-export const createOnChainDclNameChecker = async (
+export async function createOnChainDclNameChecker(
   components: Pick<AppComponents, 'config' | 'logs' | 'ethereumProvider'>
-): Promise<IWorldNamePermissionChecker> => {
+): Promise<IWorldNamePermissionChecker> {
   const logger = components.logs.getLogger('check-permissions')
   const networkId = await components.config.requireString('NETWORK_ID')
   const networkName = networkId === '1' ? 'mainnet' : 'goerli'
@@ -120,9 +120,9 @@ export const createOnChainDclNameChecker = async (
   }
 }
 
-export const createEndpointNameChecker = async (
+export async function createEndpointNameChecker(
   components: Pick<AppComponents, 'config' | 'logs' | 'fetch'>
-): Promise<IWorldNamePermissionChecker> => {
+): Promise<IWorldNamePermissionChecker> {
   const nameCheckUrl = await components.config.requireString('ENDPOINT_NAME_CHECKER_BASE_URL')
 
   return {
@@ -130,20 +130,21 @@ export const createEndpointNameChecker = async (
       if (worldName.length === 0 || ethAddress.length === 0) {
         return false
       }
-      return await components.fetch
-        .fetch(nameCheckUrl, {
-          method: 'POST',
-          body: JSON.stringify({
-            worldName: worldName,
-            ethAddress: ethAddress
-          })
+
+      const res = await components.fetch.fetch(nameCheckUrl, {
+        method: 'POST',
+        body: JSON.stringify({
+          worldName: worldName,
+          ethAddress: ethAddress
         })
-        .then((response) => response.json())
+      })
+
+      return res.json()
     }
   }
 }
 
-export const createNoOpNameChecker = async (): Promise<IWorldNamePermissionChecker> => {
+export async function createNoOpNameChecker(): Promise<IWorldNamePermissionChecker> {
   return {
     checkPermission: async (ethAddress: EthAddress, worldName: string): Promise<boolean> => {
       return !(worldName.length === 0 || ethAddress.length === 0)
