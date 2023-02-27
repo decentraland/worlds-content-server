@@ -181,15 +181,9 @@ describe('name checker: endpoint', function () {
 })
 
 describe('name checker: noop', function () {
-  let logs: ILoggerComponent
-  let config: IConfigComponent
   let permissionChecker: IWorldNamePermissionChecker
 
   beforeEach(async () => {
-    config = createConfigComponent({
-      LOG_LEVEL: 'DEBUG'
-    })
-    logs = await createLogComponent({ config })
     permissionChecker = await createNoOpNameChecker()
   })
 
