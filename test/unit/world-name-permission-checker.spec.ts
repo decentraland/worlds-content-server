@@ -26,7 +26,7 @@ describe('dcl name checker: TheGraph', function () {
   })
 
   it('when permission asked for invalid name returns false', async () => {
-    const permissionChecker = createTheGraphDclNameChecker({
+    const permissionChecker = await createTheGraphDclNameChecker({
       logs,
       marketplaceSubGraph: {
         query: async (_query: string, _variables?: Variables, _remainingAttempts?: number): Promise<any> => ({
@@ -39,7 +39,7 @@ describe('dcl name checker: TheGraph', function () {
   })
 
   it('when no names returned from TheGraph returns false', async () => {
-    const permissionChecker = createTheGraphDclNameChecker({
+    const permissionChecker = await createTheGraphDclNameChecker({
       logs,
       marketplaceSubGraph: {
         query: async (_query: string, _variables?: Variables, _remainingAttempts?: number): Promise<any> => ({
@@ -52,7 +52,7 @@ describe('dcl name checker: TheGraph', function () {
   })
 
   it('when requested name is returned from TheGraph returns true', async () => {
-    const permissionChecker = createTheGraphDclNameChecker({
+    const permissionChecker = await createTheGraphDclNameChecker({
       logs,
       marketplaceSubGraph: {
         query: async (_query: string, _variables?: Variables, _remainingAttempts?: number): Promise<any> => ({
