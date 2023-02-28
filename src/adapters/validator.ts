@@ -97,7 +97,7 @@ export const validateSignature: Validation = async (
   const result = await Authenticator.validateSignature(
     deployment.entity.id,
     deployment.authChain,
-    components.ethereumProvider,
+    undefined, // No need because it's not EIP1654 validator
     10
   )
 
@@ -266,8 +266,8 @@ const mandatoryValidations: Validation[] = [
   validateAuthChain,
   validateSigner,
   validateSignature,
-  validateDeploymentPermission, // Mirar este mejor
-  validateFiles
+  validateFiles,
+  validateDeploymentPermission
 ]
 
 const optionalValidations: Validation[] = [

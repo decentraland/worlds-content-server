@@ -64,7 +64,7 @@ test('acl handler GET /acl/:world_name', function ({ components }) {
 test('acl handler GET /acl/:world_name', function ({ components, stubComponents }) {
   it('returns acl from auth-chain when acl exists', async () => {
     const { localFetch, storage } = components
-    const { namePermissionChecker } = stubComponents
+    const { dclNameChecker } = stubComponents
 
     const delegatedIdentity = await getIdentity()
     const ownerIdentity = await getIdentity()
@@ -76,7 +76,7 @@ test('acl handler GET /acl/:world_name', function ({ components, stubComponents 
       acl: Authenticator.signPayload(ownerIdentity.authChain, payload)
     })
 
-    namePermissionChecker.checkPermission
+    dclNameChecker.checkOwnership
       .withArgs(ownerIdentity.authChain.authChain[0].payload, 'my-world.dcl.eth')
       .resolves(true)
 
@@ -93,7 +93,7 @@ test('acl handler GET /acl/:world_name', function ({ components, stubComponents 
 test('acl handler POST /acl/:world_name', function ({ components, stubComponents }) {
   it('works when all is correct', async () => {
     const { localFetch, storage } = components
-    const { namePermissionChecker } = stubComponents
+    const { dclNameChecker } = stubComponents
 
     const identity = await getIdentity()
     const delegatedIdentity = await getIdentity()
@@ -102,9 +102,7 @@ test('acl handler POST /acl/:world_name', function ({ components, stubComponents
       entityId: 'bafkreiax5plaxze77tnjbnozga7dsbefdh53horza4adf2xjzxo3k5i4xq'
     })
 
-    namePermissionChecker.checkPermission
-      .withArgs(identity.authChain.authChain[0].payload, 'my-world.dcl.eth')
-      .resolves(true)
+    dclNameChecker.checkOwnership.withArgs(identity.authChain.authChain[0].payload, 'my-world.dcl.eth').resolves(true)
 
     const payload = `{"resource":"my-world.dcl.eth","allowed":["${delegatedIdentity.realAccount.address}"]}`
 
@@ -133,7 +131,7 @@ test('acl handler POST /acl/:world_name', function ({ components, stubComponents
 test('acl handler POST /acl/:world_name', function ({ components, stubComponents }) {
   it('fails when resource is different than requested world', async () => {
     const { localFetch, storage } = components
-    const { namePermissionChecker } = stubComponents
+    const { dclNameChecker } = stubComponents
 
     const identity = await getIdentity()
     const delegatedIdentity = await getIdentity()
@@ -144,9 +142,7 @@ test('acl handler POST /acl/:world_name', function ({ components, stubComponents
       entityId: 'bafkreiax5plaxze77tnjbnozga7dsbefdh53horza4adf2xjzxo3k5i4xq'
     })
 
-    namePermissionChecker.checkPermission
-      .withArgs(identity.authChain.authChain[0].payload, 'my-world.dcl.eth')
-      .resolves(true)
+    dclNameChecker.checkOwnership.withArgs(identity.authChain.authChain[0].payload, 'my-world.dcl.eth').resolves(true)
 
     const acl = Authenticator.signPayload(identity.authChain, payload)
 
@@ -166,7 +162,7 @@ test('acl handler POST /acl/:world_name', function ({ components, stubComponents
 test('acl handler POST /acl/:world_name', function ({ components, stubComponents }) {
   it('fails when name owner is part of the ACL', async () => {
     const { localFetch, storage } = components
-    const { namePermissionChecker } = stubComponents
+    const { dclNameChecker } = stubComponents
 
     const identity = await getIdentity()
 
@@ -176,9 +172,7 @@ test('acl handler POST /acl/:world_name', function ({ components, stubComponents
       entityId: 'bafkreiax5plaxze77tnjbnozga7dsbefdh53horza4adf2xjzxo3k5i4xq'
     })
 
-    namePermissionChecker.checkPermission
-      .withArgs(identity.authChain.authChain[0].payload, 'my-world.dcl.eth')
-      .resolves(true)
+    dclNameChecker.checkOwnership.withArgs(identity.authChain.authChain[0].payload, 'my-world.dcl.eth').resolves(true)
 
     const acl = Authenticator.signPayload(identity.authChain, payload)
 
@@ -198,7 +192,7 @@ test('acl handler POST /acl/:world_name', function ({ components, stubComponents
 test('acl handler POST /acl/:world_name', function ({ components, stubComponents }) {
   it('fails when invalid acl (acl is not array)', async () => {
     const { localFetch, storage } = components
-    const { namePermissionChecker } = stubComponents
+    const { dclNameChecker } = stubComponents
 
     const identity = await getIdentity()
     const delegatedIdentity = await getIdentity()
@@ -209,9 +203,7 @@ test('acl handler POST /acl/:world_name', function ({ components, stubComponents
       entityId: 'bafkreiax5plaxze77tnjbnozga7dsbefdh53horza4adf2xjzxo3k5i4xq'
     })
 
-    namePermissionChecker.checkPermission
-      .withArgs(identity.authChain.authChain[0].payload, 'my-world.dcl.eth')
-      .resolves(true)
+    dclNameChecker.checkOwnership.withArgs(identity.authChain.authChain[0].payload, 'my-world.dcl.eth').resolves(true)
 
     const acl = Authenticator.signPayload(identity.authChain, payload)
 
@@ -230,7 +222,7 @@ test('acl handler POST /acl/:world_name', function ({ components, stubComponents
 test('acl handler POST /acl/:world_name', function ({ components, stubComponents }) {
   it('fails when invalid acl (non address)', async () => {
     const { localFetch, storage } = components
-    const { namePermissionChecker } = stubComponents
+    const { dclNameChecker } = stubComponents
 
     const identity = await getIdentity()
 
@@ -240,9 +232,7 @@ test('acl handler POST /acl/:world_name', function ({ components, stubComponents
       entityId: 'bafkreiax5plaxze77tnjbnozga7dsbefdh53horza4adf2xjzxo3k5i4xq'
     })
 
-    namePermissionChecker.checkPermission
-      .withArgs(identity.authChain.authChain[0].payload, 'my-world.dcl.eth')
-      .resolves(true)
+    dclNameChecker.checkOwnership.withArgs(identity.authChain.authChain[0].payload, 'my-world.dcl.eth').resolves(true)
 
     const acl = Authenticator.signPayload(identity.authChain, payload)
 
@@ -261,7 +251,7 @@ test('acl handler POST /acl/:world_name', function ({ components, stubComponents
 test('acl handler POST /acl/:world_name', function ({ components, stubComponents }) {
   it('fails when signer wallet does not own world name', async () => {
     const { localFetch, storage } = components
-    const { namePermissionChecker } = stubComponents
+    const { dclNameChecker } = stubComponents
 
     const identity = await getIdentity()
     const delegatedIdentity = await getIdentity()
@@ -272,9 +262,7 @@ test('acl handler POST /acl/:world_name', function ({ components, stubComponents
       entityId: 'bafkreiax5plaxze77tnjbnozga7dsbefdh53horza4adf2xjzxo3k5i4xq'
     })
 
-    namePermissionChecker.checkPermission
-      .withArgs(identity.authChain.authChain[0].payload, 'my-world.dcl.eth')
-      .resolves(false)
+    dclNameChecker.checkOwnership.withArgs(identity.authChain.authChain[0].payload, 'my-world.dcl.eth').resolves(false)
 
     const acl = Authenticator.signPayload(identity.authChain, payload)
 
@@ -293,7 +281,7 @@ test('acl handler POST /acl/:world_name', function ({ components, stubComponents
 test('acl handler POST /acl/:world_name', function ({ components, stubComponents }) {
   it('fails invalid payload sent', async () => {
     const { localFetch, storage } = components
-    const { namePermissionChecker } = stubComponents
+    const { dclNameChecker } = stubComponents
 
     const identity = await getIdentity()
 
@@ -301,9 +289,7 @@ test('acl handler POST /acl/:world_name', function ({ components, stubComponents
       entityId: 'bafkreiax5plaxze77tnjbnozga7dsbefdh53horza4adf2xjzxo3k5i4xq'
     })
 
-    namePermissionChecker.checkPermission
-      .withArgs(identity.authChain.authChain[0].payload, 'my-world.dcl.eth')
-      .resolves(false)
+    dclNameChecker.checkOwnership.withArgs(identity.authChain.authChain[0].payload, 'my-world.dcl.eth').resolves(false)
 
     const r = await localFetch.fetch('/acl/my-world.dcl.eth', {
       body: JSON.stringify({}),
@@ -320,14 +306,12 @@ test('acl handler POST /acl/:world_name', function ({ components, stubComponents
 test('acl handler POST /acl/:world_name', function ({ components, stubComponents }) {
   it('fails when the world name does not exist', async () => {
     const { localFetch, storage } = components
-    const { namePermissionChecker } = stubComponents
+    const { dclNameChecker } = stubComponents
 
     const identity = await getIdentity()
     const delegatedIdentity = await getIdentity()
 
-    namePermissionChecker.checkPermission
-      .withArgs(identity.authChain.authChain[0].payload, 'my-world.dcl.eth')
-      .resolves(true)
+    dclNameChecker.checkOwnership.withArgs(identity.authChain.authChain[0].payload, 'my-world.dcl.eth').resolves(true)
 
     const payload = `{"resource":"my-world.dcl.eth","allowed":["${delegatedIdentity.realAccount.address}"]}`
 

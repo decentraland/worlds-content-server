@@ -3,13 +3,9 @@ import { createServerComponent, createStatusCheckComponent } from '@well-known-c
 import { createLogComponent } from '@well-known-components/logger'
 import { createFetchComponent } from './adapters/fetch'
 import { createMetricsComponent } from '@well-known-components/metrics'
-import {
-  createSubgraphComponent,
-  metricDeclarations as theGraphMetricDeclarations
-} from '@well-known-components/thegraph-component'
+import { metricDeclarations as theGraphMetricDeclarations } from '@well-known-components/thegraph-component'
 import { AppComponents, GlobalContext, ICommsAdapter, SnsComponent } from './types'
 import { metricDeclarations } from './metrics'
-import { HTTPProvider } from 'eth-connect'
 import {
   createAwsS3BasedFileSystemContentStorage,
   createFolderBasedFileSystemContentStorage,
@@ -21,6 +17,7 @@ import { createWorldNamePermissionChecker } from './adapters/world-name-permissi
 import { createLimitsManagerComponent } from './adapters/limits-manager'
 import { createWorldsManagerComponent } from './adapters/worlds-manager'
 import { createCommsAdapterComponent } from './adapters/comms-adapter'
+import { createDclNameChecker } from './adapters/dcl-name-checker'
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
@@ -43,9 +40,6 @@ export async function initComponents(): Promise<AppComponents> {
 
   const commsAdapter: ICommsAdapter = await createCommsAdapterComponent({ config, fetch, logs })
 
-  const rpcUrl = await config.requireString('RPC_URL')
-  const ethereumProvider = new HTTPProvider(rpcUrl, fetch)
-
   const storageFolder = (await config.getString('STORAGE_FOLDER')) || 'contents'
 
   const bucket = await config.getString('BUCKET')
@@ -55,9 +49,6 @@ export async function initComponents(): Promise<AppComponents> {
     ? await createAwsS3BasedFileSystemContentStorage({ fs, config }, bucket)
     : await createFolderBasedFileSystemContentStorage({ fs }, storageFolder)
 
-  const subGraphUrl = await config.requireString('MARKETPLACE_SUBGRAPH_URL')
-  const marketplaceSubGraph = await createSubgraphComponent({ config, logs, metrics, fetch }, subGraphUrl)
-
   const snsArn = await config.getString('SNS_ARN')
 
   const status = await createStatusComponent({ logs, fetch, config })
@@ -66,12 +57,18 @@ export async function initComponents(): Promise<AppComponents> {
     arn: snsArn
   }
 
-  const namePermissionChecker = await createWorldNamePermissionChecker({
+  const dclNameChecker = await createDclNameChecker({
     config,
-    ethereumProvider,
     fetch,
     logs,
-    marketplaceSubGraph
+    metrics
+  })
+
+  const namePermissionChecker = await createWorldNamePermissionChecker({
+    config,
+    dclNameChecker,
+    fetch,
+    logs
   })
 
   const limitsManager = await createLimitsManagerComponent({ config, fetch, logs })
@@ -81,13 +78,13 @@ export async function initComponents(): Promise<AppComponents> {
   const validator = createValidator({
     config,
     namePermissionChecker,
-    ethereumProvider,
     limitsManager,
     storage,
     worldsManager
   })
 
   return {
+    dclNameChecker,
     commsAdapter,
     config,
     namePermissionChecker,
@@ -96,9 +93,7 @@ export async function initComponents(): Promise<AppComponents> {
     statusChecks,
     fetch,
     metrics,
-    ethereumProvider,
     storage,
-    marketplaceSubGraph,
     limitsManager,
     sns,
     status,

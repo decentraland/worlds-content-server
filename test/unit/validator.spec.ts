@@ -38,7 +38,6 @@ import { createLogComponent } from '@well-known-components/logger'
 describe('validator', function () {
   let config: IConfigComponent
   let storage: IContentStorageComponent
-  let ethereumProvider: HTTPProvider
   let fetch
   let limitsManager: ILimitsManager
   let worldNamePermissionChecker: IWorldNamePermissionChecker
@@ -57,7 +56,6 @@ describe('validator', function () {
       }
     }
 
-    ethereumProvider = new HTTPProvider('http://localhost', fetch)
     limitsManager = createMockLimitsManagerComponent()
     worldNamePermissionChecker = createMockNamePermissionChecker(['whatever.dcl.eth'])
     worldsManager = await createWorldsManagerComponent({
@@ -70,7 +68,6 @@ describe('validator', function () {
       config,
       storage,
       limitsManager,
-      ethereumProvider,
       namePermissionChecker: worldNamePermissionChecker,
       worldsManager
     }

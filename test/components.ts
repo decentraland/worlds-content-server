@@ -50,7 +50,6 @@ async function initComponents(): Promise<TestComponents> {
     storage,
     namePermissionChecker,
     limitsManager,
-    ethereumProvider: components.ethereumProvider,
     worldsManager
   })
   const status = createMockStatusComponent()
@@ -58,7 +57,6 @@ async function initComponents(): Promise<TestComponents> {
   return {
     ...components,
     localFetch: await createLocalFetchCompoment(config),
-    marketplaceSubGraph: createMockMarketplaceSubGraph(),
     namePermissionChecker: namePermissionChecker,
     commsAdapter,
     fetch,
