@@ -259,21 +259,24 @@ export const validateSdkVersion: Validation = async (
   return OK
 }
 
-const quickValidations: Validation[] = [
-  validateEntityId,
+const mandatoryValidations: Validation[] = [
   validateEntity,
+  validateEntityId,
+  validateDeploymentTtl,
   validateAuthChain,
   validateSigner,
   validateSignature,
-  validateDeploymentTtl,
-  validateSceneDimensions,
+  validateDeploymentPermission, // Mirar este mejor
   validateFiles
+]
+
+const optionalValidations: Validation[] = [
+  validateSceneDimensions,
+  validateSize
   // validateSdkVersion TODO re-enable (and test) once SDK7 is ready
 ]
 
-const slowValidations: Validation[] = [validateSize, validateDeploymentPermission]
-
-const allValidations: Validation[] = [...quickValidations, ...slowValidations]
+const allValidations: Validation[] = [...mandatoryValidations, ...optionalValidations]
 
 export const createValidator = (components: ValidatorComponents): Validator => ({
   async validate(deployment: DeploymentToValidate): Promise<ValidationResult> {
