@@ -55,6 +55,11 @@ export type Validation = (
 
 export type IWorldNamePermissionChecker = {
   checkPermission(ethAddress: EthAddress, worldName: string): Promise<boolean>
+  validate(deployment: DeploymentToValidate): Promise<boolean>
+}
+
+export type IWorldNameOwnershipChecker = {
+  checkOwnership(ethAddress: EthAddress, worldName: string): Promise<boolean>
 }
 
 export type ContentStatus = {

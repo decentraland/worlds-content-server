@@ -1,4 +1,4 @@
-import { AppComponents, IWorldNamePermissionChecker } from '../types'
+import { AppComponents, DeploymentToValidate, IWorldNameOwnershipChecker, IWorldNamePermissionChecker } from '../types'
 import { EthAddress } from '@dcl/schemas'
 import LRU from 'lru-cache'
 import { ContractFactory, RequestManager } from 'eth-connect'
@@ -34,7 +34,7 @@ export async function createWorldNamePermissionChecker(
 
 export async function createTheGraphDclNameChecker(
   components: Pick<AppComponents, 'logs' | 'marketplaceSubGraph'>
-): Promise<IWorldNamePermissionChecker> {
+): Promise<IWorldNamePermissionChecker & IWorldNameOwnershipChecker> {
   const logger = components.logs.getLogger('check-permissions')
 
   const cache = new LRU<string, string | undefined>({
@@ -75,7 +75,7 @@ export async function createTheGraphDclNameChecker(
     }
   })
 
-  const checkPermission = async (ethAddress: EthAddress, worldName: string): Promise<boolean> => {
+  async function checkOwnership(ethAddress: EthAddress, worldName: string): Promise<boolean> {
     if (worldName.length === 0) {
       return false
     }
@@ -85,20 +85,30 @@ export async function createTheGraphDclNameChecker(
   }
 
   return {
-    checkPermission
+    checkOwnership,
+    checkPermission: async function (ethAddress: EthAddress, worldName: string): Promise<boolean> {
+      if (await checkOwnership(ethAddress, worldName)) {
+        return true
+      }
+      // TODO check ACL
+      return false
+    },
+    validate(deployment: DeploymentToValidate): Promise<boolean> {
+      return Promise.resolve(false)
+    }
   }
 }
 
 export async function createOnChainDclNameChecker(
   components: Pick<AppComponents, 'config' | 'logs' | 'ethereumProvider'>
-): Promise<IWorldNamePermissionChecker> {
+): Promise<IWorldNamePermissionChecker & IWorldNameOwnershipChecker> {
   const logger = components.logs.getLogger('check-permissions')
   const networkId = await components.config.requireString('NETWORK_ID')
   const networkName = networkId === '1' ? 'mainnet' : 'goerli'
   const factory = new ContractFactory(new RequestManager(components.ethereumProvider), checkerAbi)
   const checker = (await factory.at(checkerContracts[networkName])) as any
 
-  const checkPermission = async (ethAddress: EthAddress, worldName: string): Promise<boolean> => {
+  async function checkOwnership(ethAddress: EthAddress, worldName: string): Promise<boolean> {
     if (worldName.length === 0 || !worldName.endsWith('.dcl.eth')) {
       return false
     }
@@ -116,7 +126,17 @@ export async function createOnChainDclNameChecker(
   }
 
   return {
-    checkPermission
+    checkOwnership,
+    checkPermission: async function (ethAddress: EthAddress, worldName: string): Promise<boolean> {
+      if (await checkOwnership(ethAddress, worldName)) {
+        return true
+      }
+      // TODO check ACL
+      return false
+    },
+    validate(deployment: DeploymentToValidate): Promise<boolean> {
+      return Promise.resolve(false)
+    }
   }
 }
 
@@ -140,14 +160,21 @@ export async function createEndpointNameChecker(
       })
 
       return res.json()
+    },
+    validate(deployment: DeploymentToValidate): Promise<boolean> {
+      return Promise.resolve(false)
     }
   }
 }
 
 export async function createNoOpNameChecker(): Promise<IWorldNamePermissionChecker> {
+  async function checkPermission(ethAddress: EthAddress, worldName: string): Promise<boolean> {
+    return !(worldName.length === 0 || ethAddress.length === 0)
+  }
   return {
-    checkPermission: async (ethAddress: EthAddress, worldName: string): Promise<boolean> => {
-      return !(worldName.length === 0 || ethAddress.length === 0)
+    checkPermission,
+    validate(deployment: DeploymentToValidate): Promise<boolean> {
+      return Promise.resolve(true)
     }
   }
 }

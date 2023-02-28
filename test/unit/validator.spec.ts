@@ -24,7 +24,7 @@ import {
 import { HTTPProvider, stringToUtf8Bytes } from 'eth-connect'
 import { EntityType } from '@dcl/schemas'
 import { createMockLimitsManagerComponent } from '../mocks/limits-manager-mock'
-import { createMockNamePermissionChecker } from '../mocks/dcl-name-checker-mock'
+import { createMockNamePermissionChecker } from '../mocks/world-name-permission-checker-mock'
 import { DeploymentBuilder } from 'dcl-catalyst-client'
 import { getIdentity } from '../utils'
 import { Authenticator, AuthIdentity } from '@dcl/crypto'

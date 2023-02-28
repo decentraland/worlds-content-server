@@ -1,5 +1,5 @@
 import { EthAddress } from '@dcl/schemas'
-import { IWorldNamePermissionChecker } from '../../src/types'
+import { DeploymentToValidate, IWorldNamePermissionChecker } from '../../src/types'
 
 export function createMockNamePermissionChecker(names?: string[]): IWorldNamePermissionChecker {
   const checkPermission = async (_ethAddress: EthAddress, worldName: string): Promise<boolean> => {
@@ -9,7 +9,11 @@ export function createMockNamePermissionChecker(names?: string[]): IWorldNamePer
 
     return names && names.map((name) => name.toLowerCase()).includes(worldName.toLowerCase())
   }
+
   return {
-    checkPermission
+    checkPermission,
+    validate(deployment: DeploymentToValidate): Promise<boolean> {
+      return Promise.resolve(false)
+    }
   }
 }
