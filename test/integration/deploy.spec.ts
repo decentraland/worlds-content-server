@@ -11,7 +11,7 @@ import { streamToBuffer } from '@dcl/catalyst-storage/dist/content-item'
 test('deployment works', function ({ components, stubComponents }) {
   it('creates an entity and deploys it', async () => {
     const { config, storage } = components
-    const { namePermissionChecker, metrics } = stubComponents
+    const { permissionChecker, metrics } = stubComponents
 
     const contentClient = new ContentClient({
       contentUrl: `http://${await config.requireString('HTTP_SERVER_HOST')}:${await config.requireNumber(
@@ -40,7 +40,7 @@ test('deployment works', function ({ components, stubComponents }) {
     // Sign entity id
     const identity = await getIdentity()
 
-    namePermissionChecker.checkPermission
+    permissionChecker.checkPermission
       .withArgs(identity.authChain.authChain[0].payload, 'my-super-name.dcl.eth')
       .resolves(true)
 
@@ -50,7 +50,7 @@ test('deployment works', function ({ components, stubComponents }) {
     await contentClient.deployEntity({ files, entityId, authChain })
 
     Sinon.assert.calledWith(
-      namePermissionChecker.checkPermission,
+      permissionChecker.checkPermission,
       identity.authChain.authChain[0].payload,
       'my-super-name.dcl.eth'
     )
@@ -65,7 +65,7 @@ test('deployment works', function ({ components, stubComponents }) {
 test('deployment works when not owner but has permission', function ({ components, stubComponents }) {
   it('creates an entity and deploys it', async () => {
     const { config, storage } = components
-    const { namePermissionChecker, metrics } = stubComponents
+    const { permissionChecker, metrics } = stubComponents
 
     const contentClient = new ContentClient({
       contentUrl: `http://${await config.requireString('HTTP_SERVER_HOST')}:${await config.requireNumber(
@@ -105,10 +105,10 @@ test('deployment works when not owner but has permission', function ({ component
       }
     })
 
-    namePermissionChecker.checkPermission
+    permissionChecker.checkPermission
       .withArgs(ownerIdentity.authChain.authChain[0].payload, 'my-super-name.dcl.eth')
       .resolves(true)
-    namePermissionChecker.checkPermission
+    permissionChecker.checkPermission
       .withArgs(delegatedIdentity.authChain.authChain[0].payload, 'my-super-name.dcl.eth')
       .resolves(false)
 
@@ -118,13 +118,13 @@ test('deployment works when not owner but has permission', function ({ component
     await contentClient.deployEntity({ files, entityId, authChain })
 
     Sinon.assert.calledWith(
-      namePermissionChecker.checkPermission,
+      permissionChecker.checkPermission,
       ownerIdentity.authChain.authChain[0].payload,
       'my-super-name.dcl.eth'
     )
 
     Sinon.assert.calledWith(
-      namePermissionChecker.checkPermission,
+      permissionChecker.checkPermission,
       delegatedIdentity.authChain.authChain[0].payload,
       'my-super-name.dcl.eth'
     )
@@ -143,7 +143,7 @@ test('deployment works when not owner but has permission', function ({ component
 test('deployment with failed validation', function ({ components, stubComponents }) {
   it('does not work because user does not own requested name', async () => {
     const { config, storage } = components
-    const { namePermissionChecker, metrics } = stubComponents
+    const { permissionChecker, metrics } = stubComponents
 
     const contentClient = new ContentClient({
       contentUrl: `http://${await config.requireString('HTTP_SERVER_HOST')}:${await config.requireNumber(
@@ -172,7 +172,7 @@ test('deployment with failed validation', function ({ components, stubComponents
     // Sign entity id
     const identity = await getIdentity()
 
-    namePermissionChecker.checkPermission
+    permissionChecker.checkPermission
       .withArgs(identity.authChain.authChain[0].payload, 'just-do-it.dcl.eth')
       .resolves(false)
 
@@ -184,7 +184,7 @@ test('deployment with failed validation', function ({ components, stubComponents
     )
 
     Sinon.assert.calledWith(
-      namePermissionChecker.checkPermission,
+      permissionChecker.checkPermission,
       identity.authChain.authChain[0].payload,
       'just-do-it.dcl.eth'
     )
@@ -199,7 +199,7 @@ test('deployment with failed validation', function ({ components, stubComponents
 test('deployment with failed validation', function ({ components, stubComponents }) {
   it('does not work because user did not specify any names', async () => {
     const { config, storage } = components
-    const { namePermissionChecker, metrics } = stubComponents
+    const { permissionChecker, metrics } = stubComponents
 
     const contentClient = new ContentClient({
       contentUrl: `http://${await config.requireString('HTTP_SERVER_HOST')}:${await config.requireNumber(
@@ -224,7 +224,7 @@ test('deployment with failed validation', function ({ components, stubComponents
     // Sign entity id
     const identity = await getIdentity()
 
-    namePermissionChecker.checkPermission
+    permissionChecker.checkPermission
       .withArgs(identity.authChain.authChain[0].payload, 'my-super-name.dcl.eth')
       .resolves(false)
 
@@ -235,7 +235,7 @@ test('deployment with failed validation', function ({ components, stubComponents
       'Deployment failed: scene.json needs to specify a worldConfiguration section with a valid name inside.'
     )
 
-    Sinon.assert.notCalled(namePermissionChecker.checkPermission)
+    Sinon.assert.notCalled(permissionChecker.checkPermission)
 
     expect(await storage.exist(fileHash)).toEqual(false)
     expect(await storage.exist(entityId)).toEqual(false)

@@ -68,7 +68,7 @@ describe('validator', function () {
       config,
       storage,
       limitsManager,
-      namePermissionChecker: worldNamePermissionChecker,
+      permissionChecker: worldNamePermissionChecker,
       worldsManager
     }
   })

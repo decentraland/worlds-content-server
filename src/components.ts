@@ -64,20 +64,21 @@ export async function initComponents(): Promise<AppComponents> {
     metrics
   })
 
-  const namePermissionChecker = await createWorldNamePermissionChecker({
-    config,
-    dclNameChecker,
-    fetch,
-    logs
-  })
-
   const limitsManager = await createLimitsManagerComponent({ config, fetch, logs })
 
   const worldsManager = await createWorldsManagerComponent({ logs, storage })
 
+  const namePermissionChecker = await createWorldNamePermissionChecker({
+    config,
+    dclNameChecker,
+    fetch,
+    logs,
+    worldsManager
+  })
+
   const validator = createValidator({
     config,
-    namePermissionChecker,
+    permissionChecker: namePermissionChecker,
     limitsManager,
     storage,
     worldsManager
@@ -87,7 +88,7 @@ export async function initComponents(): Promise<AppComponents> {
     dclNameChecker,
     commsAdapter,
     config,
-    namePermissionChecker,
+    permissionChecker: namePermissionChecker,
     logs,
     server,
     statusChecks,

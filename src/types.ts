@@ -45,7 +45,7 @@ export type ValidationResult = {
 
 export type ValidatorComponents = Pick<
   AppComponents,
-  'config' | 'namePermissionChecker' | 'limitsManager' | 'storage' | 'worldsManager'
+  'config' | 'permissionChecker' | 'limitsManager' | 'storage' | 'worldsManager'
 >
 
 export type Validation = (
@@ -109,7 +109,7 @@ export type BaseComponents = {
   dclNameChecker: IDclNameChecker
   commsAdapter: ICommsAdapter
   config: IConfigComponent
-  namePermissionChecker: IWorldNamePermissionChecker
+  permissionChecker: IWorldNamePermissionChecker
   logs: ILoggerComponent
   server: IHttpServerComponent<GlobalContext>
   fetch: IFetchComponent

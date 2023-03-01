@@ -48,7 +48,7 @@ async function initComponents(): Promise<TestComponents> {
   const validator = createValidator({
     config,
     storage,
-    namePermissionChecker,
+    permissionChecker: namePermissionChecker,
     limitsManager,
     worldsManager
   })
@@ -57,7 +57,7 @@ async function initComponents(): Promise<TestComponents> {
   return {
     ...components,
     localFetch: await createLocalFetchCompoment(config),
-    namePermissionChecker: namePermissionChecker,
+    permissionChecker: namePermissionChecker,
     commsAdapter,
     fetch,
     limitsManager,
