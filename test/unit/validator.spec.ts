@@ -8,7 +8,6 @@ import {
   validateEntityId,
   validateFiles,
   validateSceneDimensions,
-  validateSdkVersion,
   validateSignature,
   validateSigner,
   validateSize
@@ -21,7 +20,7 @@ import {
   ValidatorComponents,
   IWorldsManager
 } from '../../src/types'
-import { HTTPProvider, stringToUtf8Bytes } from 'eth-connect'
+import { stringToUtf8Bytes } from 'eth-connect'
 import { EntityType } from '@dcl/schemas'
 import { createMockLimitsManagerComponent } from '../mocks/limits-manager-mock'
 import { createMockNamePermissionChecker } from '../mocks/world-name-permission-checker-mock'
@@ -38,7 +37,6 @@ import { createLogComponent } from '@well-known-components/logger'
 describe('validator', function () {
   let config: IConfigComponent
   let storage: IContentStorageComponent
-  let fetch
   let limitsManager: ILimitsManager
   let worldNamePermissionChecker: IWorldNamePermissionChecker
   let worldsManager: IWorldsManager
@@ -50,12 +48,6 @@ describe('validator', function () {
       DEPLOYMENT_TTL: '10000'
     })
     storage = createInMemoryStorage()
-    fetch = {
-      fetch: (_url: string, _params: { body?: any; method?: string; mode?: string; headers?: any }): Promise<any> => {
-        return Promise.resolve({})
-      }
-    }
-
     limitsManager = createMockLimitsManagerComponent()
     worldNamePermissionChecker = createMockNamePermissionChecker(['whatever.dcl.eth'])
     worldsManager = await createWorldsManagerComponent({
@@ -268,27 +260,6 @@ describe('validator', function () {
     expect(result.ok()).toBeFalsy()
     expect(result.errors).toContain(
       'The deployment is too big. The maximum total size allowed is 10 MB for scenes. You can upload up to 10485760 bytes but you tried to upload 10485763.'
-    )
-  })
-
-  it('validateSdkVersion with errors', async () => {
-    const deployment = await createDeployment(identity.authChain, {
-      type: EntityType.SCENE,
-      pointers: ['0,0'],
-      timestamp: Date.now(),
-      metadata: {
-        runtimeVersion: '6',
-        worldConfiguration: {
-          name: 'whatever.dcl.eth'
-        }
-      },
-      files: []
-    })
-
-    const result = await validateSdkVersion(components, deployment)
-    expect(result.ok()).toBeFalsy()
-    expect(result.errors).toContain(
-      'Worlds are only supported on SDK 7. Please upgrade your scene to latest version of SDK.'
     )
   })
 })

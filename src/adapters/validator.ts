@@ -217,24 +217,6 @@ export const validateSize: Validation = async (
   return createValidationResult(errors)
 }
 
-export const validateSdkVersion: Validation = async (
-  components: Pick<ValidatorComponents, 'limitsManager' | 'storage'>,
-  deployment: DeploymentToValidate
-): Promise<ValidationResult> => {
-  const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())
-  const worldName = sceneJson.metadata.worldConfiguration.name
-  const allowSdk6 = await components.limitsManager.getAllowSdk6For(worldName || '')
-
-  const sdkVersion = deployment.entity.metadata.runtimeVersion
-  if (sdkVersion !== '7' && !allowSdk6) {
-    return createValidationResult([
-      `Worlds are only supported on SDK 7. Please upgrade your scene to latest version of SDK.`
-    ])
-  }
-
-  return OK
-}
-
 const mandatoryValidations: Validation[] = [
   validateEntity,
   validateEntityId,
@@ -246,11 +228,7 @@ const mandatoryValidations: Validation[] = [
   validateDeploymentPermission
 ]
 
-const optionalValidations: Validation[] = [
-  validateSceneDimensions,
-  validateSize
-  // validateSdkVersion TODO re-enable (and test) once SDK7 is ready
-]
+const optionalValidations: Validation[] = [validateSceneDimensions, validateSize]
 
 const allValidations: Validation[] = [...mandatoryValidations, ...optionalValidations]
 
