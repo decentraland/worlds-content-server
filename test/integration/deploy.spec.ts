@@ -5,8 +5,7 @@ import { Authenticator } from '@dcl/crypto'
 import Sinon from 'sinon'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { hashV1 } from '@dcl/hashing'
-import { getIdentity, storeJson } from '../utils'
-import { streamToBuffer } from '@dcl/catalyst-storage/dist/content-item'
+import { getIdentity } from '../utils'
 
 test('deployment works', function ({ components, stubComponents }) {
   it('creates an entity and deploys it', async () => {
@@ -40,101 +39,17 @@ test('deployment works', function ({ components, stubComponents }) {
     // Sign entity id
     const identity = await getIdentity()
 
-    permissionChecker.checkPermission
-      .withArgs(identity.authChain.authChain[0].payload, 'my-super-name.dcl.eth')
-      .resolves(true)
+    permissionChecker.validate.resolves(true)
 
     const authChain = Authenticator.signPayload(identity.authChain, entityId)
 
     // Deploy entity
     await contentClient.deployEntity({ files, entityId, authChain })
 
-    Sinon.assert.calledWith(
-      permissionChecker.checkPermission,
-      identity.authChain.authChain[0].payload,
-      'my-super-name.dcl.eth'
-    )
+    Sinon.assert.calledOnce(permissionChecker.validate)
 
     expect(await storage.exist(fileHash)).toEqual(true)
     expect(await storage.exist(entityId)).toEqual(true)
-
-    Sinon.assert.calledWithMatch(metrics.increment, 'world_deployments_counter')
-  })
-})
-
-test('deployment works when not owner but has permission', function ({ components, stubComponents }) {
-  it('creates an entity and deploys it', async () => {
-    const { config, storage } = components
-    const { permissionChecker, metrics } = stubComponents
-
-    const contentClient = new ContentClient({
-      contentUrl: `http://${await config.requireString('HTTP_SERVER_HOST')}:${await config.requireNumber(
-        'HTTP_SERVER_PORT'
-      )}`
-    })
-
-    const delegatedIdentity = await getIdentity()
-    const ownerIdentity = await getIdentity()
-
-    const payload = `{"resource":"my-world.dcl.eth","allowed":["${delegatedIdentity.realAccount.address}"]}`
-
-    await storeJson(storage, 'name-my-super-name.dcl.eth', {
-      entityId: 'bafkreiax5plaxze77tnjbnozga7dsbefdh53horza4adf2xjzxo3k5i4xq',
-      acl: Authenticator.signPayload(ownerIdentity.authChain, payload)
-    })
-
-    const entityFiles = new Map<string, Uint8Array>()
-    entityFiles.set('abc.txt', stringToUtf8Bytes('asd'))
-    const fileHash = await hashV1(entityFiles.get('abc.txt'))
-    await storeJson(storage, fileHash, {})
-
-    await storeJson(storage, 'name-my-super-name.dcl.eth', {
-      entityId: fileHash,
-      acl: Authenticator.signPayload(ownerIdentity.authChain, payload)
-    })
-
-    // Build the entity
-    const { files, entityId } = await contentClient.buildEntity({
-      type: EntityType.SCENE,
-      pointers: ['0,0'],
-      files: entityFiles,
-      metadata: {
-        worldConfiguration: {
-          name: 'my-super-name.dcl.eth'
-        }
-      }
-    })
-
-    permissionChecker.checkPermission
-      .withArgs(ownerIdentity.authChain.authChain[0].payload, 'my-super-name.dcl.eth')
-      .resolves(true)
-    permissionChecker.checkPermission
-      .withArgs(delegatedIdentity.authChain.authChain[0].payload, 'my-super-name.dcl.eth')
-      .resolves(false)
-
-    const authChain = Authenticator.signPayload(delegatedIdentity.authChain, entityId)
-
-    // Deploy entity
-    await contentClient.deployEntity({ files, entityId, authChain })
-
-    Sinon.assert.calledWith(
-      permissionChecker.checkPermission,
-      ownerIdentity.authChain.authChain[0].payload,
-      'my-super-name.dcl.eth'
-    )
-
-    Sinon.assert.calledWith(
-      permissionChecker.checkPermission,
-      delegatedIdentity.authChain.authChain[0].payload,
-      'my-super-name.dcl.eth'
-    )
-
-    expect(await storage.exist(fileHash)).toEqual(true)
-    expect(await storage.exist(entityId)).toEqual(true)
-    const content = await storage.retrieve('name-my-super-name.dcl.eth')
-    const stored = JSON.parse((await streamToBuffer(await content.asStream())).toString())
-
-    expect(stored).toMatchObject({ entityId, acl: Authenticator.signPayload(ownerIdentity.authChain, payload) })
 
     Sinon.assert.calledWithMatch(metrics.increment, 'world_deployments_counter')
   })
@@ -172,9 +87,7 @@ test('deployment with failed validation', function ({ components, stubComponents
     // Sign entity id
     const identity = await getIdentity()
 
-    permissionChecker.checkPermission
-      .withArgs(identity.authChain.authChain[0].payload, 'just-do-it.dcl.eth')
-      .resolves(false)
+    permissionChecker.validate.resolves(false)
 
     const authChain = Authenticator.signPayload(identity.authChain, entityId)
 
@@ -183,11 +96,7 @@ test('deployment with failed validation', function ({ components, stubComponents
       'Your wallet has no permission to publish this scene because it does not have permission to deploy under "just-do-it.dcl.eth". Check scene.json to select a name that either you own or you were given permission to deploy.'
     )
 
-    Sinon.assert.calledWith(
-      permissionChecker.checkPermission,
-      identity.authChain.authChain[0].payload,
-      'just-do-it.dcl.eth'
-    )
+    Sinon.assert.calledOnce(permissionChecker.validate)
 
     expect(await storage.exist(fileHash)).toEqual(false)
     expect(await storage.exist(entityId)).toEqual(false)
@@ -199,7 +108,7 @@ test('deployment with failed validation', function ({ components, stubComponents
 test('deployment with failed validation', function ({ components, stubComponents }) {
   it('does not work because user did not specify any names', async () => {
     const { config, storage } = components
-    const { permissionChecker, metrics } = stubComponents
+    const { metrics } = stubComponents
 
     const contentClient = new ContentClient({
       contentUrl: `http://${await config.requireString('HTTP_SERVER_HOST')}:${await config.requireNumber(
@@ -224,18 +133,12 @@ test('deployment with failed validation', function ({ components, stubComponents
     // Sign entity id
     const identity = await getIdentity()
 
-    permissionChecker.checkPermission
-      .withArgs(identity.authChain.authChain[0].payload, 'my-super-name.dcl.eth')
-      .resolves(false)
-
     const authChain = Authenticator.signPayload(identity.authChain, entityId)
 
     // Deploy entity
     await expect(() => contentClient.deployEntity({ files, entityId, authChain })).rejects.toThrow(
       'Deployment failed: scene.json needs to specify a worldConfiguration section with a valid name inside.'
     )
-
-    Sinon.assert.notCalled(permissionChecker.checkPermission)
 
     expect(await storage.exist(fileHash)).toEqual(false)
     expect(await storage.exist(entityId)).toEqual(false)

@@ -1,11 +1,4 @@
-import {
-  AccessControlList,
-  DeploymentToValidate,
-  Validation,
-  ValidationResult,
-  Validator,
-  ValidatorComponents
-} from '../types'
+import { DeploymentToValidate, Validation, ValidationResult, Validator, ValidatorComponents } from '../types'
 import { AuthChain, Entity, EthAddress, IPFSv2 } from '@dcl/schemas'
 import { Authenticator } from '@dcl/crypto'
 import { hashV1 } from '@dcl/hashing'

@@ -1,15 +1,13 @@
 import type { IFetchComponent } from '@well-known-components/http-server'
 import type {
-  IConfigComponent,
-  ILoggerComponent,
-  IHttpServerComponent,
   IBaseComponent,
+  IConfigComponent,
+  IHttpServerComponent,
+  ILoggerComponent,
   IMetricsComponent
 } from '@well-known-components/interfaces'
 import { metricDeclarations } from './metrics'
 import { IContentStorageComponent } from '@dcl/catalyst-storage'
-import { HTTPProvider } from 'eth-connect'
-import { ISubgraphComponent } from '@well-known-components/thegraph-component'
 import { IStatusComponent } from './adapters/status'
 import { AuthChain, Entity, EthAddress } from '@dcl/schemas'
 
@@ -145,5 +143,3 @@ export type HandlerContextWithPath<
   }>,
   Path
 >
-
-export type Context<Path extends string = any> = IHttpServerComponent.PathAwareContext<GlobalContext, Path>

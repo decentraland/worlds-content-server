@@ -22,7 +22,7 @@ export async function createWorldNamePermissionChecker(
 }
 
 export async function createDclNamePlusACLPermissionChecker(
-  components: Pick<AppComponents, 'logs' | 'dclNameChecker' | 'worldsManager'>
+  components: Pick<AppComponents, 'dclNameChecker' | 'worldsManager'>
 ): Promise<IWorldNamePermissionChecker> {
   async function allowedByAcl(worldName: string, address: EthAddress): Promise<boolean> {
     const worldMetadata = await components.worldsManager.getMetadataForWorld(worldName)
@@ -67,29 +67,48 @@ export async function createDclNamePlusACLPermissionChecker(
 }
 
 export async function createEndpointNameChecker(
-  components: Pick<AppComponents, 'config' | 'logs' | 'fetch'>
+  components: Pick<AppComponents, 'config' | 'fetch'>
 ): Promise<IWorldNamePermissionChecker> {
-  const nameCheckUrl = await components.config.requireString('ENDPOINT_NAME_CHECKER_BASE_URL')
+  const baseUrl = await components.config.requireString('ENDPOINT_NAME_CHECKER_BASE_URL')
+  const permissionUrl = (baseUrl.endsWith('/') ? baseUrl : baseUrl + '/') + 'permission'
+  const validateUrl = (baseUrl.endsWith('/') ? baseUrl : baseUrl + '/') + 'validate'
+
+  async function checkPermission(ethAddress: EthAddress, worldName: string): Promise<boolean> {
+    if (worldName.length === 0 || ethAddress.length === 0) {
+      return false
+    }
+
+    const res = await components.fetch.fetch(permissionUrl, {
+      method: 'POST',
+      body: JSON.stringify({
+        worldName: worldName,
+        ethAddress: ethAddress
+      })
+    })
+
+    return res.json()
+  }
+
+  async function validate(deployment: DeploymentToValidate): Promise<boolean> {
+    const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())
+    const worldName = sceneJson.metadata.worldConfiguration.name
+    const ethAddress = deployment.authChain[0].payload
+
+    if (worldName.length === 0 || ethAddress.length === 0) {
+      return false
+    }
+
+    const res = await components.fetch.fetch(validateUrl, {
+      method: 'POST',
+      body: JSON.stringify(sceneJson)
+    })
+
+    return res.json()
+  }
 
   return {
-    checkPermission: async (ethAddress: EthAddress, worldName: string): Promise<boolean> => {
-      if (worldName.length === 0 || ethAddress.length === 0) {
-        return false
-      }
-
-      const res = await components.fetch.fetch(nameCheckUrl, {
-        method: 'POST',
-        body: JSON.stringify({
-          worldName: worldName,
-          ethAddress: ethAddress
-        })
-      })
-
-      return res.json()
-    },
-    validate(_deployment: DeploymentToValidate): Promise<boolean> {
-      return Promise.resolve(false)
-    }
+    checkPermission,
+    validate
   }
 }
 
@@ -97,6 +116,7 @@ export async function createNoOpNameChecker(): Promise<IWorldNamePermissionCheck
   async function checkPermission(ethAddress: EthAddress, worldName: string): Promise<boolean> {
     return !(worldName.length === 0 || ethAddress.length === 0)
   }
+
   return {
     checkPermission,
     validate(_deployment: DeploymentToValidate): Promise<boolean> {

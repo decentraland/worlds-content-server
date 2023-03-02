@@ -20,7 +20,6 @@ import { IDclNameChecker } from '../../src/types'
 describe('strategy builder', function () {
   let config: IConfigComponent
   let fetch: IFetchComponent
-  let logs: ILoggerComponent
   let metrics: IMetricsComponent<keyof typeof metricDeclarations>
 
   beforeEach(async () => {

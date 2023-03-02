@@ -6,7 +6,6 @@ import { createLocalFetchCompoment, createRunner } from '@well-known-components/
 import { main } from '../src/service'
 import { TestComponents } from '../src/types'
 import { initComponents as originalInitComponents } from '../src/components'
-import { createMockMarketplaceSubGraph } from './mocks/marketplace-subgraph-mock'
 import { createMockNamePermissionChecker } from './mocks/world-name-permission-checker-mock'
 import { createValidator } from '../src/adapters/validator'
 import { createFetchComponent } from '../src/adapters/fetch'

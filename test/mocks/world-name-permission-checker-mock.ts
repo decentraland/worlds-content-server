@@ -13,7 +13,11 @@ export function createMockNamePermissionChecker(names?: string[]): IWorldNamePer
   return {
     checkPermission,
     validate(deployment: DeploymentToValidate): Promise<boolean> {
-      return Promise.resolve(false)
+      const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())
+      const worldSpecifiedName = sceneJson.metadata.worldConfiguration.name
+      return Promise.resolve(
+        names && names.map((name) => name.toLowerCase()).includes(worldSpecifiedName.toLowerCase())
+      )
     }
   }
 }
