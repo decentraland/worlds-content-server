@@ -27,7 +27,8 @@ export async function getAclHandler(
   const acl: AccessControlList = !permission
     ? {
         resource: worldName,
-        allowed: []
+        allowed: [],
+        timestamp: ''
       }
     : // Get the last element of the auth chain. The payload must contain the AccessControlList
       JSON.parse(worldMetadata.acl.slice(-1).pop()!.payload)
@@ -123,7 +124,7 @@ export async function postAclHandler(
       return {
         status: 400,
         body: {
-          message: `Timestamp is too old. There a newer ACL stored. Please sign a new ACL change request.`
+          message: 'There a newer ACL stored. Please sign a new ACL change request.'
         }
       }
     }
