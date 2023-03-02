@@ -13,23 +13,15 @@ import {
   validateSize
 } from '../../src/adapters/validator'
 import { createInMemoryStorage, IContentStorageComponent } from '@dcl/catalyst-storage'
-import {
-  DeploymentToValidate,
-  IWorldNamePermissionChecker,
-  ILimitsManager,
-  ValidatorComponents,
-  IWorldsManager
-} from '../../src/types'
+import { ILimitsManager, IWorldNamePermissionChecker, IWorldsManager, ValidatorComponents } from '../../src/types'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { EntityType } from '@dcl/schemas'
 import { createMockLimitsManagerComponent } from '../mocks/limits-manager-mock'
 import { createMockNamePermissionChecker } from '../mocks/world-name-permission-checker-mock'
-import { DeploymentBuilder } from 'dcl-catalyst-client'
-import { getIdentity } from '../utils'
-import { Authenticator, AuthIdentity } from '@dcl/crypto'
+import { createDeployment, getIdentity } from '../utils'
+import { Authenticator } from '@dcl/crypto'
 import { IConfigComponent } from '@well-known-components/interfaces'
 import { hashV0, hashV1 } from '@dcl/hashing'
-import { TextDecoder } from 'util'
 import { bufferToStream } from '@dcl/catalyst-storage/dist/content-item'
 import { createWorldsManagerComponent } from '../../src/adapters/worlds-manager'
 import { createLogComponent } from '@well-known-components/logger'
@@ -263,37 +255,3 @@ describe('validator', function () {
     )
   })
 })
-
-async function createDeployment(identityAuthChain: AuthIdentity, entity?: any) {
-  const entityFiles = new Map<string, Uint8Array>()
-  entityFiles.set('abc.txt', Buffer.from(stringToUtf8Bytes('asd')))
-  const fileHash = await hashV1(entityFiles.get('abc.txt'))
-
-  const sceneJson = entity || {
-    type: EntityType.SCENE,
-    pointers: ['0,0'],
-    timestamp: Date.now(),
-    metadata: { runtimeVersion: '7', worldConfiguration: { name: 'whatever.dcl.eth' } },
-    files: entityFiles
-  }
-  const { files, entityId } = await DeploymentBuilder.buildEntity(sceneJson)
-  files.set(entityId, Buffer.from(files.get(entityId)))
-
-  const authChain = Authenticator.signPayload(identityAuthChain, entityId)
-
-  const contentHashesInStorage = new Map<string, boolean>()
-  contentHashesInStorage.set(fileHash, false)
-
-  const finalEntity = {
-    id: entityId,
-    ...JSON.parse(new TextDecoder().decode(files.get(entityId)))
-  }
-
-  const deployment: DeploymentToValidate = {
-    entity: finalEntity,
-    files,
-    authChain,
-    contentHashesInStorage
-  }
-  return deployment
-}

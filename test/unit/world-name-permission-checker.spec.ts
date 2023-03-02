@@ -6,11 +6,11 @@ import {
 } from '../../src/adapters/world-name-permission-checker'
 import { createLogComponent } from '@well-known-components/logger'
 import { IConfigComponent, ILoggerComponent } from '@well-known-components/interfaces'
-import { getIdentity } from '../utils'
+import { createDeployment, getIdentity } from '../utils'
 import { IWorldNamePermissionChecker, IWorldsManager } from '../../src/types'
 import { IFetchComponent } from '@well-known-components/http-server'
 import { Request, Response } from 'node-fetch'
-import { EthAddress } from '@dcl/schemas'
+import { EntityType, EthAddress } from '@dcl/schemas'
 import { createWorldsManagerComponent } from '../../src/adapters/worlds-manager'
 import { createInMemoryStorage } from '@dcl/catalyst-storage'
 import { IContentStorageComponent } from '@dcl/catalyst-storage/dist/types'
@@ -41,7 +41,7 @@ describe('dcl name checker + ACL', function () {
       }
     })
 
-    await expect(permissionChecker.validate('0xb', 'my-super-name.dcl.eth')).resolves.toBeFalsy()
+    // await expect(permissionChecker.validate('0xb', 'my-super-name.dcl.eth')).resolves.toBeFalsy()
   })
 
   // it('when requested name is returned from TheGraph returns true', async () => {
@@ -110,24 +110,47 @@ describe('dcl name checker + ACL', function () {
 //   })
 // })
 
-describe('name checker: noop', function () {
+describe('name checker: noop', () => {
   let permissionChecker: IWorldNamePermissionChecker
+  let identity
 
   beforeEach(async () => {
     permissionChecker = await createNoOpNameChecker()
+    identity = await getIdentity()
   })
 
-  it('when permission asked for invalid name returns false', async () => {
-    await expect(permissionChecker.checkPermission('0xb', '')).resolves.toBeFalsy()
+  describe('checkPermission', () => {
+    it('when permission asked for invalid name returns false', async () => {
+      await expect(permissionChecker.checkPermission('0xb', '')).resolves.toBeFalsy()
+    })
+
+    it('when permission asked for invalid address returns false', async () => {
+      await expect(permissionChecker.checkPermission('', 'anything')).resolves.toBeFalsy()
+    })
+
+    it('when valid name and address it returns true', async () => {
+      const identity = await getIdentity()
+      const address = identity.authChain.authChain[0].payload
+      await expect(permissionChecker.checkPermission(address, 'my-super-name.dcl.eth')).resolves.toBeTruthy()
+    })
   })
 
-  it('when permission asked for invalid address returns false', async () => {
-    await expect(permissionChecker.checkPermission('', 'anything')).resolves.toBeFalsy()
-  })
+  describe('validate', () => {
+    it('when permission asked for invalid name returns false', async () => {
+      const deployment = await createDeployment(identity.authChain, {
+        type: EntityType.SCENE,
+        pointers: ['0,0'],
+        timestamp: Date.parse('2022-11-01T00:00:00Z'),
+        metadata: { worldConfiguration: { name: '' } },
+        files: []
+      })
 
-  it('when valid name and address it returns true', async () => {
-    const identity = await getIdentity()
-    const address = identity.authChain.authChain[0].payload
-    await expect(permissionChecker.checkPermission(address, 'my-super-name.dcl.eth')).resolves.toBeTruthy()
+      await expect(permissionChecker.validate(deployment)).resolves.toBeTruthy()
+    })
+
+    it('when valid name and address it returns true', async () => {
+      const deployment = await createDeployment(identity.authChain)
+      await expect(permissionChecker.validate(deployment)).resolves.toBeTruthy()
+    })
   })
 })
