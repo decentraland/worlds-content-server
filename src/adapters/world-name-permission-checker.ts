@@ -24,46 +24,45 @@ export async function createWorldNamePermissionChecker(
 export async function createDclNamePlusACLPermissionChecker(
   components: Pick<AppComponents, 'logs' | 'dclNameChecker' | 'worldsManager'>
 ): Promise<IWorldNamePermissionChecker> {
-  return {
-    checkPermission: async function (ethAddress: EthAddress, worldName: string): Promise<boolean> {
-      if (await components.dclNameChecker.checkOwnership(ethAddress, worldName)) {
-        return true
-      }
-      // TODO check ACL
+  async function allowedByAcl(worldName: string, address: EthAddress): Promise<boolean> {
+    const worldMetadata = await components.worldsManager.getMetadataForWorld(worldName)
+    if (!worldMetadata || !worldMetadata.acl) {
+      // No acl -> no permission
       return false
-    },
-    async validate(deployment: DeploymentToValidate): Promise<boolean> {
-      const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())
-      const worldSpecifiedName = sceneJson.metadata.worldConfiguration.name
-      const signer = deployment.authChain[0].payload
-
-      const hasPermission = await components.dclNameChecker.checkOwnership(signer, worldSpecifiedName)
-      if (!hasPermission) {
-        async function allowedByAcl(worldName: string, address: EthAddress): Promise<boolean> {
-          const worldMetadata = await components.worldsManager.getMetadataForWorld(worldName)
-          if (!worldMetadata || !worldMetadata.acl) {
-            // No acl -> no permission
-            return false
-          }
-
-          const acl = JSON.parse(worldMetadata.acl.slice(-1).pop()!.payload) as AccessControlList
-          const isAllowed = acl.allowed.some((allowedAddress) => allowedAddress.toLowerCase() === address.toLowerCase())
-          if (!isAllowed) {
-            // There is acl but requested address is not included in the allowed ones
-            return false
-          }
-
-          // The acl allows permissions, finally check that the signer of the acl still owns the world
-          const aclSigner = worldMetadata.acl[0].payload
-          return components.dclNameChecker.checkOwnership(aclSigner, worldName)
-        }
-
-        const allowed = await allowedByAcl(worldSpecifiedName, signer)
-        return Promise.resolve(allowed)
-      }
-
-      return Promise.resolve(true)
     }
+
+    const acl = JSON.parse(worldMetadata.acl.slice(-1).pop()!.payload) as AccessControlList
+    const isAllowed = acl.allowed.some((allowedAddress) => allowedAddress.toLowerCase() === address.toLowerCase())
+    if (!isAllowed) {
+      // There is acl but requested address is not included in the allowed ones
+      return false
+    }
+
+    // The acl allows permissions, finally check that the signer of the acl still owns the world
+    const aclSigner = worldMetadata.acl[0].payload
+    return components.dclNameChecker.checkOwnership(aclSigner, worldName)
+  }
+
+  async function checkPermission(ethAddress: EthAddress, worldName: string): Promise<boolean> {
+    const hasPermission = await components.dclNameChecker.checkOwnership(ethAddress, worldName)
+    if (hasPermission) {
+      return true
+    }
+
+    return await allowedByAcl(worldName, ethAddress)
+  }
+
+  async function validate(deployment: DeploymentToValidate): Promise<boolean> {
+    const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())
+    const worldSpecifiedName = sceneJson.metadata.worldConfiguration.name
+    const signer = deployment.authChain[0].payload
+
+    return await checkPermission(signer, worldSpecifiedName)
+  }
+
+  return {
+    checkPermission,
+    validate
   }
 }
 
