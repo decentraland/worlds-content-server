@@ -476,14 +476,15 @@ test('acl handler POST /acl/:world_name', function ({ components, stubComponents
     })
 
     expect(r.status).toEqual(200)
-    expect(await r.json()).toMatchObject({
+    expect(await r.json()).toEqual({
       resource: 'my-world.dcl.eth',
-      allowed: [delegatedIdentity.realAccount.address]
+      allowed: [delegatedIdentity.realAccount.address],
+      timestamp: ts
     })
 
     const content = await storage.retrieve('name-my-world.dcl.eth')
     const stored = JSON.parse((await streamToBuffer(await content.asStream())).toString())
-    expect(stored).toMatchObject({
+    expect(stored).toEqual({
       acl
     })
   })
