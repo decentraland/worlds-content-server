@@ -30,6 +30,7 @@ export type WorldMetadata = {
 export type AccessControlList = {
   resource: string
   allowed: EthAddress[]
+  timestamp: string
 }
 
 export interface Validator {
