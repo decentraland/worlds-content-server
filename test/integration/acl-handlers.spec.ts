@@ -448,7 +448,7 @@ test('acl handler POST /acl/:world_name', function ({ components, stubComponents
 
     expect(r.status).toEqual(400)
     expect(await r.json()).toEqual({
-      message: 'There a newer ACL stored. Please sign a new ACL change request.'
+      message: 'There is a newer ACL stored. Please sign a new ACL change request.'
     })
   })
 })

@@ -124,7 +124,7 @@ export async function postAclHandler(
       return {
         status: 400,
         body: {
-          message: 'There a newer ACL stored. Please sign a new ACL change request.'
+          message: 'There is a newer ACL stored. Please sign a new ACL change request.'
         }
       }
     }
