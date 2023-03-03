@@ -319,14 +319,12 @@ test('acl handler POST /acl/:world_name', function ({ components, stubComponents
 test('acl handler POST /acl/:world_name', function ({ components, stubComponents }) {
   it('fails when missing timestamp', async () => {
     const { localFetch } = components
-    const { namePermissionChecker } = stubComponents
+    const { dclNameChecker } = stubComponents
 
     const identity = await getIdentity()
     const delegatedIdentity = await getIdentity()
 
-    namePermissionChecker.checkPermission
-      .withArgs(identity.authChain.authChain[0].payload, 'my-world.dcl.eth')
-      .resolves(true)
+    dclNameChecker.checkOwnership.withArgs(identity.authChain.authChain[0].payload, 'my-world.dcl.eth').resolves(true)
 
     const payload = `{"resource":"my-world.dcl.eth","allowed":["${delegatedIdentity.realAccount.address}"]}`
 
@@ -347,14 +345,12 @@ test('acl handler POST /acl/:world_name', function ({ components, stubComponents
 test('acl handler POST /acl/:world_name', function ({ components, stubComponents }) {
   it('fails when timestamp is too old', async () => {
     const { localFetch } = components
-    const { namePermissionChecker } = stubComponents
+    const { dclNameChecker } = stubComponents
 
     const identity = await getIdentity()
     const delegatedIdentity = await getIdentity()
 
-    namePermissionChecker.checkPermission
-      .withArgs(identity.authChain.authChain[0].payload, 'my-world.dcl.eth')
-      .resolves(true)
+    dclNameChecker.checkOwnership.withArgs(identity.authChain.authChain[0].payload, 'my-world.dcl.eth').resolves(true)
 
     const ts = new Date(Date.now() - 500_000).toISOString()
     const payload = `{"resource":"my-world.dcl.eth","allowed":["${delegatedIdentity.realAccount.address}"],"timestamp":"${ts}"}`
@@ -376,14 +372,12 @@ test('acl handler POST /acl/:world_name', function ({ components, stubComponents
 test('acl handler POST /acl/:world_name', function ({ components, stubComponents }) {
   it('fails when timestamp is too far in the future', async () => {
     const { localFetch } = components
-    const { namePermissionChecker } = stubComponents
+    const { dclNameChecker } = stubComponents
 
     const identity = await getIdentity()
     const delegatedIdentity = await getIdentity()
 
-    namePermissionChecker.checkPermission
-      .withArgs(identity.authChain.authChain[0].payload, 'my-world.dcl.eth')
-      .resolves(true)
+    dclNameChecker.checkOwnership.withArgs(identity.authChain.authChain[0].payload, 'my-world.dcl.eth').resolves(true)
 
     const ts = new Date(Date.now() + 500_000).toISOString()
     const payload = `{"resource":"my-world.dcl.eth","allowed":["${delegatedIdentity.realAccount.address}"],"timestamp":"${ts}"}`
@@ -405,7 +399,7 @@ test('acl handler POST /acl/:world_name', function ({ components, stubComponents
 test('acl handler POST /acl/:world_name', function ({ components, stubComponents }) {
   it('fails when new timestamp is after currently stored ACL', async () => {
     const { localFetch, storage } = components
-    const { namePermissionChecker } = stubComponents
+    const { dclNameChecker } = stubComponents
 
     const identity = await getIdentity()
     const delegatedIdentity = await getIdentity()
@@ -418,9 +412,7 @@ test('acl handler POST /acl/:world_name', function ({ components, stubComponents
       acl: Authenticator.signPayload(identity.authChain, payload)
     })
 
-    namePermissionChecker.checkPermission
-      .withArgs(identity.authChain.authChain[0].payload, 'my-world.dcl.eth')
-      .resolves(true)
+    dclNameChecker.checkOwnership.withArgs(identity.authChain.authChain[0].payload, 'my-world.dcl.eth').resolves(true)
 
     const newTs = new Date(Date.parse(ts) - 1).toISOString()
     const newPayload = `{"resource":"my-world.dcl.eth","allowed":["${delegatedIdentity.realAccount.address}"],"timestamp":"${newTs}"}`
