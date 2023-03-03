@@ -1,18 +1,38 @@
-import { AppComponents, IWorldNamePermissionChecker } from '../types'
+import { AppComponents, IDclNameChecker } from '../types'
 import { EthAddress } from '@dcl/schemas'
 import LRU from 'lru-cache'
-import { ContractFactory, RequestManager } from 'eth-connect'
+import { ContractFactory, HTTPProvider, RequestManager } from 'eth-connect'
 import { checkerAbi, checkerContracts, registrarContracts } from '@dcl/catalyst-contracts'
+import { createSubgraphComponent } from '@well-known-components/thegraph-component'
 
 type NamesResponse = {
   nfts: { name: string; owner: { id: string } }[]
 }
 
-export const createDclNameChecker = (
-  components: Pick<AppComponents, 'logs' | 'marketplaceSubGraph'>
-): IWorldNamePermissionChecker => {
-  const logger = components.logs.getLogger('check-permissions')
-  logger.info('Using TheGraph DclNameChecker')
+export async function createDclNameChecker(
+  components: Pick<AppComponents, 'config' | 'fetch' | 'logs' | 'metrics'>
+): Promise<IDclNameChecker> {
+  const logger = components.logs.getLogger('dcl-name checker')
+  const nameValidatorStrategy = await components.config.requireString('NAME_VALIDATOR')
+  switch (nameValidatorStrategy) {
+    case 'THE_GRAPH_DCL_NAME_CHECKER':
+      logger.info('Using TheGraph DclNameChecker')
+      return createTheGraphDclNameChecker(components)
+    case 'ON_CHAIN_DCL_NAME_CHECKER':
+      logger.info('Using OnChain DclNameChecker')
+      return await createOnChainDclNameChecker(components)
+  }
+  logger.info('No support for DCL name checking')
+  return await createNoOwnershipSupportedNameChecker()
+}
+
+export async function createTheGraphDclNameChecker(
+  components: Pick<AppComponents, 'config' | 'fetch' | 'logs' | 'metrics'>
+): Promise<IDclNameChecker> {
+  const logger = components.logs.getLogger('dcl-name checker')
+
+  const subGraphUrl = await components.config.requireString('MARKETPLACE_SUBGRAPH_URL')
+  const marketplaceSubGraph = await createSubgraphComponent(components, subGraphUrl)
 
   const cache = new LRU<string, string | undefined>({
     max: 100,
@@ -24,7 +44,7 @@ export const createDclNameChecker = (
       may not be in the exact same case of the registered name. There are several methods
       suffixed _nocase, but not one for equality, so this is a bit hackish, but it works.
        */
-      const result = await components.marketplaceSubGraph.query<NamesResponse>(
+      const result = await marketplaceSubGraph.query<NamesResponse>(
         `
         query FetchOwnerForDclName($worldName: String) {
           nfts(
@@ -52,7 +72,7 @@ export const createDclNameChecker = (
     }
   })
 
-  const checkPermission = async (ethAddress: EthAddress, worldName: string): Promise<boolean> => {
+  async function checkOwnership(ethAddress: EthAddress, worldName: string): Promise<boolean> {
     if (worldName.length === 0) {
       return false
     }
@@ -62,21 +82,23 @@ export const createDclNameChecker = (
   }
 
   return {
-    checkPermission
+    checkOwnership
   }
 }
 
-export const createOnChainDclNameChecker = async (
-  components: Pick<AppComponents, 'config' | 'logs' | 'ethereumProvider'>
-): Promise<IWorldNamePermissionChecker> => {
-  const logger = components.logs.getLogger('check-permissions')
-  logger.info('Using OnChain DclNameChecker')
+export async function createOnChainDclNameChecker(
+  components: Pick<AppComponents, 'config' | 'logs' | 'fetch'>
+): Promise<IDclNameChecker> {
+  const logger = components.logs.getLogger('dcl-name checker')
+
+  const rpcUrl = await components.config.requireString('RPC_URL')
+  const ethereumProvider = new HTTPProvider(rpcUrl, components.fetch)
   const networkId = await components.config.requireString('NETWORK_ID')
   const networkName = networkId === '1' ? 'mainnet' : 'goerli'
-  const factory = new ContractFactory(new RequestManager(components.ethereumProvider), checkerAbi)
+  const factory = new ContractFactory(new RequestManager(ethereumProvider), checkerAbi)
   const checker = (await factory.at(checkerContracts[networkName])) as any
 
-  const checkPermission = async (ethAddress: EthAddress, worldName: string): Promise<boolean> => {
+  async function checkOwnership(ethAddress: EthAddress, worldName: string): Promise<boolean> {
     if (worldName.length === 0 || !worldName.endsWith('.dcl.eth')) {
       return false
     }
@@ -94,6 +116,16 @@ export const createOnChainDclNameChecker = async (
   }
 
   return {
-    checkPermission
+    checkOwnership
+  }
+}
+
+export async function createNoOwnershipSupportedNameChecker(): Promise<IDclNameChecker> {
+  async function checkOwnership(_ethAddress: EthAddress, _worldName: string): Promise<boolean> {
+    return false
+  }
+
+  return {
+    checkOwnership
   }
 }

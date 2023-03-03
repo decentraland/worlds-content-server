@@ -3,9 +3,9 @@ import { AccessControlList, HandlerContextWithPath } from '../../types'
 import { AuthChain, EthAddress } from '@dcl/schemas'
 
 export async function getAclHandler(
-  ctx: HandlerContextWithPath<'namePermissionChecker' | 'worldsManager', '/acl/:world_name'>
+  ctx: HandlerContextWithPath<'dclNameChecker' | 'worldsManager', '/acl/:world_name'>
 ): Promise<IHttpServerComponent.IResponse> {
-  const { namePermissionChecker, worldsManager } = ctx.components
+  const { dclNameChecker, worldsManager } = ctx.components
 
   const worldName = ctx.params.world_name
 
@@ -23,8 +23,8 @@ export async function getAclHandler(
 
   // Check that the ACL was signed by the wallet that currently owns the world, or else return empty
   const ethAddress = worldMetadata.acl[0].payload
-  const permission = await namePermissionChecker.checkPermission(ethAddress, worldName)
-  const acl: AccessControlList = !permission
+  const isOwner = await dclNameChecker.checkOwnership(ethAddress, worldName)
+  const acl: AccessControlList = !isOwner
     ? {
         resource: worldName,
         allowed: [],
@@ -40,9 +40,9 @@ export async function getAclHandler(
 }
 
 export async function postAclHandler(
-  ctx: HandlerContextWithPath<'namePermissionChecker' | 'worldsManager', '/acl/:world_name'>
+  ctx: HandlerContextWithPath<'dclNameChecker' | 'worldsManager', '/acl/:world_name'>
 ): Promise<IHttpServerComponent.IResponse> {
-  const { namePermissionChecker, worldsManager } = ctx.components
+  const { dclNameChecker, worldsManager } = ctx.components
 
   const worldName = ctx.params.world_name
 
@@ -56,8 +56,8 @@ export async function postAclHandler(
     }
   }
 
-  const permission = await namePermissionChecker.checkPermission(authChain[0].payload, worldName)
-  if (!permission) {
+  const isOwner = await dclNameChecker.checkOwnership(authChain[0].payload, worldName)
+  if (!isOwner) {
     return {
       status: 403,
       body: {

@@ -1,15 +1,13 @@
 import type { IFetchComponent } from '@well-known-components/http-server'
 import type {
-  IConfigComponent,
-  ILoggerComponent,
-  IHttpServerComponent,
   IBaseComponent,
+  IConfigComponent,
+  IHttpServerComponent,
+  ILoggerComponent,
   IMetricsComponent
 } from '@well-known-components/interfaces'
 import { metricDeclarations } from './metrics'
 import { IContentStorageComponent } from '@dcl/catalyst-storage'
-import { HTTPProvider } from 'eth-connect'
-import { ISubgraphComponent } from '@well-known-components/thegraph-component'
 import { IStatusComponent } from './adapters/status'
 import { AuthChain, Entity, EthAddress } from '@dcl/schemas'
 
@@ -46,7 +44,7 @@ export type ValidationResult = {
 
 export type ValidatorComponents = Pick<
   AppComponents,
-  'config' | 'namePermissionChecker' | 'ethereumProvider' | 'limitsManager' | 'storage' | 'worldsManager'
+  'config' | 'permissionChecker' | 'limitsManager' | 'storage' | 'worldsManager'
 >
 
 export type Validation = (
@@ -56,6 +54,11 @@ export type Validation = (
 
 export type IWorldNamePermissionChecker = {
   checkPermission(ethAddress: EthAddress, worldName: string): Promise<boolean>
+  validate(deployment: DeploymentToValidate): Promise<boolean>
+}
+
+export type IDclNameChecker = {
+  checkOwnership(ethAddress: EthAddress, worldName: string): Promise<boolean>
 }
 
 export type ContentStatus = {
@@ -102,16 +105,15 @@ export type IWorldsManager = {
 
 // components used in every environment
 export type BaseComponents = {
+  dclNameChecker: IDclNameChecker
   commsAdapter: ICommsAdapter
   config: IConfigComponent
-  namePermissionChecker: IWorldNamePermissionChecker
+  permissionChecker: IWorldNamePermissionChecker
   logs: ILoggerComponent
   server: IHttpServerComponent<GlobalContext>
   fetch: IFetchComponent
   metrics: IMetricsComponent<keyof typeof metricDeclarations>
-  ethereumProvider: HTTPProvider
   storage: IContentStorageComponent
-  marketplaceSubGraph: ISubgraphComponent
   limitsManager: ILimitsManager
   status: IStatusComponent
   sns: SnsComponent
@@ -142,5 +144,3 @@ export type HandlerContextWithPath<
   }>,
   Path
 >
-
-export type Context<Path extends string = any> = IHttpServerComponent.PathAwareContext<GlobalContext, Path>

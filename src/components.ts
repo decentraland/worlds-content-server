@@ -3,11 +3,9 @@ import { createServerComponent, createStatusCheckComponent } from '@well-known-c
 import { createLogComponent } from '@well-known-components/logger'
 import { createFetchComponent } from './adapters/fetch'
 import { createMetricsComponent } from '@well-known-components/metrics'
-import { createSubgraphComponent } from '@well-known-components/thegraph-component'
-import { AppComponents, GlobalContext, ICommsAdapter, IWorldNamePermissionChecker, SnsComponent } from './types'
-import { metricDeclarations } from './metrics'
 import { metricDeclarations as theGraphMetricDeclarations } from '@well-known-components/thegraph-component'
-import { HTTPProvider } from 'eth-connect'
+import { AppComponents, GlobalContext, ICommsAdapter, SnsComponent } from './types'
+import { metricDeclarations } from './metrics'
 import {
   createAwsS3BasedFileSystemContentStorage,
   createFolderBasedFileSystemContentStorage,
@@ -15,25 +13,11 @@ import {
 } from '@dcl/catalyst-storage'
 import { createStatusComponent } from './adapters/status'
 import { createValidator } from './adapters/validator'
-import { createDclNameChecker, createOnChainDclNameChecker } from './adapters/dcl-name-checker'
+import { createWorldNamePermissionChecker } from './adapters/world-name-permission-checker'
 import { createLimitsManagerComponent } from './adapters/limits-manager'
 import { createWorldsManagerComponent } from './adapters/worlds-manager'
 import { createCommsAdapterComponent } from './adapters/comms-adapter'
-
-async function determineNameValidator(
-  components: Pick<AppComponents, 'config' | 'ethereumProvider' | 'logs' | 'marketplaceSubGraph'>
-) {
-  const nameValidatorStrategy = await components.config.requireString('NAME_VALIDATOR')
-  switch (nameValidatorStrategy) {
-    case 'DCL_NAME_CHECKER':
-      return createDclNameChecker(components)
-    case 'ON_CHAIN_DCL_NAME_CHECKER':
-      return await createOnChainDclNameChecker(components)
-
-    // Add more name validator strategies as needed here
-  }
-  throw Error(`Invalid nameValidatorStrategy selected: ${nameValidatorStrategy}`)
-}
+import { createDclNameChecker } from './adapters/dcl-name-checker'
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
@@ -56,9 +40,6 @@ export async function initComponents(): Promise<AppComponents> {
 
   const commsAdapter: ICommsAdapter = await createCommsAdapterComponent({ config, fetch, logs })
 
-  const rpcUrl = await config.requireString('RPC_URL')
-  const ethereumProvider = new HTTPProvider(rpcUrl, fetch)
-
   const storageFolder = (await config.getString('STORAGE_FOLDER')) || 'contents'
 
   const bucket = await config.getString('BUCKET')
@@ -68,9 +49,6 @@ export async function initComponents(): Promise<AppComponents> {
     ? await createAwsS3BasedFileSystemContentStorage({ fs, config }, bucket)
     : await createFolderBasedFileSystemContentStorage({ fs }, storageFolder)
 
-  const subGraphUrl = await config.requireString('MARKETPLACE_SUBGRAPH_URL')
-  const marketplaceSubGraph = await createSubgraphComponent({ config, logs, metrics, fetch }, subGraphUrl)
-
   const snsArn = await config.getString('SNS_ARN')
 
   const status = await createStatusComponent({ logs, fetch, config })
@@ -79,38 +57,44 @@ export async function initComponents(): Promise<AppComponents> {
     arn: snsArn
   }
 
-  const namePermissionChecker: IWorldNamePermissionChecker = await determineNameValidator({
+  const dclNameChecker = await createDclNameChecker({
     config,
-    ethereumProvider,
+    fetch,
     logs,
-    marketplaceSubGraph
+    metrics
   })
 
   const limitsManager = await createLimitsManagerComponent({ config, fetch, logs })
 
   const worldsManager = await createWorldsManagerComponent({ logs, storage })
 
+  const permissionChecker = await createWorldNamePermissionChecker({
+    config,
+    dclNameChecker,
+    fetch,
+    logs,
+    worldsManager
+  })
+
   const validator = createValidator({
     config,
-    namePermissionChecker,
-    ethereumProvider,
+    permissionChecker,
     limitsManager,
     storage,
     worldsManager
   })
 
   return {
+    dclNameChecker,
     commsAdapter,
     config,
-    namePermissionChecker,
+    permissionChecker,
     logs,
     server,
     statusChecks,
     fetch,
     metrics,
-    ethereumProvider,
     storage,
-    marketplaceSubGraph,
     limitsManager,
     sns,
     status,

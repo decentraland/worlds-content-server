@@ -1,11 +1,4 @@
-import {
-  AccessControlList,
-  DeploymentToValidate,
-  Validation,
-  ValidationResult,
-  Validator,
-  ValidatorComponents
-} from '../types'
+import { DeploymentToValidate, Validation, ValidationResult, Validator, ValidatorComponents } from '../types'
 import { AuthChain, Entity, EthAddress, IPFSv2 } from '@dcl/schemas'
 import { Authenticator } from '@dcl/crypto'
 import { hashV1 } from '@dcl/hashing'
@@ -97,7 +90,7 @@ export const validateSignature: Validation = async (
   const result = await Authenticator.validateSignature(
     deployment.entity.id,
     deployment.authChain,
-    components.ethereumProvider,
+    undefined, // No need because it's not EIP1654 validator
     10
   )
 
@@ -105,40 +98,16 @@ export const validateSignature: Validation = async (
 }
 
 export const validateDeploymentPermission: Validation = async (
-  components: Pick<ValidatorComponents, 'namePermissionChecker' | 'worldsManager'>,
+  components: Pick<ValidatorComponents, 'permissionChecker' | 'worldsManager'>,
   deployment: DeploymentToValidate
 ): Promise<ValidationResult> => {
-  const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())
-  const worldSpecifiedName = sceneJson.metadata.worldConfiguration.name
-  const signer = deployment.authChain[0].payload
-
-  const hasPermission = await components.namePermissionChecker.checkPermission(signer, worldSpecifiedName)
+  const hasPermission = await components.permissionChecker.validate(deployment)
   if (!hasPermission) {
-    async function allowedByAcl(worldName: string, address: EthAddress): Promise<boolean> {
-      const worldMetadata = await components.worldsManager.getMetadataForWorld(worldName)
-      if (!worldMetadata || !worldMetadata.acl) {
-        // No acl -> no permission
-        return false
-      }
-
-      const acl = JSON.parse(worldMetadata.acl.slice(-1).pop()!.payload) as AccessControlList
-      const isAllowed = acl.allowed.some((allowedAddress) => allowedAddress.toLowerCase() === address.toLowerCase())
-      if (!isAllowed) {
-        // There is acl but requested address is not included in the allowed ones
-        return false
-      }
-
-      // The acl allows permissions, finally check that the signer of the acl still owns the world
-      const aclSigner = worldMetadata.acl[0].payload
-      return components.namePermissionChecker.checkPermission(aclSigner, worldName)
-    }
-
-    const allowed = await allowedByAcl(worldSpecifiedName, signer)
-    if (!allowed) {
-      return createValidationResult([
-        `Deployment failed: Your wallet has no permission to publish this scene because it does not have permission to deploy under "${worldSpecifiedName}". Check scene.json to select a name that either you own or you were given permission to deploy.`
-      ])
-    }
+    const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())
+    const worldSpecifiedName = sceneJson.metadata.worldConfiguration.name
+    return createValidationResult([
+      `Deployment failed: Your wallet has no permission to publish this scene because it does not have permission to deploy under "${worldSpecifiedName}". Check scene.json to select a name that either you own or you were given permission to deploy.`
+    ])
   }
 
   return OK
@@ -241,39 +210,20 @@ export const validateSize: Validation = async (
   return createValidationResult(errors)
 }
 
-export const validateSdkVersion: Validation = async (
-  components: Pick<ValidatorComponents, 'limitsManager' | 'storage'>,
-  deployment: DeploymentToValidate
-): Promise<ValidationResult> => {
-  const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())
-  const worldName = sceneJson.metadata.worldConfiguration.name
-  const allowSdk6 = await components.limitsManager.getAllowSdk6For(worldName || '')
-
-  const sdkVersion = deployment.entity.metadata.runtimeVersion
-  if (sdkVersion !== '7' && !allowSdk6) {
-    return createValidationResult([
-      `Worlds are only supported on SDK 7. Please upgrade your scene to latest version of SDK.`
-    ])
-  }
-
-  return OK
-}
-
-const quickValidations: Validation[] = [
-  validateEntityId,
+const mandatoryValidations: Validation[] = [
   validateEntity,
+  validateEntityId,
+  validateDeploymentTtl,
   validateAuthChain,
   validateSigner,
   validateSignature,
-  validateDeploymentTtl,
-  validateSceneDimensions,
-  validateFiles
-  // validateSdkVersion TODO re-enable (and test) once SDK7 is ready
+  validateFiles,
+  validateDeploymentPermission
 ]
 
-const slowValidations: Validation[] = [validateSize, validateDeploymentPermission]
+const optionalValidations: Validation[] = [validateSceneDimensions, validateSize]
 
-const allValidations: Validation[] = [...quickValidations, ...slowValidations]
+const allValidations: Validation[] = [...mandatoryValidations, ...optionalValidations]
 
 export const createValidator = (components: ValidatorComponents): Validator => ({
   async validate(deployment: DeploymentToValidate): Promise<ValidationResult> {

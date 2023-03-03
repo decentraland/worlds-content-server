@@ -1,0 +1,126 @@
+import { AccessControlList, AppComponents, DeploymentToValidate, IWorldNamePermissionChecker } from '../types'
+import { EthAddress } from '@dcl/schemas'
+
+export async function createWorldNamePermissionChecker(
+  components: Pick<AppComponents, 'config' | 'dclNameChecker' | 'fetch' | 'logs' | 'worldsManager'>
+): Promise<IWorldNamePermissionChecker> {
+  const logger = components.logs.getLogger('check-permissions')
+  const nameValidatorStrategy = await components.config.requireString('NAME_VALIDATOR')
+  switch (nameValidatorStrategy) {
+    case 'THE_GRAPH_DCL_NAME_CHECKER':
+    case 'ON_CHAIN_DCL_NAME_CHECKER':
+      logger.info('Using DclNameChecker + ACL')
+      return createDclNamePlusACLPermissionChecker(components)
+    case 'ENDPOINT_NAME_CHECKER':
+      logger.info('Using Endpoint NameChecker')
+      return await createEndpointNameChecker(components)
+    case 'NOOP_NAME_CHECKER':
+      logger.info('Using NoOp NameChecker')
+      return await createNoOpNameChecker()
+  }
+  throw Error(`Invalid nameValidatorStrategy selected: ${nameValidatorStrategy}`)
+}
+
+export async function createDclNamePlusACLPermissionChecker(
+  components: Pick<AppComponents, 'dclNameChecker' | 'worldsManager'>
+): Promise<IWorldNamePermissionChecker> {
+  async function allowedByAcl(worldName: string, address: EthAddress): Promise<boolean> {
+    const worldMetadata = await components.worldsManager.getMetadataForWorld(worldName)
+    if (!worldMetadata || !worldMetadata.acl) {
+      // No acl -> no permission
+      return false
+    }
+
+    const acl = JSON.parse(worldMetadata.acl.slice(-1).pop()!.payload) as AccessControlList
+    const isAllowed = acl.allowed.some((allowedAddress) => allowedAddress.toLowerCase() === address.toLowerCase())
+    if (!isAllowed) {
+      // There is acl but requested address is not included in the allowed ones
+      return false
+    }
+
+    // The acl allows permissions, finally check that the signer of the acl still owns the world
+    const aclSigner = worldMetadata.acl[0].payload
+    return components.dclNameChecker.checkOwnership(aclSigner, worldName)
+  }
+
+  async function checkPermission(ethAddress: EthAddress, worldName: string): Promise<boolean> {
+    const hasPermission = await components.dclNameChecker.checkOwnership(ethAddress, worldName)
+    if (hasPermission) {
+      return true
+    }
+
+    return await allowedByAcl(worldName, ethAddress)
+  }
+
+  async function validate(deployment: DeploymentToValidate): Promise<boolean> {
+    const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())
+    const worldSpecifiedName = sceneJson.metadata.worldConfiguration.name
+    const signer = deployment.authChain[0].payload
+
+    return await checkPermission(signer, worldSpecifiedName)
+  }
+
+  return {
+    checkPermission,
+    validate
+  }
+}
+
+export async function createEndpointNameChecker(
+  components: Pick<AppComponents, 'config' | 'fetch'>
+): Promise<IWorldNamePermissionChecker> {
+  const baseUrl = await components.config.requireString('ENDPOINT_NAME_CHECKER_BASE_URL')
+  const permissionUrl = (baseUrl.endsWith('/') ? baseUrl : baseUrl + '/') + 'permission'
+  const validateUrl = (baseUrl.endsWith('/') ? baseUrl : baseUrl + '/') + 'validate'
+
+  async function checkPermission(ethAddress: EthAddress, worldName: string): Promise<boolean> {
+    if (worldName.length === 0 || ethAddress.length === 0) {
+      return false
+    }
+
+    const res = await components.fetch.fetch(permissionUrl, {
+      method: 'POST',
+      body: JSON.stringify({
+        worldName: worldName,
+        ethAddress: ethAddress
+      })
+    })
+
+    return res.json()
+  }
+
+  async function validate(deployment: DeploymentToValidate): Promise<boolean> {
+    const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())
+    const worldName = sceneJson.metadata.worldConfiguration.name
+    const ethAddress = deployment.authChain[0].payload
+
+    if (worldName.length === 0 || ethAddress.length === 0) {
+      return false
+    }
+
+    const res = await components.fetch.fetch(validateUrl, {
+      method: 'POST',
+      body: JSON.stringify(sceneJson)
+    })
+
+    return res.json()
+  }
+
+  return {
+    checkPermission,
+    validate
+  }
+}
+
+export async function createNoOpNameChecker(): Promise<IWorldNamePermissionChecker> {
+  async function checkPermission(ethAddress: EthAddress, worldName: string): Promise<boolean> {
+    return !(worldName.length === 0 || ethAddress.length === 0)
+  }
+
+  return {
+    checkPermission,
+    validate(_deployment: DeploymentToValidate): Promise<boolean> {
+      return Promise.resolve(true)
+    }
+  }
+}

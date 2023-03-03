@@ -8,29 +8,20 @@ import {
   validateEntityId,
   validateFiles,
   validateSceneDimensions,
-  validateSdkVersion,
   validateSignature,
   validateSigner,
   validateSize
 } from '../../src/adapters/validator'
 import { createInMemoryStorage, IContentStorageComponent } from '@dcl/catalyst-storage'
-import {
-  DeploymentToValidate,
-  IWorldNamePermissionChecker,
-  ILimitsManager,
-  ValidatorComponents,
-  IWorldsManager
-} from '../../src/types'
-import { HTTPProvider, stringToUtf8Bytes } from 'eth-connect'
+import { ILimitsManager, IWorldNamePermissionChecker, IWorldsManager, ValidatorComponents } from '../../src/types'
+import { stringToUtf8Bytes } from 'eth-connect'
 import { EntityType } from '@dcl/schemas'
 import { createMockLimitsManagerComponent } from '../mocks/limits-manager-mock'
-import { createMockNamePermissionChecker } from '../mocks/dcl-name-checker-mock'
-import { DeploymentBuilder } from 'dcl-catalyst-client'
-import { getIdentity } from '../utils'
-import { Authenticator, AuthIdentity } from '@dcl/crypto'
+import { createMockNamePermissionChecker } from '../mocks/world-name-permission-checker-mock'
+import { createDeployment, getIdentity } from '../utils'
+import { Authenticator } from '@dcl/crypto'
 import { IConfigComponent } from '@well-known-components/interfaces'
 import { hashV0, hashV1 } from '@dcl/hashing'
-import { TextDecoder } from 'util'
 import { bufferToStream } from '@dcl/catalyst-storage/dist/content-item'
 import { createWorldsManagerComponent } from '../../src/adapters/worlds-manager'
 import { createLogComponent } from '@well-known-components/logger'
@@ -38,8 +29,6 @@ import { createLogComponent } from '@well-known-components/logger'
 describe('validator', function () {
   let config: IConfigComponent
   let storage: IContentStorageComponent
-  let ethereumProvider: HTTPProvider
-  let fetch
   let limitsManager: ILimitsManager
   let worldNamePermissionChecker: IWorldNamePermissionChecker
   let worldsManager: IWorldsManager
@@ -51,13 +40,6 @@ describe('validator', function () {
       DEPLOYMENT_TTL: '10000'
     })
     storage = createInMemoryStorage()
-    fetch = {
-      fetch: (_url: string, _params: { body?: any; method?: string; mode?: string; headers?: any }): Promise<any> => {
-        return Promise.resolve({})
-      }
-    }
-
-    ethereumProvider = new HTTPProvider('http://localhost', fetch)
     limitsManager = createMockLimitsManagerComponent()
     worldNamePermissionChecker = createMockNamePermissionChecker(['whatever.dcl.eth'])
     worldsManager = await createWorldsManagerComponent({
@@ -70,8 +52,7 @@ describe('validator', function () {
       config,
       storage,
       limitsManager,
-      ethereumProvider,
-      namePermissionChecker: worldNamePermissionChecker,
+      permissionChecker: worldNamePermissionChecker,
       worldsManager
     }
   })
@@ -273,59 +254,4 @@ describe('validator', function () {
       'The deployment is too big. The maximum total size allowed is 10 MB for scenes. You can upload up to 10485760 bytes but you tried to upload 10485763.'
     )
   })
-
-  it('validateSdkVersion with errors', async () => {
-    const deployment = await createDeployment(identity.authChain, {
-      type: EntityType.SCENE,
-      pointers: ['0,0'],
-      timestamp: Date.now(),
-      metadata: {
-        runtimeVersion: '6',
-        worldConfiguration: {
-          name: 'whatever.dcl.eth'
-        }
-      },
-      files: []
-    })
-
-    const result = await validateSdkVersion(components, deployment)
-    expect(result.ok()).toBeFalsy()
-    expect(result.errors).toContain(
-      'Worlds are only supported on SDK 7. Please upgrade your scene to latest version of SDK.'
-    )
-  })
 })
-
-async function createDeployment(identityAuthChain: AuthIdentity, entity?: any) {
-  const entityFiles = new Map<string, Uint8Array>()
-  entityFiles.set('abc.txt', Buffer.from(stringToUtf8Bytes('asd')))
-  const fileHash = await hashV1(entityFiles.get('abc.txt'))
-
-  const sceneJson = entity || {
-    type: EntityType.SCENE,
-    pointers: ['0,0'],
-    timestamp: Date.now(),
-    metadata: { runtimeVersion: '7', worldConfiguration: { name: 'whatever.dcl.eth' } },
-    files: entityFiles
-  }
-  const { files, entityId } = await DeploymentBuilder.buildEntity(sceneJson)
-  files.set(entityId, Buffer.from(files.get(entityId)))
-
-  const authChain = Authenticator.signPayload(identityAuthChain, entityId)
-
-  const contentHashesInStorage = new Map<string, boolean>()
-  contentHashesInStorage.set(fileHash, false)
-
-  const finalEntity = {
-    id: entityId,
-    ...JSON.parse(new TextDecoder().decode(files.get(entityId)))
-  }
-
-  const deployment: DeploymentToValidate = {
-    entity: finalEntity,
-    files,
-    authChain,
-    contentHashesInStorage
-  }
-  return deployment
-}
