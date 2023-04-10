@@ -76,7 +76,6 @@ test('consume status endpoint', function ({ components }) {
       })
 
       expect(r.status).toEqual(200)
-
       expect(await r.json()).toMatchObject({
         content: {
           commitHash: 'unknown',
