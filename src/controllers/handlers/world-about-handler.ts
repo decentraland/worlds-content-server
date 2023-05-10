@@ -56,7 +56,6 @@ export async function worldAboutHandler({
     return defaultImage
   }
 
-  console.log(sceneJson)
   const minimap: AboutResponse_MinimapConfiguration = {
     enabled:
       sceneJson.metadata.worldConfiguration?.minimapVisible ||
