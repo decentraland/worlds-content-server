@@ -48,13 +48,15 @@ export async function worldAboutHandler({
     enabled: sceneJson.metadata.worldConfiguration?.minimapVisible || false
   }
   if (sceneJson.metadata.worldConfiguration?.minimapVisible) {
-    // TODO We may need to allow the scene creator to specify these values
-    minimap.dataImage = 'https://api.decentraland.org/v1/minimap.png'
-    minimap.estateImage = 'https://api.decentraland.org/v1/estatemap.png'
+    minimap.dataImage =
+      sceneJson.metadata.worldConfiguration?.mapDataImage || 'https://api.decentraland.org/v1/minimap.png'
+    minimap.estateImage =
+      sceneJson.metadata.worldConfiguration?.estateImage || 'https://api.decentraland.org/v1/estatemap.png'
   }
 
   const skybox: AboutResponse_SkyboxConfiguration = {
     fixedHour: sceneJson.metadata.worldConfiguration?.skybox
+    // TODO add support for scene parameter customSkybox once protocol supports it
   }
 
   const healthy = contentStatus.healthy && lambdasStatus.healthy
