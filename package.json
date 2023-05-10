@@ -37,7 +37,7 @@
     "@dcl/crypto": "^3.2.3",
     "@dcl/hashing": "^1.1.2",
     "@dcl/protocol": "^1.0.0-3205348640.commit-bd227bf",
-    "@dcl/schemas": "^5.29.0",
+    "@dcl/schemas": "^6.18.3-20230510145828.commit-4f262f4",
     "@types/busboy": "^1.5.0",
     "@well-known-components/env-config-provider": "^1.2.0",
     "@well-known-components/http-server": "^1.1.6",
