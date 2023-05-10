@@ -5,6 +5,7 @@ import {
   AboutResponse_SkyboxConfiguration
 } from '@dcl/protocol/out-js/decentraland/bff/http_endpoints.gen'
 import { streamToBuffer } from '@dcl/catalyst-storage/dist/content-item'
+import { ContentMapping } from '@dcl/schemas/dist/misc/content-mapping'
 
 export async function worldAboutHandler({
   params,
@@ -46,7 +47,7 @@ export async function worldAboutHandler({
 
   function urlForFile(filename: string, defaultImage: string) {
     if (filename) {
-      const file = sceneJson.content.find((content: { file: string; hash: string }) => content.file === filename)
+      const file = sceneJson.content.find((content: ContentMapping) => content.file === filename)
       if (file) {
         return `${baseUrl}/contents/${file.hash}`
       }
