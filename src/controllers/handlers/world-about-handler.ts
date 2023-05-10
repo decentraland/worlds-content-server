@@ -45,19 +45,27 @@ export async function worldAboutHandler({
   const lambdasStatus = await status.getLambdasStatus()
 
   const minimap: AboutResponse_MinimapConfiguration = {
-    enabled: sceneJson.metadata.worldConfiguration?.minimapVisible || false
+    enabled:
+      sceneJson.metadata.worldConfiguration?.minimapVisible ||
+      sceneJson.metadata.worldConfiguration?.miniMapConfig.visible ||
+      false
   }
-  if (sceneJson.metadata.worldConfiguration?.minimapVisible) {
+  if (sceneJson.metadata.worldConfiguration?.miniMapConfig.dataImage) {
     minimap.dataImage =
-      sceneJson.metadata.worldConfiguration?.mapDataImage || 'https://api.decentraland.org/v1/minimap.png'
+      `${baseUrl}/contents/${sceneJson.metadata.worldConfiguration?.miniMapConfig.dataImage}` ||
+      'https://api.decentraland.org/v1/minimap.png'
+  }
+  if (sceneJson.metadata.worldConfiguration?.miniMapConfig.estateImage) {
     minimap.estateImage =
-      sceneJson.metadata.worldConfiguration?.estateImage || 'https://api.decentraland.org/v1/estatemap.png'
+      `${baseUrl}/contents/${sceneJson.metadata.worldConfiguration?.miniMapConfig.estateImage}` ||
+      'https://api.decentraland.org/v1/estatemap.png'
   }
 
   const skybox: AboutResponse_SkyboxConfiguration = {
-    fixedHour: sceneJson.metadata.worldConfiguration?.skybox
-    // TODO add support for scene parameter customSkybox once protocol supports it
+    fixedHour:
+      sceneJson.metadata.worldConfiguration?.skyboxConfig.fixedHour || sceneJson.metadata.worldConfiguration?.skybox
   }
+  // TODO add support for skyboxConfig parameters (texture) once protocol supports it
 
   const healthy = contentStatus.healthy && lambdasStatus.healthy
   const body: AboutResponse = {
