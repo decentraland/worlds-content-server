@@ -44,26 +44,40 @@ export async function worldAboutHandler({
   const contentStatus = await status.getContentStatus()
   const lambdasStatus = await status.getLambdasStatus()
 
+  function urlForFile(filename: string, defaultImage: string) {
+    if (filename) {
+      const file = sceneJson.content.find((content: { file: string; hash: string }) => content.file === filename)
+      if (file) {
+        return `${baseUrl}/contents/${file.hash}`
+      }
+      throw new Error(`File ${file} not found in scene`)
+    }
+    return defaultImage
+  }
+
+  console.log(sceneJson)
   const minimap: AboutResponse_MinimapConfiguration = {
     enabled:
       sceneJson.metadata.worldConfiguration?.minimapVisible ||
-      sceneJson.metadata.worldConfiguration?.miniMapConfig.visible ||
+      sceneJson.metadata.worldConfiguration?.miniMapConfig?.visible ||
       false
   }
-  if (sceneJson.metadata.worldConfiguration?.miniMapConfig.dataImage) {
-    minimap.dataImage =
-      `${baseUrl}/contents/${sceneJson.metadata.worldConfiguration?.miniMapConfig.dataImage}` ||
+  if (minimap.enabled || sceneJson.metadata.worldConfiguration?.miniMapConfig?.dataImage) {
+    minimap.dataImage = urlForFile(
+      sceneJson.metadata.worldConfiguration?.miniMapConfig?.dataImage,
       'https://api.decentraland.org/v1/minimap.png'
+    )
   }
-  if (sceneJson.metadata.worldConfiguration?.miniMapConfig.estateImage) {
-    minimap.estateImage =
-      `${baseUrl}/contents/${sceneJson.metadata.worldConfiguration?.miniMapConfig.estateImage}` ||
+  if (minimap.enabled || sceneJson.metadata.worldConfiguration?.miniMapConfig?.estateImage) {
+    minimap.estateImage = urlForFile(
+      sceneJson.metadata.worldConfiguration?.miniMapConfig?.estateImage,
       'https://api.decentraland.org/v1/estatemap.png'
+    )
   }
 
   const skybox: AboutResponse_SkyboxConfiguration = {
     fixedHour:
-      sceneJson.metadata.worldConfiguration?.skyboxConfig.fixedHour || sceneJson.metadata.worldConfiguration?.skybox
+      sceneJson.metadata.worldConfiguration?.skyboxConfig?.fixedHour || sceneJson.metadata.worldConfiguration?.skybox
   }
   // TODO add support for skyboxConfig parameters (texture) once protocol supports it
 
