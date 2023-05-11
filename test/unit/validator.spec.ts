@@ -7,6 +7,7 @@ import {
   validateEntity,
   validateEntityId,
   validateFiles,
+  validateMiniMapImages,
   validateSceneDimensions,
   validateSdkVersion,
   validateSignature,
@@ -293,6 +294,31 @@ describe('validator', function () {
     expect(result.errors).toContain(
       'Worlds are only supported on SDK 7. Please upgrade your scene to latest version of SDK.'
     )
+  })
+
+  it('validateMiniMapImages with errors', async () => {
+    const entityFiles = new Map<string, Uint8Array>()
+    entityFiles.set('abc.png', Buffer.from(stringToUtf8Bytes('asd')))
+
+    const deployment = await createDeployment(identity.authChain, {
+      type: EntityType.SCENE,
+      pointers: ['0,0'],
+      timestamp: Date.now(),
+      metadata: {
+        runtimeVersion: '7',
+        worldConfiguration: {
+          name: 'whatever.dcl.eth',
+          miniMapConfig: {
+            dataImage: 'abc.png',
+            estateImage: 'xyz.png'
+          }
+        }
+      },
+      files: entityFiles
+    })
+    const result = await validateMiniMapImages(components, deployment)
+    expect(result.ok()).toBeFalsy()
+    expect(result.errors).toContain('The file xyz.png is not present in the entity.')
   })
 })
 

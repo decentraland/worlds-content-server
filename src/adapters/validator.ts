@@ -275,7 +275,7 @@ export const validateMiniMapImages: Validation = async (
     if (imageFile) {
       const isFilePresent = sceneJson.content.some((content: ContentMapping) => content.file === imageFile)
       if (!isFilePresent) {
-        errors.push(`The file ${imageFile} is not present in the entity`)
+        errors.push(`The file ${imageFile} is not present in the entity.`)
       }
     }
   }
