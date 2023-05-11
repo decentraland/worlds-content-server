@@ -51,7 +51,6 @@ export async function worldAboutHandler({
       if (file) {
         return `${baseUrl}/contents/${file.hash}`
       }
-      throw new Error(`File ${file} not found in scene`)
     }
     return defaultImage
   }
