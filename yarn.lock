@@ -366,10 +366,10 @@
     ajv-errors "^3.0.0"
     ajv-keywords "^5.1.0"
 
-"@dcl/schemas@^6.18.3-20230510185545.commit-1323a17":
-  version "6.18.3-20230510185545.commit-1323a17"
-  resolved "https://registry.yarnpkg.com/@dcl/schemas/-/schemas-6.18.3-20230510185545.commit-1323a17.tgz#4be4791b591d8aecd8afbe957c4590105a236910"
-  integrity sha512-QYTQH0WI9qJH+rNrXtvAjOzwJsnFQhl/eplTYW0EEEiKMatxe19pf5PsaRBtC9saZSMhFHLJL5JagJhTvBrUFg==
+"@dcl/schemas@^6.18.3-20230511113725.commit-c5c3fb1":
+  version "6.18.3-20230511113725.commit-c5c3fb1"
+  resolved "https://registry.yarnpkg.com/@dcl/schemas/-/schemas-6.18.3-20230511113725.commit-c5c3fb1.tgz#719850fe91cdbe0fbcd16157c141616a2d7afd4c"
+  integrity sha512-xeYjpC2RjgoW5sWkfy+4piU71n2KbFMVYLTdQlqYxB5P1MdlgT2ZpojRnzTKq15BplUwCTttN1KFmRI2QK8YhA==
   dependencies:
     ajv "^8.11.0"
     ajv-errors "^3.0.0"
