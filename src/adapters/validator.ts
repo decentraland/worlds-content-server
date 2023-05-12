@@ -261,7 +261,7 @@ export const validateSdkVersion: Validation = async (
 }
 
 export const validateMiniMapImages: Validation = async (
-  components: Pick<ValidatorComponents, 'storage'>,
+  components: ValidatorComponents,
   deployment: DeploymentToValidate
 ): Promise<ValidationResult> => {
   const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())
@@ -283,6 +283,26 @@ export const validateMiniMapImages: Validation = async (
   return createValidationResult(errors)
 }
 
+export const validateSkyboxTextures: Validation = async (
+  components: ValidatorComponents,
+  deployment: DeploymentToValidate
+): Promise<ValidationResult> => {
+  const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())
+
+  const errors: string[] = []
+
+  for (const textureFile of sceneJson.metadata.worldConfiguration?.skyboxConfig?.textures || []) {
+    if (textureFile) {
+      const isFilePresent = sceneJson.content.some((content: ContentMapping) => content.file === textureFile)
+      if (!isFilePresent) {
+        errors.push(`The texture file ${textureFile} is not present in the entity.`)
+      }
+    }
+  }
+
+  return createValidationResult(errors)
+}
+
 const quickValidations: Validation[] = [
   validateEntityId,
   validateEntity,
@@ -292,7 +312,8 @@ const quickValidations: Validation[] = [
   validateDeploymentTtl,
   validateSceneDimensions,
   validateFiles,
-  validateMiniMapImages
+  validateMiniMapImages,
+  validateSkyboxTextures
   // validateSdkVersion TODO re-enable (and test) once SDK7 is ready
 ]
 

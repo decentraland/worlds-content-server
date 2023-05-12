@@ -12,7 +12,8 @@ import {
   validateSdkVersion,
   validateSignature,
   validateSigner,
-  validateSize
+  validateSize,
+  validateSkyboxTextures
 } from '../../src/adapters/validator'
 import { createInMemoryStorage, IContentStorageComponent } from '@dcl/catalyst-storage'
 import {
@@ -319,6 +320,26 @@ describe('validator', function () {
     const result = await validateMiniMapImages(components, deployment)
     expect(result.ok()).toBeFalsy()
     expect(result.errors).toContain('The file xyz.png is not present in the entity.')
+  })
+
+  it('validateSkyboxTextures with errors', async () => {
+    const deployment = await createDeployment(identity.authChain, {
+      type: EntityType.SCENE,
+      pointers: ['0,0'],
+      timestamp: Date.now(),
+      metadata: {
+        runtimeVersion: '7',
+        worldConfiguration: {
+          name: 'whatever.dcl.eth',
+          skyboxConfig: {
+            textures: ['xyz.png']
+          }
+        }
+      }
+    })
+    const result = await validateSkyboxTextures(components, deployment)
+    expect(result.ok()).toBeFalsy()
+    expect(result.errors).toContain('The texture file xyz.png is not present in the entity.')
   })
 })
 
