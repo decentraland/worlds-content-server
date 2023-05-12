@@ -37,6 +37,9 @@ test('deployment works', function ({ components, stubComponents }) {
             enabled: true,
             dataImage: 'abc.txt',
             estateImage: 'abc.txt'
+          },
+          skyboxConfig: {
+            textures: ['abc.txt']
           }
         }
       }

@@ -45,7 +45,7 @@ export async function worldAboutHandler({
   const contentStatus = await status.getContentStatus()
   const lambdasStatus = await status.getLambdasStatus()
 
-  function urlForFile(filename: string, defaultImage: string) {
+  function urlForFile(filename: string, defaultImage: string = ''): string {
     if (filename) {
       const file = sceneJson.content.find((content: ContentMapping) => content.file === filename)
       if (file) {
@@ -76,9 +76,11 @@ export async function worldAboutHandler({
 
   const skybox: AboutResponse_SkyboxConfiguration = {
     fixedHour:
-      sceneJson.metadata.worldConfiguration?.skyboxConfig?.fixedHour || sceneJson.metadata.worldConfiguration?.skybox
+      sceneJson.metadata.worldConfiguration?.skyboxConfig?.fixedHour || sceneJson.metadata.worldConfiguration?.skybox,
+    textures: sceneJson.metadata.worldConfiguration?.skyboxConfig?.textures
+      ? sceneJson.metadata.worldConfiguration?.skyboxConfig?.textures.map((texture: string) => urlForFile(texture))
+      : undefined
   }
-  // TODO add support for skyboxConfig parameters (texture) once protocol supports it
 
   const healthy = contentStatus.healthy && lambdasStatus.healthy
   const body: AboutResponse = {
