@@ -100,6 +100,11 @@ export type IWorldsManager = {
   storeAcl(worldName: string, acl: AuthChain): Promise<void>
 }
 
+export type IWorldsIndexer = {
+  createIndex(): Promise<void>
+  getIndex(): Promise<Map<string, WorldMetadata>>
+}
+
 // components used in every environment
 export type BaseComponents = {
   commsAdapter: ICommsAdapter
@@ -116,6 +121,7 @@ export type BaseComponents = {
   status: IStatusComponent
   sns: SnsComponent
   validator: Validator
+  worldsIndexer: IWorldsIndexer
   worldsManager: IWorldsManager
 }
 

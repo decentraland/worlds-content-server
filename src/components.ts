@@ -19,6 +19,7 @@ import { createDclNameChecker, createOnChainDclNameChecker } from './adapters/dc
 import { createLimitsManagerComponent } from './adapters/limits-manager'
 import { createWorldsManagerComponent } from './adapters/worlds-manager'
 import { createCommsAdapterComponent } from './adapters/comms-adapter'
+import { createWorldsIndexerComponent } from './adapters/worlds-indexer'
 
 async function determineNameValidator(
   components: Pick<AppComponents, 'config' | 'ethereumProvider' | 'logs' | 'marketplaceSubGraph'>
@@ -89,6 +90,7 @@ export async function initComponents(): Promise<AppComponents> {
   const limitsManager = await createLimitsManagerComponent({ config, fetch, logs })
 
   const worldsManager = await createWorldsManagerComponent({ logs, storage })
+  const worldsIndexer = await createWorldsIndexerComponent({ logs, storage, worldsManager })
 
   const validator = createValidator({
     config,
@@ -115,6 +117,7 @@ export async function initComponents(): Promise<AppComponents> {
     sns,
     status,
     validator,
+    worldsIndexer,
     worldsManager
   }
 }
