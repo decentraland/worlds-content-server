@@ -90,7 +90,13 @@ export async function initComponents(): Promise<AppComponents> {
   const limitsManager = await createLimitsManagerComponent({ config, fetch, logs })
 
   const worldsManager = await createWorldsManagerComponent({ logs, storage })
-  const worldsIndexer = await createWorldsIndexerComponent({ logs, storage, worldsManager })
+  const worldsIndexer = await createWorldsIndexerComponent({
+    commsAdapter,
+    logs,
+    marketplaceSubGraph,
+    storage,
+    worldsManager
+  })
 
   const validator = createValidator({
     config,

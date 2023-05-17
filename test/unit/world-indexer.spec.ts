@@ -6,22 +6,38 @@ import { createInMemoryStorage } from '@dcl/catalyst-storage'
 import { createWorldsManagerComponent } from '../../src/adapters/worlds-manager'
 import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage/dist/content-item'
 import { stringToUtf8Bytes } from 'eth-connect'
+import { Variables } from '@well-known-components/thegraph-component/dist/types'
+import { createMockCommsAdapterComponent } from '../mocks/comms-adapter-mock'
+import { ICommsAdapter } from '../../src/types'
 
 describe('All data from worlds', function () {
+  let commsAdapter: ICommsAdapter
   let config: IConfigComponent
   let logs
   let storage
   let worldsManager
   // let fetcher
   let worldsIndexer
+  const marketplaceSubGraph = {
+    query: async (_query: string, _variables?: Variables, _remainingAttempts?: number): Promise<any> => ({
+      names: []
+    })
+  }
 
   beforeEach(async () => {
+    commsAdapter = createMockCommsAdapterComponent()
     config = await createConfigComponent({})
     logs = await createLogComponent({ config })
     storage = await createInMemoryStorage()
     worldsManager = await createWorldsManagerComponent({ logs, storage })
     //  fetcher = await createFetchComponent()
-    worldsIndexer = await createWorldsIndexerComponent({ logs, storage, worldsManager })
+    worldsIndexer = await createWorldsIndexerComponent({
+      commsAdapter,
+      logs,
+      marketplaceSubGraph,
+      storage,
+      worldsManager
+    })
   })
 
   it('creates an index of all the data from all the worlds deployed in the server', async () => {
@@ -38,7 +54,6 @@ describe('All data from worlds', function () {
   it('retrieves last created index', async () => {
     const worldName = {
       name: 'world-name.dcl.eth',
-      description: 'A world',
       owner: '0x123',
       scenes: [
         {
@@ -69,7 +84,7 @@ describe('All data from worlds', function () {
         Buffer.from(
           stringToUtf8Bytes(
             JSON.stringify({
-              'world-name.dcl.eth': worldName
+              'mariano.dcl.eth': worldName
             })
           )
         )
@@ -78,9 +93,9 @@ describe('All data from worlds', function () {
     const index = await worldsIndexer.getIndex()
 
     expect(index).toEqual({
-      'world-name.dcl.eth': {
+      'mariano.dcl.eth': {
         ...worldName,
-        currentUsers: 3
+        currentUsers: 2
       }
     })
   })
