@@ -1,11 +1,4 @@
-import {
-  AccessControlList,
-  DeploymentToValidate,
-  Validation,
-  ValidationResult,
-  Validator,
-  ValidatorComponents
-} from '../types'
+import { DeploymentToValidate, Validation, ValidationResult, Validator, ValidatorComponents } from '../types'
 import { AuthChain, Entity, EthAddress, IPFSv2 } from '@dcl/schemas'
 import { Authenticator } from '@dcl/crypto'
 import { hashV1 } from '@dcl/hashing'
@@ -114,7 +107,7 @@ export const validateDeploymentPermission: Validation = async (
   const worldSpecifiedName = sceneJson.metadata.worldConfiguration.name
   const signer = deployment.authChain[0].payload
 
-  const allowed = await allowedByAcl(components, signer, worldSpecifiedName)
+  const allowed = await allowedByAcl(components, worldSpecifiedName, signer)
   if (allowed) {
     return OK
   }
