@@ -58,6 +58,17 @@ export type IWorldNamePermissionChecker = {
   checkPermission(ethAddress: EthAddress, worldName: string): Promise<boolean>
 }
 
+export type IEngagementStatsFetcher = {
+  for(worldNames: string[]): Promise<IEngagementStats>
+}
+
+export type IEngagementStats = {
+  // ownersForNames(worldNames: string[]): Promise<Map<string, EthAddress>>
+  // ownedLandsForWallets(ethAddress: EthAddress[]): Promise<Map<EthAddress, number>>
+  // activeRentalsForWallets(ethAddress: EthAddress[]): Promise<Map<EthAddress, number>>
+  shouldBeIndexed(worldName: string): boolean
+}
+
 export type ContentStatus = {
   commitHash: string
   worldsCount: number
@@ -109,6 +120,7 @@ export type IWorldsIndexer = {
 export type BaseComponents = {
   commsAdapter: ICommsAdapter
   config: IConfigComponent
+  engagementStatsFetcher: IEngagementStatsFetcher
   namePermissionChecker: IWorldNamePermissionChecker
   logs: ILoggerComponent
   server: IHttpServerComponent<GlobalContext>

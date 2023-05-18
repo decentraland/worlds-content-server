@@ -5,12 +5,13 @@ import { stringToUtf8Bytes } from 'eth-connect'
 export async function createWorldsIndexerComponent({
   commsAdapter,
   logs,
+  engagementStatsFetcher,
   marketplaceSubGraph,
   storage,
   worldsManager
 }: Pick<
   AppComponents,
-  'commsAdapter' | 'logs' | 'marketplaceSubGraph' | 'storage' | 'worldsManager'
+  'commsAdapter' | 'engagementStatsFetcher' | 'logs' | 'marketplaceSubGraph' | 'storage' | 'worldsManager'
 >): Promise<IWorldsIndexer> {
   const logger = logs.getLogger('worlds-indexer')
 
@@ -69,6 +70,7 @@ export async function createWorldsIndexerComponent({
     const deployedWorldsNames = await worldsManager.getDeployedWorldsNames()
     const index: any = {}
 
+    const iEngagementStats = await engagementStatsFetcher.for(deployedWorldsNames)
     const allWallets = await getWalletsForNames(deployedWorldsNames)
     for (const worldName of deployedWorldsNames) {
       const entity = await worldsManager.getEntityForWorld(worldName)
@@ -78,7 +80,8 @@ export async function createWorldsIndexerComponent({
       index[worldName] = {
         name: worldName,
         owner: allWallets[worldName],
-        indexInPlaces: !entity.metadata?.worldConfiguration?.placesConfig?.optOut,
+        indexInPlaces:
+          !entity.metadata?.worldConfiguration?.placesConfig?.optOut && iEngagementStats.shouldBeIndexed(worldName),
         scenes: [
           {
             [`${entity.id}`]: {

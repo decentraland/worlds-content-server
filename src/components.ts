@@ -20,6 +20,7 @@ import { createLimitsManagerComponent } from './adapters/limits-manager'
 import { createWorldsManagerComponent } from './adapters/worlds-manager'
 import { createCommsAdapterComponent } from './adapters/comms-adapter'
 import { createWorldsIndexerComponent } from './adapters/worlds-indexer'
+import { createEngagementStatsFetcherComponent } from './adapters/engagement-stats-fetcher'
 
 async function determineNameValidator(
   components: Pick<AppComponents, 'config' | 'ethereumProvider' | 'logs' | 'marketplaceSubGraph'>
@@ -87,12 +88,14 @@ export async function initComponents(): Promise<AppComponents> {
     marketplaceSubGraph
   })
 
+  const engagementStatsFetcher = await createEngagementStatsFetcherComponent({ config, ethereumProvider })
   const limitsManager = await createLimitsManagerComponent({ config, fetch, logs })
 
   const worldsManager = await createWorldsManagerComponent({ logs, storage })
   const worldsIndexer = await createWorldsIndexerComponent({
     commsAdapter,
     logs,
+    engagementStatsFetcher,
     marketplaceSubGraph,
     storage,
     worldsManager
@@ -110,18 +113,19 @@ export async function initComponents(): Promise<AppComponents> {
   return {
     commsAdapter,
     config,
-    namePermissionChecker,
-    logs,
-    server,
-    statusChecks,
-    fetch,
-    metrics,
+    engagementStatsFetcher,
     ethereumProvider,
-    storage,
-    marketplaceSubGraph,
+    fetch,
     limitsManager,
+    logs,
+    marketplaceSubGraph,
+    metrics,
+    namePermissionChecker,
+    server,
     sns,
     status,
+    statusChecks,
+    storage,
     validator,
     worldsIndexer,
     worldsManager
