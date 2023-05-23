@@ -24,8 +24,5 @@ export async function getOwnerOf(dclName: string, network: Network, provider: Pr
 
 export async function balanceOf(owner: EthAddress, network: Network, provider: Provider): Promise<number> {
   const contract = new Contract(landContracts[network], landAbi, provider)
-  console.log(landContracts[network], owner)
-  console.log(contract.balanceOf)
-  // TODO Hugo failing
   return await contract.balanceOf(owner)
 }

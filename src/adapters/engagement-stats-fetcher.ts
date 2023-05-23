@@ -34,7 +34,7 @@ export async function createEngagementStatsFetcherComponent({
 
       // Fetch balanceOf from LAND contract for each owner
       for (const [_, walletStats] of walletsStats) {
-        // TODO: Fetch balanceOf from LAND contract
+        // TODO: Batch the balanceOf calls to LAND contract
         walletStats.ownedLands = await balanceOf(walletStats.owner, networkName, jsonRpcProvider)
       }
 
@@ -47,12 +47,14 @@ export async function createEngagementStatsFetcherComponent({
 
       return {
         shouldBeIndexed(worldName: string): boolean {
-          if (owners.has(worldName)) {
-            const wallet = owners.get(worldName)
-            if (wallet) {
-              const worldStats = walletsStats.get(wallet)!
-              return !!worldStats && (worldStats.ownedLands > 0 || worldStats.activeRentals > 0)
-            }
+          const wallet = owners.get(worldName)
+          if (wallet) {
+            const worldStats = walletsStats.get(wallet)!
+            const result = !!worldStats && (worldStats.ownedLands > 0 || worldStats.activeRentals > 0)
+            console.log(
+              `for ${worldName}: ownedLands: ${worldStats.ownedLands}, activeRentals: ${worldStats.activeRentals}, shouldBeIndexed: ${result} `
+            )
+            return result
           }
 
           return false
