@@ -21,6 +21,7 @@ import { createWorldsManagerComponent } from './adapters/worlds-manager'
 import { createCommsAdapterComponent } from './adapters/comms-adapter'
 import { createWorldsIndexerComponent } from './adapters/worlds-indexer'
 import { createEngagementStatsFetcherComponent } from './adapters/engagement-stats-fetcher'
+import { JsonRpcProvider } from 'ethers'
 
 async function determineNameValidator(
   components: Pick<AppComponents, 'config' | 'ethereumProvider' | 'logs' | 'marketplaceSubGraph'>
@@ -60,6 +61,7 @@ export async function initComponents(): Promise<AppComponents> {
 
   const rpcUrl = await config.requireString('RPC_URL')
   const ethereumProvider = new HTTPProvider(rpcUrl, fetch)
+  const jsonRpcProvider = new JsonRpcProvider(rpcUrl)
 
   const storageFolder = (await config.getString('STORAGE_FOLDER')) || 'contents'
 
@@ -88,7 +90,7 @@ export async function initComponents(): Promise<AppComponents> {
     marketplaceSubGraph
   })
 
-  const engagementStatsFetcher = await createEngagementStatsFetcherComponent({ config, ethereumProvider })
+  const engagementStatsFetcher = await createEngagementStatsFetcherComponent({ config, jsonRpcProvider })
   const limitsManager = await createLimitsManagerComponent({ config, fetch, logs })
 
   const worldsManager = await createWorldsManagerComponent({ logs, storage })
@@ -116,6 +118,7 @@ export async function initComponents(): Promise<AppComponents> {
     engagementStatsFetcher,
     ethereumProvider,
     fetch,
+    jsonRpcProvider,
     limitsManager,
     logs,
     marketplaceSubGraph,

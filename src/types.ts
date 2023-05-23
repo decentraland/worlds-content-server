@@ -12,6 +12,7 @@ import { HTTPProvider } from 'eth-connect'
 import { ISubgraphComponent } from '@well-known-components/thegraph-component'
 import { IStatusComponent } from './adapters/status'
 import { AuthChain, Entity, EthAddress } from '@dcl/schemas'
+import { JsonRpcProvider } from 'ethers'
 
 export type GlobalContext = {
   components: BaseComponents
@@ -122,6 +123,7 @@ export type BaseComponents = {
   config: IConfigComponent
   engagementStatsFetcher: IEngagementStatsFetcher
   namePermissionChecker: IWorldNamePermissionChecker
+  jsonRpcProvider: JsonRpcProvider
   logs: ILoggerComponent
   server: IHttpServerComponent<GlobalContext>
   fetch: IFetchComponent
