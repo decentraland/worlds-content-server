@@ -1,6 +1,6 @@
 import { AppComponents, IEngagementStats, IEngagementStatsFetcher } from '../types'
 import { EthAddress } from '@dcl/schemas'
-import { getOwnerOf } from '../contracts'
+import { balanceOf, getOwnerOf } from '../contracts'
 import { Network } from '../contracts/types'
 
 type WorldStats = {
@@ -35,8 +35,7 @@ export async function createEngagementStatsFetcherComponent({
       // Fetch balanceOf from LAND contract for each owner
       for (const [_, walletStats] of walletsStats) {
         // TODO: Fetch balanceOf from LAND contract
-        const numberOfLandOwned = 0
-        walletStats.ownedLands = numberOfLandOwned
+        walletStats.ownedLands = await balanceOf(walletStats.owner, networkName, jsonRpcProvider)
       }
 
       // Fetch the active rental contracts for each owner
