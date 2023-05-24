@@ -8,7 +8,7 @@ import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage/dist/conte
 import { stringToUtf8Bytes } from 'eth-connect'
 import { Variables } from '@well-known-components/thegraph-component/dist/types'
 import { createMockCommsAdapterComponent } from '../mocks/comms-adapter-mock'
-import { ICommsAdapter, IEngagementStatsFetcher, WorldStats } from '../../src/types'
+import { ICommsAdapter, IEngagementStatsFetcher, WorldData, WorldStats } from '../../src/types'
 import { createMockEngagementStatsFetcherComponent } from '../mocks/engagement-stats-fetcher-mock'
 import { EthAddress } from '@dcl/schemas'
 
@@ -54,7 +54,7 @@ describe('All data from worlds', function () {
     const content = await storage.retrieve('global-index.json')
     const stored = JSON.parse((await streamToBuffer(await content.asStream())).toString())
     console.log(stored)
-    expect(stored).toMatchObject({})
+    expect(stored).toMatchObject([])
   })
 
   it('retrieves last created index but it has not been created', async () => {
@@ -62,51 +62,32 @@ describe('All data from worlds', function () {
   })
 
   it('retrieves last created index', async () => {
-    const worldName = {
+    const worldData: WorldData = {
       name: 'world-name.dcl.eth',
       owner: '0x123',
+      indexInPlaces: true,
       scenes: [
         {
-          bafkreielwj3ki46munydwn4ayazdvmjln76khmz2xyaf5v6dkmo6yoebbi: {
-            title: 'Mi propia escena',
-            description: 'Mi lugar en el mundo',
-
-            pointers: ['20,24'],
-            timestamp: 1683916946483
-          }
+          id: 'bafkreielwj3ki46munydwn4ayazdvmjln76khmz2xyaf5v6dkmo6yoebbi',
+          title: 'Mi propia escena',
+          description: 'Mi lugar en el mundo',
+          thumbnail: 'https://localhost:3000/contents/bafkreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku',
+          pointers: ['20,24'],
+          timestamp: 1683916946483
         }
-      ],
-      configuration: {
-        miniMapConfig: {
-          visible: true,
-          dataImage: 'black_image.png',
-          estateImage: 'black_image.png'
-        },
-        skyboxConfig: {
-          fixedHour: 36000,
-          textures: ['black_image.png']
-        }
-      }
+      ]
     }
     await storage.storeStream(
       'global-index.json',
-      bufferToStream(
-        Buffer.from(
-          stringToUtf8Bytes(
-            JSON.stringify({
-              'world-name.dcl.eth': worldName
-            })
-          )
-        )
-      )
+      bufferToStream(Buffer.from(stringToUtf8Bytes(JSON.stringify([worldData]))))
     )
     const index = await worldsIndexer.getIndex()
 
-    expect(index).toEqual({
-      'world-name.dcl.eth': {
-        ...worldName,
+    expect(index).toEqual([
+      {
+        ...worldData,
         currentUsers: 2
       }
-    })
+    ])
   })
 })

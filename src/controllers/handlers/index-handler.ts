@@ -10,17 +10,16 @@ export async function getIndexHandler(
 
   const index = await worldsIndexer.getIndex()
 
-  for (const worldName in index) {
-    console.log(worldName, index[worldName].scenes)
-    for (const scene of Object.values(index[worldName].scenes)) {
-      // @ts-ignore
-      scene['thumbnail'] = `${baseUrl}/contents/${scene.thumbnail}`
+  // Transform to URLs
+  for (const worldData of index) {
+    for (const scene of worldData.scenes) {
+      scene.thumbnail = `${baseUrl}/contents/${scene.thumbnail}`
     }
   }
 
   return {
     status: 200,
-    body: index
+    body: { data: index }
   }
 }
 

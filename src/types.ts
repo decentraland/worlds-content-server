@@ -83,6 +83,24 @@ export type ContentStatus = {
 
 export type WorldStatus = { worldName: string; users: number }
 
+export type WorldData = {
+  name: string
+  owner: EthAddress
+  indexInPlaces: boolean
+  scenes: SceneData[]
+  currentUsers?: number
+}
+
+export type SceneData = {
+  id: string
+  title: string
+  description: string
+  thumbnail: string
+  pointers: string[]
+  timestamp: number
+  runtimeVersion?: string
+}
+
 export type CommsStatus = {
   adapterType: string
   statusUrl: string
@@ -119,7 +137,7 @@ export type IWorldsManager = {
 
 export type IWorldsIndexer = {
   createIndex(): Promise<void>
-  getIndex(): Promise<Record<string, any>>
+  getIndex(): Promise<WorldData[]>
 }
 
 // components used in every environment

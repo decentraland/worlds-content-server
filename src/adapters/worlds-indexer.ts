@@ -1,4 +1,4 @@
-import { AppComponents, IWorldsIndexer, WorldStatus } from '../types'
+import { AppComponents, IWorldsIndexer, WorldData, WorldStatus } from '../types'
 import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage/dist/content-item'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { ContentMapping } from '@dcl/schemas/dist/misc/content-mapping'
@@ -17,24 +17,24 @@ export async function createWorldsIndexerComponent({
 
   const globalIndexFile = 'global-index.json'
 
-  const addLiveData = async (staticIndex: any) => {
+  const addLiveData = async (staticIndex: WorldData[]) => {
     const commsStatus = await commsAdapter.status()
-    const usersByWorld = commsStatus.details?.reduce((accum: any, world: WorldStatus) => {
+    const usersByWorld = commsStatus.details?.reduce((accum: Record<string, WorldStatus>, world: WorldStatus) => {
       accum[world.worldName] = world
       return accum
     }, {})
 
     console.log(commsStatus)
 
-    for (const worldName in staticIndex) {
-      staticIndex[worldName].currentUsers = usersByWorld?.[worldName]?.users ?? 0
+    for (const worldData of staticIndex) {
+      worldData.currentUsers = usersByWorld?.[worldData.name]?.users ?? 0
     }
   }
 
   async function createIndex(): Promise<void> {
     logger.info(`Creating index of all the data from all the worlds deployed in the server`)
     const deployedWorldsNames = await worldsManager.getDeployedWorldsNames()
-    const index: any = {}
+    const index: WorldData[] = []
 
     const engagementStats = await engagementStatsFetcher.for(deployedWorldsNames)
     for (const worldName of deployedWorldsNames) {
@@ -45,28 +45,32 @@ export async function createWorldsIndexerComponent({
       const thumbnailFile = entity.content.find(
         (content: ContentMapping) => content.file === entity.metadata?.display?.navmapThumbnail
       )
-      index[worldName] = {
-        name: worldName,
-        owner: engagementStats.ownerOf(worldName),
-        indexInPlaces:
-          !entity.metadata?.worldConfiguration?.placesConfig?.optOut && engagementStats.shouldBeIndexed(worldName),
-        scenes: {
-          [`${entity.id}`]: {
-            title: entity.metadata?.display?.title,
-            description: entity.metadata?.display?.description,
-            thumbnail: thumbnailFile!.hash,
-            pointers: entity.pointers,
-            runtimeVersion: entity.metadata?.runtimeVersion
-          }
-        }
+      const owner = engagementStats.ownerOf(worldName)
+      if (owner) {
+        index.push({
+          name: worldName,
+          owner: owner,
+          indexInPlaces:
+            !entity.metadata?.worldConfiguration?.placesConfig?.optOut && engagementStats.shouldBeIndexed(worldName),
+          scenes: [
+            {
+              id: entity.id,
+              title: entity.metadata?.display?.title,
+              description: entity.metadata?.display?.description,
+              thumbnail: thumbnailFile!.hash,
+              pointers: entity.pointers,
+              runtimeVersion: entity.metadata?.runtimeVersion,
+              timestamp: entity.timestamp
+            }
+          ]
+        })
       }
     }
     await storage.storeStream(globalIndexFile, bufferToStream(stringToUtf8Bytes(JSON.stringify(index))))
     logger.info(`Done indexing`)
   }
 
-  async function getIndex(): Promise<Record<string, any>> {
-    // await createIndex() // TODO Remove
+  async function getIndex(): Promise<WorldData[]> {
     const content = await storage.retrieve(globalIndexFile)
     if (!content) {
       return Promise.reject('No global index found')
@@ -75,7 +79,6 @@ export async function createWorldsIndexerComponent({
 
     await addLiveData(staticIndex)
 
-    console.log({ staticIndex })
     return staticIndex
   }
 
