@@ -62,6 +62,13 @@ export async function initComponents(): Promise<AppComponents> {
   const rpcUrl = await config.requireString('RPC_URL')
   const ethereumProvider = new HTTPProvider(rpcUrl, fetch)
   const jsonRpcProvider = new JsonRpcProvider(rpcUrl)
+  const logLevel = await config.getString('LOG_LEVEL')
+  if (logLevel && logLevel.toUpperCase() === 'DEBUG') {
+    const logger = logs.getLogger('json-rpc-provider')
+    await jsonRpcProvider.on('debug', (info) => {
+      logger.debug(JSON.stringify(info, null, 2))
+    })
+  }
 
   const storageFolder = (await config.getString('STORAGE_FOLDER')) || 'contents'
 
@@ -90,7 +97,7 @@ export async function initComponents(): Promise<AppComponents> {
     marketplaceSubGraph
   })
 
-  const engagementStatsFetcher = await createEngagementStatsFetcherComponent({ config, jsonRpcProvider })
+  const engagementStatsFetcher = await createEngagementStatsFetcherComponent({ config, jsonRpcProvider, logs })
   const limitsManager = await createLimitsManagerComponent({ config, fetch, logs })
 
   const worldsManager = await createWorldsManagerComponent({ logs, storage })
