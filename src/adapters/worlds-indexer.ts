@@ -1,17 +1,17 @@
-import { AppComponents, IWorldsIndexer, WorldMetadata, WorldStatus } from '../types'
+import { AppComponents, IWorldsIndexer, WorldStatus } from '../types'
 import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage/dist/content-item'
 import { stringToUtf8Bytes } from 'eth-connect'
+import { ContentMapping } from '@dcl/schemas/dist/misc/content-mapping'
 
 export async function createWorldsIndexerComponent({
   commsAdapter,
   logs,
   engagementStatsFetcher,
-  marketplaceSubGraph,
   storage,
   worldsManager
 }: Pick<
   AppComponents,
-  'commsAdapter' | 'engagementStatsFetcher' | 'logs' | 'marketplaceSubGraph' | 'storage' | 'worldsManager'
+  'commsAdapter' | 'engagementStatsFetcher' | 'logs' | 'storage' | 'worldsManager'
 >): Promise<IWorldsIndexer> {
   const logger = logs.getLogger('worlds-indexer')
 
@@ -42,27 +42,30 @@ export async function createWorldsIndexerComponent({
       if (!entity) {
         continue
       }
+      const thumbnailFile = entity.content.find(
+        (content: ContentMapping) => content.file === entity.metadata?.display?.navmapThumbnail
+      )
       index[worldName] = {
         name: worldName,
         owner: engagementStats.ownerOf(worldName),
         indexInPlaces:
           !entity.metadata?.worldConfiguration?.placesConfig?.optOut && engagementStats.shouldBeIndexed(worldName),
-        scenes: [
-          {
-            [`${entity.id}`]: {
-              title: entity.metadata?.display?.title,
-              description: entity.metadata?.display?.description,
-              pointers: entity.pointers
-            }
+        scenes: {
+          [`${entity.id}`]: {
+            title: entity.metadata?.display?.title,
+            description: entity.metadata?.display?.description,
+            thumbnail: thumbnailFile!.hash,
+            pointers: entity.pointers,
+            runtimeVersion: entity.metadata?.runtimeVersion
           }
-        ]
+        }
       }
     }
     await storage.storeStream(globalIndexFile, bufferToStream(stringToUtf8Bytes(JSON.stringify(index))))
     logger.info(`Done indexing`)
   }
 
-  async function getIndex(): Promise<Map<string, WorldMetadata>> {
+  async function getIndex(): Promise<Record<string, any>> {
     // await createIndex() // TODO Remove
     const content = await storage.retrieve(globalIndexFile)
     if (!content) {

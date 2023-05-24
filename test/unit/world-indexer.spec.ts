@@ -41,7 +41,6 @@ describe('All data from worlds', function () {
       commsAdapter,
       logs,
       engagementStatsFetcher,
-      marketplaceSubGraph,
       storage,
       worldsManager
     })

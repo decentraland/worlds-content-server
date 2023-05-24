@@ -1,9 +1,9 @@
 import type { IFetchComponent } from '@well-known-components/http-server'
 import type {
-  IConfigComponent,
-  ILoggerComponent,
-  IHttpServerComponent,
   IBaseComponent,
+  IConfigComponent,
+  IHttpServerComponent,
+  ILoggerComponent,
   IMetricsComponent
 } from '@well-known-components/interfaces'
 import { metricDeclarations } from './metrics'
@@ -119,7 +119,7 @@ export type IWorldsManager = {
 
 export type IWorldsIndexer = {
   createIndex(): Promise<void>
-  getIndex(): Promise<Map<string, WorldMetadata>>
+  getIndex(): Promise<Record<string, any>>
 }
 
 // components used in every environment

@@ -112,7 +112,6 @@ export async function initComponents(): Promise<AppComponents> {
     commsAdapter,
     logs,
     engagementStatsFetcher,
-    marketplaceSubGraph,
     storage,
     worldsManager
   })
