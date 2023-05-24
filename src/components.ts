@@ -79,8 +79,10 @@ export async function initComponents(): Promise<AppComponents> {
     ? await createAwsS3BasedFileSystemContentStorage({ fs, config }, bucket)
     : await createFolderBasedFileSystemContentStorage({ fs }, storageFolder)
 
-  const subGraphUrl = await config.requireString('MARKETPLACE_SUBGRAPH_URL')
-  const marketplaceSubGraph = await createSubgraphComponent({ config, logs, metrics, fetch }, subGraphUrl)
+  const marketplaceSubGraphUrl = await config.requireString('MARKETPLACE_SUBGRAPH_URL')
+  const marketplaceSubGraph = await createSubgraphComponent({ config, logs, metrics, fetch }, marketplaceSubGraphUrl)
+  const rentalsSubGraphUrl = await config.requireString('RENTALS_SUBGRAPH_URL')
+  const rentalsSubGraph = await createSubgraphComponent({ config, logs, metrics, fetch }, rentalsSubGraphUrl)
 
   const snsArn = await config.getString('SNS_ARN')
 
@@ -97,7 +99,12 @@ export async function initComponents(): Promise<AppComponents> {
     marketplaceSubGraph
   })
 
-  const engagementStatsFetcher = await createEngagementStatsFetcherComponent({ config, jsonRpcProvider, logs })
+  const engagementStatsFetcher = await createEngagementStatsFetcherComponent({
+    config,
+    jsonRpcProvider,
+    logs,
+    rentalsSubGraph
+  })
   const limitsManager = await createLimitsManagerComponent({ config, fetch, logs })
 
   const worldsManager = await createWorldsManagerComponent({ logs, storage })
@@ -131,6 +138,7 @@ export async function initComponents(): Promise<AppComponents> {
     marketplaceSubGraph,
     metrics,
     namePermissionChecker,
+    rentalsSubGraph,
     server,
     sns,
     status,

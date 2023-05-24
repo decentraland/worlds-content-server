@@ -8,7 +8,9 @@ import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage/dist/conte
 import { stringToUtf8Bytes } from 'eth-connect'
 import { Variables } from '@well-known-components/thegraph-component/dist/types'
 import { createMockCommsAdapterComponent } from '../mocks/comms-adapter-mock'
-import { ICommsAdapter } from '../../src/types'
+import { ICommsAdapter, IEngagementStatsFetcher, WorldStats } from '../../src/types'
+import { createMockEngagementStatsFetcherComponent } from '../mocks/engagement-stats-fetcher-mock'
+import { EthAddress } from '@dcl/schemas'
 
 describe('All data from worlds', function () {
   let commsAdapter: ICommsAdapter
@@ -16,8 +18,10 @@ describe('All data from worlds', function () {
   let logs
   let storage
   let worldsManager
-  // let fetcher
   let worldsIndexer
+  let engagementStatsFetcher: IEngagementStatsFetcher
+  let owners: Map<string, EthAddress>
+  let walletsStats: Map<EthAddress, WorldStats>
   const marketplaceSubGraph = {
     query: async (_query: string, _variables?: Variables, _remainingAttempts?: number): Promise<any> => ({
       names: []
@@ -30,10 +34,13 @@ describe('All data from worlds', function () {
     logs = await createLogComponent({ config })
     storage = await createInMemoryStorage()
     worldsManager = await createWorldsManagerComponent({ logs, storage })
-    //  fetcher = await createFetchComponent()
+    owners = new Map<string, EthAddress>()
+    walletsStats = new Map<EthAddress, WorldStats>()
+    engagementStatsFetcher = await createMockEngagementStatsFetcherComponent(owners, walletsStats)
     worldsIndexer = await createWorldsIndexerComponent({
       commsAdapter,
       logs,
+      engagementStatsFetcher,
       marketplaceSubGraph,
       storage,
       worldsManager
@@ -49,6 +56,10 @@ describe('All data from worlds', function () {
     const stored = JSON.parse((await streamToBuffer(await content.asStream())).toString())
     console.log(stored)
     expect(stored).toMatchObject({})
+  })
+
+  it('retrieves last created index but it has not been created', async () => {
+    await expect(() => worldsIndexer.getIndex()).rejects.toEqual('No global index found')
   })
 
   it('retrieves last created index', async () => {
@@ -84,7 +95,7 @@ describe('All data from worlds', function () {
         Buffer.from(
           stringToUtf8Bytes(
             JSON.stringify({
-              'mariano.dcl.eth': worldName
+              'world-name.dcl.eth': worldName
             })
           )
         )
@@ -93,7 +104,7 @@ describe('All data from worlds', function () {
     const index = await worldsIndexer.getIndex()
 
     expect(index).toEqual({
-      'mariano.dcl.eth': {
+      'world-name.dcl.eth': {
         ...worldName,
         currentUsers: 2
       }

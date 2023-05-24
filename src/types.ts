@@ -63,11 +63,16 @@ export type IEngagementStatsFetcher = {
   for(worldNames: string[]): Promise<IEngagementStats>
 }
 
+export type WorldStats = {
+  owner: EthAddress
+  ownedLands: number
+  activeRentals: number
+}
+
 export type IEngagementStats = {
-  // ownersForNames(worldNames: string[]): Promise<Map<string, EthAddress>>
-  // ownedLandsForWallets(ethAddress: EthAddress[]): Promise<Map<EthAddress, number>>
-  // activeRentalsForWallets(ethAddress: EthAddress[]): Promise<Map<EthAddress, number>>
   shouldBeIndexed(worldName: string): boolean
+  ownerOf(worldName: string): EthAddress | undefined
+  statsFor(worldName: string): WorldStats | undefined
 }
 
 export type ContentStatus = {
@@ -122,18 +127,19 @@ export type BaseComponents = {
   commsAdapter: ICommsAdapter
   config: IConfigComponent
   engagementStatsFetcher: IEngagementStatsFetcher
-  namePermissionChecker: IWorldNamePermissionChecker
-  jsonRpcProvider: JsonRpcProvider
-  logs: ILoggerComponent
-  server: IHttpServerComponent<GlobalContext>
-  fetch: IFetchComponent
-  metrics: IMetricsComponent<keyof typeof metricDeclarations>
   ethereumProvider: HTTPProvider
-  storage: IContentStorageComponent
-  marketplaceSubGraph: ISubgraphComponent
+  fetch: IFetchComponent
+  jsonRpcProvider: JsonRpcProvider
   limitsManager: ILimitsManager
-  status: IStatusComponent
+  logs: ILoggerComponent
+  marketplaceSubGraph: ISubgraphComponent
+  metrics: IMetricsComponent<keyof typeof metricDeclarations>
+  namePermissionChecker: IWorldNamePermissionChecker
+  rentalsSubGraph: ISubgraphComponent
+  server: IHttpServerComponent<GlobalContext>
   sns: SnsComponent
+  status: IStatusComponent
+  storage: IContentStorageComponent
   validator: Validator
   worldsIndexer: IWorldsIndexer
   worldsManager: IWorldsManager

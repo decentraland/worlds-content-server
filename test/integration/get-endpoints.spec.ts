@@ -87,7 +87,7 @@ test('consume status endpoint', function ({ components }) {
           users: 2,
           details: [
             {
-              worldName: 'mariano.dcl.eth',
+              worldName: 'world-name.dcl.eth',
               users: 2
             }
           ]

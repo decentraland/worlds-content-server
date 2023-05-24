@@ -17,40 +17,6 @@ export async function createWorldsIndexerComponent({
 
   const globalIndexFile = 'global-index.json'
 
-  const getWalletsForNames = async (deployedWorldsNames: string[]) => {
-    const subQueries = deployedWorldsNames
-      .map((name) => name.toLowerCase().replace('.dcl.eth', ''))
-      .map(
-        (name) => `
-          ${name}: nfts(
-            where: { name_starts_with_nocase: "${name}", name_ends_with_nocase: "${name}", category: ens }
-            orderBy: name
-          ) {
-            name
-            owner {
-              id
-            }
-          }
-    `
-      )
-    const query = `
-      query {
-        ${subQueries.join('\n')}
-      }`
-    const queryResult = await marketplaceSubGraph.query<any>(query)
-
-    const result: any = {}
-    for (const name of deployedWorldsNames) {
-      const sanitizedName = name.toLowerCase().replace('.dcl.eth', '')
-      const found = queryResult[sanitizedName].filter(
-        (nft: any) => `${nft.name.toLowerCase()}.dcl.eth` === name.toLowerCase()
-      )
-      result[name] = found[0]?.owner?.id
-    }
-
-    return result
-  }
-
   const addLiveData = async (staticIndex: any) => {
     const commsStatus = await commsAdapter.status()
     const usersByWorld = commsStatus.details?.reduce((accum: any, world: WorldStatus) => {
@@ -70,8 +36,7 @@ export async function createWorldsIndexerComponent({
     const deployedWorldsNames = await worldsManager.getDeployedWorldsNames()
     const index: any = {}
 
-    const iEngagementStats = await engagementStatsFetcher.for(deployedWorldsNames)
-    const allWallets = await getWalletsForNames(deployedWorldsNames)
+    const engagementStats = await engagementStatsFetcher.for(deployedWorldsNames)
     for (const worldName of deployedWorldsNames) {
       const entity = await worldsManager.getEntityForWorld(worldName)
       if (!entity) {
@@ -79,9 +44,9 @@ export async function createWorldsIndexerComponent({
       }
       index[worldName] = {
         name: worldName,
-        owner: allWallets[worldName],
+        owner: engagementStats.ownerOf(worldName),
         indexInPlaces:
-          !entity.metadata?.worldConfiguration?.placesConfig?.optOut && iEngagementStats.shouldBeIndexed(worldName),
+          !entity.metadata?.worldConfiguration?.placesConfig?.optOut && engagementStats.shouldBeIndexed(worldName),
         scenes: [
           {
             [`${entity.id}`]: {

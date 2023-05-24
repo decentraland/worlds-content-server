@@ -1,26 +1,64 @@
-import { AppComponents, IEngagementStats, IEngagementStatsFetcher } from '../types'
+import { AppComponents, IEngagementStats, IEngagementStatsFetcher, WorldStats } from '../types'
 import { EthAddress } from '@dcl/schemas'
 import { balanceOf, getOwnerOf } from '../contracts'
 import { Network } from '../contracts/types'
 
-type WorldStats = {
-  owner: EthAddress
-  ownedLands: number
-  activeRentals: number
+const RENTAL_QUERY = `
+      query activeRentals($wallets: [String!]!, $endsAt: Int!) {
+        rentals(where: {tenant_in: $wallets, isActive: true, endsAt_gt: $endsAt}) {
+          tenant
+          isActive
+          endsAt
+        }
+      }`
+
+type RentalsResponse = {
+  rentals: {
+    tenant: EthAddress
+    isActive: boolean
+    endsAt: string
+  }[]
 }
 
+export async function createEngagementStats(
+  owners: Map<string, EthAddress>,
+  walletsStats: Map<EthAddress, WorldStats>
+) {
+  return {
+    statsFor(worldName: string): WorldStats | undefined {
+      const wallet = owners.get(worldName)
+      if (wallet) {
+        return walletsStats.get(wallet)
+      }
+      return undefined
+    },
+    ownerOf(worldName: string): EthAddress | undefined {
+      return owners.get(worldName)
+    },
+    shouldBeIndexed(worldName: string): boolean {
+      const wallet = owners.get(worldName)
+      if (wallet) {
+        const worldStats = walletsStats.get(wallet)!
+        return !!worldStats && (worldStats.ownedLands > 0 || worldStats.activeRentals > 0)
+      }
+
+      return false
+    }
+  }
+}
 export async function createEngagementStatsFetcherComponent({
-  logs,
   config,
-  jsonRpcProvider
-}: Pick<AppComponents, 'config' | 'jsonRpcProvider' | 'logs'>): Promise<IEngagementStatsFetcher> {
+  logs,
+  jsonRpcProvider,
+  rentalsSubGraph
+}: Pick<AppComponents, 'config' | 'jsonRpcProvider' | 'logs' | 'rentalsSubGraph'>): Promise<IEngagementStatsFetcher> {
   const logger = logs.getLogger('engagement-stats-fetcher')
   const networkId = await config.requireString('NETWORK_ID')
   const networkName: Network = networkId === '1' ? 'mainnet' : 'goerli'
 
   return {
     async for(worldNames: string[]): Promise<IEngagementStats> {
-      // First figure out the owners for all the names
+      // First figure out the owners for each of the worlds
       const owners = new Map<string, EthAddress>()
       const walletsStats = new Map<EthAddress, WorldStats>()
       await Promise.all(
@@ -48,28 +86,19 @@ export async function createEngagementStatsFetcherComponent({
         })
       )
 
-      // Fetch the active rental contracts for each owner
-      for (const [_, walletStats] of walletsStats) {
-        // TODO: Fetch active rental contracts for each owner
-        const activeRentals = 0
-        walletStats.activeRentals = activeRentals
-      }
-
-      return {
-        shouldBeIndexed(worldName: string): boolean {
-          const wallet = owners.get(worldName)
-          if (wallet) {
-            const worldStats = walletsStats.get(wallet)!
-            const result = !!worldStats && (worldStats.ownedLands > 0 || worldStats.activeRentals > 0)
-            logger.info(
-              `for ${worldName}: ownedLands: ${worldStats.ownedLands}, activeRentals: ${worldStats.activeRentals}, shouldBeIndexed: ${result} `
-            )
-            return result
-          }
-
-          return false
+      // Find out which wallets have active rental contracts
+      const result = await rentalsSubGraph.query<RentalsResponse>(RENTAL_QUERY, {
+        wallets: Array.from(walletsStats.keys()).map((wallet) => wallet.toLowerCase()),
+        endsAt: Math.floor(Date.now() / 1000)
+      })
+      result.rentals.forEach((rental) => {
+        const walletStats = walletsStats.get(rental.tenant.toLowerCase())
+        if (walletStats) {
+          walletStats.activeRentals++
         }
-      }
+      })
+
+      return createEngagementStats(owners, walletsStats)
     }
   }
 }
