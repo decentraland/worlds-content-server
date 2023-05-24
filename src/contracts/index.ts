@@ -1,4 +1,3 @@
-// import * as ethers from 'ethers'
 import { Contract, Provider } from 'ethers'
 import { landAbi, registrarAbi } from './abi'
 import { Network } from './types'
