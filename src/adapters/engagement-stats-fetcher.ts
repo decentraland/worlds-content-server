@@ -12,7 +12,7 @@ const RENTAL_QUERY = `
         }
       }`
 
-type RentalsResponse = {
+export type RentalsResponse = {
   rentals: {
     tenant: EthAddress
     isActive: boolean
