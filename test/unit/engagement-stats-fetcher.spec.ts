@@ -25,10 +25,17 @@ describe('Engagement Stats Fetcher', function () {
     })
     logs = await createLogComponent({ config })
     landContract = {
-      balanceOf: jest.fn(() => Promise.resolve(2))
+      balanceOf: jest.fn((owner) => {
+        if (owner === '0x123') return Promise.resolve(2)
+        else return Promise.reject('Error')
+      })
     }
     dclRegistrarContract = {
-      getOwnerOf: jest.fn(() => Promise.resolve('0x123'))
+      getOwnerOf: jest.fn((dclName) => {
+        if (dclName === 'world-name') return Promise.resolve('0x123')
+        else if (dclName === 'another-world-name') return Promise.resolve('0x456')
+        else return Promise.reject('Error')
+      })
     }
     rentalsSubGraph = {
       query: (_query: string, _variables?: Variables, _remainingAttempts?: number): Promise<any> => {
@@ -52,7 +59,11 @@ describe('Engagement Stats Fetcher', function () {
   })
 
   it('creates an index of all the data from all the worlds deployed in the server', async () => {
-    const engagementStats = await engagementStatsFetcher.for(['world-name.dcl.eth'])
+    const engagementStats = await engagementStatsFetcher.for([
+      'world-name.dcl.eth',
+      'another-world-name.dcl.eth',
+      'missing-world-name.dcl.eth'
+    ])
 
     expect(landContract.balanceOf).toHaveBeenCalledWith('0x123')
     expect(dclRegistrarContract.getOwnerOf).toHaveBeenCalledWith('world-name')
