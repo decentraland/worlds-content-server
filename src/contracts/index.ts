@@ -39,16 +39,3 @@ export function createDclRegistrarContract(network: Network, provider: Provider)
     }
   }
 }
-
-// export async function getOwnerOf(dclName: string, network: Network, provider: Provider): Promise<EthAddress> {
-//   const contract = new Contract(dclRegistrarContracts[network], registrarAbi, provider)
-//
-//   const ownerOf = await contract.getOwnerOf(dclName)
-//
-//   return ownerOf.toLowerCase()
-// }
-//
-// export async function balanceOf(owner: EthAddress, network: Network, provider: Provider): Promise<number> {
-//   const contract = new Contract(landContracts[network], landAbi, provider)
-//   return await contract.balanceOf(owner)
-// }
