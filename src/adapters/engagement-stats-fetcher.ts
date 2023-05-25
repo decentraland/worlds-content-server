@@ -36,7 +36,7 @@ export async function createEngagementStats(
     shouldBeIndexed(worldName: string): boolean {
       const wallet = owners.get(worldName)
       if (wallet) {
-        const worldStats = walletsStats.get(wallet)!
+        const worldStats = walletsStats.get(wallet)
         return !!worldStats && (worldStats.ownedLands > 0 || worldStats.activeRentals > 0)
       }
 
@@ -44,6 +44,7 @@ export async function createEngagementStats(
     }
   }
 }
+
 export async function createEngagementStatsFetcherComponent({
   dclRegistrarContract,
   landContract,
