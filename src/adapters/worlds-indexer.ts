@@ -65,7 +65,7 @@ export async function createWorldsIndexerComponent({
       }
     }
     await storage.storeStream(globalIndexFile, bufferToStream(stringToUtf8Bytes(JSON.stringify(index))))
-    logger.info(`Done indexing`)
+    logger.info('Done indexing')
   }
 
   async function getIndex(): Promise<WorldData[]> {
