@@ -6,9 +6,7 @@ export async function getIndexHandler(
 ): Promise<IHttpServerComponent.IResponse> {
   const { config, worldsIndexer } = context.components
 
-  const baseUrl = (
-    (await config.getString('HTTP_BASE_URL')) || `${context.url.protocol}//${context.url.host}`
-  ).toString()
+  const baseUrl = (await config.getString('HTTP_BASE_URL')) || `${context.url.protocol}//${context.url.host}`
 
   const index = await worldsIndexer.getIndex()
 
