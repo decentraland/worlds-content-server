@@ -30,7 +30,7 @@ export async function createWorldsIndexerComponent({
   }
 
   async function createIndex(): Promise<void> {
-    logger.info(`Creating index of all the data from all the worlds deployed in the server`)
+    logger.info('Creating index of all the data from all the worlds deployed in the server')
     const deployedWorldsNames = await worldsManager.getDeployedWorldsNames()
     const index: WorldData[] = []
 
