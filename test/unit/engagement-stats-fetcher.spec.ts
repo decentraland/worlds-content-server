@@ -7,27 +7,29 @@ import {
   createEngagementStats,
   createEngagementStatsFetcherComponent
 } from '../../src/adapters/engagement-stats-fetcher'
-import { JsonRpcProvider } from 'ethers'
 import { ISubgraphComponent } from '@well-known-components/thegraph-component'
 import { Variables } from '@well-known-components/thegraph-component/dist/types'
-import { balanceOf, getOwnerOf } from '../../src/contracts'
-
-jest.mock('../../src/contracts', () => ({ balanceOf: jest.fn(() => 2), getOwnerOf: jest.fn(() => '0x123') }))
+import { IDclRegistrarContract, ILandContract } from '../../src/contracts'
 
 describe('Engagement Stats Fetcher', function () {
   let config: IConfigComponent
   let logs
   let rentalsSubGraph: ISubgraphComponent
-  let jsonRpcProvider: JsonRpcProvider
   let engagementStatsFetcher: IEngagementStatsFetcher
+  let landContract: ILandContract
+  let dclRegistrarContract: IDclRegistrarContract
 
   beforeEach(async () => {
     config = await createConfigComponent({
       NETWORK_ID: '1'
     })
     logs = await createLogComponent({ config })
-    jsonRpcProvider = new JsonRpcProvider()
-
+    landContract = {
+      balanceOf: jest.fn(() => Promise.resolve(2))
+    }
+    dclRegistrarContract = {
+      getOwnerOf: jest.fn(() => Promise.resolve('0x123'))
+    }
     rentalsSubGraph = {
       query: (_query: string, _variables?: Variables, _remainingAttempts?: number): Promise<any> => {
         return Promise.resolve({
@@ -42,9 +44,9 @@ describe('Engagement Stats Fetcher', function () {
       }
     }
     engagementStatsFetcher = await createEngagementStatsFetcherComponent({
-      config,
+      dclRegistrarContract,
+      landContract,
       logs,
-      jsonRpcProvider,
       rentalsSubGraph
     })
   })
@@ -52,8 +54,8 @@ describe('Engagement Stats Fetcher', function () {
   it('creates an index of all the data from all the worlds deployed in the server', async () => {
     const engagementStats = await engagementStatsFetcher.for(['world-name.dcl.eth'])
 
-    expect(balanceOf).toHaveBeenCalledWith('0x123', 'mainnet', jsonRpcProvider)
-    expect(getOwnerOf).toHaveBeenCalledWith('world-name', 'mainnet', jsonRpcProvider)
+    expect(landContract.balanceOf).toHaveBeenCalledWith('0x123')
+    expect(dclRegistrarContract.getOwnerOf).toHaveBeenCalledWith('world-name')
 
     const worldNameStats = engagementStats.ownerOf('world-name.dcl.eth')
     expect(worldNameStats).toEqual('0x123')

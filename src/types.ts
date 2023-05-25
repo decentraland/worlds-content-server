@@ -13,6 +13,7 @@ import { ISubgraphComponent } from '@well-known-components/thegraph-component'
 import { IStatusComponent } from './adapters/status'
 import { AuthChain, Entity, EthAddress } from '@dcl/schemas'
 import { JsonRpcProvider } from 'ethers'
+import { IDclRegistrarContract, ILandContract } from './contracts'
 
 export type GlobalContext = {
   components: BaseComponents
@@ -144,10 +145,12 @@ export type IWorldsIndexer = {
 export type BaseComponents = {
   commsAdapter: ICommsAdapter
   config: IConfigComponent
+  dclRegistrarContract: IDclRegistrarContract
   engagementStatsFetcher: IEngagementStatsFetcher
   ethereumProvider: HTTPProvider
   fetch: IFetchComponent
   jsonRpcProvider: JsonRpcProvider
+  landContract: ILandContract
   limitsManager: ILimitsManager
   logs: ILoggerComponent
   marketplaceSubGraph: ISubgraphComponent

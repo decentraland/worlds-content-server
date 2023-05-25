@@ -22,6 +22,8 @@ import { createCommsAdapterComponent } from './adapters/comms-adapter'
 import { createWorldsIndexerComponent } from './adapters/worlds-indexer'
 import { createEngagementStatsFetcherComponent } from './adapters/engagement-stats-fetcher'
 import { JsonRpcProvider } from 'ethers'
+import { createDclRegistrarContract, createLandContract } from './contracts'
+import { Network } from './contracts/types'
 
 async function determineNameValidator(
   components: Pick<AppComponents, 'config' | 'ethereumProvider' | 'logs' | 'marketplaceSubGraph'>
@@ -99,9 +101,14 @@ export async function initComponents(): Promise<AppComponents> {
     marketplaceSubGraph
   })
 
+  const networkId = await config.requireString('NETWORK_ID')
+  const networkName: Network = networkId === '1' ? 'mainnet' : 'goerli'
+  const landContract = createLandContract(networkName, jsonRpcProvider)
+  const dclRegistrarContract = createDclRegistrarContract(networkName, jsonRpcProvider)
+
   const engagementStatsFetcher = await createEngagementStatsFetcherComponent({
-    config,
-    jsonRpcProvider,
+    dclRegistrarContract,
+    landContract,
     logs,
     rentalsSubGraph
   })
@@ -128,10 +135,12 @@ export async function initComponents(): Promise<AppComponents> {
   return {
     commsAdapter,
     config,
+    dclRegistrarContract,
     engagementStatsFetcher,
     ethereumProvider,
     fetch,
     jsonRpcProvider,
+    landContract,
     limitsManager,
     logs,
     marketplaceSubGraph,

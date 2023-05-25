@@ -1,7 +1,5 @@
 import { AppComponents, IEngagementStats, IEngagementStatsFetcher, WorldStats } from '../types'
 import { EthAddress } from '@dcl/schemas'
-import { balanceOf, getOwnerOf } from '../contracts'
-import { Network } from '../contracts/types'
 
 const RENTAL_QUERY = `
       query activeRentals($wallets: [String!]!, $endsAt: Int!) {
@@ -47,14 +45,15 @@ export async function createEngagementStats(
   }
 }
 export async function createEngagementStatsFetcherComponent({
-  config,
+  dclRegistrarContract,
+  landContract,
   logs,
-  jsonRpcProvider,
   rentalsSubGraph
-}: Pick<AppComponents, 'config' | 'jsonRpcProvider' | 'logs' | 'rentalsSubGraph'>): Promise<IEngagementStatsFetcher> {
+}: Pick<
+  AppComponents,
+  'dclRegistrarContract' | 'landContract' | 'logs' | 'rentalsSubGraph'
+>): Promise<IEngagementStatsFetcher> {
   const logger = logs.getLogger('engagement-stats-fetcher')
-  const networkId = await config.requireString('NETWORK_ID')
-  const networkName: Network = networkId === '1' ? 'mainnet' : 'goerli'
 
   return {
     async for(worldNames: string[]): Promise<IEngagementStats> {
@@ -64,10 +63,10 @@ export async function createEngagementStatsFetcherComponent({
       await Promise.all(
         worldNames.map(async (worldName: string) => {
           try {
-            const ownerOf = await getOwnerOf(worldName.replace('.dcl.eth', ''), networkName, jsonRpcProvider)
-            owners.set(worldName, ownerOf.toLowerCase())
-            walletsStats.set(ownerOf.toLowerCase(), { owner: ownerOf.toLowerCase(), ownedLands: 0, activeRentals: 0 })
-            logger.info(`Adding owner of world ${worldName}: ${ownerOf.toLowerCase()}`)
+            const ownerOf = await dclRegistrarContract.getOwnerOf(worldName.replace('.dcl.eth', ''))
+            owners.set(worldName, ownerOf)
+            walletsStats.set(ownerOf, { owner: ownerOf, ownedLands: 0, activeRentals: 0 })
+            logger.info(`Adding owner of world ${worldName}: ${ownerOf}`)
           } catch (error: any) {
             logger.warn(`Error fetching owner of world ${worldName}: ${error.message}`)
           }
@@ -78,10 +77,10 @@ export async function createEngagementStatsFetcherComponent({
       await Promise.all(
         Array.from(walletsStats.values()).map(async (walletStats: WorldStats) => {
           try {
-            walletStats.ownedLands = await balanceOf(walletStats.owner, networkName, jsonRpcProvider)
+            walletStats.ownedLands = await landContract.balanceOf(walletStats.owner)
             logger.info(`Adding balanceOf for ${walletStats.owner}: ${walletStats.ownedLands}`)
           } catch (e: any) {
-            console.warn(`Error fetching balanceOf for ${walletStats.owner}: ${e.message}`)
+            logger.warn(`Error fetching balanceOf for ${walletStats.owner}: ${e.message}`)
           }
         })
       )

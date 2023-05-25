@@ -24,8 +24,6 @@ export async function createWorldsIndexerComponent({
       return accum
     }, {})
 
-    console.log(commsStatus)
-
     for (const worldData of staticIndex) {
       worldData.currentUsers = usersByWorld?.[worldData.name]?.users ?? 0
     }
