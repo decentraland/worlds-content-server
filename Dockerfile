@@ -2,7 +2,7 @@ ARG RUN
 
 FROM node:lts-alpine as builderenv
 
-RUN apk update
+RUN apk update && apk upgrade
 RUN apk add --no-cache git
 
 WORKDIR /app
@@ -28,7 +28,7 @@ RUN echo "COMMIT_HASH=$COMMIT_HASH" >> .env
 
 FROM node:lts-alpine
 
-RUN apk update
+RUN apk update && apk upgrade
 RUN apk add --no-cache tini
 
 # NODE_ENV is used to configure some runtime options, like JSON logger
