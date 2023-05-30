@@ -58,22 +58,6 @@ export type IWorldNamePermissionChecker = {
   checkPermission(ethAddress: EthAddress, worldName: string): Promise<boolean>
 }
 
-export type IEngagementStatsFetcher = {
-  for(worldNames: string[]): Promise<IEngagementStats>
-}
-
-export type WorldStats = {
-  owner: EthAddress
-  ownedLands: number
-  activeRentals: number
-}
-
-export type IEngagementStats = {
-  shouldBeIndexed(worldName: string): boolean
-  ownerOf(worldName: string): EthAddress | undefined
-  statsFor(worldName: string): WorldStats | undefined
-}
-
 export type ContentStatus = {
   commitHash: string
   worldsCount: number
