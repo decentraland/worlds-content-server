@@ -8,10 +8,10 @@ export async function getIndexHandler(
 
   const baseUrl = (await config.getString('HTTP_BASE_URL')) || `${context.url.protocol}//${context.url.host}`
 
-  const index = await worldsIndexer.getIndex()
+  const indexData = await worldsIndexer.getIndex()
 
   // Transform to URLs
-  for (const worldData of index) {
+  for (const worldData of indexData.index) {
     for (const scene of worldData.scenes) {
       scene.thumbnail = `${baseUrl}/contents/${scene.thumbnail}`
     }
@@ -19,21 +19,6 @@ export async function getIndexHandler(
 
   return {
     status: 200,
-    body: { data: index }
-  }
-}
-
-export async function postIndexHandler(
-  context: HandlerContextWithPath<'worldsIndexer', '/index'>
-): Promise<IHttpServerComponent.IResponse> {
-  const { worldsIndexer } = context.components
-
-  await worldsIndexer.createIndex()
-
-  return {
-    status: 301,
-    headers: {
-      location: '/index'
-    }
+    body: { data: indexData.index, lastUpdated: new Date(indexData.timestamp).toISOString() }
   }
 }

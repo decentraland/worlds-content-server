@@ -1,7 +1,9 @@
-import { AppComponents, IWorldsIndexer, WorldData, WorldStatus } from '../types'
+import { AppComponents, IWorldsIndexer, WorldData, WorldsIndex, WorldStatus } from '../types'
 import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage/dist/content-item'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { ContentMapping } from '@dcl/schemas/dist/misc/content-mapping'
+
+const GLOBAL_INDEX_FILE = 'global-index.json'
 
 export async function createWorldsIndexerComponent({
   commsAdapter,
@@ -10,8 +12,6 @@ export async function createWorldsIndexerComponent({
   worldsManager
 }: Pick<AppComponents, 'commsAdapter' | 'logs' | 'storage' | 'worldsManager'>): Promise<IWorldsIndexer> {
   const logger = logs.getLogger('worlds-indexer')
-
-  const globalIndexFile = 'global-index.json'
 
   const addLiveData = async (staticIndex: WorldData[]) => {
     const commsStatus = await commsAdapter.status()
@@ -25,7 +25,7 @@ export async function createWorldsIndexerComponent({
     }
   }
 
-  async function createIndex(): Promise<void> {
+  async function createIndex(): Promise<WorldsIndex> {
     logger.info('Creating index of all the data from all the worlds deployed in the server')
     const deployedWorldsNames = await worldsManager.getDeployedWorldsNames()
     const index: WorldData[] = []
@@ -53,24 +53,34 @@ export async function createWorldsIndexerComponent({
         ]
       })
     }
-    await storage.storeStream(globalIndexFile, bufferToStream(stringToUtf8Bytes(JSON.stringify(index))))
+
+    const indexData: WorldsIndex = { index, timestamp: Date.now() }
+    await storage.storeStream(GLOBAL_INDEX_FILE, bufferToStream(stringToUtf8Bytes(JSON.stringify(indexData))))
     logger.info('Done indexing')
+
+    return indexData
   }
 
-  async function getIndex(): Promise<WorldData[]> {
-    const content = await storage.retrieve(globalIndexFile)
+  async function getIndex(): Promise<WorldsIndex> {
+    const content = await storage.retrieve(GLOBAL_INDEX_FILE)
+    let indexdata: WorldsIndex
+
     if (!content) {
-      return Promise.reject('No global index found')
+      indexdata = await createIndex()
+    } else {
+      indexdata = JSON.parse((await streamToBuffer(await content.asStream())).toString())
+      // if older than 10 minutes create a new one
+      if (Date.now() - indexdata.timestamp > 10 * 60 * 1000) {
+        indexdata = await createIndex()
+      }
     }
-    const staticIndex = JSON.parse((await streamToBuffer(await content.asStream())).toString())
 
-    await addLiveData(staticIndex)
+    await addLiveData(indexdata.index)
 
-    return staticIndex
+    return indexdata
   }
 
   return {
-    createIndex,
     getIndex
   }
 }

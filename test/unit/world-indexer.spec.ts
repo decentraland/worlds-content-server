@@ -7,8 +7,7 @@ import { createWorldsManagerComponent } from '../../src/adapters/worlds-manager'
 import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage/dist/content-item'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { createMockCommsAdapterComponent } from '../mocks/comms-adapter-mock'
-import { ICommsAdapter, WorldData, WorldStats } from '../../src/types'
-import { EthAddress } from '@dcl/schemas'
+import { ICommsAdapter, WorldData } from '../../src/types'
 
 describe('All data from worlds', function () {
   let commsAdapter: ICommsAdapter
@@ -74,44 +73,43 @@ describe('All data from worlds', function () {
       )
     )
 
-    await worldsIndexer.createIndex()
+    await worldsIndexer.getIndex()
 
     expect(storage.exist('global-index.json')).toBeTruthy()
 
     const content = await storage.retrieve('global-index.json')
     const stored = JSON.parse((await streamToBuffer(await content.asStream())).toString())
-    expect(stored).toEqual([
-      {
-        name: 'world-name.dcl.eth',
-        scenes: [
-          {
-            description: 'Mi lugar en el mundo',
-            id: 'bafkreielwj3ki46munydwn4ayazdvmjln76khmz2xyaf5v6dkmo6yoebbi',
-            pointers: ['20,24'],
-            thumbnail: 'bafkreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku',
-            timestamp: 1683909215429,
-            title: 'Mi propia escena'
-          }
-        ]
-      },
-      {
-        name: 'another-world-name.dcl.eth',
-        scenes: [
-          {
-            description: 'Mi lugar en el mundo',
-            id: 'bafkreic6ix3pdwf7g24reg4ktlyjpmtbqbc2nq4zocupkmul37am4vlt6y',
-            pointers: ['20,24'],
-            thumbnail: 'bafkreidduubi76bntd27dewz4cvextrfl3qyd4td6mtztuisxi26q64dnq',
-            timestamp: 1684263239610,
-            title: 'Mi propia escena'
-          }
-        ]
-      }
-    ])
-  })
-
-  it('retrieves last created index but it has not been created', async () => {
-    await expect(() => worldsIndexer.getIndex()).rejects.toEqual('No global index found')
+    expect(stored).toEqual({
+      index: [
+        {
+          name: 'world-name.dcl.eth',
+          scenes: [
+            {
+              description: 'Mi lugar en el mundo',
+              id: 'bafkreielwj3ki46munydwn4ayazdvmjln76khmz2xyaf5v6dkmo6yoebbi',
+              pointers: ['20,24'],
+              thumbnail: 'bafkreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku',
+              timestamp: 1683909215429,
+              title: 'Mi propia escena'
+            }
+          ]
+        },
+        {
+          name: 'another-world-name.dcl.eth',
+          scenes: [
+            {
+              description: 'Mi lugar en el mundo',
+              id: 'bafkreic6ix3pdwf7g24reg4ktlyjpmtbqbc2nq4zocupkmul37am4vlt6y',
+              pointers: ['20,24'],
+              thumbnail: 'bafkreidduubi76bntd27dewz4cvextrfl3qyd4td6mtztuisxi26q64dnq',
+              timestamp: 1684263239610,
+              title: 'Mi propia escena'
+            }
+          ]
+        }
+      ],
+      timestamp: expect.any(Number)
+    })
   })
 
   it('retrieves last created index', async () => {
@@ -144,19 +142,24 @@ describe('All data from worlds', function () {
 
     await storage.storeStream(
       'global-index.json',
-      bufferToStream(Buffer.from(stringToUtf8Bytes(JSON.stringify([worldData1, worldData2]))))
+      bufferToStream(
+        Buffer.from(stringToUtf8Bytes(JSON.stringify({ index: [worldData1, worldData2], timestamp: Date.now() })))
+      )
     )
     const index = await worldsIndexer.getIndex()
 
-    expect(index).toEqual([
-      {
-        ...worldData1,
-        currentUsers: 2
-      },
-      {
-        ...worldData2,
-        currentUsers: 0
-      }
-    ])
+    expect(index).toEqual({
+      index: [
+        {
+          ...worldData1,
+          currentUsers: 2
+        },
+        {
+          ...worldData2,
+          currentUsers: 0
+        }
+      ],
+      timestamp: expect.any(Number)
+    })
   })
 })

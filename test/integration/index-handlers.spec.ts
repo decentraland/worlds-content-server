@@ -5,7 +5,7 @@ import { stringToUtf8Bytes } from 'eth-connect'
 import { WorldData } from '../../src/types'
 
 test('index handler GET /index', function ({ components }) {
-  it.only('returns an error when world does not exist', async () => {
+  it('returns an error when world does not exist', async () => {
     const { localFetch, storage } = components
 
     const worldData1: WorldData = {
@@ -24,7 +24,7 @@ test('index handler GET /index', function ({ components }) {
 
     await storage.storeStream(
       'global-index.json',
-      bufferToStream(Buffer.from(stringToUtf8Bytes(JSON.stringify([worldData1]))))
+      bufferToStream(Buffer.from(stringToUtf8Bytes(JSON.stringify({ index: [worldData1], timestamp: Date.now() }))))
     )
 
     const r = await localFetch.fetch('/index')
@@ -39,28 +39,8 @@ test('index handler GET /index', function ({ components }) {
           ],
           currentUsers: 2
         }
-      ]
-    })
-  })
-})
-
-test('index handler POST /index', function ({ components }) {
-  it('returns an empty list of allowed when no acl exists', async () => {
-    const { localFetch, storage } = components
-
-    await storeJson(
-      storage,
-      'name-my-world.dcl.eth',
-      '{"entityId":"bafkreiax5plaxze77tnjbnozga7dsbefdh53horza4adf2xjzxo3k5i4xq"}'
-    )
-
-    const r = await localFetch.fetch('/acl/my-world.dcl.eth')
-
-    expect(r.status).toBe(200)
-    expect(await r.json()).toEqual({
-      resource: 'my-world.dcl.eth',
-      allowed: [],
-      timestamp: ''
+      ],
+      lastUpdated: expect.any(String)
     })
   })
 })

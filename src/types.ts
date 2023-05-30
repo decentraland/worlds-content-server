@@ -132,9 +132,13 @@ export type IWorldsManager = {
   storeAcl(worldName: string, acl: AuthChain): Promise<void>
 }
 
+export type WorldsIndex = {
+  index: WorldData[]
+  timestamp: number
+}
+
 export type IWorldsIndexer = {
-  createIndex(): Promise<void>
-  getIndex(): Promise<WorldData[]>
+  getIndex(): Promise<WorldsIndex>
 }
 
 // components used in every environment

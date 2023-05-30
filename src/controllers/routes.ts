@@ -8,7 +8,7 @@ import { statusHandler } from './handlers/status-handler'
 import { commsAdapterHandler } from './handlers/comms-adapter-handler'
 import { activeEntitiesHandler } from './handlers/active-entities'
 import { getAclHandler, postAclHandler } from './handlers/acl-handlers'
-import { getIndexHandler, postIndexHandler } from './handlers/index-handlers'
+import { getIndexHandler } from './handlers/index-handlers'
 import { meetAdapterHandler } from './handlers/meet-adapter-handler'
 
 export async function setupRouter(_globalContext: GlobalContext): Promise<Router<GlobalContext>> {
@@ -34,7 +34,6 @@ export async function setupRouter(_globalContext: GlobalContext): Promise<Router
   router.get('/status', statusHandler)
 
   router.get('/index', getIndexHandler)
-  router.post('/index', postIndexHandler)
 
   router.post('/get-comms-adapter/:roomId', commsAdapterHandler)
   router.post('/meet-adapter/:roomId', meetAdapterHandler)
