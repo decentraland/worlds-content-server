@@ -26,7 +26,6 @@ RUN echo "COMMIT_HASH=$COMMIT_HASH" >> .env
 FROM node:lts-alpine
 
 RUN apk add --no-cache tini
-RUN apk add --no-cache tini
 
 # NODE_ENV is used to configure some runtime options, like JSON logger
 ENV NODE_ENV production
