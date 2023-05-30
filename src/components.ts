@@ -3,10 +3,12 @@ import { createServerComponent, createStatusCheckComponent } from '@well-known-c
 import { createLogComponent } from '@well-known-components/logger'
 import { createFetchComponent } from './adapters/fetch'
 import { createMetricsComponent } from '@well-known-components/metrics'
-import { createSubgraphComponent } from '@well-known-components/thegraph-component'
+import {
+  createSubgraphComponent,
+  metricDeclarations as theGraphMetricDeclarations
+} from '@well-known-components/thegraph-component'
 import { AppComponents, GlobalContext, ICommsAdapter, IWorldNamePermissionChecker, SnsComponent } from './types'
 import { metricDeclarations } from './metrics'
-import { metricDeclarations as theGraphMetricDeclarations } from '@well-known-components/thegraph-component'
 import { HTTPProvider } from 'eth-connect'
 import {
   createAwsS3BasedFileSystemContentStorage,
@@ -20,10 +22,6 @@ import { createLimitsManagerComponent } from './adapters/limits-manager'
 import { createWorldsManagerComponent } from './adapters/worlds-manager'
 import { createCommsAdapterComponent } from './adapters/comms-adapter'
 import { createWorldsIndexerComponent } from './adapters/worlds-indexer'
-import { createEngagementStatsFetcherComponent } from './adapters/engagement-stats-fetcher'
-import { JsonRpcProvider } from 'ethers'
-import { createDclRegistrarContract, createLandContract } from './contracts'
-import { Network } from './contracts/types'
 
 async function determineNameValidator(
   components: Pick<AppComponents, 'config' | 'ethereumProvider' | 'logs' | 'marketplaceSubGraph'>
@@ -63,14 +61,6 @@ export async function initComponents(): Promise<AppComponents> {
 
   const rpcUrl = await config.requireString('RPC_URL')
   const ethereumProvider = new HTTPProvider(rpcUrl, fetch)
-  const jsonRpcProvider = new JsonRpcProvider(rpcUrl)
-  const logLevel = await config.getString('LOG_LEVEL')
-  if (logLevel && logLevel.toUpperCase() === 'DEBUG') {
-    const logger = logs.getLogger('json-rpc-provider')
-    await jsonRpcProvider.on('debug', (info) => {
-      logger.debug(JSON.stringify(info, null, 2))
-    })
-  }
 
   const storageFolder = (await config.getString('STORAGE_FOLDER')) || 'contents'
 
@@ -81,10 +71,8 @@ export async function initComponents(): Promise<AppComponents> {
     ? await createAwsS3BasedFileSystemContentStorage({ fs, config }, bucket)
     : await createFolderBasedFileSystemContentStorage({ fs }, storageFolder)
 
-  const marketplaceSubGraphUrl = await config.requireString('MARKETPLACE_SUBGRAPH_URL')
-  const marketplaceSubGraph = await createSubgraphComponent({ config, logs, metrics, fetch }, marketplaceSubGraphUrl)
-  const rentalsSubGraphUrl = await config.requireString('RENTALS_SUBGRAPH_URL')
-  const rentalsSubGraph = await createSubgraphComponent({ config, logs, metrics, fetch }, rentalsSubGraphUrl)
+  const subGraphUrl = await config.requireString('MARKETPLACE_SUBGRAPH_URL')
+  const marketplaceSubGraph = await createSubgraphComponent({ config, logs, metrics, fetch }, subGraphUrl)
 
   const snsArn = await config.getString('SNS_ARN')
 
@@ -101,24 +89,12 @@ export async function initComponents(): Promise<AppComponents> {
     marketplaceSubGraph
   })
 
-  const networkId = await config.requireString('NETWORK_ID')
-  const networkName: Network = networkId === '1' ? 'mainnet' : 'goerli'
-  const landContract = createLandContract(networkName, jsonRpcProvider)
-  const dclRegistrarContract = createDclRegistrarContract(networkName, jsonRpcProvider)
-
-  const engagementStatsFetcher = await createEngagementStatsFetcherComponent({
-    dclRegistrarContract,
-    landContract,
-    logs,
-    rentalsSubGraph
-  })
   const limitsManager = await createLimitsManagerComponent({ config, fetch, logs })
 
   const worldsManager = await createWorldsManagerComponent({ logs, storage })
   const worldsIndexer = await createWorldsIndexerComponent({
     commsAdapter,
     logs,
-    engagementStatsFetcher,
     storage,
     worldsManager
   })
@@ -135,18 +111,13 @@ export async function initComponents(): Promise<AppComponents> {
   return {
     commsAdapter,
     config,
-    dclRegistrarContract,
-    engagementStatsFetcher,
     ethereumProvider,
     fetch,
-    jsonRpcProvider,
-    landContract,
     limitsManager,
     logs,
     marketplaceSubGraph,
     metrics,
     namePermissionChecker,
-    rentalsSubGraph,
     server,
     sns,
     status,

@@ -6,13 +6,9 @@ import { ContentMapping } from '@dcl/schemas/dist/misc/content-mapping'
 export async function createWorldsIndexerComponent({
   commsAdapter,
   logs,
-  engagementStatsFetcher,
   storage,
   worldsManager
-}: Pick<
-  AppComponents,
-  'commsAdapter' | 'engagementStatsFetcher' | 'logs' | 'storage' | 'worldsManager'
->): Promise<IWorldsIndexer> {
+}: Pick<AppComponents, 'commsAdapter' | 'logs' | 'storage' | 'worldsManager'>): Promise<IWorldsIndexer> {
   const logger = logs.getLogger('worlds-indexer')
 
   const globalIndexFile = 'global-index.json'
@@ -34,7 +30,6 @@ export async function createWorldsIndexerComponent({
     const deployedWorldsNames = await worldsManager.getDeployedWorldsNames()
     const index: WorldData[] = []
 
-    const engagementStats = await engagementStatsFetcher.for(deployedWorldsNames)
     for (const worldName of deployedWorldsNames) {
       const entity = await worldsManager.getEntityForWorld(worldName)
       if (!entity) {
@@ -43,26 +38,20 @@ export async function createWorldsIndexerComponent({
       const thumbnailFile = entity.content.find(
         (content: ContentMapping) => content.file === entity.metadata?.display?.navmapThumbnail
       )
-      const owner = engagementStats.ownerOf(worldName)
-      if (owner) {
-        index.push({
-          name: worldName,
-          owner: owner,
-          indexInPlaces:
-            !entity.metadata?.worldConfiguration?.placesConfig?.optOut && engagementStats.shouldBeIndexed(worldName),
-          scenes: [
-            {
-              id: entity.id,
-              title: entity.metadata?.display?.title,
-              description: entity.metadata?.display?.description,
-              thumbnail: thumbnailFile!.hash,
-              pointers: entity.pointers,
-              runtimeVersion: entity.metadata?.runtimeVersion,
-              timestamp: entity.timestamp
-            }
-          ]
-        })
-      }
+      index.push({
+        name: worldName,
+        scenes: [
+          {
+            id: entity.id,
+            title: entity.metadata?.display?.title,
+            description: entity.metadata?.display?.description,
+            thumbnail: thumbnailFile!.hash,
+            pointers: entity.pointers,
+            runtimeVersion: entity.metadata?.runtimeVersion,
+            timestamp: entity.timestamp
+          }
+        ]
+      })
     }
     await storage.storeStream(globalIndexFile, bufferToStream(stringToUtf8Bytes(JSON.stringify(index))))
     logger.info('Done indexing')

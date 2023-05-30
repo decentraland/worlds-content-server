@@ -7,8 +7,7 @@ import { createWorldsManagerComponent } from '../../src/adapters/worlds-manager'
 import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage/dist/content-item'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { createMockCommsAdapterComponent } from '../mocks/comms-adapter-mock'
-import { ICommsAdapter, IEngagementStatsFetcher, WorldData, WorldStats } from '../../src/types'
-import { createMockEngagementStatsFetcherComponent } from '../mocks/engagement-stats-fetcher-mock'
+import { ICommsAdapter, WorldData, WorldStats } from '../../src/types'
 import { EthAddress } from '@dcl/schemas'
 
 describe('All data from worlds', function () {
@@ -18,9 +17,6 @@ describe('All data from worlds', function () {
   let storage
   let worldsManager
   let worldsIndexer
-  let engagementStatsFetcher: IEngagementStatsFetcher
-  let owners: Map<string, EthAddress>
-  let walletsStats: Map<EthAddress, WorldStats>
 
   beforeEach(async () => {
     commsAdapter = createMockCommsAdapterComponent()
@@ -28,13 +24,9 @@ describe('All data from worlds', function () {
     logs = await createLogComponent({ config })
     storage = await createInMemoryStorage()
     worldsManager = await createWorldsManagerComponent({ logs, storage })
-    owners = new Map<string, EthAddress>()
-    walletsStats = new Map<EthAddress, WorldStats>()
-    engagementStatsFetcher = await createMockEngagementStatsFetcherComponent(owners, walletsStats)
     worldsIndexer = await createWorldsIndexerComponent({
       commsAdapter,
       logs,
-      engagementStatsFetcher,
       storage,
       worldsManager
     })
@@ -81,9 +73,6 @@ describe('All data from worlds', function () {
         )
       )
     )
-    owners.set('world-name.dcl.eth', '0x123')
-    owners.set('another-world-name.dcl.eth', '0x123')
-    walletsStats.set('0x123', { owner: '0x123', activeRentals: 0, ownedLands: 2 })
 
     await worldsIndexer.createIndex()
 
@@ -93,9 +82,7 @@ describe('All data from worlds', function () {
     const stored = JSON.parse((await streamToBuffer(await content.asStream())).toString())
     expect(stored).toEqual([
       {
-        indexInPlaces: true,
         name: 'world-name.dcl.eth',
-        owner: '0x123',
         scenes: [
           {
             description: 'Mi lugar en el mundo',
@@ -108,9 +95,7 @@ describe('All data from worlds', function () {
         ]
       },
       {
-        indexInPlaces: false,
         name: 'another-world-name.dcl.eth',
-        owner: '0x123',
         scenes: [
           {
             description: 'Mi lugar en el mundo',
@@ -132,8 +117,6 @@ describe('All data from worlds', function () {
   it('retrieves last created index', async () => {
     const worldData1: WorldData = {
       name: 'world-name.dcl.eth',
-      owner: '0x123',
-      indexInPlaces: true,
       scenes: [
         {
           id: 'bafkreielwj3ki46munydwn4ayazdvmjln76khmz2xyaf5v6dkmo6yoebbi',
@@ -146,9 +129,7 @@ describe('All data from worlds', function () {
       ]
     }
     const worldData2: WorldData = {
-      indexInPlaces: false,
       name: 'another-world-name.dcl.eth',
-      owner: '0x123',
       scenes: [
         {
           description: 'Mi lugar en el mundo',

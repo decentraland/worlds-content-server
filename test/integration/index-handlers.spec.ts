@@ -10,8 +10,6 @@ test('index handler GET /index', function ({ components }) {
 
     const worldData1: WorldData = {
       name: 'world-name.dcl.eth',
-      owner: '0x123',
-      indexInPlaces: true,
       scenes: [
         {
           id: 'bafkreielwj3ki46munydwn4ayazdvmjln76khmz2xyaf5v6dkmo6yoebbi',

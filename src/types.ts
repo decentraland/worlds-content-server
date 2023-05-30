@@ -12,8 +12,6 @@ import { HTTPProvider } from 'eth-connect'
 import { ISubgraphComponent } from '@well-known-components/thegraph-component'
 import { IStatusComponent } from './adapters/status'
 import { AuthChain, Entity, EthAddress } from '@dcl/schemas'
-import { JsonRpcProvider } from 'ethers'
-import { IDclRegistrarContract, ILandContract } from './contracts'
 
 export type GlobalContext = {
   components: BaseComponents
@@ -86,8 +84,6 @@ export type WorldStatus = { worldName: string; users: number }
 
 export type WorldData = {
   name: string
-  owner: EthAddress
-  indexInPlaces: boolean
   scenes: SceneData[]
   currentUsers?: number
 }
@@ -145,18 +141,13 @@ export type IWorldsIndexer = {
 export type BaseComponents = {
   commsAdapter: ICommsAdapter
   config: IConfigComponent
-  dclRegistrarContract: IDclRegistrarContract
-  engagementStatsFetcher: IEngagementStatsFetcher
   ethereumProvider: HTTPProvider
   fetch: IFetchComponent
-  jsonRpcProvider: JsonRpcProvider
-  landContract: ILandContract
   limitsManager: ILimitsManager
   logs: ILoggerComponent
   marketplaceSubGraph: ISubgraphComponent
   metrics: IMetricsComponent<keyof typeof metricDeclarations>
   namePermissionChecker: IWorldNamePermissionChecker
-  rentalsSubGraph: ISubgraphComponent
   server: IHttpServerComponent<GlobalContext>
   sns: SnsComponent
   status: IStatusComponent

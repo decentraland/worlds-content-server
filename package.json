@@ -50,7 +50,6 @@
     "dcl-catalyst-client": "^13.0.15",
     "decentraland-crypto-middleware": "^1.0.4",
     "eth-connect": "^6.0.3",
-    "ethers": "^6.4.0",
     "jsonwebtoken": "^9.0.0",
     "livekit-server-sdk": "^1.1.0",
     "lru-cache": "^7.14.0",

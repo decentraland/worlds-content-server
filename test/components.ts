@@ -16,7 +16,6 @@ import { createMockStatusComponent } from './mocks/status-mock'
 import { createInMemoryStorage } from '@dcl/catalyst-storage'
 import { createMockCommsAdapterComponent } from './mocks/comms-adapter-mock'
 import { createWorldsIndexerComponent } from '../src/adapters/worlds-indexer'
-import { createEngagementStatsFetcherComponent } from '../src/adapters/engagement-stats-fetcher'
 
 /**
  * Behaves like Jest "describe" function, used to describe a test for a
@@ -41,12 +40,6 @@ async function initComponents(): Promise<TestComponents> {
 
   const fetch = await createFetchComponent()
 
-  const engagementStatsFetcher = await createEngagementStatsFetcherComponent({
-    dclRegistrarContract: components.dclRegistrarContract,
-    landContract: components.landContract,
-    logs,
-    rentalsSubGraph: components.rentalsSubGraph
-  })
   const limitsManager = createMockLimitsManagerComponent()
 
   const commsAdapter = createMockCommsAdapterComponent()
@@ -55,7 +48,6 @@ async function initComponents(): Promise<TestComponents> {
   const worldsIndexer = await createWorldsIndexerComponent({
     commsAdapter,
     logs,
-    engagementStatsFetcher,
     storage,
     worldsManager
   })
@@ -73,7 +65,6 @@ async function initComponents(): Promise<TestComponents> {
   return {
     ...components,
     commsAdapter,
-    engagementStatsFetcher,
     fetch,
     limitsManager,
     localFetch: await createLocalFetchCompoment(config),
