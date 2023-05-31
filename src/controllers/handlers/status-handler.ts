@@ -14,7 +14,7 @@ export async function statusHandler(
   const status: StatusResponse = {
     content: {
       commitHash,
-      worldsCount: deployedWorlds.length,
+      worldsCount: deployedWorlds.length
     },
     comms: {
       ...commsStatus,

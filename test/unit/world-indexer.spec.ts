@@ -6,11 +6,9 @@ import { createInMemoryStorage } from '@dcl/catalyst-storage'
 import { createWorldsManagerComponent } from '../../src/adapters/worlds-manager'
 import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage/dist/content-item'
 import { stringToUtf8Bytes } from 'eth-connect'
-import { createMockCommsAdapterComponent } from '../mocks/comms-adapter-mock'
-import { ICommsAdapter, WorldData } from '../../src/types'
+import { WorldData } from '../../src/types'
 
 describe('All data from worlds', function () {
-  let commsAdapter: ICommsAdapter
   let config: IConfigComponent
   let logs
   let storage
@@ -18,7 +16,6 @@ describe('All data from worlds', function () {
   let worldsIndexer
 
   beforeEach(async () => {
-    commsAdapter = createMockCommsAdapterComponent()
     config = await createConfigComponent({})
     logs = await createLogComponent({ config })
     storage = await createInMemoryStorage()
