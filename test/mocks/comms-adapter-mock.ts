@@ -18,7 +18,8 @@ export function createMockCommsAdapterComponent(): ICommsAdapter {
             worldName: 'world-name.dcl.eth',
             users: 2
           }
-        ]
+        ],
+        timestamp: Date.now()
       })
     }
   }

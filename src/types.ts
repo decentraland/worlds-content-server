@@ -61,7 +61,6 @@ export type IWorldNamePermissionChecker = {
 export type ContentStatus = {
   commitHash: string
   worldsCount: number
-  details?: string[]
 }
 
 export type WorldStatus = { worldName: string; users: number }
