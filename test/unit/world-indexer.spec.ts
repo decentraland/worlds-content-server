@@ -149,4 +149,35 @@ describe('All data from worlds', function () {
       timestamp: expect.any(Number)
     })
   })
+
+  it('recreates the index if too old', async () => {
+    const worldData1: WorldData = {
+      name: 'world-name.dcl.eth',
+      scenes: [
+        {
+          id: 'bafkreielwj3ki46munydwn4ayazdvmjln76khmz2xyaf5v6dkmo6yoebbi',
+          title: 'Mi propia escena',
+          description: 'Mi lugar en el mundo',
+          thumbnail: 'bafkreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku',
+          pointers: ['20,24'],
+          timestamp: 1683916946483
+        }
+      ]
+    }
+
+    await storage.storeStream(
+      'global-index.json',
+      bufferToStream(
+        Buffer.from(stringToUtf8Bytes(JSON.stringify({ index: [worldData1], timestamp: Date.now() - 20 * 60 * 1000 })))
+      )
+    )
+    const index = await worldsIndexer.getIndex()
+
+    // The index should have no worlds because in the test we never stored the entity
+    expect(index).toEqual({
+      index: [],
+      timestamp: expect.any(Number)
+    })
+    expect(index.timestamp).toBeGreaterThan(Date.now() - 60 * 1000)
+  })
 })

@@ -50,19 +50,19 @@ export async function createWorldsIndexerComponent({
 
   async function getIndex(): Promise<WorldsIndex> {
     const content = await storage.retrieve(GLOBAL_INDEX_FILE)
-    let indexdata: WorldsIndex
+    let index: WorldsIndex
 
     if (!content) {
-      indexdata = await createIndex()
+      index = await createIndex()
     } else {
-      indexdata = JSON.parse((await streamToBuffer(await content.asStream())).toString())
+      index = JSON.parse((await streamToBuffer(await content.asStream())).toString())
       // if older than 10 minutes create a new one
-      if (Date.now() - indexdata.timestamp > 10 * 60 * 1000) {
-        indexdata = await createIndex()
+      if (Date.now() - index.timestamp > 10 * 60 * 1000) {
+        index = await createIndex()
       }
     }
 
-    return indexdata
+    return index
   }
 
   return {
