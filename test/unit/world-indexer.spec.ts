@@ -24,7 +24,6 @@ describe('All data from worlds', function () {
     storage = await createInMemoryStorage()
     worldsManager = await createWorldsManagerComponent({ logs, storage })
     worldsIndexer = await createWorldsIndexerComponent({
-      commsAdapter,
       logs,
       storage,
       worldsManager
@@ -149,16 +148,7 @@ describe('All data from worlds', function () {
     const index = await worldsIndexer.getIndex()
 
     expect(index).toEqual({
-      index: [
-        {
-          ...worldData1,
-          currentUsers: 2
-        },
-        {
-          ...worldData2,
-          currentUsers: 0
-        }
-      ],
+      index: [worldData1, worldData2],
       timestamp: expect.any(Number)
     })
   })

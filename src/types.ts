@@ -69,7 +69,6 @@ export type WorldStatus = { worldName: string; users: number }
 export type WorldData = {
   name: string
   scenes: SceneData[]
-  currentUsers?: number
 }
 
 export type SceneData = {

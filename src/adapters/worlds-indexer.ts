@@ -1,4 +1,4 @@
-import { AppComponents, IWorldsIndexer, WorldData, WorldsIndex, WorldStatus } from '../types'
+import { AppComponents, IWorldsIndexer, WorldData, WorldsIndex } from '../types'
 import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage/dist/content-item'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { ContentMapping } from '@dcl/schemas/dist/misc/content-mapping'
@@ -6,24 +6,11 @@ import { ContentMapping } from '@dcl/schemas/dist/misc/content-mapping'
 const GLOBAL_INDEX_FILE = 'global-index.json'
 
 export async function createWorldsIndexerComponent({
-  commsAdapter,
   logs,
   storage,
   worldsManager
-}: Pick<AppComponents, 'commsAdapter' | 'logs' | 'storage' | 'worldsManager'>): Promise<IWorldsIndexer> {
+}: Pick<AppComponents, 'logs' | 'storage' | 'worldsManager'>): Promise<IWorldsIndexer> {
   const logger = logs.getLogger('worlds-indexer')
-
-  const addLiveData = async (staticIndex: WorldData[]) => {
-    const commsStatus = await commsAdapter.status()
-    const usersByWorld = commsStatus.details?.reduce((accum: Record<string, WorldStatus>, world: WorldStatus) => {
-      accum[world.worldName] = world
-      return accum
-    }, {})
-
-    for (const worldData of staticIndex) {
-      worldData.currentUsers = usersByWorld?.[worldData.name]?.users ?? 0
-    }
-  }
 
   async function createIndex(): Promise<WorldsIndex> {
     logger.info('Creating index of all the data from all the worlds deployed in the server')
@@ -75,7 +62,7 @@ export async function createWorldsIndexerComponent({
       }
     }
 
-    await addLiveData(indexdata.index)
+    // await addLiveData(indexdata.index)
 
     return indexdata
   }

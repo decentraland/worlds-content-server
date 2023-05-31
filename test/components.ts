@@ -46,7 +46,6 @@ async function initComponents(): Promise<TestComponents> {
 
   const worldsManager = await createWorldsManagerComponent({ logs, storage })
   const worldsIndexer = await createWorldsIndexerComponent({
-    commsAdapter,
     logs,
     storage,
     worldsManager

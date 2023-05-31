@@ -36,8 +36,7 @@ test('index handler GET /index', function ({ components }) {
           ...worldData1,
           scenes: [
             { ...worldData1.scenes[0], thumbnail: `http://0.0.0.0:3000/contents/${worldData1.scenes[0].thumbnail}` }
-          ],
-          currentUsers: 2
+          ]
         }
       ],
       lastUpdated: expect.any(String)

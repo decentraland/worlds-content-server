@@ -93,7 +93,6 @@ export async function initComponents(): Promise<AppComponents> {
 
   const worldsManager = await createWorldsManagerComponent({ logs, storage })
   const worldsIndexer = await createWorldsIndexerComponent({
-    commsAdapter,
     logs,
     storage,
     worldsManager
