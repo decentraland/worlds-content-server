@@ -62,8 +62,6 @@ export async function createWorldsIndexerComponent({
       }
     }
 
-    // await addLiveData(indexdata.index)
-
     return indexdata
   }
 

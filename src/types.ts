@@ -88,6 +88,7 @@ export type CommsStatus = {
   users: number
   rooms: number
   details?: WorldStatus[]
+  timestamp: number
 }
 
 export type StatusResponse = {

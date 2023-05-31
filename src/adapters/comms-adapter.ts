@@ -59,10 +59,12 @@ function createWsRoomAdapter(
             users: res.users,
             details: res.details
               .filter((room: any) => room.roomName.startsWith(roomPrefix))
+              .filter((room: any) => room.count > 0)
               .map((room: { roomName: string; count: number }): WorldStatus => {
                 const { roomName, count } = room
                 return { worldName: roomName.substring(roomPrefix.length), users: count }
-              })
+              }),
+            timestamp: Date.now()
           })
         )
     },
@@ -101,6 +103,7 @@ function createLiveKitAdapter(
         .then((res: any): CommsStatus => {
           const roomList = res.rooms
             .filter((room: any) => room.name.startsWith(roomPrefix))
+            .filter((room: any) => room.num_participants > 0)
             .map((room: { name: string; num_participants: number }) => {
               const { name, num_participants } = room
               return { worldName: name.substring(roomPrefix.length), users: num_participants }
@@ -111,7 +114,8 @@ function createLiveKitAdapter(
             statusUrl: `https://${host}/`,
             rooms: roomList.length,
             users: roomList.reduce((carry: number, value: WorldStatus) => carry + value.users, 0),
-            details: roomList
+            details: roomList,
+            timestamp: Date.now()
           }
         })
     },
