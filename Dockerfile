@@ -2,7 +2,6 @@ ARG RUN
 
 FROM node:lts-alpine as builderenv
 
-RUN apk update && apk upgrade
 RUN apk add --no-cache git
 
 WORKDIR /app
@@ -15,10 +14,10 @@ RUN yarn install --frozen-lockfile
 # build the app
 COPY . /app
 RUN yarn test
-RUN yarn build
 
 # remove devDependencies, keep only used dependencies
 RUN yarn install --prod --frozen-lockfile
+RUN yarn build
 
 # Make commit hash available to application
 ARG COMMIT_HASH
