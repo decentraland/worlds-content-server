@@ -18,29 +18,33 @@ export async function createWorldsIndexerComponent({
 
     const byName = new Map<string, WorldData | undefined>()
     for (const worldName of deployedWorldsNames) {
-      void queue.add(async () => {
-        const entity = await worldsManager.getEntityForWorld(worldName)
-        if (!entity) {
-          return
-        }
-        const thumbnailFile = entity.content.find(
-          (content: ContentMapping) => content.file === entity.metadata?.display?.navmapThumbnail
-        )
-        byName.set(worldName, {
-          name: worldName,
-          scenes: [
-            {
-              id: entity.id,
-              title: entity.metadata?.display?.title,
-              description: entity.metadata?.display?.description,
-              thumbnail: thumbnailFile?.hash,
-              pointers: entity.pointers,
-              runtimeVersion: entity.metadata?.runtimeVersion,
-              timestamp: entity.timestamp
-            }
-          ]
+      queue
+        .add(async () => {
+          const entity = await worldsManager.getEntityForWorld(worldName)
+          if (!entity) {
+            return
+          }
+          const thumbnailFile = entity.content.find(
+            (content: ContentMapping) => content.file === entity.metadata?.display?.navmapThumbnail
+          )
+          byName.set(worldName, {
+            name: worldName,
+            scenes: [
+              {
+                id: entity.id,
+                title: entity.metadata?.display?.title,
+                description: entity.metadata?.display?.description,
+                thumbnail: thumbnailFile?.hash,
+                pointers: entity.pointers,
+                runtimeVersion: entity.metadata?.runtimeVersion,
+                timestamp: entity.timestamp
+              }
+            ]
+          })
         })
-      })
+        .catch((error) => {
+          logger.error(`Error fetching data for world ${worldName}: ${error.message}`)
+        })
     }
 
     await queue.onIdle()
