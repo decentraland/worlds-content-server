@@ -116,7 +116,8 @@ export async function worldAboutHandler({
 
 async function resolveFixedAdapter(worldName: string, sceneJson: any, baseUrl: string, roomPrefix: string) {
   const fixedAdapter =
-    sceneJson.metadata.dreamsSpaceConfiguration?.fixedAdapter || sceneJson.metadata.worldConfiguration?.fixedAdapter
+    sceneJson.metadata.dreamSpaceConfiguration?.fixedAdapter || sceneJson.metadata.worldConfiguration?.fixedAdapter
+  console.log({ fixedAdapter })
   if (fixedAdapter === 'offline:offline') {
     return 'offline:offline'
   }

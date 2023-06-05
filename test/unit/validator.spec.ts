@@ -152,7 +152,7 @@ describe('validator', function () {
       type: EntityType.SCENE,
       pointers: ['0,0'],
       timestamp: Date.parse('2022-11-01T00:00:00Z'),
-      metadata: { worldConfiguration: { name: 'whatever.dcl.eth' } },
+      metadata: { dreamSpaceConfiguration: { name: 'whatever.dcl.eth' } },
       files: []
     })
 
@@ -203,7 +203,7 @@ describe('validator', function () {
       pointers: ['0,0'],
       timestamp: Date.now(),
       metadata: {
-        worldConfiguration: {
+        dreamSpaceConfiguration: {
           name: 'different.dcl.eth'
         }
       },
@@ -223,7 +223,7 @@ describe('validator', function () {
       pointers: ['0,0', '0,1', '1,0', '1,1', '1,2'],
       timestamp: Date.now(),
       metadata: {
-        worldConfiguration: {
+        dreamSpaceConfiguration: {
           name: 'whatever.dcl.eth'
         }
       },
@@ -278,7 +278,7 @@ describe('validator', function () {
       pointers: ['0,0'],
       timestamp: Date.now(),
       metadata: {
-        worldConfiguration: {
+        dreamSpaceConfiguration: {
           name: 'whatever.dcl.eth'
         }
       },
@@ -303,7 +303,7 @@ describe('validator', function () {
       timestamp: Date.now(),
       metadata: {
         runtimeVersion: '6',
-        worldConfiguration: {
+        dreamSpaceConfiguration: {
           name: 'whatever.dcl.eth'
         }
       },
@@ -327,7 +327,7 @@ describe('validator', function () {
       timestamp: Date.now(),
       metadata: {
         runtimeVersion: '7',
-        worldConfiguration: {
+        dreamSpaceConfiguration: {
           name: 'whatever.dcl.eth',
           miniMapConfig: {
             dataImage: 'abc.png',
@@ -349,7 +349,7 @@ describe('validator', function () {
       timestamp: Date.now(),
       metadata: {
         runtimeVersion: '7',
-        worldConfiguration: {
+        dreamSpaceConfiguration: {
           name: 'whatever.dcl.eth',
           skyboxConfig: {
             textures: ['xyz.png']
@@ -408,7 +408,7 @@ async function createDeployment(identityAuthChain: AuthIdentity, entity?: any) {
     timestamp: Date.now(),
     metadata: {
       runtimeVersion: '7',
-      worldConfiguration: { name: 'whatever.dcl.eth' },
+      dreamSpaceConfiguration: { name: 'whatever.dcl.eth' },
       display: {
         navmapThumbnail: 'abc.txt'
       }

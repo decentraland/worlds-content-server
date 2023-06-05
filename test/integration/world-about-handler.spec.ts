@@ -94,7 +94,7 @@ test('world about handler /world/:world_name/about', function ({ components }) {
 
     await storeJson(storage, 'bafybeictjyqjlkgybfckczpuqlqo7xfhho3jpnep4wesw3ivaeeuqugc2y', {
       metadata: {
-        worldConfiguration: {
+        dreamSpaceConfiguration: {
           miniMapConfig: { visible: true }
         }
       }
@@ -113,7 +113,7 @@ test('world about handler /world/:world_name/about', function ({ components }) {
 
     await storeJson(storage, 'bafybeictjyqjlkgybfckczpuqlqo7xfhho3jpnep4wesw3ivaeeuqugc2y', {
       metadata: {
-        worldConfiguration: {
+        dreamSpaceConfiguration: {
           minimapVisible: false,
           miniMapConfig: {
             dataImage: 'black_image.png',
@@ -148,7 +148,7 @@ test('world about handler /world/:world_name/about', function ({ components }) {
 
     await storeJson(storage, 'bafybeictjyqjlkgybfckczpuqlqo7xfhho3jpnep4wesw3ivaeeuqugc2y', {
       metadata: {
-        worldConfiguration: {
+        dreamSpaceConfiguration: {
           name: 'some-name.dcl.eth',
           skyboxConfig: {
             textures: ['black_image.png']
@@ -184,7 +184,7 @@ test('world about handler /world/:world_name/about', function ({ components }) {
 
     await storeJson(storage, 'bafybeictjyqjlkgybfckczpuqlqo7xfhho3jpnep4wesw3ivaeeuqugc2y', {
       metadata: {
-        worldConfiguration: {
+        dreamSpaceConfiguration: {
           fixedAdapter: 'offline:offline'
         }
       }

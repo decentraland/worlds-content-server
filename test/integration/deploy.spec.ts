@@ -167,7 +167,7 @@ test('deployment works when not owner but has permission', function ({ component
       pointers: ['0,0'],
       files: entityFiles,
       metadata: {
-        worldConfiguration: {
+        dreamSpaceConfiguration: {
           name: 'my-super-name.dcl.eth'
         }
       }
@@ -230,7 +230,7 @@ test('deployment with failed validation', function ({ components, stubComponents
       pointers: ['0,0'],
       files: entityFiles,
       metadata: {
-        worldConfiguration: {
+        dreamSpaceConfiguration: {
           name: 'just-do-it.dcl.eth'
         }
       }
