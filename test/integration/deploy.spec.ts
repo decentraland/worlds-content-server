@@ -237,7 +237,7 @@ test('deployment with failed validation', function ({ components, stubComponents
 
     // Deploy entity
     await expect(() => contentClient.deploy({ files, entityId, authChain })).rejects.toThrow(
-      'Deployment failed: scene.json needs to specify a worldConfiguration section with a valid name inside.'
+      'Deployment failed: scene.json needs to specify a `dreamSpaceConfiguration` section with a valid name inside.'
     )
 
     Sinon.assert.notCalled(namePermissionChecker.checkPermission)
