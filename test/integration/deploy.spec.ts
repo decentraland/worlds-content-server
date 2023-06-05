@@ -10,7 +10,7 @@ import { streamToBuffer } from '@dcl/catalyst-storage/dist/content-item'
 import { buildEntity } from 'dcl-catalyst-client/dist/client/utils/DeploymentBuilder'
 
 test('deployment works', function ({ components, stubComponents }) {
-  it('creates an entity and deploys it', async () => {
+  it('creates an entity and deploys it (using worldConfiguration)', async () => {
     const { config, storage } = components
     const { namePermissionChecker, metrics } = stubComponents
 
@@ -32,6 +32,67 @@ test('deployment works', function ({ components, stubComponents }) {
       files: entityFiles,
       metadata: {
         worldConfiguration: {
+          name: 'my-super-name.dcl.eth',
+          miniMapConfig: {
+            enabled: true,
+            dataImage: 'abc.txt',
+            estateImage: 'abc.txt'
+          },
+          skyboxConfig: {
+            textures: ['abc.txt']
+          }
+        }
+      }
+    })
+
+    // Sign entity id
+    const identity = await getIdentity()
+
+    namePermissionChecker.checkPermission
+      .withArgs(identity.authChain.authChain[0].payload, 'my-super-name.dcl.eth')
+      .resolves(true)
+
+    const authChain = Authenticator.signPayload(identity.authChain, entityId)
+
+    // Deploy entity
+    await contentClient.deploy({ files, entityId, authChain })
+
+    Sinon.assert.calledWith(
+      namePermissionChecker.checkPermission,
+      identity.authChain.authChain[0].payload,
+      'my-super-name.dcl.eth'
+    )
+
+    expect(await storage.exist(fileHash)).toEqual(true)
+    expect(await storage.exist(entityId)).toEqual(true)
+
+    Sinon.assert.calledWithMatch(metrics.increment, 'world_deployments_counter')
+  })
+})
+
+test('deployment works', function ({ components, stubComponents }) {
+  it('creates an entity and deploys it (using dreamSpaceConfiguration)', async () => {
+    const { config, storage } = components
+    const { namePermissionChecker, metrics } = stubComponents
+
+    const contentClient = createContentClient({
+      url: `http://${await config.requireString('HTTP_SERVER_HOST')}:${await config.requireNumber('HTTP_SERVER_PORT')}`,
+      fetcher: components.fetch
+    })
+
+    const entityFiles = new Map<string, Uint8Array>()
+    entityFiles.set('abc.txt', stringToUtf8Bytes('asd'))
+    const fileHash = await hashV1(entityFiles.get('abc.txt'))
+
+    expect(await storage.exist(fileHash)).toEqual(false)
+
+    // Build the entity
+    const { files, entityId } = await buildEntity({
+      type: EntityType.SCENE,
+      pointers: ['0,0'],
+      files: entityFiles,
+      metadata: {
+        dreamSpaceConfiguration: {
           name: 'my-super-name.dcl.eth',
           miniMapConfig: {
             enabled: true,
