@@ -79,7 +79,7 @@ export async function createWorldsManagerComponent({
     const content = await worldsCache.fetch(worldName)
 
     await storage.storeStream(
-      `name-${worldName}`,
+      `name-${worldName.toLowerCase()}`,
       bufferToStream(
         stringToUtf8Bytes(
           JSON.stringify({

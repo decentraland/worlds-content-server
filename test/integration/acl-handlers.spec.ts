@@ -139,6 +139,42 @@ test('acl handler POST /acl/:world_name', function ({ components, stubComponents
 })
 
 test('acl handler POST /acl/:world_name', function ({ components, stubComponents }) {
+  it.only('stores the ACL in a file with the world name in lowercase when all is correct', async () => {
+    const { localFetch, storage } = components
+    const { namePermissionChecker } = stubComponents
+
+    const identity = await getIdentity()
+    const delegatedIdentity = await getIdentity()
+
+    namePermissionChecker.checkPermission
+      .withArgs(identity.authChain.authChain[0].payload, 'MY-WORLD.dcl.eth')
+      .resolves(true)
+
+    const ts = new Date().toISOString()
+    const payload = `{"resource":"MY-WORLD.dcl.eth","allowed":["${delegatedIdentity.realAccount.address}"],"timestamp":"${ts}"}`
+
+    const signature = Authenticator.createSignature(identity.realAccount, payload)
+    const acl = Authenticator.createSimpleAuthChain(payload, identity.realAccount.address, signature)
+    const r = await localFetch.fetch('/acl/MY-WORLD.dcl.eth', {
+      body: JSON.stringify(acl),
+      method: 'POST'
+    })
+
+    expect(r.status).toEqual(200)
+    expect(await r.json()).toEqual({
+      resource: 'MY-WORLD.dcl.eth',
+      allowed: [delegatedIdentity.realAccount.address],
+      timestamp: ts
+    })
+
+    const content = await storage.retrieve('name-my-world.dcl.eth')
+    expect(content).toBeDefined()
+    const stored = JSON.parse((await streamToBuffer(await content.asStream())).toString())
+    expect(stored).toMatchObject({ acl })
+  })
+})
+
+test('acl handler POST /acl/:world_name', function ({ components, stubComponents }) {
   it('fails when resource is different than requested world', async () => {
     const { localFetch, storage } = components
     const { namePermissionChecker } = stubComponents
