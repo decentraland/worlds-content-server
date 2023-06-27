@@ -139,7 +139,7 @@ test('acl handler POST /acl/:world_name', function ({ components, stubComponents
 })
 
 test('acl handler POST /acl/:world_name', function ({ components, stubComponents }) {
-  it.only('stores the ACL in a file with the world name in lowercase when all is correct', async () => {
+  it('stores the ACL in a file with the world name in lowercase when all is correct', async () => {
     const { localFetch, storage } = components
     const { namePermissionChecker } = stubComponents
 
