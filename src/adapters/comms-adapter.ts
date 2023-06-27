@@ -1,5 +1,5 @@
 import { AppComponents, CommsStatus, ICommsAdapter, WorldStatus } from '../types'
-import { AccessToken, Room, RoomServiceClient } from 'livekit-server-sdk'
+import { AccessToken } from 'livekit-server-sdk'
 import { EthAddress } from '@dcl/schemas'
 import LRU from 'lru-cache'
 
@@ -23,7 +23,7 @@ export async function createCommsAdapterComponent({
       logger.info(`Using livekit adapter with host: ${host}`)
       const apiKey = await config.requireString('LIVEKIT_API_KEY')
       const apiSecret = await config.requireString('LIVEKIT_API_SECRET')
-      return cachingAdapter({ logs }, createLiveKitAdapter(roomPrefix, host, apiKey, apiSecret))
+      return cachingAdapter({ logs }, createLiveKitAdapter({ fetch }, roomPrefix, host, apiKey, apiSecret))
 
     default:
       throw Error(`Invalid comms adapter: ${adapterType}`)
@@ -74,22 +74,54 @@ function createWsRoomAdapter(
   }
 }
 
-function createLiveKitAdapter(roomPrefix: string, host: string, apiKey: string, apiSecret: string): ICommsAdapter {
+function createLiveKitAdapter(
+  { fetch }: Pick<AppComponents, 'fetch'>,
+  roomPrefix: string,
+  host: string,
+  apiKey: string,
+  apiSecret: string
+): ICommsAdapter {
   return {
     async status(): Promise<CommsStatus> {
-      const roomService = new RoomServiceClient(`https://${host}`, apiKey, apiSecret)
-      const rooms = await roomService.listRooms()
+      const token = new AccessToken(apiKey, apiSecret, {
+        name: 'SuperAdmin',
+        ttl: 5 * 60 // 5 minutes
+      })
+      token.addGrant({ roomList: true })
 
-      const worldRoomNames = rooms
-        .filter((room: Room) => room.name.startsWith(roomPrefix))
-        .map((room: Room) => room.name)
+      const worldRoomNames = await fetch
+        .fetch(`https://${host}/twirp/livekit.RoomService/ListRooms`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token.toJwt()}`,
+            'Content-Type': 'application/json'
+          },
+          body: '{}'
+        })
+        .then((response) => response.json())
+        .then((res: any) =>
+          res.rooms.filter((room: any) => room.name.startsWith(roomPrefix)).map((room: { name: string }) => room.name)
+        )
 
-      const roomWithUsers = await Promise.all(
+      const roomsWithUsers = await Promise.all(
         worldRoomNames.map(async (roomName: string) => {
-          return await roomService
-            .listParticipants(roomName)
-            .then((participants) => {
-              return { worldName: roomName.substring(roomPrefix.length), users: participants.length }
+          const token = new AccessToken(apiKey, apiSecret, {
+            name: 'SuperAdmin',
+            ttl: 5 * 60 // 5 minutes
+          })
+          token.addGrant({ roomAdmin: true, room: roomName })
+          return await fetch
+            .fetch(`https://${host}/twirp/livekit.RoomService/ListParticipants`, {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${token.toJwt()}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({ room: roomName })
+            })
+            .then((response) => response.json())
+            .then((data) => {
+              return { worldName: roomName.substring(roomPrefix.length), users: data.participants.length }
             })
             .catch((error) => {
               console.log(error)
@@ -101,9 +133,9 @@ function createLiveKitAdapter(roomPrefix: string, host: string, apiKey: string, 
       return {
         adapterType: 'livekit',
         statusUrl: `https://${host}/`,
-        rooms: roomWithUsers.length,
-        users: roomWithUsers.reduce((carry: number, value: WorldStatus) => carry + value.users, 0),
-        details: roomWithUsers,
+        rooms: roomsWithUsers.length,
+        users: roomsWithUsers.reduce((carry: number, value: WorldStatus) => carry + value.users, 0),
+        details: roomsWithUsers,
         timestamp: Date.now()
       }
     },
@@ -126,7 +158,7 @@ function cachingAdapter({ logs }: Pick<AppComponents, 'logs'>, wrappedAdapter: I
   const CACHE_KEY = 'comms_status'
   const cache = new LRU<string, CommsStatus>({
     max: 1,
-    ttl: 60 * 1000, // cache for 1 minute
+    ttl: 60 * 1000, // cache for 1 minutes
     fetchMethod: async (_, staleValue): Promise<CommsStatus> => {
       try {
         return await wrappedAdapter.status()

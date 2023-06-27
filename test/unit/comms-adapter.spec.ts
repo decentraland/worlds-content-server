@@ -117,34 +117,53 @@ describe('comms-adapter', function () {
       })
       const logs = await createLogComponent({ config })
 
-      const fetch: IFetchComponent = {
-        fetch: async (_url: Request): Promise<Response> =>
-          new Response(
-            JSON.stringify({
-              rooms: [
-                {
-                  name: 'world-prd-mariano.dcl.eth',
-                  num_participants: 2
-                },
-                {
-                  name: 'world-prd-an-empty-world.dcl.eth',
-                  num_participants: 0
-                }
-              ]
-            })
-          )
+      const fetch = {
+        fetch: jest.fn()
       }
+
+      fetch.fetch.mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            rooms: [
+              {
+                name: 'world-prd-mariano.dcl.eth'
+              },
+              {
+                name: 'world-prd-another-world.dcl.eth'
+              }
+            ]
+          })
+        )
+      )
+      fetch.fetch.mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            participants: [{}]
+          })
+        )
+      )
+      fetch.fetch.mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            participants: [{}, {}, {}]
+          })
+        )
+      )
 
       const commsAdapter = await createCommsAdapterComponent({ config, fetch, logs })
 
       const adapter = await commsAdapter.status()
       expect(adapter).toMatchObject({
-        rooms: 1,
-        users: 2,
+        rooms: 2,
+        users: 4,
         details: [
           {
-            users: 2,
+            users: 1,
             worldName: 'prd-mariano.dcl.eth'
+          },
+          {
+            users: 3,
+            worldName: 'prd-another-world.dcl.eth'
           }
         ]
       })
