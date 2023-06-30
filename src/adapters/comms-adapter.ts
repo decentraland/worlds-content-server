@@ -3,6 +3,15 @@ import { AccessToken } from 'livekit-server-sdk'
 import { EthAddress } from '@dcl/schemas'
 import LRU from 'lru-cache'
 
+function chunk<T>(theArray: T[], size: number): T[][] {
+  return theArray.reduce((acc: T[][], _, i) => {
+    if (i % size === 0) {
+      acc.push(theArray.slice(i, i + size))
+    }
+    return acc
+  }, [])
+}
+
 export async function createCommsAdapterComponent({
   config,
   fetch,
@@ -89,7 +98,7 @@ function createLiveKitAdapter(
       })
       token.addGrant({ roomList: true })
 
-      const worldRoomNames = await fetch
+      const worldRoomNames: string[] = await fetch
         .fetch(`https://${host}/twirp/livekit.RoomService/ListRooms`, {
           method: 'POST',
           headers: {
@@ -103,32 +112,43 @@ function createLiveKitAdapter(
           res.rooms.filter((room: any) => room.name.startsWith(roomPrefix)).map((room: { name: string }) => room.name)
         )
 
-      const roomsWithUsers = await Promise.all(
-        worldRoomNames.map(async (roomName: string) => {
-          const token = new AccessToken(apiKey, apiSecret, {
-            name: 'SuperAdmin',
-            ttl: 5 * 60 // 5 minutes
+      // We need to chunk the room names because the ListRooms endpoint
+      // only retrieves max_participants for the first 10 rooms
+      const roomsWithUsers = (
+        await Promise.all(
+          chunk(worldRoomNames, 10).map((chunkedRoomNames: string[]): Promise<WorldStatus[]> => {
+            return fetch
+              .fetch(`https://${host}/twirp/livekit.RoomService/ListRooms`, {
+                method: 'POST',
+                headers: {
+                  Authorization: `Bearer ${token.toJwt()}`,
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ names: chunkedRoomNames })
+              })
+              .then((response) => response.json())
+              .then((res: any) => {
+                return res.rooms.map(
+                  (room: { name: string; num_participants: number }): WorldStatus => ({
+                    worldName: room.name.substring(roomPrefix.length),
+                    users: room.num_participants
+                  })
+                )
+              })
+              .catch((error) => {
+                console.log(error)
+                return chunkedRoomNames.map(
+                  (worldRoomName: string): WorldStatus => ({
+                    worldName: worldRoomName.substring(roomPrefix.length),
+                    users: 0
+                  })
+                )
+              })
           })
-          token.addGrant({ roomAdmin: true, room: roomName })
-          return await fetch
-            .fetch(`https://${host}/twirp/livekit.RoomService/ListParticipants`, {
-              method: 'POST',
-              headers: {
-                Authorization: `Bearer ${token.toJwt()}`,
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({ room: roomName })
-            })
-            .then((response) => response.json())
-            .then((data) => {
-              return { worldName: roomName.substring(roomPrefix.length), users: data.participants.length }
-            })
-            .catch((error) => {
-              console.log(error)
-              return { worldName: roomName.substring(roomPrefix.length), users: 0 }
-            })
-        })
+        )
       )
+        .flat()
+        .filter((room: WorldStatus) => room.users > 0)
 
       return {
         adapterType: 'livekit',

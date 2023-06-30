@@ -138,25 +138,33 @@ describe('comms-adapter', function () {
       fetch.fetch.mockResolvedValueOnce(
         new Response(
           JSON.stringify({
-            participants: [{}, {}, {}]
+            rooms: [
+              {
+                name: 'world-prd-mariano.dcl.eth',
+                num_participants: 3
+              },
+              {
+                name: 'world-prd-another-world.dcl.eth',
+                num_participants: 1
+              }
+            ]
           })
         )
       )
-      fetch.fetch.mockRejectedValueOnce(new Response(JSON.stringify('error')))
 
       const commsAdapter = await createCommsAdapterComponent({ config, fetch, logs })
 
       const adapter = await commsAdapter.status()
       expect(adapter).toMatchObject({
         rooms: 2,
-        users: 3,
+        users: 4,
         details: [
           {
             users: 3,
             worldName: 'prd-mariano.dcl.eth'
           },
           {
-            users: 0,
+            users: 1,
             worldName: 'prd-another-world.dcl.eth'
           }
         ]
