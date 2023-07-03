@@ -8,9 +8,12 @@ export const validateEntityId: Validation = async (
   components: Partial<ValidatorComponents>,
   deployment: DeploymentToValidate
 ): Promise<ValidationResult> => {
-  const entityRaw = deployment.files.get(deployment.entity.id) || Buffer.from([])
-  const result = (await hashV1(entityRaw)) === deployment.entity.id
+  const entityRaw = deployment.files.get(deployment.entity.id)
+  if (!entityRaw) {
+    return createValidationResult(['Entity not found in files.'])
+  }
 
+  const result = (await hashV1(entityRaw)) === deployment.entity.id
   return createValidationResult(
     !result ? [`Invalid entity hash: expected ${await hashV1(entityRaw)} but got ${deployment.entity.id}`] : []
   )

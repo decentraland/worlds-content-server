@@ -61,16 +61,28 @@ describe('common validations', function () {
       expect(result.ok()).toBeTruthy()
     })
 
+    it('with no entity', async () => {
+      const deployment = await createDeployment(identity.authChain)
+
+      // make the entity id invalid
+      deployment.files.delete(deployment.entity.id)
+
+      const result = await validateEntityId(components, deployment)
+      expect(result.ok()).toBeFalsy()
+      expect(result.errors).toContain(`Entity not found in files.`)
+    })
+
     it('with invalid entity id', async () => {
       const deployment = await createDeployment(identity.authChain)
 
       // make the entity id invalid
-      deployment.entity.id = 'bafkreie3yaomoex7orli7fumfwgk5abgels5o5fiauxfijzlzoiymqppdi'
+      deployment.files.set(deployment.entity.id, Buffer.from(stringToUtf8Bytes('invalid')))
 
       const result = await validateEntityId(components, deployment)
       expect(result.ok()).toBeFalsy()
-      expect(result.errors[0]).toContain(`Invalid entity hash: expected `)
-      expect(result.errors[0]).toContain(`but got bafkreie3yaomoex7orli7fumfwgk5abgels5o5fiauxfijzlzoiymqppdi`)
+      expect(result.errors[0]).toContain(
+        `Invalid entity hash: expected bafkreihrengxkf4nrevbgosbank2lkmqz525f4z6xis5k5muhvg7mmxtuq but got`
+      )
     })
   })
 
