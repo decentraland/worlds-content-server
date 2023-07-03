@@ -1,21 +1,4 @@
 import { createConfigComponent } from '@well-known-components/env-config-provider'
-import {
-  createValidator,
-  validateAuthChain,
-  validateDeploymentPermission,
-  validateDeploymentTtl,
-  validateEntity,
-  validateEntityId,
-  validateFiles,
-  validateMiniMapImages,
-  validateSceneDimensions,
-  validateSdkVersion,
-  validateSignature,
-  validateSigner,
-  validateSize,
-  validateSkyboxTextures,
-  validateThumbnail
-} from '../../src/adapters/validator'
 import { createInMemoryStorage, IContentStorageComponent } from '@dcl/catalyst-storage'
 import {
   DeploymentToValidate,
@@ -37,6 +20,26 @@ import { TextDecoder } from 'util'
 import { bufferToStream } from '@dcl/catalyst-storage/dist/content-item'
 import { createWorldsManagerComponent } from '../../src/adapters/worlds-manager'
 import { createLogComponent } from '@well-known-components/logger'
+import { createValidator } from '../../src/logic/validations'
+import {
+  validateAuthChain,
+  validateBaseEntity,
+  validateDeploymentTtl,
+  validateEntityId,
+  validateFiles,
+  validateSignature,
+  validateSigner
+} from '../../src/logic/validations/common'
+import {
+  validateDeploymentPermission,
+  validateMiniMapImages,
+  validateSceneDimensions,
+  validateSceneEntity,
+  validateSdkVersion,
+  validateSize,
+  validateSkyboxTextures,
+  validateThumbnail
+} from '../../src/logic/validations/scene'
 
 describe('validator', function () {
   let config: IConfigComponent
@@ -95,7 +98,7 @@ describe('validator', function () {
     // make the entity invalid
     delete deployment.entity.type
 
-    const result = await validateEntity(components, deployment)
+    const result = await validateBaseEntity(components, deployment)
     expect(result.ok()).toBeFalsy()
     expect(result.errors).toContain("must have required property 'type'")
   })
@@ -105,11 +108,18 @@ describe('validator', function () {
       type: EntityType.SCENE,
       pointers: ['0,0'],
       timestamp: Date.parse('2022-11-01T00:00:00Z'),
-      metadata: { worldConfiguration: { dclName: 'whatever.dcl.eth' } },
+      metadata: {
+        main: 'abc.txt',
+        scene: {
+          base: '20,24',
+          parcels: ['20,24']
+        },
+        worldConfiguration: { dclName: 'whatever.dcl.eth' }
+      },
       files: []
     })
 
-    const result = await validateEntity(components, deployment)
+    const result = await validateSceneEntity(components, deployment)
     expect(result.ok()).toBeFalsy()
     expect(result.errors).toContain(
       '`dclName` in scene.json was renamed to `name`. Please update your scene.json accordingly.'
@@ -388,6 +398,11 @@ async function createDeployment(identityAuthChain: AuthIdentity, entity?: any) {
     pointers: ['0,0'],
     timestamp: Date.now(),
     metadata: {
+      main: 'abc.txt',
+      scene: {
+        base: '20,24',
+        parcels: ['20,24']
+      },
       runtimeVersion: '7',
       worldConfiguration: { name: 'whatever.dcl.eth' },
       display: {

@@ -16,12 +16,12 @@ import {
   createFsComponent
 } from '@dcl/catalyst-storage'
 import { createStatusComponent } from './adapters/status'
-import { createValidator } from './adapters/validator'
 import { createDclNameChecker, createOnChainDclNameChecker } from './adapters/dcl-name-checker'
 import { createLimitsManagerComponent } from './adapters/limits-manager'
 import { createWorldsManagerComponent } from './adapters/worlds-manager'
 import { createCommsAdapterComponent } from './adapters/comms-adapter'
 import { createWorldsIndexerComponent } from './adapters/worlds-indexer'
+import { createValidator } from './logic/validations'
 
 async function determineNameValidator(
   components: Pick<AppComponents, 'config' | 'ethereumProvider' | 'logs' | 'marketplaceSubGraph'>

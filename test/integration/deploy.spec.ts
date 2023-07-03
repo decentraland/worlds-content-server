@@ -7,7 +7,7 @@ import { stringToUtf8Bytes } from 'eth-connect'
 import { hashV1 } from '@dcl/hashing'
 import { getIdentity, storeJson } from '../utils'
 import { streamToBuffer } from '@dcl/catalyst-storage/dist/content-item'
-import { buildEntity } from 'dcl-catalyst-client/dist/client/utils/DeploymentBuilder'
+import { DeploymentBuilder } from 'dcl-catalyst-client'
 
 test('deployment works', function ({ components, stubComponents }) {
   it('creates an entity and deploys it', async () => {
@@ -26,11 +26,16 @@ test('deployment works', function ({ components, stubComponents }) {
     expect(await storage.exist(fileHash)).toEqual(false)
 
     // Build the entity
-    const { files, entityId } = await buildEntity({
+    const { files, entityId } = await DeploymentBuilder.buildEntity({
       type: EntityType.SCENE,
       pointers: ['0,0'],
       files: entityFiles,
       metadata: {
+        main: 'abc.txt',
+        scene: {
+          base: '20,24',
+          parcels: ['20,24']
+        },
         worldConfiguration: {
           name: 'my-super-name.dcl.eth',
           miniMapConfig: {
@@ -101,11 +106,16 @@ test('deployment works when not owner but has permission', function ({ component
     })
 
     // Build the entity
-    const { files, entityId } = await buildEntity({
+    const { files, entityId } = await DeploymentBuilder.buildEntity({
       type: EntityType.SCENE,
       pointers: ['0,0'],
       files: entityFiles,
       metadata: {
+        main: 'abc.txt',
+        scene: {
+          base: '20,24',
+          parcels: ['20,24']
+        },
         worldConfiguration: {
           name: 'my-super-name.dcl.eth'
         }
@@ -164,11 +174,16 @@ test('deployment with failed validation', function ({ components, stubComponents
     expect(await storage.exist(fileHash)).toEqual(false)
 
     // Build the entity
-    const { files, entityId } = await buildEntity({
+    const { files, entityId } = await DeploymentBuilder.buildEntity({
       type: EntityType.SCENE,
       pointers: ['0,0'],
       files: entityFiles,
       metadata: {
+        main: 'abc.txt',
+        scene: {
+          base: '20,24',
+          parcels: ['20,24']
+        },
         worldConfiguration: {
           name: 'just-do-it.dcl.eth'
         }
@@ -219,11 +234,17 @@ test('deployment with failed validation', function ({ components, stubComponents
     expect(await storage.exist(fileHash)).toEqual(false)
 
     // Build the entity
-    const { files, entityId } = await buildEntity({
+    const { files, entityId } = await DeploymentBuilder.buildEntity({
       type: EntityType.SCENE,
       pointers: ['0,0'],
       files: entityFiles,
-      metadata: {}
+      metadata: {
+        main: 'abc.txt',
+        scene: {
+          base: '20,24',
+          parcels: ['20,24']
+        }
+      }
     })
 
     // Sign entity id
