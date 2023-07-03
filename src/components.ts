@@ -21,7 +21,8 @@ import { createLimitsManagerComponent } from './adapters/limits-manager'
 import { createWorldsManagerComponent } from './adapters/worlds-manager'
 import { createCommsAdapterComponent } from './adapters/comms-adapter'
 import { createWorldsIndexerComponent } from './adapters/worlds-indexer'
-import { createValidator } from './logic/validations'
+
+import { createValidator } from './logic/validations/validator'
 
 async function determineNameValidator(
   components: Pick<AppComponents, 'config' | 'ethereumProvider' | 'logs' | 'marketplaceSubGraph'>
@@ -95,7 +96,6 @@ export async function initComponents(): Promise<AppComponents> {
   const validator = createValidator({
     config,
     namePermissionChecker,
-    ethereumProvider,
     limitsManager,
     storage,
     worldsManager

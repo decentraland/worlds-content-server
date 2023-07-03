@@ -1,4 +1,4 @@
-import { Validation } from '../../types'
+import { DeploymentToValidate, Validation, ValidationResult, Validator, ValidatorComponents } from '../../types'
 import {
   validateAuthChain,
   validateBaseEntity,
@@ -17,6 +17,7 @@ import {
   validateSkyboxTextures,
   validateThumbnail
 } from './scene'
+import { OK } from './utils'
 
 export const commonValidations: Validation[] = [
   validateEntityId,
@@ -28,15 +29,28 @@ export const commonValidations: Validation[] = [
   validateFiles
 ]
 
-const quickValidations: Validation[] = [
+const sceneValidations: Validation[] = [
   validateSceneEntity,
   validateSceneDimensions,
   validateMiniMapImages,
   validateSkyboxTextures,
-  validateThumbnail
+  validateThumbnail,
   // validateSdkVersion TODO re-enable (and test) once SDK7 is ready
+  validateSize, // Slow
+  validateDeploymentPermission // Slow
 ]
 
-export const slowValidations: Validation[] = [validateSize, validateDeploymentPermission]
+const allValidations: Validation[] = [...commonValidations, ...sceneValidations]
 
-export const allValidations: Validation[] = [...commonValidations, ...quickValidations, ...slowValidations]
+export const createValidator = (components: ValidatorComponents): Validator => ({
+  async validate(deployment: DeploymentToValidate): Promise<ValidationResult> {
+    for (const validate of allValidations) {
+      const result = await validate(components, deployment)
+      if (!result.ok()) {
+        return result
+      }
+    }
+
+    return OK
+  }
+})

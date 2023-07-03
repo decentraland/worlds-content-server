@@ -46,7 +46,7 @@ export type ValidationResult = {
 
 export type ValidatorComponents = Pick<
   AppComponents,
-  'config' | 'namePermissionChecker' | 'ethereumProvider' | 'limitsManager' | 'storage' | 'worldsManager'
+  'config' | 'namePermissionChecker' | 'limitsManager' | 'storage' | 'worldsManager'
 >
 
 export type Validation = (

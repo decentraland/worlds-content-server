@@ -15,7 +15,8 @@ import { createInMemoryStorage } from '@dcl/catalyst-storage'
 import { createMockCommsAdapterComponent } from './mocks/comms-adapter-mock'
 import { createWorldsIndexerComponent } from '../src/adapters/worlds-indexer'
 import * as nodeFetch from 'node-fetch'
-import { createValidator } from '../src/logic/validations'
+
+import { createValidator } from '../src/logic/validations/validator'
 
 /**
  * Behaves like Jest "describe" function, used to describe a test for a
@@ -67,7 +68,6 @@ async function initComponents(): Promise<TestComponents> {
     storage,
     namePermissionChecker,
     limitsManager,
-    ethereumProvider: components.ethereumProvider,
     worldsManager
   })
   const status = createMockStatusComponent()

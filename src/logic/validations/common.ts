@@ -68,12 +68,7 @@ export const validateSignature: Validation = async (
   components: Partial<ValidatorComponents>,
   deployment: DeploymentToValidate
 ): Promise<ValidationResult> => {
-  const result = await Authenticator.validateSignature(
-    deployment.entity.id,
-    deployment.authChain,
-    components.ethereumProvider,
-    10
-  )
+  const result = await Authenticator.validateSignature(deployment.entity.id, deployment.authChain, null, 10)
 
   return createValidationResult(result.message ? [result.message] : [])
 }
