@@ -7,7 +7,7 @@ export function createMockNamePermissionChecker(names?: string[]): IWorldNamePer
       return false
     }
 
-    return names && names.map((name) => name.toLowerCase()).includes(worldName.toLowerCase())
+    return !!names && names.map((name) => name.toLowerCase()).includes(worldName.toLowerCase())
   }
   return {
     checkPermission

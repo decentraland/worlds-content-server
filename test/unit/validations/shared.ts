@@ -6,10 +6,10 @@ import { DeploymentBuilder } from 'dcl-catalyst-client'
 import { TextDecoder } from 'util'
 import { DeploymentToValidate } from '../../../src/types'
 
-export async function createDeployment(identityAuthChain: AuthIdentity, entity?: any) {
+export async function createSceneDeployment(identityAuthChain: AuthIdentity, entity?: any) {
   const entityFiles = new Map<string, Uint8Array>()
   entityFiles.set('abc.txt', Buffer.from(stringToUtf8Bytes('asd')))
-  const fileHash = await hashV1(entityFiles.get('abc.txt'))
+  const fileHash = await hashV1(entityFiles.get('abc.txt')!)
 
   const sceneJson = entity || {
     type: EntityType.SCENE,
@@ -30,7 +30,45 @@ export async function createDeployment(identityAuthChain: AuthIdentity, entity?:
     files: entityFiles
   }
   const { files, entityId } = await DeploymentBuilder.buildEntity(sceneJson)
-  files.set(entityId, Buffer.from(files.get(entityId)))
+  files.set(entityId, Buffer.from(files.get(entityId)!))
+
+  const authChain = Authenticator.signPayload(identityAuthChain, entityId)
+
+  const contentHashesInStorage = new Map<string, boolean>()
+  contentHashesInStorage.set(fileHash, false)
+
+  const finalEntity = {
+    id: entityId,
+    ...JSON.parse(new TextDecoder().decode(files.get(entityId)))
+  }
+
+  const deployment: DeploymentToValidate = {
+    entity: finalEntity,
+    files,
+    authChain,
+    contentHashesInStorage
+  }
+  return deployment
+}
+
+export async function createSkyboxDeployment(identityAuthChain: AuthIdentity, entity?: any) {
+  const entityFiles = new Map<string, Uint8Array>()
+  entityFiles.set('abc.txt', Buffer.from(stringToUtf8Bytes('asd')))
+  const fileHash = await hashV1(entityFiles.get('abc.txt')!)
+
+  const sceneJson = entity || {
+    type: EntityType.SKYBOX,
+    pointers: ['urn:decentraland:skybox:forest'],
+    timestamp: Date.now(),
+    metadata: {
+      id: 'urn:decentraland:skybox:forest',
+      name: 'Forest Skybox',
+      unityPackage: 'Forest_Skybox.unitypackage'
+    },
+    files: entityFiles
+  }
+  const { files, entityId } = await DeploymentBuilder.buildEntity(sceneJson)
+  files.set(entityId, Buffer.from(files.get(entityId)!))
 
   const authChain = Authenticator.signPayload(identityAuthChain, entityId)
 

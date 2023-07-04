@@ -20,6 +20,7 @@ import { createCommsAdapterComponent } from './adapters/comms-adapter'
 import { createWorldsIndexerComponent } from './adapters/worlds-indexer'
 
 import { createValidator } from './logic/validations'
+import { createEntityDeployer } from './adapters/entity-deployer'
 
 async function determineNameValidator(
   components: Pick<AppComponents, 'config' | 'ethereumProvider' | 'logs' | 'marketplaceSubGraph'>
@@ -88,6 +89,7 @@ export async function initComponents(): Promise<AppComponents> {
     worldsManager
   })
 
+  const entityDeployer = createEntityDeployer({ config, logs, metrics, storage, sns })
   const validator = createValidator({
     config,
     namePermissionChecker,
@@ -99,6 +101,7 @@ export async function initComponents(): Promise<AppComponents> {
   return {
     commsAdapter,
     config,
+    entityDeployer,
     ethereumProvider,
     fetch,
     limitsManager,

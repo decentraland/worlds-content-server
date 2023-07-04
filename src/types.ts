@@ -11,7 +11,7 @@ import { IContentStorageComponent } from '@dcl/catalyst-storage'
 import { HTTPProvider } from 'eth-connect'
 import { ISubgraphComponent } from '@well-known-components/thegraph-component'
 import { IStatusComponent } from './adapters/status'
-import { AuthChain, Entity, EthAddress } from '@dcl/schemas'
+import { AuthChain, AuthLink, Entity, EthAddress } from '@dcl/schemas'
 
 export type GlobalContext = {
   components: BaseComponents
@@ -49,10 +49,7 @@ export type ValidatorComponents = Pick<
   'config' | 'namePermissionChecker' | 'limitsManager' | 'storage' | 'worldsManager'
 >
 
-export type Validation = (
-  components: ValidatorComponents,
-  deployment: DeploymentToValidate
-) => ValidationResult | Promise<ValidationResult>
+export type Validation = (deployment: DeploymentToValidate) => ValidationResult | Promise<ValidationResult>
 
 export type IWorldNamePermissionChecker = {
   checkPermission(ethAddress: EthAddress, worldName: string): Promise<boolean>
@@ -124,10 +121,26 @@ export type IWorldsIndexer = {
   getIndex(): Promise<WorldsIndex>
 }
 
+export type DeploymentResult = {
+  message: string
+}
+
+export type IEntityDeployer = {
+  deployEntity(
+    baseUrl: string,
+    entity: Entity,
+    allContentHashesInStorage: Map<string, boolean>,
+    files: Map<string, Uint8Array>,
+    entityJson: string,
+    authChain: AuthLink[]
+  ): Promise<DeploymentResult>
+}
+
 // components used in every environment
 export type BaseComponents = {
   commsAdapter: ICommsAdapter
   config: IConfigComponent
+  entityDeployer: IEntityDeployer
   ethereumProvider: HTTPProvider
   fetch: IFetchComponent
   limitsManager: ILimitsManager
@@ -169,3 +182,22 @@ export type HandlerContextWithPath<
 >
 
 export type Context<Path extends string = any> = IHttpServerComponent.PathAwareContext<GlobalContext, Path>
+
+export class InvalidRequestError extends Error {
+  constructor(message: string) {
+    super(message)
+    Error.captureStackTrace(this, this.constructor)
+  }
+}
+
+export class NotFoundError extends Error {
+  constructor(message: string) {
+    super(message)
+    Error.captureStackTrace(this, this.constructor)
+  }
+}
+
+export interface ErrorResponse {
+  error: string
+  message: string
+}

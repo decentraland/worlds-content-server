@@ -1,5 +1,5 @@
 import { createUnsafeIdentity } from '@dcl/crypto/dist/crypto'
-import { Authenticator } from '@dcl/crypto'
+import { Authenticator, AuthIdentity, IdentityType } from '@dcl/crypto'
 import { Readable } from 'stream'
 import { IContentStorageComponent } from '@dcl/catalyst-storage'
 import { stringToUtf8Bytes } from 'eth-connect'
@@ -30,7 +30,9 @@ export async function storeJson(storage: IContentStorageComponent, fileId: strin
   )
 }
 
-export async function getIdentity() {
+export type Identity = { authChain: AuthIdentity; realAccount: IdentityType; ephemeralIdentity: IdentityType }
+
+export async function getIdentity(): Promise<Identity> {
   const ephemeralIdentity = createUnsafeIdentity()
   const realAccount = createUnsafeIdentity()
 

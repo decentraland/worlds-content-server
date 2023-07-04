@@ -4,10 +4,7 @@ import { createValidationResult, OK } from './utils'
 import { allowedByAcl } from '../acl'
 import { ContentMapping } from '@dcl/schemas/dist/misc/content-mapping'
 
-export const validateSceneEntity: Validation = async (
-  components: Partial<ValidatorComponents>,
-  deployment: DeploymentToValidate
-): Promise<ValidationResult> => {
+export const validateSceneEntity: Validation = async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
   if (!Scene.validate(deployment.entity.metadata)) {
     return createValidationResult(Scene.validate.errors?.map((error) => error.message || '') || [])
   }
@@ -26,108 +23,105 @@ export const validateSceneEntity: Validation = async (
   return OK
 }
 
-export const validateDeploymentPermission: Validation = async (
-  components: Pick<ValidatorComponents, 'namePermissionChecker' | 'worldsManager'>,
-  deployment: DeploymentToValidate
-): Promise<ValidationResult> => {
-  const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())
-  const worldSpecifiedName = sceneJson.metadata.worldConfiguration.name
-  const signer = deployment.authChain[0].payload
+export function createValidateDeploymentPermission(
+  components: Pick<ValidatorComponents, 'namePermissionChecker' | 'worldsManager'>
+) {
+  return async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
+    const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())
+    const worldSpecifiedName = sceneJson.metadata.worldConfiguration.name
+    const signer = deployment.authChain[0].payload
 
-  const allowed = await allowedByAcl(components, worldSpecifiedName, signer)
-  if (allowed) {
-    return OK
-  }
-
-  return createValidationResult([
-    `Deployment failed: Your wallet has no permission to publish this scene because it does not have permission to deploy under "${worldSpecifiedName}". Check scene.json to select a name that either you own or you were given permission to deploy.`
-  ])
-}
-
-export const validateSceneDimensions: Validation = async (
-  components: Pick<ValidatorComponents, 'limitsManager'>,
-  deployment: DeploymentToValidate
-): Promise<ValidationResult> => {
-  const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())
-  const worldName = sceneJson.metadata.worldConfiguration.name
-
-  const maxParcels = await components.limitsManager.getMaxAllowedParcelsFor(worldName || '')
-  if (deployment.entity.pointers.length > maxParcels) {
-    return createValidationResult([`Max allowed scene dimensions is ${maxParcels} parcels.`])
-  }
-
-  return OK
-}
-
-export const validateSize: Validation = async (
-  components: Pick<ValidatorComponents, 'limitsManager' | 'storage'>,
-  deployment: DeploymentToValidate
-): Promise<ValidationResult> => {
-  const fetchContentFileSize = async (hash: string): Promise<number> => {
-    const content = await components.storage.retrieve(hash)
-    if (!content) {
-      throw Error(`Couldn't fetch content file with hash ${hash}`)
+    const allowed = await allowedByAcl(components, worldSpecifiedName, signer)
+    if (allowed) {
+      return OK
     }
 
-    // Empty files are retrieved with size: null in aws-sdk
-    return content.size || 0
-  }
-
-  const calculateDeploymentSize = async (entity: Entity, files: Map<string, Uint8Array>): Promise<number> => {
-    let totalSize = 0
-    for (const hash of new Set(entity.content?.map((item) => item.hash) ?? [])) {
-      const uploadedFile = files.get(hash)
-      if (uploadedFile) {
-        totalSize += uploadedFile.byteLength
-      } else {
-        const contentSize = await fetchContentFileSize(hash)
-        totalSize += contentSize
-      }
-    }
-    return totalSize
-  }
-
-  const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())
-  const worldName = sceneJson.metadata.worldConfiguration.name
-  const maxTotalSizeInMB = await components.limitsManager.getMaxAllowedSizeInMbFor(worldName || '')
-
-  const errors: string[] = []
-  try {
-    const deploymentSize = await calculateDeploymentSize(deployment.entity, deployment.files)
-    if (deploymentSize > maxTotalSizeInMB * 1024 * 1024) {
-      errors.push(
-        `The deployment is too big. The maximum total size allowed is ${maxTotalSizeInMB} MB for scenes. You can upload up to ${
-          maxTotalSizeInMB * 1024 * 1024
-        } bytes but you tried to upload ${deploymentSize}.`
-      )
-    }
-  } catch (e: any) {
-    errors.push(e.message)
-  }
-
-  return createValidationResult(errors)
-}
-
-export const validateSdkVersion: Validation = async (
-  components: Pick<ValidatorComponents, 'limitsManager' | 'storage'>,
-  deployment: DeploymentToValidate
-): Promise<ValidationResult> => {
-  const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())
-  const worldName = sceneJson.metadata.worldConfiguration.name
-  const allowSdk6 = await components.limitsManager.getAllowSdk6For(worldName || '')
-
-  const sdkVersion = deployment.entity.metadata.runtimeVersion
-  if (sdkVersion !== '7' && !allowSdk6) {
     return createValidationResult([
-      `Worlds are only supported on SDK 7. Please upgrade your scene to latest version of SDK.`
+      `Deployment failed: Your wallet has no permission to publish this scene because it does not have permission to deploy under "${worldSpecifiedName}". Check scene.json to select a name that either you own or you were given permission to deploy.`
     ])
   }
+}
 
-  return OK
+export function createValidateSceneDimensions(components: Pick<ValidatorComponents, 'limitsManager'>) {
+  return async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
+    const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())
+    const worldName = sceneJson.metadata.worldConfiguration.name
+
+    const maxParcels = await components.limitsManager.getMaxAllowedParcelsFor(worldName || '')
+    if (deployment.entity.pointers.length > maxParcels) {
+      return createValidationResult([`Max allowed scene dimensions is ${maxParcels} parcels.`])
+    }
+
+    return OK
+  }
+}
+
+export function createValidateSize(components: Pick<ValidatorComponents, 'limitsManager' | 'storage'>) {
+  return async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
+    const fetchContentFileSize = async (hash: string): Promise<number> => {
+      const content = await components.storage.retrieve(hash)
+      if (!content) {
+        throw Error(`Couldn't fetch content file with hash ${hash}`)
+      }
+
+      // Empty files are retrieved with size: null in aws-sdk
+      return content.size || 0
+    }
+
+    const calculateDeploymentSize = async (entity: Entity, files: Map<string, Uint8Array>): Promise<number> => {
+      let totalSize = 0
+      for (const hash of new Set(entity.content?.map((item) => item.hash) ?? [])) {
+        const uploadedFile = files.get(hash)
+        if (uploadedFile) {
+          totalSize += uploadedFile.byteLength
+        } else {
+          const contentSize = await fetchContentFileSize(hash)
+          totalSize += contentSize
+        }
+      }
+      return totalSize
+    }
+
+    const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())
+    const worldName = sceneJson.metadata.worldConfiguration.name
+    const maxTotalSizeInMB = await components.limitsManager.getMaxAllowedSizeInMbFor(worldName || '')
+
+    const errors: string[] = []
+    try {
+      const deploymentSize = await calculateDeploymentSize(deployment.entity, deployment.files)
+      if (deploymentSize > maxTotalSizeInMB * 1024 * 1024) {
+        errors.push(
+          `The deployment is too big. The maximum total size allowed is ${maxTotalSizeInMB} MB for scenes. You can upload up to ${
+            maxTotalSizeInMB * 1024 * 1024
+          } bytes but you tried to upload ${deploymentSize}.`
+        )
+      }
+    } catch (e: any) {
+      errors.push(e.message)
+    }
+
+    return createValidationResult(errors)
+  }
+}
+
+export function createValidateSdkVersion(components: Pick<ValidatorComponents, 'limitsManager' | 'storage'>) {
+  return async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
+    const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())
+    const worldName = sceneJson.metadata.worldConfiguration.name
+    const allowSdk6 = await components.limitsManager.getAllowSdk6For(worldName || '')
+
+    const sdkVersion = deployment.entity.metadata.runtimeVersion
+    if (sdkVersion !== '7' && !allowSdk6) {
+      return createValidationResult([
+        `Worlds are only supported on SDK 7. Please upgrade your scene to latest version of SDK.`
+      ])
+    }
+
+    return OK
+  }
 }
 
 export const validateMiniMapImages: Validation = async (
-  components: ValidatorComponents,
   deployment: DeploymentToValidate
 ): Promise<ValidationResult> => {
   const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())
@@ -149,10 +143,7 @@ export const validateMiniMapImages: Validation = async (
   return createValidationResult(errors)
 }
 
-export const validateThumbnail: Validation = async (
-  components: ValidatorComponents,
-  deployment: DeploymentToValidate
-): Promise<ValidationResult> => {
+export const validateThumbnail: Validation = async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
   const sceneThumbnail = deployment.entity.metadata?.display?.navmapThumbnail
   if (sceneThumbnail) {
     const isFilePresent = deployment.entity.content.some((content: ContentMapping) => content.file === sceneThumbnail)
@@ -165,7 +156,6 @@ export const validateThumbnail: Validation = async (
 }
 
 export const validateSkyboxTextures: Validation = async (
-  components: ValidatorComponents,
   deployment: DeploymentToValidate
 ): Promise<ValidationResult> => {
   const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())

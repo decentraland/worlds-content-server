@@ -11,9 +11,11 @@ import { getAclHandler, postAclHandler } from './handlers/acl-handlers'
 import { getIndexHandler } from './handlers/index-handler'
 import { meetAdapterHandler } from './handlers/meet-adapter-handler'
 import { getLiveDataHandler } from './handlers/live-data-handler'
+import { errorHandler } from './handlers/error-handler'
 
 export async function setupRouter(_globalContext: GlobalContext): Promise<Router<GlobalContext>> {
   const router = new Router<GlobalContext>()
+  router.use(errorHandler)
 
   router.get('/world/:world_name/about', worldAboutHandler)
 

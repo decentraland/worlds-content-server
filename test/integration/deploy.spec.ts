@@ -1,5 +1,5 @@
 import { test } from '../components'
-import { createContentClient } from 'dcl-catalyst-client'
+import { createContentClient, DeploymentBuilder } from 'dcl-catalyst-client'
 import { EntityType } from '@dcl/schemas'
 import { Authenticator } from '@dcl/crypto'
 import Sinon from 'sinon'
@@ -7,7 +7,6 @@ import { stringToUtf8Bytes } from 'eth-connect'
 import { hashV1 } from '@dcl/hashing'
 import { getIdentity, storeJson } from '../utils'
 import { streamToBuffer } from '@dcl/catalyst-storage/dist/content-item'
-import { DeploymentBuilder } from 'dcl-catalyst-client'
 
 test('deployment works', function ({ components, stubComponents }) {
   it('creates an entity and deploys it', async () => {
@@ -21,13 +20,13 @@ test('deployment works', function ({ components, stubComponents }) {
 
     const entityFiles = new Map<string, Uint8Array>()
     entityFiles.set('abc.txt', stringToUtf8Bytes('asd'))
-    const fileHash = await hashV1(entityFiles.get('abc.txt'))
+    const fileHash = await hashV1(entityFiles.get('abc.txt')!)
 
     expect(await storage.exist(fileHash)).toEqual(false)
 
     // Build the entity
     const { files, entityId } = await DeploymentBuilder.buildEntity({
-      type: EntityType.SCENE,
+      type: EntityType.SCENE as any,
       pointers: ['0,0'],
       files: entityFiles,
       metadata: {
@@ -60,7 +59,11 @@ test('deployment works', function ({ components, stubComponents }) {
     const authChain = Authenticator.signPayload(identity.authChain, entityId)
 
     // Deploy entity
-    await contentClient.deploy({ files, entityId, authChain })
+    const response = (await contentClient.deploy({ files, entityId, authChain })) as Response
+    expect(await response.json()).toMatchObject({
+      message:
+        'Your scene was deployed to a Worlds Content Server!\nAccess world my-super-name.dcl.eth: https://play.decentraland.org/?realm=https%3A%2F%2F0.0.0.0%3A3000%2Fworld%2Fmy-super-name.dcl.eth'
+    })
 
     Sinon.assert.calledWith(
       namePermissionChecker.checkPermission,
@@ -70,8 +73,54 @@ test('deployment works', function ({ components, stubComponents }) {
 
     expect(await storage.exist(fileHash)).toEqual(true)
     expect(await storage.exist(entityId)).toEqual(true)
+    expect(await storage.exist('name-my-super-name.dcl.eth')).toEqual(true)
 
     Sinon.assert.calledWithMatch(metrics.increment, 'world_deployments_counter')
+  })
+})
+
+test('deployment of skybox works', function ({ components, stubComponents }) {
+  it('creates a skybox entity and deploys it', async () => {
+    const { config, storage } = components
+
+    const contentClient = createContentClient({
+      url: `http://${await config.requireString('HTTP_SERVER_HOST')}:${await config.requireNumber('HTTP_SERVER_PORT')}`,
+      fetcher: components.fetch
+    })
+
+    const entityFiles = new Map<string, Uint8Array>()
+    entityFiles.set('abc.txt', stringToUtf8Bytes('asd'))
+    const fileHash = await hashV1(entityFiles.get('abc.txt')!)
+
+    expect(await storage.exist(fileHash)).toEqual(false)
+
+    // Build the entity
+    const { files, entityId } = await DeploymentBuilder.buildEntity({
+      type: EntityType.SKYBOX as any,
+      pointers: ['urn:decentraland:skybox:forest'],
+      files: entityFiles,
+      metadata: {
+        id: 'urn:decentraland:skybox:forest',
+        name: 'Forest Skybox',
+        unityPackage: 'abc.txt'
+      }
+    })
+
+    // Sign entity id
+    const identity = await getIdentity()
+
+    const authChain = Authenticator.signPayload(identity.authChain, entityId)
+
+    // Deploy entity
+    const response = (await contentClient.deploy({ files, entityId, authChain })) as Response
+    expect(await response.json()).toMatchObject({
+      message:
+        'Your skybox was deployed to a Worlds Content Server!\nIt can be referenced in Worlds deployed here using the urn: urn:decentraland:skybox:forest'
+    })
+
+    expect(await storage.exist(fileHash)).toEqual(true)
+    expect(await storage.exist(entityId)).toEqual(true)
+    expect(await storage.exist('skybox-urn:decentraland:skybox:forest')).toEqual(true)
   })
 })
 
@@ -97,7 +146,7 @@ test('deployment works when not owner but has permission', function ({ component
 
     const entityFiles = new Map<string, Uint8Array>()
     entityFiles.set('abc.txt', stringToUtf8Bytes('asd'))
-    const fileHash = await hashV1(entityFiles.get('abc.txt'))
+    const fileHash = await hashV1(entityFiles.get('abc.txt')!)
     await storeJson(storage, fileHash, {})
 
     await storeJson(storage, 'name-my-super-name.dcl.eth', {
@@ -107,7 +156,7 @@ test('deployment works when not owner but has permission', function ({ component
 
     // Build the entity
     const { files, entityId } = await DeploymentBuilder.buildEntity({
-      type: EntityType.SCENE,
+      type: EntityType.SCENE as any,
       pointers: ['0,0'],
       files: entityFiles,
       metadata: {
@@ -149,7 +198,7 @@ test('deployment works when not owner but has permission', function ({ component
     expect(await storage.exist(fileHash)).toEqual(true)
     expect(await storage.exist(entityId)).toEqual(true)
     const content = await storage.retrieve('name-my-super-name.dcl.eth')
-    const stored = JSON.parse((await streamToBuffer(await content.asStream())).toString())
+    const stored = JSON.parse((await streamToBuffer(await content!.asStream())).toString())
 
     expect(stored).toMatchObject({ entityId, acl: Authenticator.signPayload(ownerIdentity.authChain, payload) })
 
@@ -169,13 +218,13 @@ test('deployment with failed validation', function ({ components, stubComponents
 
     const entityFiles = new Map<string, Uint8Array>()
     entityFiles.set('abc.txt', stringToUtf8Bytes('asd'))
-    const fileHash = await hashV1(entityFiles.get('abc.txt'))
+    const fileHash = await hashV1(entityFiles.get('abc.txt')!)
 
     expect(await storage.exist(fileHash)).toEqual(false)
 
     // Build the entity
     const { files, entityId } = await DeploymentBuilder.buildEntity({
-      type: EntityType.SCENE,
+      type: EntityType.SCENE as any,
       pointers: ['0,0'],
       files: entityFiles,
       metadata: {
@@ -201,7 +250,7 @@ test('deployment with failed validation', function ({ components, stubComponents
 
     // Deploy entity
     await expect(() => contentClient.deploy({ files, entityId, authChain })).rejects.toThrow(
-      'Your wallet has no permission to publish this scene because it does not have permission to deploy under "just-do-it.dcl.eth". Check scene.json to select a name that either you own or you were given permission to deploy.'
+      'Your wallet has no permission to publish this scene because it does not have permission to deploy under \\"just-do-it.dcl.eth\\". Check scene.json to select a name that either you own or you were given permission to deploy.'
     )
 
     Sinon.assert.calledWith(
@@ -229,13 +278,13 @@ test('deployment with failed validation', function ({ components, stubComponents
 
     const entityFiles = new Map<string, Uint8Array>()
     entityFiles.set('abc.txt', stringToUtf8Bytes('asd'))
-    const fileHash = await hashV1(entityFiles.get('abc.txt'))
+    const fileHash = await hashV1(entityFiles.get('abc.txt')!)
 
     expect(await storage.exist(fileHash)).toEqual(false)
 
     // Build the entity
     const { files, entityId } = await DeploymentBuilder.buildEntity({
-      type: EntityType.SCENE,
+      type: EntityType.SCENE as any,
       pointers: ['0,0'],
       files: entityFiles,
       metadata: {

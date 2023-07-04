@@ -387,10 +387,18 @@
     ajv-errors "^3.0.0"
     ajv-keywords "^5.1.0"
 
-"@dcl/schemas@^7.1.0", "@dcl/schemas@^7.6.0":
+"@dcl/schemas@^7.1.0":
   version "7.6.0"
   resolved "https://registry.yarnpkg.com/@dcl/schemas/-/schemas-7.6.0.tgz#8a244e97d6478c6d30db6376177aae611db46786"
   integrity sha512-TDIk7tDc4VB9ky0EgVUjFB/EBKkgjadcQ/ia4b9kU5vYlx7XUSB2kao/EDNRFfR17W1pssmZlUDtjmzFWTYSgQ==
+  dependencies:
+    ajv "^8.11.0"
+    ajv-errors "^3.0.0"
+    ajv-keywords "^5.1.0"
+
+"@dcl/schemas@https://sdk-team-cdn.decentraland.org/@dcl/schemas/branch/feat/skybox/dcl-schemas-7.6.1-5457478537.commit-de82324.tgz":
+  version "7.6.1-5457478537.commit-de82324"
+  resolved "https://sdk-team-cdn.decentraland.org/@dcl/schemas/branch/feat/skybox/dcl-schemas-7.6.1-5457478537.commit-de82324.tgz#5a19f4201716aff2fbbb2a82e8d7e41afeffc53d"
   dependencies:
     ajv "^8.11.0"
     ajv-errors "^3.0.0"

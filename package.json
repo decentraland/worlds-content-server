@@ -37,7 +37,7 @@
     "@dcl/crypto": "^3.2.3",
     "@dcl/hashing": "^1.1.2",
     "@dcl/protocol": "^1.0.0-4959770633.commit-e249449",
-    "@dcl/schemas": "^7.6.0",
+    "@dcl/schemas": "https://sdk-team-cdn.decentraland.org/@dcl/schemas/branch/feat/skybox/dcl-schemas-7.6.1-5457478537.commit-de82324.tgz",
     "@types/busboy": "^1.5.0",
     "@well-known-components/env-config-provider": "^1.2.0",
     "@well-known-components/http-server": "^1.1.6",

@@ -1,7 +1,7 @@
 import { ILimitsManager } from '../../src/types'
 
 export function createMockLimitsManagerComponent(): ILimitsManager {
-  const whitelist = {
+  const whitelist: Record<string, any> = {
     'privileged.dcl.eth': {
       max_parcels: 50,
       max_size_in_mb: 200,
