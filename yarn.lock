@@ -319,21 +319,12 @@
     aws-sdk "^2.1248.0"
     destroy "^1.2.0"
 
-"@dcl/crypto@^3.2.3":
-  version "3.3.1"
-  resolved "https://registry.yarnpkg.com/@dcl/crypto/-/crypto-3.3.1.tgz#1cc16d4313e7bc0f57daf6ffa9837355781156a8"
-  integrity sha512-eq/zeJod1bsxQJaNf1Ln/W7+5MT8NnuWLADZJeTBoIPcyQX4/V03M+TfAVB6dpRHynIBBTU1CaiPIkeUVxpyiA==
+"@dcl/crypto@^3.4.0", "@dcl/crypto@^3.4.2":
+  version "3.4.2"
+  resolved "https://registry.yarnpkg.com/@dcl/crypto/-/crypto-3.4.2.tgz#025d0bd2a996fba6cbae80025544a8d04c50efc4"
+  integrity sha512-yUZeWrOVZNnPBiYhDd3M6z/QJWKEHvAFPaFhGmq2vtzJ3myIzH3dpGdJ4YKpkyhBddOaHhwfa9MUIv+30ve+Ew==
   dependencies:
-    "@dcl/schemas" "^6.4.2"
-    eth-connect "^6.0.3"
-    ethereum-cryptography "^1.0.3"
-
-"@dcl/crypto@^3.4.0":
-  version "3.4.1"
-  resolved "https://registry.yarnpkg.com/@dcl/crypto/-/crypto-3.4.1.tgz#2ab9b9b5b18efbe5d65eee3936c0f73c20480858"
-  integrity sha512-dpPMKPsQP7CS+CWtnOrk7sIGnh7dkdEs34dKLTHv4mGX/5A0odmEhvoUZLR+meWo1ifNcESLoVKdAEmowkQwlw==
-  dependencies:
-    "@dcl/schemas" "^6.4.2"
+    "@dcl/schemas" "^7.3.4"
     eth-connect "^6.0.3"
     ethereum-cryptography "^1.0.3"
 
@@ -380,25 +371,7 @@
   dependencies:
     "@dcl/ts-proto" "^1.146.2"
 
-"@dcl/schemas@^6.4.2":
-  version "6.6.0"
-  resolved "https://registry.yarnpkg.com/@dcl/schemas/-/schemas-6.6.0.tgz#8ecbc4ee3b873c24447a39492aec9726cf3c5987"
-  integrity sha512-8+y8NBeGq/A6AMr3FOPsmCY7ru4YUbpJkFKzmJe1dQH9Zq61/iHveJIamHJca5RCrB3D1oFPFs0KP6yWnMKElg==
-  dependencies:
-    ajv "^8.11.0"
-    ajv-errors "^3.0.0"
-    ajv-keywords "^5.1.0"
-
-"@dcl/schemas@^7.1.0":
-  version "7.2.0"
-  resolved "https://registry.yarnpkg.com/@dcl/schemas/-/schemas-7.2.0.tgz#385df4d91c18783884dcf3d4f12a112f65f0db58"
-  integrity sha512-oULCVSczP5bhfur95aWJ8iKVHl4gLH8++8CMyncTVKAeFhAjPLTE8lqpZmGPPkhd05/Crw/WALXT7ghukMlkQg==
-  dependencies:
-    ajv "^8.11.0"
-    ajv-errors "^3.0.0"
-    ajv-keywords "^5.1.0"
-
-"@dcl/schemas@^7.3.4":
+"@dcl/schemas@^7.1.0", "@dcl/schemas@^7.3.4":
   version "7.3.4"
   resolved "https://registry.yarnpkg.com/@dcl/schemas/-/schemas-7.3.4.tgz#cd36308f2045578d5230076452087918afd5680d"
   integrity sha512-k/N2XmqGV/tAIdr4Ni40LRNE6CV3r9KSd/+4dB0irY4NnhQ1yk1LC9QhLDWXr9Fb15uHJt54ftbFTJwILpzdww==
