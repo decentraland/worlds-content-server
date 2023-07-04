@@ -2,11 +2,8 @@ import { createDotEnvConfigComponent } from '@well-known-components/env-config-p
 import { createServerComponent, createStatusCheckComponent } from '@well-known-components/http-server'
 import { createLogComponent } from '@well-known-components/logger'
 import { createFetchComponent } from './adapters/fetch'
-import { createMetricsComponent } from '@well-known-components/metrics'
-import {
-  createSubgraphComponent,
-  metricDeclarations as theGraphMetricDeclarations
-} from '@well-known-components/thegraph-component'
+import { createMetricsComponent, instrumentHttpServerWithMetrics } from '@well-known-components/metrics'
+import { createSubgraphComponent } from '@well-known-components/thegraph-component'
 import { AppComponents, GlobalContext, ICommsAdapter, IWorldNamePermissionChecker, SnsComponent } from './types'
 import { metricDeclarations } from './metrics'
 import { HTTPProvider } from 'eth-connect'
@@ -47,10 +44,8 @@ export async function initComponents(): Promise<AppComponents> {
   const server = await createServerComponent<GlobalContext>({ config, logs }, { cors: {} })
   const statusChecks = await createStatusCheckComponent({ server, config })
   const fetch = await createFetchComponent()
-  const metrics = await createMetricsComponent(
-    { ...metricDeclarations, ...theGraphMetricDeclarations },
-    { server, config }
-  )
+  const metrics = await createMetricsComponent(metricDeclarations, { config })
+  await instrumentHttpServerWithMetrics({ metrics, server, config })
 
   const commsAdapter: ICommsAdapter = await createCommsAdapterComponent({ config, fetch, logs })
 
