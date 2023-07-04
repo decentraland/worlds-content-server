@@ -16,7 +16,9 @@ import { createMockCommsAdapterComponent } from './mocks/comms-adapter-mock'
 import { createWorldsIndexerComponent } from '../src/adapters/worlds-indexer'
 import * as nodeFetch from 'node-fetch'
 
-import { createValidator } from '../src/logic/validations/validator'
+import { createValidator } from '../src/logic/validations'
+import { createTestMetricsComponent } from '@well-known-components/metrics'
+import { metricDeclarations } from '../src/metrics'
 
 /**
  * Behaves like Jest "describe" function, used to describe a test for a
@@ -34,6 +36,8 @@ async function initComponents(): Promise<TestComponents> {
   const components = await originalInitComponents()
 
   const { config, logs } = components
+
+  const metrics = createTestMetricsComponent(metricDeclarations)
 
   const storage = createInMemoryStorage()
 
@@ -79,6 +83,7 @@ async function initComponents(): Promise<TestComponents> {
     limitsManager,
     localFetch: await createLocalFetchCompoment(config),
     marketplaceSubGraph: createMockMarketplaceSubGraph(),
+    metrics,
     namePermissionChecker,
     status,
     storage,
