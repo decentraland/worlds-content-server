@@ -4,7 +4,7 @@
 import { createLocalFetchCompoment, createRunner } from '@well-known-components/test-helpers'
 
 import { main } from '../src/service'
-import { TestComponents } from '../src/types'
+import { SnsComponent, TestComponents } from '../src/types'
 import { initComponents as originalInitComponents } from '../src/components'
 import { createMockMarketplaceSubGraph } from './mocks/marketplace-subgraph-mock'
 import { createMockNamePermissionChecker } from './mocks/dcl-name-checker-mock'
@@ -19,6 +19,7 @@ import * as nodeFetch from 'node-fetch'
 import { createValidator } from '../src/logic/validations'
 import { createTestMetricsComponent } from '@well-known-components/metrics'
 import { metricDeclarations } from '../src/metrics'
+import { createEntityDeployer } from '../src/adapters/entity-deployer'
 
 /**
  * Behaves like Jest "describe" function, used to describe a test for a
@@ -67,6 +68,11 @@ async function initComponents(): Promise<TestComponents> {
     worldsManager
   })
 
+  const sns: SnsComponent = {
+    arn: undefined
+  }
+  const entityDeployer = createEntityDeployer({ config, logs, metrics, storage, sns })
+
   const validator = createValidator({
     config,
     storage,
@@ -79,6 +85,7 @@ async function initComponents(): Promise<TestComponents> {
   return {
     ...components,
     commsAdapter,
+    entityDeployer,
     fetch,
     limitsManager,
     localFetch: await createLocalFetchCompoment(config),

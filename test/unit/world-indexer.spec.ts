@@ -1,19 +1,19 @@
 import { createWorldsIndexerComponent } from '../../src/adapters/worlds-indexer'
 import { createLogComponent } from '@well-known-components/logger'
-import { IConfigComponent } from '@well-known-components/interfaces'
+import { IConfigComponent, ILoggerComponent } from '@well-known-components/interfaces'
 import { createConfigComponent } from '@well-known-components/env-config-provider'
-import { createInMemoryStorage } from '@dcl/catalyst-storage'
+import { createInMemoryStorage, IContentStorageComponent } from '@dcl/catalyst-storage'
 import { createWorldsManagerComponent } from '../../src/adapters/worlds-manager'
 import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage/dist/content-item'
 import { stringToUtf8Bytes } from 'eth-connect'
-import { WorldData } from '../../src/types'
+import { IWorldsIndexer, IWorldsManager, WorldData } from '../../src/types'
 
 describe('All data from worlds', function () {
   let config: IConfigComponent
-  let logs
-  let storage
-  let worldsManager
-  let worldsIndexer
+  let logs: ILoggerComponent
+  let storage: IContentStorageComponent
+  let worldsManager: IWorldsManager
+  let worldsIndexer: IWorldsIndexer
 
   beforeEach(async () => {
     config = await createConfigComponent({})
@@ -74,7 +74,7 @@ describe('All data from worlds', function () {
     expect(storage.exist('global-index.json')).toBeTruthy()
 
     const content = await storage.retrieve('global-index.json')
-    const stored = JSON.parse((await streamToBuffer(await content.asStream())).toString())
+    const stored = JSON.parse((await streamToBuffer(await content!.asStream())).toString())
     expect(stored).toEqual({
       index: [
         {

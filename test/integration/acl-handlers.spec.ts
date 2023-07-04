@@ -130,7 +130,7 @@ test('acl handler POST /acl/:world_name', function ({ components, stubComponents
     })
 
     const content = await storage.retrieve('name-my-world.dcl.eth')
-    const stored = JSON.parse((await streamToBuffer(await content.asStream())).toString())
+    const stored = JSON.parse((await streamToBuffer(await content!.asStream())).toString())
     expect(stored).toMatchObject({
       entityId: 'bafkreiax5plaxze77tnjbnozga7dsbefdh53horza4adf2xjzxo3k5i4xq',
       acl
@@ -169,7 +169,7 @@ test('acl handler POST /acl/:world_name', function ({ components, stubComponents
 
     const content = await storage.retrieve('name-my-world.dcl.eth')
     expect(content).toBeDefined()
-    const stored = JSON.parse((await streamToBuffer(await content.asStream())).toString())
+    const stored = JSON.parse((await streamToBuffer(await content!.asStream())).toString())
     expect(stored).toMatchObject({ acl })
   })
 })
@@ -519,7 +519,7 @@ test('acl handler POST /acl/:world_name', function ({ components, stubComponents
     })
 
     const content = await storage.retrieve('name-my-world.dcl.eth')
-    const stored = JSON.parse((await streamToBuffer(await content.asStream())).toString())
+    const stored = JSON.parse((await streamToBuffer(await content!.asStream())).toString())
     expect(stored).toEqual({
       acl
     })

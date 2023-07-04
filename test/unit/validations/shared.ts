@@ -6,10 +6,10 @@ import { DeploymentBuilder } from 'dcl-catalyst-client'
 import { TextDecoder } from 'util'
 import { DeploymentToValidate } from '../../../src/types'
 
-export async function createDeployment(identityAuthChain: AuthIdentity, entity?: any) {
+export async function createSceneDeployment(identityAuthChain: AuthIdentity, entity?: any) {
   const entityFiles = new Map<string, Uint8Array>()
   entityFiles.set('abc.txt', Buffer.from(stringToUtf8Bytes('asd')))
-  const fileHash = await hashV1(entityFiles.get('abc.txt'))
+  const fileHash = await hashV1(entityFiles.get('abc.txt')!)
 
   const sceneJson = entity || {
     type: EntityType.SCENE,
@@ -30,7 +30,7 @@ export async function createDeployment(identityAuthChain: AuthIdentity, entity?:
     files: entityFiles
   }
   const { files, entityId } = await DeploymentBuilder.buildEntity(sceneJson)
-  files.set(entityId, Buffer.from(files.get(entityId)))
+  files.set(entityId, Buffer.from(files.get(entityId)!))
 
   const authChain = Authenticator.signPayload(identityAuthChain, entityId)
 

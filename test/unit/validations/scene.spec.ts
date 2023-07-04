@@ -5,23 +5,23 @@ import { stringToUtf8Bytes } from 'eth-connect'
 import { EntityType } from '@dcl/schemas'
 import { createMockLimitsManagerComponent } from '../../mocks/limits-manager-mock'
 import { createMockNamePermissionChecker } from '../../mocks/dcl-name-checker-mock'
-import { getIdentity } from '../../utils'
+import { getIdentity, Identity } from '../../utils'
 import { IConfigComponent } from '@well-known-components/interfaces'
 import { hashV1 } from '@dcl/hashing'
 import { bufferToStream } from '@dcl/catalyst-storage/dist/content-item'
 import { createWorldsManagerComponent } from '../../../src/adapters/worlds-manager'
 import { createLogComponent } from '@well-known-components/logger'
 import {
-  validateDeploymentPermission,
+  createValidateDeploymentPermission,
+  createValidateSceneDimensions,
+  createValidateSdkVersion,
+  createValidateSize,
   validateMiniMapImages,
-  validateSceneDimensions,
   validateSceneEntity,
-  validateSdkVersion,
-  validateSize,
   validateSkyboxTextures,
   validateThumbnail
 } from '../../../src/logic/validations/scene'
-import { createDeployment } from './shared'
+import { createSceneDeployment } from './shared'
 
 describe('scene validations', function () {
   let config: IConfigComponent
@@ -29,7 +29,7 @@ describe('scene validations', function () {
   let limitsManager: ILimitsManager
   let worldNamePermissionChecker: IWorldNamePermissionChecker
   let worldsManager: IWorldsManager
-  let identity
+  let identity: Identity
   let components: ValidatorComponents
 
   beforeEach(async () => {
@@ -56,14 +56,14 @@ describe('scene validations', function () {
 
   describe('validateSceneEntity', () => {
     it('with all ok', async () => {
-      const deployment = await createDeployment(identity.authChain)
+      const deployment = await createSceneDeployment(identity.authChain)
 
-      const result = await validateSceneEntity(components, deployment)
+      const result = await validateSceneEntity(deployment)
       expect(result.ok()).toBeTruthy()
     })
 
     it('with missing required fields', async () => {
-      const deployment = await createDeployment(identity.authChain, {
+      const deployment = await createSceneDeployment(identity.authChain, {
         type: EntityType.SCENE,
         pointers: ['0,0'],
         timestamp: Date.parse('2022-11-01T00:00:00Z'),
@@ -73,14 +73,14 @@ describe('scene validations', function () {
         files: []
       })
 
-      const result = await validateSceneEntity(components, deployment)
+      const result = await validateSceneEntity(deployment)
       expect(result.ok()).toBeFalsy()
       expect(result.errors).toContain("must have required property 'main'")
       expect(result.errors).toContain("must have required property 'scene'")
     })
 
     it('with old field dclName', async () => {
-      const deployment = await createDeployment(identity.authChain, {
+      const deployment = await createSceneDeployment(identity.authChain, {
         type: EntityType.SCENE,
         pointers: ['0,0'],
         timestamp: Date.parse('2022-11-01T00:00:00Z'),
@@ -95,7 +95,7 @@ describe('scene validations', function () {
         files: []
       })
 
-      const result = await validateSceneEntity(components, deployment)
+      const result = await validateSceneEntity(deployment)
       expect(result.ok()).toBeFalsy()
       expect(result.errors).toContain(
         '`dclName` in scene.json was renamed to `name`. Please update your scene.json accordingly.'
@@ -103,7 +103,7 @@ describe('scene validations', function () {
     })
 
     it('with no worldConfiguration', async () => {
-      const deployment = await createDeployment(identity.authChain, {
+      const deployment = await createSceneDeployment(identity.authChain, {
         type: EntityType.SCENE,
         pointers: ['0,0'],
         timestamp: Date.parse('2022-11-01T00:00:00Z'),
@@ -117,7 +117,7 @@ describe('scene validations', function () {
         files: []
       })
 
-      const result = await validateSceneEntity(components, deployment)
+      const result = await validateSceneEntity(deployment)
       expect(result.ok()).toBeFalsy()
       expect(result.errors).toContain(
         'scene.json needs to specify a worldConfiguration section with a valid name inside.'
@@ -127,14 +127,15 @@ describe('scene validations', function () {
 
   describe('validateDeploymentPermission', () => {
     it('with all ok', async () => {
-      const deployment = await createDeployment(identity.authChain)
+      const deployment = await createSceneDeployment(identity.authChain)
 
-      const result = await validateDeploymentPermission(components, deployment)
+      const validateDeploymentPermission = createValidateDeploymentPermission(components)
+      const result = await validateDeploymentPermission(deployment)
       expect(result.ok()).toBeTruthy()
     })
 
     it('with no ownership of requested dcl name', async () => {
-      const deployment = await createDeployment(identity.authChain, {
+      const deployment = await createSceneDeployment(identity.authChain, {
         type: EntityType.SCENE,
         pointers: ['0,0'],
         timestamp: Date.now(),
@@ -146,7 +147,8 @@ describe('scene validations', function () {
         files: []
       })
 
-      const result = await validateDeploymentPermission(components, deployment)
+      const validateDeploymentPermission = createValidateDeploymentPermission(components)
+      const result = await validateDeploymentPermission(deployment)
       expect(result.ok()).toBeFalsy()
       expect(result.errors).toContain(
         'Deployment failed: Your wallet has no permission to publish this scene because it does not have permission to deploy under "different.dcl.eth". Check scene.json to select a name that either you own or you were given permission to deploy.'
@@ -156,14 +158,15 @@ describe('scene validations', function () {
 
   describe('validateSceneDimensions', () => {
     it('with all ok', async () => {
-      const deployment = await createDeployment(identity.authChain)
+      const deployment = await createSceneDeployment(identity.authChain)
 
-      const result = await validateSceneDimensions(components, deployment)
+      const validateSceneDimensions = createValidateSceneDimensions(components)
+      const result = await validateSceneDimensions(deployment)
       expect(result.ok()).toBeTruthy()
     })
 
     it('with more parcels than allowed', async () => {
-      const deployment = await createDeployment(identity.authChain, {
+      const deployment = await createSceneDeployment(identity.authChain, {
         type: EntityType.SCENE,
         pointers: ['0,0', '0,1', '1,0', '1,1', '1,2'],
         timestamp: Date.now(),
@@ -175,7 +178,8 @@ describe('scene validations', function () {
         files: []
       })
 
-      const result = await validateSceneDimensions(components, deployment)
+      const validateSceneDimensions = createValidateSceneDimensions(components)
+      const result = await validateSceneDimensions(deployment)
       expect(result.ok()).toBeFalsy()
       expect(result.errors).toContain('Max allowed scene dimensions is 4 parcels.')
     })
@@ -183,9 +187,10 @@ describe('scene validations', function () {
 
   describe('validateSize', () => {
     it('with all ok', async () => {
-      const deployment = await createDeployment(identity.authChain)
+      const deployment = await createSceneDeployment(identity.authChain)
 
-      const result = await validateSize(components, deployment)
+      const validateSize = createValidateSize(components)
+      const result = await validateSize(deployment)
       expect(result.ok()).toBeTruthy()
     })
 
@@ -199,7 +204,7 @@ describe('scene validations', function () {
       entityFiles.set('abc.txt', Buffer.from(stringToUtf8Bytes('asd')))
       entityFiles.set('file-1.txt', fileContent) // Big file to make validation fail
 
-      const deployment = await createDeployment(identity.authChain, {
+      const deployment = await createSceneDeployment(identity.authChain, {
         type: EntityType.SCENE,
         pointers: ['0,0'],
         timestamp: Date.now(),
@@ -215,7 +220,8 @@ describe('scene validations', function () {
       deployment.files.delete(await hashV1(Buffer.from('asd')))
       await storage.storeStream(await hashV1(Buffer.from('asd')), bufferToStream(Buffer.from(stringToUtf8Bytes('asd'))))
 
-      const result = await validateSize(components, deployment)
+      const validateSize = createValidateSize(components)
+      const result = await validateSize(deployment)
       expect(result.ok()).toBeFalsy()
       expect(result.errors).toContain(
         'The deployment is too big. The maximum total size allowed is 10 MB for scenes. You can upload up to 10485760 bytes but you tried to upload 10485763.'
@@ -225,14 +231,15 @@ describe('scene validations', function () {
 
   describe('validateSdkVersion', () => {
     it('with all ok', async () => {
-      const deployment = await createDeployment(identity.authChain)
+      const deployment = await createSceneDeployment(identity.authChain)
 
-      const result = await validateSdkVersion(components, deployment)
+      const validateSdkVersion = createValidateSdkVersion(components)
+      const result = await validateSdkVersion(deployment)
       expect(result.ok()).toBeTruthy()
     })
 
     it('with errors', async () => {
-      const deployment = await createDeployment(identity.authChain, {
+      const deployment = await createSceneDeployment(identity.authChain, {
         type: EntityType.SCENE,
         pointers: ['0,0'],
         timestamp: Date.now(),
@@ -245,7 +252,8 @@ describe('scene validations', function () {
         files: []
       })
 
-      const result = await validateSdkVersion(components, deployment)
+      const validateSdkVersion = createValidateSdkVersion(components)
+      const result = await validateSdkVersion(deployment)
       expect(result.ok()).toBeFalsy()
       expect(result.errors).toContain(
         'Worlds are only supported on SDK 7. Please upgrade your scene to latest version of SDK.'
@@ -258,7 +266,7 @@ describe('scene validations', function () {
       const entityFiles = new Map<string, Uint8Array>()
       entityFiles.set('abc.png', Buffer.from(stringToUtf8Bytes('asd')))
 
-      const deployment = await createDeployment(identity.authChain, {
+      const deployment = await createSceneDeployment(identity.authChain, {
         type: EntityType.SCENE,
         pointers: ['0,0'],
         timestamp: Date.now(),
@@ -274,7 +282,7 @@ describe('scene validations', function () {
         },
         files: entityFiles
       })
-      const result = await validateMiniMapImages(components, deployment)
+      const result = await validateMiniMapImages(deployment)
       expect(result.ok()).toBeTruthy()
     })
 
@@ -282,7 +290,7 @@ describe('scene validations', function () {
       const entityFiles = new Map<string, Uint8Array>()
       entityFiles.set('abc.png', Buffer.from(stringToUtf8Bytes('asd')))
 
-      const deployment = await createDeployment(identity.authChain, {
+      const deployment = await createSceneDeployment(identity.authChain, {
         type: EntityType.SCENE,
         pointers: ['0,0'],
         timestamp: Date.now(),
@@ -298,7 +306,7 @@ describe('scene validations', function () {
         },
         files: entityFiles
       })
-      const result = await validateMiniMapImages(components, deployment)
+      const result = await validateMiniMapImages(deployment)
       expect(result.ok()).toBeFalsy()
       expect(result.errors).toContain('The file xyz.png is not present in the entity.')
     })
@@ -306,13 +314,13 @@ describe('scene validations', function () {
 
   describe('validateThumbnail', () => {
     it('with all ok', async () => {
-      const deployment = await createDeployment(identity.authChain)
-      const result = await validateThumbnail(components, deployment)
+      const deployment = await createSceneDeployment(identity.authChain)
+      const result = await validateThumbnail(deployment)
       expect(result.ok()).toBeTruthy()
     })
 
     it('with absolute URL errors', async () => {
-      const deployment = await createDeployment(identity.authChain, {
+      const deployment = await createSceneDeployment(identity.authChain, {
         type: EntityType.SCENE,
         pointers: ['0,0'],
         timestamp: Date.now(),
@@ -322,7 +330,7 @@ describe('scene validations', function () {
           }
         }
       })
-      const result = await validateThumbnail(components, deployment)
+      const result = await validateThumbnail(deployment)
       expect(result.ok()).toBeFalsy()
       expect(result.errors).toContain(
         "Scene thumbnail 'https://example.com/image.png' must be a file included in the deployment."
@@ -330,7 +338,7 @@ describe('scene validations', function () {
     })
 
     it('with missing file errors', async () => {
-      const deployment = await createDeployment(identity.authChain, {
+      const deployment = await createSceneDeployment(identity.authChain, {
         type: EntityType.SCENE,
         pointers: ['0,0'],
         timestamp: Date.now(),
@@ -340,7 +348,7 @@ describe('scene validations', function () {
           }
         }
       })
-      const result = await validateThumbnail(components, deployment)
+      const result = await validateThumbnail(deployment)
       expect(result.ok()).toBeFalsy()
       expect(result.errors).toContain("Scene thumbnail 'image.png' must be a file included in the deployment.")
     })
@@ -351,7 +359,7 @@ describe('scene validations', function () {
       const entityFiles = new Map<string, Uint8Array>()
       entityFiles.set('xyz.png', Buffer.from(stringToUtf8Bytes('asd')))
 
-      const deployment = await createDeployment(identity.authChain, {
+      const deployment = await createSceneDeployment(identity.authChain, {
         type: EntityType.SCENE,
         pointers: ['0,0'],
         timestamp: Date.now(),
@@ -366,12 +374,12 @@ describe('scene validations', function () {
         },
         files: entityFiles
       })
-      const result = await validateSkyboxTextures(components, deployment)
+      const result = await validateSkyboxTextures(deployment)
       expect(result.ok()).toBeTruthy()
     })
 
     it('with errors', async () => {
-      const deployment = await createDeployment(identity.authChain, {
+      const deployment = await createSceneDeployment(identity.authChain, {
         type: EntityType.SCENE,
         pointers: ['0,0'],
         timestamp: Date.now(),
@@ -385,7 +393,7 @@ describe('scene validations', function () {
           }
         }
       })
-      const result = await validateSkyboxTextures(components, deployment)
+      const result = await validateSkyboxTextures(deployment)
       expect(result.ok()).toBeFalsy()
       expect(result.errors).toContain('The texture file xyz.png is not present in the entity.')
     })

@@ -3,12 +3,12 @@ import { createInMemoryStorage, IContentStorageComponent } from '@dcl/catalyst-s
 import { ILimitsManager, IWorldNamePermissionChecker, IWorldsManager, ValidatorComponents } from '../../../src/types'
 import { createMockLimitsManagerComponent } from '../../mocks/limits-manager-mock'
 import { createMockNamePermissionChecker } from '../../mocks/dcl-name-checker-mock'
-import { getIdentity } from '../../utils'
+import { getIdentity, Identity } from '../../utils'
 import { IConfigComponent } from '@well-known-components/interfaces'
 import { createWorldsManagerComponent } from '../../../src/adapters/worlds-manager'
 import { createLogComponent } from '@well-known-components/logger'
-import { createDeployment } from './shared'
-import { createValidator } from '../../../src/logic/validations/validator'
+import { createSceneDeployment } from './shared'
+import { createValidator } from '../../../src/logic/validations'
 
 describe('validator', function () {
   let config: IConfigComponent
@@ -16,7 +16,7 @@ describe('validator', function () {
   let limitsManager: ILimitsManager
   let worldNamePermissionChecker: IWorldNamePermissionChecker
   let worldsManager: IWorldsManager
-  let identity
+  let identity: Identity
   let components: ValidatorComponents
 
   beforeEach(async () => {
@@ -41,10 +41,10 @@ describe('validator', function () {
     }
   })
 
-  it('all validations pass', async () => {
+  it('all validations pass for scene', async () => {
     const validator = await createValidator(components)
 
-    const deployment = await createDeployment(identity.authChain)
+    const deployment = await createSceneDeployment(identity.authChain)
 
     const result = await validator.validate(deployment)
     expect(result.ok()).toBeTruthy()

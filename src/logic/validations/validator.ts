@@ -1,51 +1,64 @@
 import { DeploymentToValidate, Validation, ValidationResult, Validator, ValidatorComponents } from '../../types'
 import {
+  createValidateDeploymentTtl,
   validateAuthChain,
   validateBaseEntity,
-  validateDeploymentTtl,
   validateEntityId,
   validateFiles,
   validateSignature,
-  validateSigner
+  validateSigner,
+  validateSupportedEntityType
 } from './common'
 import {
-  validateDeploymentPermission,
+  createValidateDeploymentPermission,
+  createValidateSceneDimensions,
+  createValidateSize,
   validateMiniMapImages,
-  validateSceneDimensions,
   validateSceneEntity,
-  validateSize,
   validateSkyboxTextures,
   validateThumbnail
 } from './scene'
-import { OK } from './utils'
+import { OK, validateAll, validateIfTypeMatches } from './utils'
+import { EntityType } from '@dcl/schemas'
 
-export const commonValidations: Validation[] = [
-  validateEntityId,
-  validateBaseEntity,
-  validateAuthChain,
-  validateSigner,
-  validateSignature,
-  validateDeploymentTtl,
-  validateFiles
-]
+export function createValidateFns(components: ValidatorComponents): Validation[] {
+  return [
+    // Common validations to all entity types
+    validateAll([
+      validateEntityId,
+      validateBaseEntity,
+      validateAuthChain,
+      validateSigner,
+      validateSignature,
+      createValidateDeploymentTtl(components),
+      validateFiles,
+      validateSupportedEntityType
+    ]),
 
-const sceneValidations: Validation[] = [
-  validateSceneEntity,
-  validateSceneDimensions,
-  validateMiniMapImages,
-  validateSkyboxTextures,
-  validateThumbnail,
-  // validateSdkVersion TODO re-enable (and test) once SDK7 is ready
-  validateSize, // Slow
-  validateDeploymentPermission // Slow
-]
+    // Scene entity validations
+    validateIfTypeMatches(
+      EntityType.SCENE,
+      validateAll([
+        validateSceneEntity,
+        createValidateSceneDimensions(components),
+        validateMiniMapImages,
+        validateSkyboxTextures,
+        validateThumbnail,
+        // validateSdkVersion(components) TODO re-enable (and test) once SDK7 is ready
+        createValidateSize(components), // Slow
+        createValidateDeploymentPermission(components) // Slow
+      ])
+    )
 
-const allValidations: Validation[] = [...commonValidations, ...sceneValidations]
+    // Other entity validations will go here ...
+  ]
+}
 
 export const createValidator = (components: ValidatorComponents): Validator => ({
   async validate(deployment: DeploymentToValidate): Promise<ValidationResult> {
-    for (const validate of allValidations) {
-      const result = await validate(components, deployment)
+    const validations = createValidateFns(components)
+    for (const validation of validations) {
+      const result = await validation(deployment)
       if (!result.ok()) {
         return result
       }

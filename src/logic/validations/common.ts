@@ -1,13 +1,10 @@
 import { DeploymentToValidate, Validation, ValidationResult, ValidatorComponents } from '../../types'
 import { hashV1 } from '@dcl/hashing'
 import { createValidationResult, OK } from './utils'
-import { AuthChain, Entity, EthAddress, IPFSv2 } from '@dcl/schemas'
+import { AuthChain, Entity, EntityType, EthAddress, IPFSv2 } from '@dcl/schemas'
 import { Authenticator } from '@dcl/crypto'
 
-export const validateEntityId: Validation = async (
-  components: Partial<ValidatorComponents>,
-  deployment: DeploymentToValidate
-): Promise<ValidationResult> => {
+export const validateEntityId: Validation = async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
   const entityRaw = deployment.files.get(deployment.entity.id)
   if (!entityRaw) {
     return createValidationResult(['Entity not found in files.'])
@@ -19,10 +16,7 @@ export const validateEntityId: Validation = async (
   )
 }
 
-export const validateBaseEntity: Validation = async (
-  components: Partial<ValidatorComponents>,
-  deployment: DeploymentToValidate
-): Promise<ValidationResult> => {
+export const validateBaseEntity: Validation = async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
   if (!Entity.validate(deployment.entity)) {
     return createValidationResult(Entity.validate.errors?.map((error) => error.message || '') || [])
   }
@@ -30,24 +24,20 @@ export const validateBaseEntity: Validation = async (
   return OK
 }
 
-export const validateDeploymentTtl: Validation = async (
-  components: Pick<ValidatorComponents, 'config'>,
-  deployment: DeploymentToValidate
-): Promise<ValidationResult> => {
-  const ttl = Date.now() - deployment.entity.timestamp
-  const maxTtl = (await components.config.getNumber('DEPLOYMENT_TTL')) || 300_000
-  if (ttl > maxTtl) {
-    return createValidationResult([
-      `Deployment was created ${ttl / 1000} secs ago. Max allowed: ${maxTtl / 1000} secs.`
-    ])
+export function createValidateDeploymentTtl(components: Pick<ValidatorComponents, 'config'>) {
+  return async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
+    const ttl = Date.now() - deployment.entity.timestamp
+    const maxTtl = (await components.config.getNumber('DEPLOYMENT_TTL')) || 300_000
+    if (ttl > maxTtl) {
+      return createValidationResult([
+        `Deployment was created ${ttl / 1000} secs ago. Max allowed: ${maxTtl / 1000} secs.`
+      ])
+    }
+    return OK
   }
-  return OK
 }
 
-export const validateAuthChain: Validation = async (
-  components: Partial<ValidatorComponents>,
-  deployment: DeploymentToValidate
-): Promise<ValidationResult> => {
+export const validateAuthChain: Validation = async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
   if (!AuthChain.validate(deployment.authChain)) {
     return createValidationResult(AuthChain.validate.errors?.map((error) => error.message || '') || [])
   }
@@ -55,10 +45,7 @@ export const validateAuthChain: Validation = async (
   return OK
 }
 
-export const validateSigner: Validation = async (
-  components: Partial<ValidatorComponents>,
-  deployment: DeploymentToValidate
-): Promise<ValidationResult> => {
+export const validateSigner: Validation = async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
   const signer = deployment.authChain[0].payload
   if (!EthAddress.validate(signer)) {
     return createValidationResult([`Invalid signer: ${signer}`])
@@ -67,19 +54,13 @@ export const validateSigner: Validation = async (
   return OK
 }
 
-export const validateSignature: Validation = async (
-  components: Partial<ValidatorComponents>,
-  deployment: DeploymentToValidate
-): Promise<ValidationResult> => {
+export const validateSignature: Validation = async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
   const result = await Authenticator.validateSignature(deployment.entity.id, deployment.authChain, null, 10)
 
   return createValidationResult(result.message ? [result.message] : [])
 }
 
-export const validateFiles: Validation = async (
-  components: Partial<ValidatorComponents>,
-  deployment: DeploymentToValidate
-): Promise<ValidationResult> => {
+export const validateFiles: Validation = async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
   const errors: string[] = []
 
   // validate all files are part of the entity
@@ -107,4 +88,12 @@ export const validateFiles: Validation = async (
   }
 
   return createValidationResult(errors)
+}
+
+export const validateSupportedEntityType = async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
+  switch (deployment.entity.type) {
+    case EntityType.SCENE:
+      return OK
+  }
+  return createValidationResult([`Entity type ${deployment.entity.type} is not supported.`])
 }
