@@ -33,7 +33,7 @@
   },
   "dependencies": {
     "@dcl/catalyst-contracts": "^3.1.4",
-    "@dcl/catalyst-storage": "^2.0.2-20221220152949.commit-0c86407",
+    "@dcl/catalyst-storage": "^2.0.4",
     "@dcl/crypto": "^3.2.3",
     "@dcl/hashing": "^1.1.2",
     "@dcl/protocol": "^1.0.0-4959770633.commit-e249449",
