@@ -317,16 +317,7 @@
     aws-sdk "^2.1407.0"
     destroy "^1.2.0"
 
-"@dcl/crypto@^3.2.3":
-  version "3.3.1"
-  resolved "https://registry.yarnpkg.com/@dcl/crypto/-/crypto-3.3.1.tgz#1cc16d4313e7bc0f57daf6ffa9837355781156a8"
-  integrity sha512-eq/zeJod1bsxQJaNf1Ln/W7+5MT8NnuWLADZJeTBoIPcyQX4/V03M+TfAVB6dpRHynIBBTU1CaiPIkeUVxpyiA==
-  dependencies:
-    "@dcl/schemas" "^6.4.2"
-    eth-connect "^6.0.3"
-    ethereum-cryptography "^1.0.3"
-
-"@dcl/crypto@^3.4.0":
+"@dcl/crypto@^3.2.3", "@dcl/crypto@^3.4.0":
   version "3.4.1"
   resolved "https://registry.yarnpkg.com/@dcl/crypto/-/crypto-3.4.1.tgz#2ab9b9b5b18efbe5d65eee3936c0f73c20480858"
   integrity sha512-dpPMKPsQP7CS+CWtnOrk7sIGnh7dkdEs34dKLTHv4mGX/5A0odmEhvoUZLR+meWo1ifNcESLoVKdAEmowkQwlw==
@@ -387,7 +378,7 @@
     ajv-errors "^3.0.0"
     ajv-keywords "^5.1.0"
 
-"@dcl/schemas@^7.1.0", "@dcl/schemas@^7.6.0":
+"@dcl/schemas@^7.6.0":
   version "7.6.0"
   resolved "https://registry.yarnpkg.com/@dcl/schemas/-/schemas-7.6.0.tgz#8a244e97d6478c6d30db6376177aae611db46786"
   integrity sha512-TDIk7tDc4VB9ky0EgVUjFB/EBKkgjadcQ/ia4b9kU5vYlx7XUSB2kao/EDNRFfR17W1pssmZlUDtjmzFWTYSgQ==
@@ -2875,15 +2866,15 @@ dataloader@^1.4.0:
   resolved "https://registry.yarnpkg.com/dataloader/-/dataloader-1.4.0.tgz#bca11d867f5d3f1b9ed9f737bd15970c65dff5c8"
   integrity sha512-68s5jYdlvasItOJnCuI2Q9s4q98g0pCyL3HrcKJu8KNugUl8ahgmZYg38ysLTgQjjXX3H8CJLkAvWrclWfcalw==
 
-dcl-catalyst-client@^20.1.1:
-  version "20.1.1"
-  resolved "https://registry.yarnpkg.com/dcl-catalyst-client/-/dcl-catalyst-client-20.1.1.tgz#3b31b9b5caa06c5fef3c31954fd5345b67eb4ceb"
-  integrity sha512-EE6TN+u+TOs9H83YMYVTUZauvwfOtXfZEXqVL/C7j5aYgl4o6gpxzus+divjj1wBmdmZkhwykJox4vaNBpwcNQ==
+dcl-catalyst-client@^21.1.0:
+  version "21.1.0"
+  resolved "https://registry.yarnpkg.com/dcl-catalyst-client/-/dcl-catalyst-client-21.1.0.tgz#8a61a4daa42c3a1ed0422e98daa83d8f63f9349d"
+  integrity sha512-w9AK3+uEQ9+2X9mztWTBt7H3rEXmPG/COSywLYuwb/ec6WCSb6PFqNK3QIzbeUbqcreRuOAcCZvN6jUJ+5RgfA==
   dependencies:
     "@dcl/catalyst-contracts" "^4.0.2"
     "@dcl/crypto" "^3.4.0"
     "@dcl/hashing" "^2.0.0"
-    "@dcl/schemas" "^7.1.0"
+    "@dcl/schemas" "^7.6.0"
     "@well-known-components/fetch-component" "^2.0.0"
     cookie "^0.5.0"
     cross-fetch "^3.1.5"
