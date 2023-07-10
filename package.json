@@ -32,7 +32,7 @@
     "tabWidth": 2
   },
   "dependencies": {
-    "@dcl/catalyst-contracts": "^3.1.4",
+    "@dcl/catalyst-contracts": "^4.0.5",
     "@dcl/catalyst-storage": "^2.0.4",
     "@dcl/crypto": "^3.2.3",
     "@dcl/hashing": "^1.1.2",
@@ -49,7 +49,7 @@
     "busboy": "^1.6.0",
     "dcl-catalyst-client": "^21.2.0",
     "decentraland-crypto-middleware": "^1.0.4",
-    "eth-connect": "^6.0.3",
+    "eth-connect": "^6.2.0",
     "jsonwebtoken": "^9.0.0",
     "livekit-server-sdk": "^1.1.0",
     "lru-cache": "^7.14.0",

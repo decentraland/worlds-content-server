@@ -70,7 +70,7 @@ describe('dcl name checker: on-chain', function () {
 
   beforeEach(async () => {
     config = createConfigComponent({
-      NETWORK_ID: '1',
+      ETH_NETWORK: 'mainnet',
       LOG_LEVEL: 'DEBUG'
     })
     logs = await createLogComponent({ config })

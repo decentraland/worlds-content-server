@@ -2,7 +2,7 @@ import { AppComponents, IWorldNamePermissionChecker } from '../types'
 import { EthAddress } from '@dcl/schemas'
 import LRU from 'lru-cache'
 import { ContractFactory, RequestManager } from 'eth-connect'
-import { checkerAbi, checkerContracts, registrarContracts } from '@dcl/catalyst-contracts'
+import { checkerAbi, l1Contracts, L1Network } from '@dcl/catalyst-contracts'
 
 type NamesResponse = {
   nfts: { name: string; owner: { id: string } }[]
@@ -71,10 +71,13 @@ export const createOnChainDclNameChecker = async (
 ): Promise<IWorldNamePermissionChecker> => {
   const logger = components.logs.getLogger('check-permissions')
   logger.info('Using OnChain DclNameChecker')
-  const networkId = await components.config.requireString('NETWORK_ID')
-  const networkName = networkId === '1' ? 'mainnet' : 'goerli'
+  const ethNetwork = await components.config.requireString('ETH_NETWORK')
+  const contracts = l1Contracts[ethNetwork as L1Network]
+  if (!contracts) {
+    throw new Error(`Invalid ETH_NETWORK: ${ethNetwork}`)
+  }
   const factory = new ContractFactory(new RequestManager(components.ethereumProvider), checkerAbi)
-  const checker = (await factory.at(checkerContracts[networkName])) as any
+  const checker = (await factory.at(contracts.checker)) as any
 
   const checkPermission = async (ethAddress: EthAddress, worldName: string): Promise<boolean> => {
     if (worldName.length === 0 || !worldName.endsWith('.dcl.eth')) {
@@ -83,7 +86,7 @@ export const createOnChainDclNameChecker = async (
 
     const hasPermission = await checker.checkName(
       ethAddress,
-      registrarContracts[networkName],
+      contracts.registrar,
       worldName.replace('.dcl.eth', ''),
       'latest'
     )

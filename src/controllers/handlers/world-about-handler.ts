@@ -6,6 +6,7 @@ import {
 } from '@dcl/protocol/out-js/decentraland/bff/http_endpoints.gen'
 import { streamToBuffer } from '@dcl/catalyst-storage/dist/content-item'
 import { ContentMapping } from '@dcl/schemas/dist/misc/content-mapping'
+import { l1Contracts, L1Network } from '@dcl/catalyst-contracts'
 
 export async function worldAboutHandler({
   params,
@@ -36,7 +37,12 @@ export async function worldAboutHandler({
 
   const urn = `urn:decentraland:entity:${entityId}?=&baseUrl=${baseUrl}/contents/`
 
-  const networkId = await config.requireNumber('NETWORK_ID')
+  const ethNetwork = await config.requireString('ETH_NETWORK')
+  const contracts = l1Contracts[ethNetwork as L1Network]
+  if (!contracts) {
+    throw new Error(`Invalid ETH_NETWORK: ${ethNetwork}`)
+  }
+
   const roomPrefix = await config.requireString('COMMS_ROOM_PREFIX')
   const fixedAdapter = await resolveFixedAdapter(params.world_name, sceneJson, baseUrl, roomPrefix)
 
@@ -87,7 +93,7 @@ export async function worldAboutHandler({
     healthy,
     acceptingUsers: healthy,
     configurations: {
-      networkId,
+      networkId: contracts.chainId,
       globalScenesUrn: globalScenesURN ? globalScenesURN.split(' ') : [],
       scenesUrn: [urn],
       minimap,
