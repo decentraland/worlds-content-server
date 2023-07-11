@@ -4,7 +4,7 @@ import { IConfigComponent } from '@well-known-components/interfaces'
 import { createConfigComponent } from '@well-known-components/env-config-provider'
 import { createInMemoryStorage } from '@dcl/catalyst-storage'
 import { createWorldsManagerComponent } from '../../src/adapters/worlds-manager'
-import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage/dist/content-item'
+import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { WorldData } from '../../src/types'
 

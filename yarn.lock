@@ -1494,10 +1494,9 @@
   resolved "https://registry.yarnpkg.com/@dcl/catalyst-contracts/-/catalyst-contracts-4.0.5.tgz#4062174cd5de41cbf8a152cac12233adca1b67c5"
   integrity sha512-6GqfQ8cYGT+W0ZVcAX6GKRxklCm0tgYPKYV4QtkuuFybmCRZmmmsZ6ACTH22ic3TL+l4Aph0KjVmhnAY7RyC7w==
 
-"@dcl/catalyst-storage@^3.0.0":
-  version "3.0.0"
-  resolved "https://registry.yarnpkg.com/@dcl/catalyst-storage/-/catalyst-storage-3.0.0.tgz#24347ea6dcaf8eb2d31b7405822a698fd7f6d770"
-  integrity sha512-xonNW4W5L5h4rcLGGm2fTXwdWolr9SE30qDKduIwd3LGr6QAgzTdDx7ZuYU9ALVDgbVnwKzVyp1EjdUwGi6Uqw==
+"@dcl/catalyst-storage@https://sdk-team-cdn.decentraland.org/@dcl/catalyst-storage/branch/exports/dcl-catalyst-storage-3.0.1-5521093678.commit-07b589f.tgz":
+  version "3.0.1-5521093678.commit-07b589f"
+  resolved "https://sdk-team-cdn.decentraland.org/@dcl/catalyst-storage/branch/exports/dcl-catalyst-storage-3.0.1-5521093678.commit-07b589f.tgz#a38d7d065e8f9435def0b74159ca0eb38bcb7954"
   dependencies:
     "@aws-sdk/client-s3" "^3.369.0"
     "@aws-sdk/lib-storage" "^3.369.0"

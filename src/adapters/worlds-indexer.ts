@@ -1,5 +1,5 @@
 import { AppComponents, IWorldsIndexer, WorldData, WorldsIndex } from '../types'
-import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage/dist/content-item'
+import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { ContentMapping } from '@dcl/schemas/dist/misc/content-mapping'
 import PQueue from 'p-queue'
