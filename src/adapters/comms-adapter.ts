@@ -178,8 +178,8 @@ function cachingAdapter({ logs }: Pick<AppComponents, 'logs'>, wrappedAdapter: I
   const CACHE_KEY = 'comms_status'
   const cache = new LRU<string, CommsStatus>({
     max: 1,
-    ttl: 60 * 1000, // cache for 1 minutes
-    fetchMethod: async (_, staleValue): Promise<CommsStatus> => {
+    ttl: 60 * 1000, // cache for 1 minute
+    fetchMethod: async (_, staleValue): Promise<CommsStatus | undefined> => {
       try {
         return await wrappedAdapter.status()
       } catch (_: any) {

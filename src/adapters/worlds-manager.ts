@@ -13,7 +13,7 @@ export async function createWorldsManagerComponent({
   const cache = new LRU<string, string[]>({
     max: 1,
     ttl: 10 * 60 * 1000, // cache for 10 minutes
-    fetchMethod: async (_, staleValue): Promise<string[]> => {
+    fetchMethod: async (_, staleValue): Promise<string[] | undefined> => {
       try {
         const worlds = []
         for await (const key of storage.allFileIds('name-')) {
