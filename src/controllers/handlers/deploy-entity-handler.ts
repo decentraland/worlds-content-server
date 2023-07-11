@@ -100,8 +100,6 @@ export async function deployEntity(
     const entityRaw = ctx.formData.files[entityId].value.toString()
     const sceneJson = JSON.parse(entityRaw)
 
-    console.log('sceneJson', sceneJson)
-
     const entity: Entity = {
       id: entityId, // this is not part of the published entity
       timestamp: Date.now(), // this is not part of the published entity
