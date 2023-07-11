@@ -1267,14 +1267,6 @@
     ajv-errors "^3.0.0"
     ajv-keywords "^5.1.0"
 
-"@dcl/schemas@https://sdk-team-cdn.decentraland.org/@dcl/schemas/branch/feat/skybox/dcl-schemas-7.6.1-5457478537.commit-de82324.tgz":
-  version "7.6.1-5457478537.commit-de82324"
-  resolved "https://sdk-team-cdn.decentraland.org/@dcl/schemas/branch/feat/skybox/dcl-schemas-7.6.1-5457478537.commit-de82324.tgz#5a19f4201716aff2fbbb2a82e8d7e41afeffc53d"
-  dependencies:
-    ajv "^8.11.0"
-    ajv-errors "^3.0.0"
-    ajv-keywords "^5.1.0"
-
 "@dcl/schemas@https://sdk-team-cdn.decentraland.org/@dcl/schemas/branch/feat/skybox/dcl-schemas-8.2.1-5522305788.commit-04ce2a4.tgz":
   version "8.2.1-5522305788.commit-04ce2a4"
   resolved "https://sdk-team-cdn.decentraland.org/@dcl/schemas/branch/feat/skybox/dcl-schemas-8.2.1-5522305788.commit-04ce2a4.tgz#ae80ba591a8c586ed3847aff84aa159ad2486d56"

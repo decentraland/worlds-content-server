@@ -7,7 +7,6 @@ import { stringToUtf8Bytes } from 'eth-connect'
 import { hashV1 } from '@dcl/hashing'
 import { getIdentity, storeJson } from '../utils'
 import { streamToBuffer } from '@dcl/catalyst-storage'
-import { DeploymentBuilder } from 'dcl-catalyst-client'
 
 test('deployment works', function ({ components, stubComponents }) {
   it('creates an entity and deploys it', async () => {
