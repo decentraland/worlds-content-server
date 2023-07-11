@@ -60,7 +60,7 @@ export async function createWorldsManagerComponent({
     const json = JSON.parse((await streamToBuffer(await content?.asStream())).toString())
 
     return {
-      // the timestamp is not stored int the entity :/
+      // the timestamp is not stored in the entity :/
       timestamp: 0,
       ...json,
       id: entityId
