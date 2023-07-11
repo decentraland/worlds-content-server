@@ -79,7 +79,7 @@ test('deployment works', function ({ components, stubComponents }) {
   })
 })
 
-test('deployment of skybox works', function ({ components, stubComponents }) {
+test('deployment of skybox works', function ({ components }) {
   it('creates a skybox entity and deploys it', async () => {
     const { config, storage } = components
 
