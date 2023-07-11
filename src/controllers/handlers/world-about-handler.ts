@@ -4,7 +4,7 @@ import {
   AboutResponse_MinimapConfiguration,
   AboutResponse_SkyboxConfiguration
 } from '@dcl/protocol/out-js/decentraland/bff/http_endpoints.gen'
-import { streamToBuffer } from '@dcl/catalyst-storage'
+import { streamToBuffer } from '@dcl/catalyst-storage/dist/content-item'
 import { ContentMapping } from '@dcl/schemas/dist/misc/content-mapping'
 import { l1Contracts, L1Network } from '@dcl/catalyst-contracts'
 

@@ -2,9 +2,9 @@ import { AuthChain, AuthLink, Entity } from '@dcl/schemas'
 import { IHttpServerComponent, ILoggerComponent } from '@well-known-components/interfaces'
 import { FormDataContext } from '../../logic/multipart'
 import { AppComponents, HandlerContextWithPath } from '../../types'
-import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage'
+import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage/dist/content-item'
 import { stringToUtf8Bytes } from 'eth-connect'
-import { PublishCommand, SNSClient } from '@aws-sdk/client-sns'
+import { SNS } from 'aws-sdk'
 import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
 
 export function requireString(val: string | null | undefined): string {
@@ -155,12 +155,13 @@ export async function deployEntity(
         },
         contentServerUrls: [baseUrl]
       }
-      const sns = new SNSClient({})
-      const command = new PublishCommand({
-        TopicArn: ctx.components.sns.arn,
-        Message: JSON.stringify(deploymentToSqs)
-      })
-      const receipt = await sns.send(command)
+      const sns = new SNS()
+      const receipt = await sns
+        .publish({
+          TopicArn: ctx.components.sns.arn,
+          Message: JSON.stringify(deploymentToSqs)
+        })
+        .promise()
       logger.info('notification sent', {
         MessageId: receipt.MessageId as any,
         SequenceNumber: receipt.SequenceNumber as any
