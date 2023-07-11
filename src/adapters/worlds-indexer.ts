@@ -76,7 +76,7 @@ export async function createWorldsIndexerComponent({
       index = await createIndex()
     } else {
       index = JSON.parse((await streamToBuffer(await content.asStream())).toString())
-      // if older than 10 minutes create a new one
+      // if older than 10 minutes, create a new one
       if (Date.now() - index.timestamp > 10 * 60 * 1000) {
         index = await createIndex()
       }
