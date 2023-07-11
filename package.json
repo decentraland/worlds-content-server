@@ -32,8 +32,7 @@
     "jsonwebtoken": "^9.0.1",
     "livekit-server-sdk": "^1.2.4",
     "lru-cache": "^7.18.3",
-    "p-queue": "^6.6.2",
-    "ts-proto": "^1.152.1"
+    "p-queue": "^6.6.2"
   },
   "devDependencies": {
     "@dcl/eslint-config": "^1.1.7",
