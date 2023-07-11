@@ -28,14 +28,12 @@
     "busboy": "^1.6.0",
     "decentraland-crypto-middleware": "^1.1.0",
     "eth-connect": "^6.2.0",
-    "jsonwebtoken": "^9.0.1",
     "livekit-server-sdk": "^1.2.4",
     "lru-cache": "^7.18.3",
     "p-queue": "^6.6.2"
   },
   "devDependencies": {
     "@dcl/eslint-config": "^1.1.7",
-    "@types/koa": "^2.13.6",
     "@types/node": "^18.16.19",
     "@types/passport-strategy": "^0.2.35",
     "@well-known-components/test-helpers": "^1.5.3",
