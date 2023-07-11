@@ -4,7 +4,7 @@ import { FormDataContext } from '../../logic/multipart'
 import { AppComponents, HandlerContextWithPath } from '../../types'
 import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage/dist/content-item'
 import { stringToUtf8Bytes } from 'eth-connect'
-import { SNS } from 'aws-sdk'
+import { PublishCommand, SNSClient } from '@aws-sdk/client-sns'
 import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
 
 export function requireString(val: string | null | undefined): string {
@@ -100,6 +100,8 @@ export async function deployEntity(
     const entityRaw = ctx.formData.files[entityId].value.toString()
     const sceneJson = JSON.parse(entityRaw)
 
+    console.log('sceneJson', sceneJson)
+
     const entity: Entity = {
       id: entityId, // this is not part of the published entity
       timestamp: Date.now(), // this is not part of the published entity
@@ -155,13 +157,12 @@ export async function deployEntity(
         },
         contentServerUrls: [baseUrl]
       }
-      const sns = new SNS()
-      const receipt = await sns
-        .publish({
-          TopicArn: ctx.components.sns.arn,
-          Message: JSON.stringify(deploymentToSqs)
-        })
-        .promise()
+      const sns = new SNSClient({})
+      const command = new PublishCommand({
+        TopicArn: ctx.components.sns.arn,
+        Message: JSON.stringify(deploymentToSqs)
+      })
+      const receipt = await sns.send(command)
       logger.info('notification sent', {
         MessageId: receipt.MessageId as any,
         SequenceNumber: receipt.SequenceNumber as any
