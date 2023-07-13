@@ -1,7 +1,7 @@
 import { IHttpServerComponent } from '@well-known-components/interfaces'
 import { ErrorResponse, InvalidRequestError, NotFoundError } from '../../types'
 
-function handleError(error: any): { status: number; body: ErrorResponse } {
+function handleError(url: URL, error: any): { status: number; body: ErrorResponse } {
   if (error instanceof InvalidRequestError) {
     return {
       status: 400,
@@ -22,7 +22,14 @@ function handleError(error: any): { status: number; body: ErrorResponse } {
     }
   }
 
-  throw error
+  console.log(`Error handling ${url.toString()}: ${error.message}`)
+  return {
+    status: 500,
+    body: {
+      error: 'Internal Server Error',
+      message: error.message
+    }
+  }
 }
 
 export async function errorHandler(
@@ -32,17 +39,6 @@ export async function errorHandler(
   try {
     return await next()
   } catch (error: any) {
-    try {
-      return handleError(error)
-    } catch (err: any) {
-      console.log(`Error handling ${ctx.url.toString()}: ${error.message}`)
-      return {
-        status: 500,
-        body: {
-          error: 'Internal Server Error',
-          message: error.message
-        }
-      }
-    }
+    return handleError(ctx.url, error)
   }
 }
