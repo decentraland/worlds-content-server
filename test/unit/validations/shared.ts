@@ -50,3 +50,41 @@ export async function createSceneDeployment(identityAuthChain: AuthIdentity, ent
   }
   return deployment
 }
+
+export async function createSkyboxDeployment(identityAuthChain: AuthIdentity, entity?: any) {
+  const entityFiles = new Map<string, Uint8Array>()
+  entityFiles.set('abc.txt', Buffer.from(stringToUtf8Bytes('asd')))
+  const fileHash = await hashV1(entityFiles.get('abc.txt')!)
+
+  const sceneJson = entity || {
+    type: EntityType.SKYBOX,
+    pointers: ['urn:decentraland:skybox:forest'],
+    timestamp: Date.now(),
+    metadata: {
+      id: 'urn:decentraland:skybox:forest',
+      name: 'Forest Skybox',
+      unityPackage: 'Forest_Skybox.unitypackage'
+    },
+    files: entityFiles
+  }
+  const { files, entityId } = await DeploymentBuilder.buildEntity(sceneJson)
+  files.set(entityId, Buffer.from(files.get(entityId)!))
+
+  const authChain = Authenticator.signPayload(identityAuthChain, entityId)
+
+  const contentHashesInStorage = new Map<string, boolean>()
+  contentHashesInStorage.set(fileHash, false)
+
+  const finalEntity = {
+    id: entityId,
+    ...JSON.parse(new TextDecoder().decode(files.get(entityId)))
+  }
+
+  const deployment: DeploymentToValidate = {
+    entity: finalEntity,
+    files,
+    authChain,
+    contentHashesInStorage
+  }
+  return deployment
+}

@@ -21,6 +21,7 @@ import {
 } from './scene'
 import { OK, validateAll, validateIfTypeMatches } from './utils'
 import { EntityType } from '@dcl/schemas'
+import { validatePointer, validateSkyboxEntity } from './skybox'
 
 export function createValidateFns(components: ValidatorComponents): Validation[] {
   return [
@@ -50,9 +51,18 @@ export function createValidateFns(components: ValidatorComponents): Validation[]
         createValidateSize(components), // Slow
         createValidateDeploymentPermission(components) // Slow
       ])
-    )
+    ),
 
-    // Other entity validations will go here ...
+    // Skybox entity validations
+    validateIfTypeMatches(
+      EntityType.SKYBOX,
+      validateAll([
+        validateSkyboxEntity,
+        validatePointer
+        // Check deployment size
+        // Check deployment permissions... figure out mechanism
+      ])
+    )
   ]
 }
 
