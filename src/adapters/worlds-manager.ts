@@ -1,6 +1,6 @@
 import { AppComponents, IWorldsManager, WorldMetadata } from '../types'
 import LRU from 'lru-cache'
-import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage'
+import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage/dist/content-item'
 import { AuthChain, Entity } from '@dcl/schemas'
 import { stringToUtf8Bytes } from 'eth-connect'
 
@@ -13,7 +13,7 @@ export async function createWorldsManagerComponent({
   const cache = new LRU<string, string[]>({
     max: 1,
     ttl: 10 * 60 * 1000, // cache for 10 minutes
-    fetchMethod: async (_, staleValue): Promise<string[]> => {
+    fetchMethod: async (_, staleValue): Promise<string[] | undefined> => {
       try {
         const worlds = []
         for await (const key of storage.allFileIds('name-')) {
@@ -60,7 +60,7 @@ export async function createWorldsManagerComponent({
     const json = JSON.parse((await streamToBuffer(await content?.asStream())).toString())
 
     return {
-      // the timestamp is not stored int the entity :/
+      // the timestamp is not stored in the entity :/
       timestamp: 0,
       ...json,
       id: entityId

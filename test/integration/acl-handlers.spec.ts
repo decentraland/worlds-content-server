@@ -1,7 +1,7 @@
 import { test } from '../components'
 import { getIdentity, storeJson } from '../utils'
 import { Authenticator } from '@dcl/crypto'
-import { streamToBuffer } from '@dcl/catalyst-storage'
+import { streamToBuffer } from '@dcl/catalyst-storage/dist/content-item'
 
 test('acl handler GET /acl/:world_name', function ({ components }) {
   it('returns an error when world does not exist', async () => {

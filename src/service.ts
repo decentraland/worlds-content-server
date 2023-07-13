@@ -1,7 +1,7 @@
 import { Lifecycle } from '@well-known-components/interfaces'
 import { setupRouter } from './controllers/routes'
 import { AppComponents, GlobalContext, TestComponents } from './types'
-import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage'
+import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage/dist/content-item'
 import { stringToUtf8Bytes } from 'eth-connect'
 
 // this function wires the business logic (adapters & controllers) with the components (ports)
