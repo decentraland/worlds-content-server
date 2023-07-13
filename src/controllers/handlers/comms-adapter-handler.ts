@@ -1,4 +1,4 @@
-import { HandlerContextWithPath } from '../../types'
+import { HandlerContextWithPath, InvalidRequestError, NotFoundError } from '../../types'
 import { IHttpServerComponent } from '@well-known-components/interfaces'
 import { DecentralandSignatureContext } from 'decentraland-crypto-middleware/lib/types'
 import verify from 'decentraland-crypto-middleware/lib/verify'
@@ -28,33 +28,18 @@ export async function commsAdapterHandler(
   }
 
   if (!validateMetadata(context.verification!.authMetadata)) {
-    return {
-      status: 400,
-      body: {
-        message: 'Access denied, invalid metadata'
-      }
-    }
+    throw new InvalidRequestError('Access denied, invalid metadata')
   }
 
   const roomPrefix = await config.requireString('COMMS_ROOM_PREFIX')
   if (!context.params.roomId.startsWith(roomPrefix)) {
-    return {
-      status: 400,
-      body: {
-        message: 'Invalid room id requested.'
-      }
-    }
+    throw new InvalidRequestError('Invalid room id requested.')
   }
 
   const worldName = context.params.roomId.substring(roomPrefix.length)
 
   if (!(await storage.exist('name-' + worldName))) {
-    return {
-      status: 404,
-      body: {
-        message: `World "${worldName}" does not exist.`
-      }
-    }
+    throw new NotFoundError(`World "${worldName}" does not exist.`)
   }
 
   return {

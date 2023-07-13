@@ -80,7 +80,7 @@ test('comms adapter handler /get-comms-adapter/:roomId', function ({ components 
     const r = await localFetch.fetch(path, actualInit)
 
     expect(r.status).toEqual(404)
-    expect(await r.json()).toEqual({ message: 'World "myRoom" does not exist.' })
+    expect(await r.json()).toMatchObject({ message: 'World "myRoom" does not exist.' })
   })
 })
 
@@ -119,7 +119,7 @@ test('comms adapter handler /get-comms-adapter/:roomId', function ({ components 
     const r = await localFetch.fetch(path, actualInit)
 
     expect(r.status).toEqual(400)
-    expect(await r.json()).toEqual({ message: 'Invalid room id requested.' })
+    expect(await r.json()).toMatchObject({ message: 'Invalid room id requested.' })
   })
 })
 
@@ -155,7 +155,7 @@ test('comms adapter handler /get-comms-adapter/:roomId', function ({ components 
     const r = await localFetch.fetch(path, actualInit)
 
     expect(r.status).toEqual(400)
-    expect(await r.json()).toEqual({
+    expect(await r.json()).toMatchObject({
       message: 'Access denied, invalid metadata'
     })
   })

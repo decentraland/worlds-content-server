@@ -1,16 +1,13 @@
-import { HandlerContextWithPath } from '../../types'
+import { HandlerContextWithPath, InvalidRequestError } from '../../types'
 import { IHttpServerComponent } from '@well-known-components/interfaces'
 
 export async function activeEntitiesHandler(
   context: HandlerContextWithPath<'worldsManager', '/entities/active'>
 ): Promise<IHttpServerComponent.IResponse> {
   const body = await context.request.json()
-
-  if (!body || typeof body !== 'object' || !Array.isArray(body.pointers))
-    return {
-      status: 400,
-      body: { message: 'Invalid request. Request body is not valid' }
-    }
+  if (!body || typeof body !== 'object' || !Array.isArray(body.pointers)) {
+    throw new InvalidRequestError('Invalid request. Request body is not valid')
+  }
 
   const pointers: string[] = []
 

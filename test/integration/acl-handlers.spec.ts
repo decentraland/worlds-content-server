@@ -201,7 +201,7 @@ test('acl handler POST /acl/:world_name', function ({ components, stubComponents
     })
 
     expect(r.status).toEqual(400)
-    expect(await r.json()).toEqual({
+    expect(await r.json()).toMatchObject({
       message:
         'Provided acl is for world "another-world.dcl.eth" but you are trying to set acl for world my-world.dcl.eth.'
     })
@@ -234,7 +234,7 @@ test('acl handler POST /acl/:world_name', function ({ components, stubComponents
     })
 
     expect(r.status).toEqual(400)
-    expect(await r.json()).toEqual({
+    expect(await r.json()).toMatchObject({
       message:
         'You are trying to give permission to yourself. You own "my-world.dcl.eth", so you already have permission to deploy scenes, no need to include yourself in the ACL.'
     })
@@ -268,7 +268,7 @@ test('acl handler POST /acl/:world_name', function ({ components, stubComponents
     })
 
     expect(r.status).toEqual(400)
-    expect(await r.json()).toEqual({
+    expect(await r.json()).toMatchObject({
       message: `Provided acl is invalid. allowed is missing or not an array of addresses.`
     })
   })
@@ -300,7 +300,7 @@ test('acl handler POST /acl/:world_name', function ({ components, stubComponents
     })
 
     expect(r.status).toEqual(400)
-    expect(await r.json()).toEqual({
+    expect(await r.json()).toMatchObject({
       message: `Provided acl is invalid. allowed is missing or not an array of addresses.`
     })
   })
@@ -333,7 +333,7 @@ test('acl handler POST /acl/:world_name', function ({ components, stubComponents
     })
 
     expect(r.status).toEqual(403)
-    expect(await r.json()).toEqual({
+    expect(await r.json()).toMatchObject({
       message: `Your wallet does not own "my-world.dcl.eth", you can not set access control lists for it.`
     })
   })
@@ -360,7 +360,7 @@ test('acl handler POST /acl/:world_name', function ({ components, stubComponents
     })
 
     expect(r.status).toEqual(400)
-    expect(await r.json()).toEqual({
+    expect(await r.json()).toMatchObject({
       message: `Invalid payload received. Need to be a valid AuthChain.`
     })
   })
@@ -388,7 +388,7 @@ test('acl handler POST /acl/:world_name', function ({ components, stubComponents
     })
 
     expect(r.status).toEqual(400)
-    expect(await r.json()).toEqual({
+    expect(await r.json()).toMatchObject({
       message: `Invalid ACL, timestamp is missing or has an invalid date.`
     })
   })
@@ -417,7 +417,7 @@ test('acl handler POST /acl/:world_name', function ({ components, stubComponents
     })
 
     expect(r.status).toEqual(400)
-    expect(await r.json()).toEqual({
+    expect(await r.json()).toMatchObject({
       message: `Timestamp is not recent. Please sign a new ACL change request.`
     })
   })
@@ -446,7 +446,7 @@ test('acl handler POST /acl/:world_name', function ({ components, stubComponents
     })
 
     expect(r.status).toEqual(400)
-    expect(await r.json()).toEqual({
+    expect(await r.json()).toMatchObject({
       message: `Timestamp is not recent. Please sign a new ACL change request.`
     })
   })
@@ -483,7 +483,7 @@ test('acl handler POST /acl/:world_name', function ({ components, stubComponents
     })
 
     expect(r.status).toEqual(400)
-    expect(await r.json()).toEqual({
+    expect(await r.json()).toMatchObject({
       message: 'There is a newer ACL stored. Please sign a new ACL change request.'
     })
   })
