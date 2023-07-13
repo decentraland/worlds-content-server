@@ -25,6 +25,17 @@ test('deployment works', function ({ components, stubComponents }) {
     expect(await storage.exist(fileHash)).toEqual(false)
 
     // Build the entity
+    const worldConfig = {
+      name: 'my-super-name.dcl.eth',
+      miniMapConfig: {
+        enabled: true,
+        dataImage: 'abc.txt',
+        estateImage: 'abc.txt'
+      },
+      skyboxConfig: {
+        textures: ['abc.txt']
+      }
+    }
     const { files, entityId } = await DeploymentBuilder.buildEntity({
       type: EntityType.SCENE as any,
       pointers: ['0,0'],
@@ -35,17 +46,7 @@ test('deployment works', function ({ components, stubComponents }) {
           base: '20,24',
           parcels: ['20,24']
         },
-        worldConfiguration: {
-          name: 'my-super-name.dcl.eth',
-          miniMapConfig: {
-            enabled: true,
-            dataImage: 'abc.txt',
-            estateImage: 'abc.txt'
-          },
-          skyboxConfig: {
-            textures: ['abc.txt']
-          }
-        }
+        worldConfiguration: worldConfig
       }
     })
 
@@ -74,6 +75,10 @@ test('deployment works', function ({ components, stubComponents }) {
     expect(await storage.exist(fileHash)).toEqual(true)
     expect(await storage.exist(entityId)).toEqual(true)
     expect(await storage.exist('name-my-super-name.dcl.eth')).toEqual(true)
+    const content = await storage.retrieve('name-my-super-name.dcl.eth')
+    const stored = JSON.parse((await streamToBuffer(await content!.asStream())).toString())
+
+    expect(stored).toMatchObject({ entityId, config: worldConfig })
 
     Sinon.assert.calledWithMatch(metrics.increment, 'world_deployments_counter')
   })

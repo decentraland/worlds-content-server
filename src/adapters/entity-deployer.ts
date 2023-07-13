@@ -68,7 +68,10 @@ export function createEntityDeployer(
     const worldName = entity.metadata.worldConfiguration.name
     logger.debug(`Deployment for scene "${entity.id}" under world name "${worldName}"`)
 
-    await worldsManager.storeWorldMetadata(worldName, { entityId: entity.id })
+    await worldsManager.storeWorldMetadata(worldName, {
+      entityId: entity.id,
+      config: entity.metadata.worldConfiguration
+    })
 
     metrics.increment('world_deployments_counter')
 
