@@ -115,7 +115,7 @@ test('deployment of skybox works', function ({ components }) {
     const response = (await contentClient.deploy({ files, entityId, authChain })) as Response
     expect(await response.json()).toMatchObject({
       message:
-        'Your skybox was deployed to a Worlds Content Server!\nIt can be referenced in Worlds deployed here using the urn: urn:decentraland:skybox:forest'
+        'Your skybox was deployed to the Worlds Content Server!\nIt can be referenced in Worlds deployed on the same server using the urn: urn:decentraland:skybox:forest'
     })
 
     expect(await storage.exist(fileHash)).toEqual(true)
