@@ -112,7 +112,7 @@ export function createEntityDeployer(
     }
   }
 
-  async function postSkyboxDeployment(baseUrl: string, entity: Entity, authChain: AuthLink[]) {
+  async function postSkyboxDeployment(baseUrl: string, entity: Entity, _authChain: AuthLink[]) {
     await storage.storeStream(
       `skybox-${entity.pointers[0].toLowerCase()}`,
       bufferToStream(stringToUtf8Bytes(JSON.stringify({ entityId: entity.id })))
