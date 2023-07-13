@@ -42,10 +42,6 @@ export async function createWorldsManagerComponent({
     return (await cache.fetch(WORLDS_KEY))!
   }
 
-  async function getDeployedWorldsCount(): Promise<number> {
-    return (await cache.fetch(WORLDS_KEY))?.length || 0
-  }
-
   async function getEntityForWorld(worldName: string): Promise<Entity | undefined> {
     const entityId = await getEntityIdForWorld(worldName)
     if (!entityId) {
@@ -95,7 +91,6 @@ export async function createWorldsManagerComponent({
 
   return {
     getDeployedWorldsNames,
-    getDeployedWorldsCount,
     getMetadataForWorld,
     getEntityIdForWorld,
     getEntityForWorld,

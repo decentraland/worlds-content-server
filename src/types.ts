@@ -95,7 +95,6 @@ export type ILimitsManager = {
 
 export type IWorldsManager = {
   getDeployedWorldsNames(): Promise<string[]>
-  getDeployedWorldsCount(): Promise<number>
   getMetadataForWorld(worldName: string): Promise<WorldMetadata | undefined>
   getEntityIdForWorld(worldName: string): Promise<string | undefined>
   getEntityForWorld(worldName: string): Promise<Entity | undefined>
@@ -170,8 +169,6 @@ export type HandlerContextWithPath<
   }>,
   Path
 >
-
-export type Context<Path extends string = any> = IHttpServerComponent.PathAwareContext<GlobalContext, Path>
 
 export class InvalidRequestError extends Error {
   constructor(message: string) {
