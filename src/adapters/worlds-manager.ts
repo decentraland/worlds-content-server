@@ -43,12 +43,12 @@ export async function createWorldsManagerComponent({
   }
 
   async function getEntityForWorld(worldName: string): Promise<Entity | undefined> {
-    const entityId = await getEntityIdForWorld(worldName)
-    if (!entityId) {
+    const metadata = await getMetadataForWorld(worldName)
+    if (!metadata || !metadata.entityId) {
       return undefined
     }
 
-    const content = await storage.retrieve(entityId)
+    const content = await storage.retrieve(metadata.entityId)
     if (!content) {
       return undefined
     }
@@ -59,16 +59,12 @@ export async function createWorldsManagerComponent({
       // the timestamp is not stored in the entity :/
       timestamp: 0,
       ...json,
-      id: entityId
+      id: metadata.entityId
     }
   }
 
   async function getMetadataForWorld(worldName: string): Promise<WorldMetadata | undefined> {
     return await worldsCache.fetch(worldName)
-  }
-
-  async function getEntityIdForWorld(worldName: string): Promise<string | undefined> {
-    return (await worldsCache.fetch(worldName))?.entityId
   }
 
   async function storeAcl(worldName: string, acl: AuthChain): Promise<void> {
@@ -92,7 +88,6 @@ export async function createWorldsManagerComponent({
   return {
     getDeployedWorldsNames,
     getMetadataForWorld,
-    getEntityIdForWorld,
     getEntityForWorld,
     storeAcl
   }

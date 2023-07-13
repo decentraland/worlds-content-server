@@ -16,26 +16,26 @@ export async function worldAboutHandler({
   HandlerContextWithPath<'config' | 'status' | 'storage' | 'worldsManager', '/world/:world_name/about'>,
   'components' | 'params' | 'url'
 >) {
-  const entityId = await worldsManager.getEntityIdForWorld(params.world_name)
-  if (!entityId) {
+  const worldMetadata = await worldsManager.getMetadataForWorld(params.world_name)
+  if (!worldMetadata || !worldMetadata.entityId) {
     return {
       status: 404,
       body: `World "${params.world_name}" has no scene deployed.`
     }
   }
 
-  const scene = await storage.retrieve(entityId)
+  const scene = await storage.retrieve(worldMetadata.entityId)
   if (!scene) {
     return {
       status: 404,
-      body: `Scene "${entityId}" not deployed in this server.`
+      body: `Scene "${worldMetadata.entityId}" not deployed in this server.`
     }
   }
   const sceneJson = JSON.parse((await streamToBuffer(await scene?.asStream())).toString())
 
   const baseUrl = (await config.getString('HTTP_BASE_URL')) || `${url.protocol}//${url.host}`
 
-  const urn = `urn:decentraland:entity:${entityId}?=&baseUrl=${baseUrl}/contents/`
+  const urn = `urn:decentraland:entity:${worldMetadata.entityId}?=&baseUrl=${baseUrl}/contents/`
 
   const ethNetwork = await config.requireString('ETH_NETWORK')
   const contracts = l1Contracts[ethNetwork as L1Network]

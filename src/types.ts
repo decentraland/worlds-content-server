@@ -96,7 +96,6 @@ export type ILimitsManager = {
 export type IWorldsManager = {
   getDeployedWorldsNames(): Promise<string[]>
   getMetadataForWorld(worldName: string): Promise<WorldMetadata | undefined>
-  getEntityIdForWorld(worldName: string): Promise<string | undefined>
   getEntityForWorld(worldName: string): Promise<Entity | undefined>
   storeAcl(worldName: string, acl: AuthChain): Promise<void>
 }
