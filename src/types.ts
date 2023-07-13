@@ -101,6 +101,7 @@ export type IWorldsManager = {
   getMetadataForWorld(worldName: string): Promise<WorldMetadata | undefined>
   getEntityForWorld(worldName: string): Promise<Entity | undefined>
   storeAcl(worldName: string, acl: AuthChain): Promise<void>
+  storeScene(worldName: string, entity: Entity): Promise<void>
 }
 
 export type WorldsIndex = {

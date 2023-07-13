@@ -85,10 +85,27 @@ export async function createWorldsManagerComponent({
     worldsCache.delete(worldName)
   }
 
+  async function storeScene(worldName: string, entity: Entity): Promise<void> {
+    const content = await storage.retrieve(`name-${worldName.toLowerCase()}`)
+
+    let acl: AuthChain | undefined
+    if (content) {
+      const stored = JSON.parse((await streamToBuffer(await content.asStream())).toString())
+      acl = stored.acl
+    }
+    await storage.storeStream(
+      `name-${worldName.toLowerCase()}`,
+      bufferToStream(stringToUtf8Bytes(JSON.stringify({ entityId: entity.id, acl })))
+    )
+
+    worldsCache.delete(worldName)
+  }
+
   return {
     getDeployedWorldsNames,
     getMetadataForWorld,
     getEntityForWorld,
-    storeAcl
+    storeAcl,
+    storeScene
   }
 }

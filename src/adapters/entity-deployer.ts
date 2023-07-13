@@ -1,6 +1,6 @@
 import { AppComponents, DeploymentResult, IEntityDeployer } from '../types'
 import { AuthLink, Entity, EntityType } from '@dcl/schemas'
-import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage/dist/content-item'
+import { bufferToStream } from '@dcl/catalyst-storage/dist/content-item'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
 import { PublishCommand, SNSClient } from '@aws-sdk/client-sns'
@@ -8,9 +8,9 @@ import { PublishCommand, SNSClient } from '@aws-sdk/client-sns'
 type PostDeploymentHook = (baseUrl: string, entity: Entity, authChain: AuthLink[]) => Promise<DeploymentResult>
 
 export function createEntityDeployer(
-  components: Pick<AppComponents, 'config' | 'logs' | 'metrics' | 'storage' | 'sns'>
+  components: Pick<AppComponents, 'config' | 'logs' | 'metrics' | 'storage' | 'sns' | 'worldsManager'>
 ): IEntityDeployer {
-  const { logs, storage } = components
+  const { logs, storage, worldsManager } = components
   const logger = logs.getLogger('entity-deployer')
 
   async function deployEntity(
@@ -62,22 +62,13 @@ export function createEntityDeployer(
   }
 
   async function postSceneDeployment(baseUrl: string, entity: Entity, authChain: AuthLink[]) {
-    const { metrics, storage, sns } = components
+    const { metrics, sns } = components
 
     // determine the name to use for deploying the world
     const worldName = entity.metadata.worldConfiguration.name
     logger.debug(`Deployment for scene "${entity.id}" under world name "${worldName}"`)
 
-    let acl
-    const content = await storage.retrieve(`name-${worldName.toLowerCase()}`)
-    if (content) {
-      const stored = JSON.parse((await streamToBuffer(await content.asStream())).toString())
-      acl = stored.acl
-    }
-    await storage.storeStream(
-      `name-${worldName.toLowerCase()}`,
-      bufferToStream(stringToUtf8Bytes(JSON.stringify({ entityId: entity.id, acl })))
-    )
+    await worldsManager.storeScene(worldName, entity)
 
     metrics.increment('world_deployments_counter')
 

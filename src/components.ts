@@ -90,7 +90,7 @@ export async function initComponents(): Promise<AppComponents> {
     worldsManager
   })
 
-  const entityDeployer = createEntityDeployer({ config, logs, metrics, storage, sns })
+  const entityDeployer = createEntityDeployer({ config, logs, metrics, storage, sns, worldsManager })
   const validator = createValidator({
     config,
     namePermissionChecker,

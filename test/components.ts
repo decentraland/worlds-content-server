@@ -71,7 +71,7 @@ async function initComponents(): Promise<TestComponents> {
   const sns: SnsComponent = {
     arn: undefined
   }
-  const entityDeployer = createEntityDeployer({ config, logs, metrics, storage, sns })
+  const entityDeployer = createEntityDeployer({ config, logs, metrics, storage, sns, worldsManager })
 
   const validator = createValidator({
     config,
