@@ -16,6 +16,7 @@ import {
   createValidateSceneDimensions,
   createValidateSdkVersion,
   createValidateSize,
+  validateDeprecatedConfig,
   validateMiniMapImages,
   validateSceneEntity,
   validateSkyboxTextures,
@@ -79,29 +80,6 @@ describe('scene validations', function () {
       expect(result.errors).toContain("must have required property 'scene'")
     })
 
-    it('with old field dclName', async () => {
-      const deployment = await createSceneDeployment(identity.authChain, {
-        type: EntityType.SCENE,
-        pointers: ['0,0'],
-        timestamp: Date.parse('2022-11-01T00:00:00Z'),
-        metadata: {
-          main: 'abc.txt',
-          scene: {
-            base: '20,24',
-            parcels: ['20,24']
-          },
-          worldConfiguration: { dclName: 'whatever.dcl.eth' }
-        },
-        files: []
-      })
-
-      const result = await validateSceneEntity(deployment)
-      expect(result.ok()).toBeFalsy()
-      expect(result.errors).toContain(
-        '`dclName` in scene.json was renamed to `name`. Please update your scene.json accordingly.'
-      )
-    })
-
     it('with no worldConfiguration', async () => {
       const deployment = await createSceneDeployment(identity.authChain, {
         type: EntityType.SCENE,
@@ -121,6 +99,74 @@ describe('scene validations', function () {
       expect(result.ok()).toBeFalsy()
       expect(result.errors).toContain(
         'scene.json needs to specify a worldConfiguration section with a valid name inside.'
+      )
+    })
+  })
+
+  describe('validateDeprecatedConfig', () => {
+    it('with all ok', async () => {
+      const deployment = await createSceneDeployment(identity.authChain)
+
+      const result = await validateSceneEntity(deployment)
+      expect(result.ok()).toBeTruthy()
+    })
+
+    it('with old field dclName', async () => {
+      const deployment = await createSceneDeployment(identity.authChain, {
+        type: EntityType.SCENE,
+        pointers: ['0,0'],
+        timestamp: Date.parse('2022-11-01T00:00:00Z'),
+        metadata: {
+          main: 'abc.txt',
+          scene: {
+            base: '20,24',
+            parcels: ['20,24']
+          },
+          worldConfiguration: { dclName: 'whatever.dcl.eth' }
+        },
+        files: []
+      })
+
+      const result = await validateDeprecatedConfig(deployment)
+      expect(result.ok()).toBeFalsy()
+      expect(result.errors).toContain(
+        '`dclName` in scene.json was renamed to `name`. Please update your scene.json accordingly.'
+      )
+    })
+
+    it('with old field minimapVisible', async () => {
+      const deployment = await createSceneDeployment(identity.authChain, {
+        type: EntityType.SCENE,
+        pointers: ['0,0'],
+        timestamp: Date.parse('2022-11-01T00:00:00Z'),
+        metadata: {
+          worldConfiguration: { name: 'whatever.dcl.eth', minimapVisible: true }
+        },
+        files: []
+      })
+
+      const result = await validateDeprecatedConfig(deployment)
+      expect(result.ok()).toBeFalsy()
+      expect(result.errors).toContain(
+        '`minimapVisible` in scene.json is deprecated in favor of `{ miniMapConfig: { visible } }`. Please update your scene.json accordingly.'
+      )
+    })
+
+    it('with old field skybox', async () => {
+      const deployment = await createSceneDeployment(identity.authChain, {
+        type: EntityType.SCENE,
+        pointers: ['0,0'],
+        timestamp: Date.parse('2022-11-01T00:00:00Z'),
+        metadata: {
+          worldConfiguration: { name: 'whatever.dcl.eth', skybox: 3600 }
+        },
+        files: []
+      })
+
+      const result = await validateDeprecatedConfig(deployment)
+      expect(result.ok()).toBeFalsy()
+      expect(result.errors).toContain(
+        '`skybox` in scene.json is deprecated in favor of `{ skyboxConfig: { fixedTime } }`. Please update your scene.json accordingly.'
       )
     })
   })

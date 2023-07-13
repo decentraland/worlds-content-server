@@ -9,17 +9,35 @@ export const validateSceneEntity: Validation = async (deployment: DeploymentToVa
     return createValidationResult(Scene.validate.errors?.map((error) => error.message || '') || [])
   }
 
+  if (!deployment.entity.metadata.worldConfiguration?.name) {
+    return createValidationResult([
+      'scene.json needs to specify a worldConfiguration section with a valid name inside.'
+    ])
+  }
+  return OK
+}
+
+export const validateDeprecatedConfig: Validation = async (
+  deployment: DeploymentToValidate
+): Promise<ValidationResult> => {
   if ((deployment.entity.metadata.worldConfiguration as any)?.dclName) {
     return createValidationResult([
       '`dclName` in scene.json was renamed to `name`. Please update your scene.json accordingly.'
     ])
   }
 
-  if (!deployment.entity.metadata.worldConfiguration?.name) {
+  if (deployment.entity.metadata.worldConfiguration?.minimapVisible) {
     return createValidationResult([
-      'scene.json needs to specify a worldConfiguration section with a valid name inside.'
+      '`minimapVisible` in scene.json is deprecated in favor of `{ miniMapConfig: { visible } }`. Please update your scene.json accordingly.'
     ])
   }
+
+  if (deployment.entity.metadata.worldConfiguration?.skybox) {
+    return createValidationResult([
+      '`skybox` in scene.json is deprecated in favor of `{ skyboxConfig: { fixedTime } }`. Please update your scene.json accordingly.'
+    ])
+  }
+
   return OK
 }
 

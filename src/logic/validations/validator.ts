@@ -13,6 +13,7 @@ import {
   createValidateDeploymentPermission,
   createValidateSceneDimensions,
   createValidateSize,
+  validateDeprecatedConfig,
   validateMiniMapImages,
   validateSceneEntity,
   validateSkyboxTextures,
@@ -40,6 +41,7 @@ export function createValidateFns(components: ValidatorComponents): Validation[]
       EntityType.SCENE,
       validateAll([
         validateSceneEntity,
+        validateDeprecatedConfig,
         createValidateSceneDimensions(components),
         validateMiniMapImages,
         validateSkyboxTextures,
