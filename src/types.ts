@@ -28,7 +28,7 @@ export type DeploymentToValidate = {
 export type WorldMetadata = {
   entityId: string
   acl?: AuthChain
-  config: WorldConfiguration
+  config?: WorldConfiguration
 }
 
 export type AccessControlList = {

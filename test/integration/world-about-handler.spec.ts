@@ -2,7 +2,6 @@ import { test } from '../components'
 import { getIdentity, storeJson } from '../utils'
 import { Authenticator } from '@dcl/crypto'
 
-const STORED_ENTITY = { metadata: {} }
 const ENTITY_CID = 'bafybeictjyqjlkgybfckczpuqlqo7xfhho3jpnep4wesw3ivaeeuqugc2y'
 const ENS = 'some-name.dcl.eth'
 
@@ -36,7 +35,13 @@ test('world about handler /world/:world_name/about', function ({ components }) {
   it('when world exists it responds', async () => {
     const { localFetch, storage } = components
 
-    await storeJson(storage, ENTITY_CID, STORED_ENTITY)
+    await storeJson(storage, ENTITY_CID, {
+      metadata: {
+        worldConfiguration: {
+          name: ENS
+        }
+      }
+    })
     await storeJson(storage, `name-${ENS}`, {
       entityId: ENTITY_CID
     })

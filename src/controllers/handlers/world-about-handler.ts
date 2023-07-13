@@ -7,6 +7,7 @@ import {
 import { streamToBuffer } from '@dcl/catalyst-storage/dist/content-item'
 import { ContentMapping } from '@dcl/schemas/dist/misc/content-mapping'
 import { l1Contracts, L1Network } from '@dcl/catalyst-contracts'
+import { WorldConfiguration } from '@dcl/schemas'
 
 export async function worldAboutHandler({
   params,
@@ -33,6 +34,8 @@ export async function worldAboutHandler({
   }
   const sceneJson = JSON.parse((await streamToBuffer(await scene?.asStream())).toString())
 
+  const worldConfiguration: WorldConfiguration = worldMetadata.config || sceneJson.metadata.worldConfiguration!
+
   const baseUrl = (await config.getString('HTTP_BASE_URL')) || `${url.protocol}//${url.host}`
 
   const urn = `urn:decentraland:entity:${worldMetadata.entityId}?=&baseUrl=${baseUrl}/contents/`
@@ -44,14 +47,14 @@ export async function worldAboutHandler({
   }
 
   const roomPrefix = await config.requireString('COMMS_ROOM_PREFIX')
-  const fixedAdapter = await resolveFixedAdapter(params.world_name, sceneJson, baseUrl, roomPrefix)
+  const fixedAdapter = await resolveFixedAdapter(params.world_name, worldConfiguration, baseUrl, roomPrefix)
 
   const globalScenesURN = await config.getString('GLOBAL_SCENES_URN')
 
   const contentStatus = await status.getContentStatus()
   const lambdasStatus = await status.getLambdasStatus()
 
-  function urlForFile(filename: string, defaultImage: string = ''): string {
+  function urlForFile(filename: string | undefined, defaultImage: string = ''): string {
     if (filename) {
       const file = sceneJson.content.find((content: ContentMapping) => content.file === filename)
       if (file) {
@@ -62,30 +65,26 @@ export async function worldAboutHandler({
   }
 
   const minimap: AboutResponse_MinimapConfiguration = {
-    enabled:
-      sceneJson.metadata.worldConfiguration?.minimapVisible ||
-      sceneJson.metadata.worldConfiguration?.miniMapConfig?.visible ||
-      false
+    enabled: worldConfiguration.minimapVisible || worldConfiguration.miniMapConfig?.visible || false
   }
-  if (minimap.enabled || sceneJson.metadata.worldConfiguration?.miniMapConfig?.dataImage) {
+  if (minimap.enabled || worldConfiguration.miniMapConfig?.dataImage) {
     minimap.dataImage = urlForFile(
-      sceneJson.metadata.worldConfiguration?.miniMapConfig?.dataImage,
+      worldConfiguration.miniMapConfig?.dataImage,
       'https://api.decentraland.org/v1/minimap.png'
     )
   }
-  if (minimap.enabled || sceneJson.metadata.worldConfiguration?.miniMapConfig?.estateImage) {
+  if (minimap.enabled || worldConfiguration.miniMapConfig?.estateImage) {
     minimap.estateImage = urlForFile(
-      sceneJson.metadata.worldConfiguration?.miniMapConfig?.estateImage,
+      worldConfiguration.miniMapConfig?.estateImage,
       'https://api.decentraland.org/v1/estatemap.png'
     )
   }
 
   const skybox: AboutResponse_SkyboxConfiguration = {
-    fixedHour:
-      sceneJson.metadata.worldConfiguration?.skyboxConfig?.fixedHour || sceneJson.metadata.worldConfiguration?.skybox,
-    textures: sceneJson.metadata.worldConfiguration?.skyboxConfig?.textures
-      ? sceneJson.metadata.worldConfiguration?.skyboxConfig?.textures.map((texture: string) => urlForFile(texture))
-      : undefined
+    fixedHour: worldConfiguration.skyboxConfig?.fixedTime || worldConfiguration.skybox,
+    textures: worldConfiguration.skyboxConfig?.textures
+      ? worldConfiguration.skyboxConfig?.textures.map((texture: string) => urlForFile(texture))
+      : (undefined as any)
   }
 
   const healthy = contentStatus.healthy && lambdasStatus.healthy
@@ -121,8 +120,13 @@ export async function worldAboutHandler({
   }
 }
 
-async function resolveFixedAdapter(worldName: string, sceneJson: any, baseUrl: string, roomPrefix: string) {
-  if (sceneJson.metadata.worldConfiguration?.fixedAdapter === 'offline:offline') {
+async function resolveFixedAdapter(
+  worldName: string,
+  worldConfiguration: WorldConfiguration,
+  baseUrl: string,
+  roomPrefix: string
+) {
+  if (worldConfiguration?.fixedAdapter === 'offline:offline') {
     return 'offline:offline'
   }
 
