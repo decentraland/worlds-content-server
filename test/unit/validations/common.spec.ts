@@ -240,7 +240,7 @@ describe('common validations', function () {
       expect(result.ok()).toBeTruthy()
     })
 
-    it('with invalid entity type', async () => {
+    it('with unsupported entity type', async () => {
       const deployment = await createSceneDeployment(identity.authChain, {
         type: EntityType.PROFILE,
         pointers: ['0x1'],
