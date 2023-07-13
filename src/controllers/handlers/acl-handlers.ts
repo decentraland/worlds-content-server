@@ -99,7 +99,7 @@ export async function postAclHandler(
     }
   }
 
-  await worldsManager.storeAcl(worldName, authChain)
+  await worldsManager.storeWorldMetadata(worldName, { acl: authChain })
 
   return {
     status: 200,

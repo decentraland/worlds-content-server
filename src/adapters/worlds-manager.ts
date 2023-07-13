@@ -1,7 +1,7 @@
 import { AppComponents, IWorldsManager, WorldMetadata } from '../types'
 import LRU from 'lru-cache'
 import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage/dist/content-item'
-import { AuthChain, Entity } from '@dcl/schemas'
+import { Entity } from '@dcl/schemas'
 import { stringToUtf8Bytes } from 'eth-connect'
 
 export async function createWorldsManagerComponent({
@@ -10,6 +10,7 @@ export async function createWorldsManagerComponent({
 }: Pick<AppComponents, 'logs' | 'storage'>): Promise<IWorldsManager> {
   const logger = logs.getLogger('worlds-manager')
   const WORLDS_KEY = 'worlds'
+
   const cache = new LRU<string, string[]>({
     max: 1,
     ttl: 10 * 60 * 1000, // cache for 10 minutes
@@ -26,6 +27,7 @@ export async function createWorldsManagerComponent({
       }
     }
   })
+
   const worldsCache = new LRU<string, WorldMetadata>({
     max: 100,
     ttl: 2 * 1000, // cache for 2 seconds (should be enough for multiple accesses during the same request)
@@ -67,35 +69,17 @@ export async function createWorldsManagerComponent({
     return await worldsCache.fetch(worldName)
   }
 
-  async function storeAcl(worldName: string, acl: AuthChain): Promise<void> {
-    const content = await worldsCache.fetch(worldName)
-
-    await storage.storeStream(
-      `name-${worldName.toLowerCase()}`,
-      bufferToStream(
-        stringToUtf8Bytes(
-          JSON.stringify({
-            entityId: content?.entityId,
-            acl: acl
-          })
-        )
-      )
-    )
-
-    worldsCache.delete(worldName)
-  }
-
-  async function storeScene(worldName: string, entity: Entity): Promise<void> {
+  async function storeWorldMetadata(worldName: string, worldMetadata: Partial<WorldMetadata>): Promise<void> {
     const content = await storage.retrieve(`name-${worldName.toLowerCase()}`)
-
-    let acl: AuthChain | undefined
+    const metadata: Partial<WorldMetadata> = {}
     if (content) {
-      const stored = JSON.parse((await streamToBuffer(await content.asStream())).toString())
-      acl = stored.acl
+      Object.assign(metadata, JSON.parse((await streamToBuffer(await content.asStream())).toString()))
     }
+    Object.assign(metadata, worldMetadata)
+
     await storage.storeStream(
       `name-${worldName.toLowerCase()}`,
-      bufferToStream(stringToUtf8Bytes(JSON.stringify({ entityId: entity.id, acl })))
+      bufferToStream(stringToUtf8Bytes(JSON.stringify(metadata)))
     )
 
     worldsCache.delete(worldName)
@@ -105,7 +89,6 @@ export async function createWorldsManagerComponent({
     getDeployedWorldsNames,
     getMetadataForWorld,
     getEntityForWorld,
-    storeAcl,
-    storeScene
+    storeWorldMetadata
   }
 }

@@ -11,7 +11,7 @@ import { IContentStorageComponent } from '@dcl/catalyst-storage'
 import { HTTPProvider } from 'eth-connect'
 import { ISubgraphComponent } from '@well-known-components/thegraph-component'
 import { IStatusComponent } from './adapters/status'
-import { AuthChain, AuthLink, Entity, EthAddress } from '@dcl/schemas'
+import { AuthChain, AuthLink, Entity, EthAddress, WorldConfiguration } from '@dcl/schemas'
 import { MigrationExecutor } from './migrations/migration-executor'
 
 export type GlobalContext = {
@@ -28,6 +28,7 @@ export type DeploymentToValidate = {
 export type WorldMetadata = {
   entityId: string
   acl?: AuthChain
+  config: WorldConfiguration
 }
 
 export type AccessControlList = {
@@ -100,8 +101,7 @@ export type IWorldsManager = {
   getDeployedWorldsNames(): Promise<string[]>
   getMetadataForWorld(worldName: string): Promise<WorldMetadata | undefined>
   getEntityForWorld(worldName: string): Promise<Entity | undefined>
-  storeAcl(worldName: string, acl: AuthChain): Promise<void>
-  storeScene(worldName: string, entity: Entity): Promise<void>
+  storeWorldMetadata(worldName: string, metadata: Partial<WorldMetadata>): Promise<void>
 }
 
 export type WorldsIndex = {
