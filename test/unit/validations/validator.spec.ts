@@ -7,7 +7,7 @@ import { getIdentity, Identity } from '../../utils'
 import { IConfigComponent } from '@well-known-components/interfaces'
 import { createWorldsManagerComponent } from '../../../src/adapters/worlds-manager'
 import { createLogComponent } from '@well-known-components/logger'
-import { createSceneDeployment } from './shared'
+import { createSceneDeployment, createSkyboxDeployment } from './shared'
 import { createValidator } from '../../../src/logic/validations'
 
 describe('validator', function () {
@@ -45,6 +45,16 @@ describe('validator', function () {
     const validator = await createValidator(components)
 
     const deployment = await createSceneDeployment(identity.authChain)
+
+    const result = await validator.validate(deployment)
+    expect(result.ok()).toBeTruthy()
+    expect(result.errors).toEqual([])
+  })
+
+  it('all validations pass for skybox', async () => {
+    const validator = await createValidator(components)
+
+    const deployment = await createSkyboxDeployment(identity.authChain)
 
     const result = await validator.validate(deployment)
     expect(result.ok()).toBeTruthy()

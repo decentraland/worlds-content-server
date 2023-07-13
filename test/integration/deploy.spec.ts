@@ -79,6 +79,51 @@ test('deployment works', function ({ components, stubComponents }) {
   })
 })
 
+test('deployment of skybox works', function ({ components }) {
+  it('creates a skybox entity and deploys it', async () => {
+    const { config, storage } = components
+
+    const contentClient = createContentClient({
+      url: `http://${await config.requireString('HTTP_SERVER_HOST')}:${await config.requireNumber('HTTP_SERVER_PORT')}`,
+      fetcher: components.fetch
+    })
+
+    const entityFiles = new Map<string, Uint8Array>()
+    entityFiles.set('abc.txt', stringToUtf8Bytes('asd'))
+    const fileHash = await hashV1(entityFiles.get('abc.txt')!)
+
+    expect(await storage.exist(fileHash)).toEqual(false)
+
+    // Build the entity
+    const { files, entityId } = await DeploymentBuilder.buildEntity({
+      type: EntityType.SKYBOX as any,
+      pointers: ['urn:decentraland:skybox:forest'],
+      files: entityFiles,
+      metadata: {
+        id: 'urn:decentraland:skybox:forest',
+        name: 'Forest Skybox',
+        unityPackage: 'abc.txt'
+      }
+    })
+
+    // Sign entity id
+    const identity = await getIdentity()
+
+    const authChain = Authenticator.signPayload(identity.authChain, entityId)
+
+    // Deploy entity
+    const response = (await contentClient.deploy({ files, entityId, authChain })) as Response
+    expect(await response.json()).toMatchObject({
+      message:
+        'Your skybox was deployed to the Worlds Content Server!\nIt can be referenced in Worlds deployed on the same server using the urn: urn:decentraland:skybox:forest'
+    })
+
+    expect(await storage.exist(fileHash)).toEqual(true)
+    expect(await storage.exist(entityId)).toEqual(true)
+    expect(await storage.exist('skybox-urn:decentraland:skybox:forest')).toEqual(true)
+  })
+})
+
 test('deployment works when not owner but has permission', function ({ components, stubComponents }) {
   it('creates an entity and deploys it', async () => {
     const { config, storage } = components

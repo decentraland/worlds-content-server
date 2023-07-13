@@ -39,7 +39,8 @@ export function createEntityDeployer(
   }
 
   const postDeploymentHooks: Partial<Record<EntityType, PostDeploymentHook>> = {
-    [EntityType.SCENE]: postSceneDeployment
+    [EntityType.SCENE]: postSceneDeployment,
+    [EntityType.SKYBOX]: postSkyboxDeployment
   }
 
   async function postDeployment(
@@ -107,6 +108,20 @@ export function createEntityDeployer(
       message: [
         `Your scene was deployed to a Worlds Content Server!`,
         `Access world ${worldName}: https://play.decentraland.org/?realm=${encodeURIComponent(worldUrl)}`
+      ].join('\n')
+    }
+  }
+
+  async function postSkyboxDeployment(baseUrl: string, entity: Entity, _authChain: AuthLink[]) {
+    await storage.storeStream(
+      `skybox-${entity.pointers[0].toLowerCase()}`,
+      bufferToStream(stringToUtf8Bytes(JSON.stringify({ entityId: entity.id })))
+    )
+
+    return {
+      message: [
+        `Your skybox was deployed to the Worlds Content Server!`,
+        `It can be referenced in Worlds deployed on the same server using the urn: ${entity.pointers[0]}`
       ].join('\n')
     }
   }

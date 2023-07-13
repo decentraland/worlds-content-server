@@ -93,6 +93,7 @@ export const validateFiles: Validation = async (deployment: DeploymentToValidate
 export const validateSupportedEntityType = async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
   switch (deployment.entity.type) {
     case EntityType.SCENE:
+    case EntityType.SKYBOX:
       return OK
   }
   return createValidationResult([`Entity type ${deployment.entity.type} is not supported.`])
