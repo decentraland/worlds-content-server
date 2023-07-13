@@ -1,5 +1,15 @@
-import { HandlerContextWithPath, StatusResponse } from '../../types'
+import { CommsStatus, HandlerContextWithPath } from '../../types'
 import { IHttpServerComponent } from '@well-known-components/interfaces'
+
+export type ContentStatus = {
+  commitHash: string
+  worldsCount: number
+}
+
+export type StatusResponse = {
+  content: ContentStatus
+  comms: CommsStatus
+}
 
 export async function statusHandler(
   context: HandlerContextWithPath<'commsAdapter' | 'config' | 'worldsManager', '/status'>
