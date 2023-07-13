@@ -2,6 +2,16 @@ import { migrateMetadata } from '../../src/logic/world-metadata-migrator'
 import { WorldMetadata } from '../../src/types'
 
 describe('world-metadata-migrator', function () {
+  it('should migrate do nothing when no config', function () {
+    const metadata = {
+      entityId: 'whatever'
+    } as WorldMetadata
+
+    const migrated = migrateMetadata(metadata)
+
+    expect(migrated).toEqual(metadata)
+  })
+
   it('should migrate dclName to name', function () {
     const metadata = {
       entityId: 'whatever',
@@ -10,7 +20,7 @@ describe('world-metadata-migrator', function () {
 
     const migrated = migrateMetadata(metadata)
 
-    expect(migrated).toMatchObject({
+    expect(migrated).toEqual({
       entityId: 'whatever',
       config: { name: 'whatever.dcl.eth' }
     })
@@ -24,7 +34,7 @@ describe('world-metadata-migrator', function () {
 
     const migrated = migrateMetadata(metadata)
 
-    expect(migrated).toMatchObject({
+    expect(migrated).toEqual({
       entityId: 'whatever',
       config: { name: 'whatever.dcl.eth', miniMapConfig: { visible: true } }
     })
@@ -38,7 +48,7 @@ describe('world-metadata-migrator', function () {
 
     const migrated = migrateMetadata(metadata)
 
-    expect(migrated).toMatchObject({
+    expect(migrated).toEqual({
       entityId: 'whatever',
       config: { name: 'whatever.dcl.eth', skyboxConfig: { fixedTime: 3600 } }
     })
