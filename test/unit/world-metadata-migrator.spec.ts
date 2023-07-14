@@ -7,9 +7,9 @@ describe('world-metadata-migrator', function () {
       entityId: 'whatever'
     } as WorldMetadata
 
-    const migrated = migrateMetadata(metadata)
+    const migrated = migrateMetadata('worldName', metadata)
 
-    expect(migrated).toEqual(metadata)
+    expect(migrated).toEqual({ ...metadata, config: { name: 'worldName' } })
   })
 
   it('should migrate dclName to name', function () {
@@ -18,7 +18,7 @@ describe('world-metadata-migrator', function () {
       config: { dclName: 'whatever.dcl.eth' }
     } as WorldMetadata
 
-    const migrated = migrateMetadata(metadata)
+    const migrated = migrateMetadata('worldName', metadata)
 
     expect(migrated).toEqual({
       entityId: 'whatever',
@@ -32,7 +32,7 @@ describe('world-metadata-migrator', function () {
       config: { name: 'whatever.dcl.eth', minimapVisible: true }
     } as WorldMetadata
 
-    const migrated = migrateMetadata(metadata)
+    const migrated = migrateMetadata('worldName', metadata)
 
     expect(migrated).toEqual({
       entityId: 'whatever',
@@ -46,7 +46,7 @@ describe('world-metadata-migrator', function () {
       config: { name: 'whatever.dcl.eth', skybox: 3600 }
     } as WorldMetadata
 
-    const migrated = migrateMetadata(metadata)
+    const migrated = migrateMetadata('worldName', metadata)
 
     expect(migrated).toEqual({
       entityId: 'whatever',

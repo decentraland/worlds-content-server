@@ -1,28 +1,35 @@
 import { WorldMetadata } from '../types'
 
-export function migrateMetadata(metadata: WorldMetadata): WorldMetadata {
-  const { config } = metadata as any
+export function migrateMetadata(worldName: string, metadata: WorldMetadata): WorldMetadata {
+  console.log('original metadata', metadata, typeof metadata)
+
+  const cloned = structuredClone(metadata) as any
+
+  // Old deployments may not even have a worldConfiguration
+  if (!cloned.config) {
+    cloned.config = {
+      name: worldName
+    }
+  }
 
   // Deprecated dclName
-  if (config?.dclName) {
-    config.name = config.dclName
-    delete config.dclName
+  if (cloned.config.dclName) {
+    cloned.config.name = cloned.config.dclName
+    delete cloned.config.dclName
   }
 
   // Deprecated minimapVisible
-  if (config?.minimapVisible) {
-    config.miniMapConfig = { visible: config.minimapVisible }
-    delete config.minimapVisible
+  if (cloned.config.minimapVisible) {
+    cloned.config.miniMapConfig = { visible: cloned.config.minimapVisible }
+    delete cloned.config.minimapVisible
   }
 
   // Deprecated minimapVisible
-  if (config?.skybox) {
-    config.skyboxConfig = { fixedTime: config.skybox }
-    delete config.skybox
+  if (cloned.config.skybox) {
+    cloned.config.skyboxConfig = { fixedTime: cloned.config.skybox }
+    delete cloned.config.skybox
   }
 
-  return {
-    ...metadata,
-    config
-  } as WorldMetadata
+  console.log('migrated', cloned)
+  return cloned as WorldMetadata
 }

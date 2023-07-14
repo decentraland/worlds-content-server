@@ -22,11 +22,9 @@ test('acl handler GET /acl/:world_name', function ({ components }) {
   it('returns an empty list of allowed when no acl exists', async () => {
     const { localFetch, storage } = components
 
-    await storeJson(
-      storage,
-      'name-my-world.dcl.eth',
-      '{"entityId":"bafkreiax5plaxze77tnjbnozga7dsbefdh53horza4adf2xjzxo3k5i4xq"}'
-    )
+    await storeJson(storage, 'name-my-world.dcl.eth', {
+      entityId: 'bafkreiax5plaxze77tnjbnozga7dsbefdh53horza4adf2xjzxo3k5i4xq'
+    })
 
     const r = await localFetch.fetch('/acl/my-world.dcl.eth')
 

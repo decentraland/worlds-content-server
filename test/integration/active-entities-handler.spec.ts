@@ -41,7 +41,8 @@ test('world about handler /world/:world_name/about', function ({ components }) {
 
     await storeJson(storage, ENTITY_CID, STORED_ENTITY)
     await storeJson(storage, `name-${ENS}`, {
-      entityId: ENTITY_CID
+      entityId: ENTITY_CID,
+      config: { name: ENS }
     })
     const r = await localFetch.fetch('/entities/active', {
       method: 'POST',
