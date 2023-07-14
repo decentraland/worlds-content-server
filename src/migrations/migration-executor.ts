@@ -26,7 +26,7 @@ export function createMigrationExecutor(components: MigratorComponents): Migrati
         }
 
         logger.info(`running migration ${script}`)
-        migration.run(components)
+        await migration.run(components)
         logger.info(`migration ${script} run successfully`)
 
         await storage.storeStream(script, Readable.from(Buffer.from('')))
