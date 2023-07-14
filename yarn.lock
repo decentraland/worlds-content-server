@@ -949,21 +949,12 @@
     aws-sdk "^2.1407.0"
     destroy "^1.2.0"
 
-"@dcl/crypto@^3.4.0":
-  version "3.4.1"
-  resolved "https://registry.yarnpkg.com/@dcl/crypto/-/crypto-3.4.1.tgz#2ab9b9b5b18efbe5d65eee3936c0f73c20480858"
-  integrity sha512-dpPMKPsQP7CS+CWtnOrk7sIGnh7dkdEs34dKLTHv4mGX/5A0odmEhvoUZLR+meWo1ifNcESLoVKdAEmowkQwlw==
+"@dcl/crypto@^3.4.0", "@dcl/crypto@^3.4.3":
+  version "3.4.3"
+  resolved "https://registry.yarnpkg.com/@dcl/crypto/-/crypto-3.4.3.tgz#74f55aed699949bc2566a7b0d6a23de499019afe"
+  integrity sha512-biG8PqImY3jtVM5bPizgAD0P6X9/7VMxKuD2hxiEEeZClfB1Zi76Qk8pHaLpJ5pU3B+NogwZ8xoREhq0Po+gXQ==
   dependencies:
-    "@dcl/schemas" "^6.4.2"
-    eth-connect "^6.0.3"
-    ethereum-cryptography "^1.0.3"
-
-"@dcl/crypto@^3.4.2":
-  version "3.4.2"
-  resolved "https://registry.yarnpkg.com/@dcl/crypto/-/crypto-3.4.2.tgz#025d0bd2a996fba6cbae80025544a8d04c50efc4"
-  integrity sha512-yUZeWrOVZNnPBiYhDd3M6z/QJWKEHvAFPaFhGmq2vtzJ3myIzH3dpGdJ4YKpkyhBddOaHhwfa9MUIv+30ve+Ew==
-  dependencies:
-    "@dcl/schemas" "^7.3.4"
+    "@dcl/schemas" "^8.2.0"
     eth-connect "^6.0.3"
     ethereum-cryptography "^1.0.3"
 
@@ -999,24 +990,6 @@
   integrity sha512-0Pq31ssDKlSApZd8HbrKzif+D9pEt3KrdsaCaLGQIwBkSjG6umkk4d0WoMs88lL+COtxVfbJjrtOzOeiy8DTfg==
   dependencies:
     "@dcl/ts-proto" "^1.146.2"
-
-"@dcl/schemas@^6.4.2":
-  version "6.6.0"
-  resolved "https://registry.yarnpkg.com/@dcl/schemas/-/schemas-6.6.0.tgz#8ecbc4ee3b873c24447a39492aec9726cf3c5987"
-  integrity sha512-8+y8NBeGq/A6AMr3FOPsmCY7ru4YUbpJkFKzmJe1dQH9Zq61/iHveJIamHJca5RCrB3D1oFPFs0KP6yWnMKElg==
-  dependencies:
-    ajv "^8.11.0"
-    ajv-errors "^3.0.0"
-    ajv-keywords "^5.1.0"
-
-"@dcl/schemas@^7.3.4":
-  version "7.6.0"
-  resolved "https://registry.yarnpkg.com/@dcl/schemas/-/schemas-7.6.0.tgz#8a244e97d6478c6d30db6376177aae611db46786"
-  integrity sha512-TDIk7tDc4VB9ky0EgVUjFB/EBKkgjadcQ/ia4b9kU5vYlx7XUSB2kao/EDNRFfR17W1pssmZlUDtjmzFWTYSgQ==
-  dependencies:
-    ajv "^8.11.0"
-    ajv-errors "^3.0.0"
-    ajv-keywords "^5.1.0"
 
 "@dcl/schemas@^8.1.0", "@dcl/schemas@^8.2.0":
   version "8.2.0"
@@ -4189,12 +4162,7 @@ etag@~1.8.1:
   resolved "https://registry.yarnpkg.com/etag/-/etag-1.8.1.tgz#41ae2eeb65efa62268aebfea83ac7d79299b0887"
   integrity sha512-aIL5Fx7mawVa300al2BnEE4iNvo1qETxLrPI/o05L7z6go7fCw1J6EQmbK4FmJ2AS7kgVF/KEZWufBfdClMcPg==
 
-eth-connect@^6.0.3:
-  version "6.1.0"
-  resolved "https://registry.yarnpkg.com/eth-connect/-/eth-connect-6.1.0.tgz#94df7e019592825f0d2ee2429d19baf9fa3c5136"
-  integrity sha512-p5FN4GieTxwfJvgmGCPgXqL6w8/2cbLiTmNxpgQg881gSI0RdOShTHHu8amgxlj3VM4crovBx7UEKS2RGOhBLQ==
-
-eth-connect@^6.2.0:
+eth-connect@^6.0.3, eth-connect@^6.2.0:
   version "6.2.0"
   resolved "https://registry.yarnpkg.com/eth-connect/-/eth-connect-6.2.0.tgz#4626138112db25a597f5ba2b4570cea8c9a2ff7d"
   integrity sha512-Iwh1mP4r2yUxh2jUf4Q9W+g1u7Uo/SI9gYJmdn6GuytSXcYaz71OinOWFrMIiBy3Afkvwk9aut+HOagNGsKQVQ==
