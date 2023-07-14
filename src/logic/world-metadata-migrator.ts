@@ -1,7 +1,7 @@
 import { WorldMetadata } from '../types'
 
 export function migrateMetadata(worldName: string, metadata: WorldMetadata): WorldMetadata {
-  console.log('original metadata', metadata, typeof metadata)
+  // console.log('original metadata', metadata, typeof metadata)
 
   const cloned = structuredClone(metadata) as any
 
@@ -30,6 +30,6 @@ export function migrateMetadata(worldName: string, metadata: WorldMetadata): Wor
     delete cloned.config.skybox
   }
 
-  console.log('migrated', cloned)
+  // console.log('migrated', cloned)
   return cloned as WorldMetadata
 }
