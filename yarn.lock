@@ -993,12 +993,12 @@
     ipfs-unixfs-importer "^7.0.3"
     multiformats "^9.6.3"
 
-"@dcl/protocol@^1.0.0-5125382977.commit-f7db98f":
-  version "1.0.0-5125382977.commit-f7db98f"
-  resolved "https://registry.yarnpkg.com/@dcl/protocol/-/protocol-1.0.0-5125382977.commit-f7db98f.tgz#bccd6df036efb1e257ba13a6e426814eadc34375"
-  integrity sha512-0Pq31ssDKlSApZd8HbrKzif+D9pEt3KrdsaCaLGQIwBkSjG6umkk4d0WoMs88lL+COtxVfbJjrtOzOeiy8DTfg==
+"@dcl/protocol@^1.0.0-5555484353.commit-63c469d":
+  version "1.0.0-5555484353.commit-63c469d"
+  resolved "https://registry.yarnpkg.com/@dcl/protocol/-/protocol-1.0.0-5555484353.commit-63c469d.tgz#625df76f5c7169051082e4a25153270b4f8e139c"
+  integrity sha512-QRdUF8P4RmVSsI7k61sVgrIC7Zngh0cr78O2o9Hfd9GWVThhX1JJDoafBeG3BjcFCNp5HHkaHdLuCo8vHkUkPw==
   dependencies:
-    "@dcl/ts-proto" "^1.146.2"
+    "@dcl/ts-proto" "1.153.0"
 
 "@dcl/schemas@^6.4.2":
   version "6.6.0"
@@ -1027,16 +1027,16 @@
     ajv-errors "^3.0.0"
     ajv-keywords "^5.1.0"
 
-"@dcl/ts-proto@^1.146.2":
-  version "1.146.2"
-  resolved "https://registry.yarnpkg.com/@dcl/ts-proto/-/ts-proto-1.146.2.tgz#1607fc378e3f76e8f88e974a6c031508de7e8811"
-  integrity sha512-r6iUFT+eO4/Kaafvg+vyLtq2dHkSpfehdhWd3J2mO16tcqclLjJ61CwRBXWBm31nk1L8HQFZc7iYgboMxT9g6g==
+"@dcl/ts-proto@1.153.0":
+  version "1.153.0"
+  resolved "https://registry.yarnpkg.com/@dcl/ts-proto/-/ts-proto-1.153.0.tgz#3104f0c23f69fd4fb04759d147970853f7df52dd"
+  integrity sha512-jmoK+/mxSyhxIswar1SRPcEp/N1/QYShbuAHc4FEPls843m0kbPUUKJYCwtFCd+Fwu3pT8j8O30cq9iJ80gaZQ==
   dependencies:
-    "@types/object-hash" "^1.3.0"
+    "@types/object-hash" "^3.0.2"
     case-anything "^2.1.10"
     dataloader "^1.4.0"
-    object-hash "^1.3.1"
-    protobufjs "^6.11.3"
+    object-hash "^3.0.0"
+    protobufjs "^7.2.4"
     ts-poet "^6.4.1"
     ts-proto-descriptors "1.9.0"
 
@@ -2637,10 +2637,10 @@
   resolved "https://registry.yarnpkg.com/@types/node/-/node-18.16.19.tgz#cb03fca8910fdeb7595b755126a8a78144714eea"
   integrity sha512-IXl7o+R9iti9eBW4Wg2hx1xQDig183jj7YLn8F7udNceyfkbn1ZxmzZXuak20gR40D7pIkIY1kYGx5VIGbaHKA==
 
-"@types/object-hash@^1.3.0":
-  version "1.3.4"
-  resolved "https://registry.yarnpkg.com/@types/object-hash/-/object-hash-1.3.4.tgz#079ba142be65833293673254831b5e3e847fe58b"
-  integrity sha512-xFdpkAkikBgqBdG9vIlsqffDV8GpvnPEzs0IUtr1v3BEB97ijsFQ4RXVbUZwjFThhB4MDSTUfvmxUD5PGx0wXA==
+"@types/object-hash@^3.0.2":
+  version "3.0.2"
+  resolved "https://registry.yarnpkg.com/@types/object-hash/-/object-hash-3.0.2.tgz#f3656433e6c6049571fc3fb3fb42f389af96c0eb"
+  integrity sha512-tfyXl1JPCf2hzIDK29gO7qGqJjThKBzg/Cn3bA68R9NmWdOx+f7k5mm4to/n43BHspCwcoUC6FU4NpUoK/h9bQ==
 
 "@types/pbkdf2@^3.0.0":
   version "3.1.0"
@@ -6303,10 +6303,10 @@ object-assign@^4, object-assign@^4.1.0, object-assign@^4.1.1:
   resolved "https://registry.yarnpkg.com/object-assign/-/object-assign-4.1.1.tgz#2109adc7965887cfc05cbbd442cac8bfbb360863"
   integrity sha512-rJgTQnkUnH1sFw8yT6VSU3zD3sWmu6sZhIseY8VX+GRu3P6F7Fu+JNDoXfklElbLJSnc3FUQHVe4cU5hj+BcUg==
 
-object-hash@^1.3.1:
-  version "1.3.1"
-  resolved "https://registry.yarnpkg.com/object-hash/-/object-hash-1.3.1.tgz#fde452098a951cb145f039bb7d455449ddc126df"
-  integrity sha512-OSuu/pU4ENM9kmREg0BdNrUDIl1heYa4mBZacJc+vVWz4GtAwu7jO8s4AIt2aGRUTqxykpWzI3Oqnsm13tTMDA==
+object-hash@^3.0.0:
+  version "3.0.0"
+  resolved "https://registry.yarnpkg.com/object-hash/-/object-hash-3.0.0.tgz#73f97f753e7baffc0e2cc9d6e079079744ac82e9"
+  integrity sha512-RSn9F68PjH9HqtltsSnqYC1XXoWe9Bju5+213R98cNGttag9q9yAOTzdbsqvIa7aNm5WffBZFpWYr2aWrklWAw==
 
 object-inspect@^1.9.0:
   version "1.12.3"
@@ -6590,7 +6590,7 @@ prompts@^2.0.1:
     kleur "^3.0.3"
     sisteransi "^1.0.5"
 
-protobufjs@^6.10.2, protobufjs@^6.11.3, protobufjs@^6.8.8:
+protobufjs@^6.10.2, protobufjs@^6.8.8:
   version "6.11.3"
   resolved "https://registry.yarnpkg.com/protobufjs/-/protobufjs-6.11.3.tgz#637a527205a35caa4f3e2a9a4a13ddffe0e7af74"
   integrity sha512-xL96WDdCZYdU7Slin569tFX712BxsxslWwAfAhCYjQKGTq7dAU91Lomy6nLLhh/dyGhk/YH4TwTSRxTzhuHyZg==
