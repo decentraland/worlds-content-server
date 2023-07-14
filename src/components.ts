@@ -21,6 +21,7 @@ import { createWorldsIndexerComponent } from './adapters/worlds-indexer'
 
 import { createValidator } from './logic/validations'
 import { createEntityDeployer } from './adapters/entity-deployer'
+import { createMigrationExecutor } from './migrations/migration-executor'
 
 async function determineNameValidator(
   components: Pick<AppComponents, 'config' | 'ethereumProvider' | 'logs' | 'marketplaceSubGraph'>
@@ -98,6 +99,8 @@ export async function initComponents(): Promise<AppComponents> {
     worldsManager
   })
 
+  const migrationExecutor = createMigrationExecutor({ logs, storage, worldsManager })
+
   return {
     commsAdapter,
     config,
@@ -108,6 +111,7 @@ export async function initComponents(): Promise<AppComponents> {
     logs,
     marketplaceSubGraph,
     metrics,
+    migrationExecutor,
     namePermissionChecker,
     server,
     sns,

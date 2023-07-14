@@ -12,6 +12,7 @@ import { HTTPProvider } from 'eth-connect'
 import { ISubgraphComponent } from '@well-known-components/thegraph-component'
 import { IStatusComponent } from './adapters/status'
 import { AuthChain, AuthLink, Entity, EthAddress } from '@dcl/schemas'
+import { MigrationExecutor } from './migrations/migration-executor'
 
 export type GlobalContext = {
   components: BaseComponents
@@ -48,6 +49,8 @@ export type ValidatorComponents = Pick<
   AppComponents,
   'config' | 'namePermissionChecker' | 'limitsManager' | 'storage' | 'worldsManager'
 >
+
+export type MigratorComponents = Pick<AppComponents, 'logs' | 'storage' | 'worldsManager'>
 
 export type Validation = (deployment: DeploymentToValidate) => ValidationResult | Promise<ValidationResult>
 
@@ -135,6 +138,7 @@ export type BaseComponents = {
   logs: ILoggerComponent
   marketplaceSubGraph: ISubgraphComponent
   metrics: IMetricsComponent<keyof typeof metricDeclarations>
+  migrationExecutor: MigrationExecutor
   namePermissionChecker: IWorldNamePermissionChecker
   server: IHttpServerComponent<GlobalContext>
   sns: SnsComponent
