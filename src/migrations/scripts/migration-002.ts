@@ -51,12 +51,13 @@ export default {
         const existing = await readFile(key)
         if (existing) {
           const scene = (await readFile(existing.entityId)) as any
-          const migrated = migrateMetadata(key.replace('name-', ''), {
+          const worldName = key.replace('name-', '')
+          const migrated = migrateMetadata(worldName, {
             ...existing,
             config: scene.metadata.worldConfiguration
           })
           if (!deepEqual(existing, migrated)) {
-            logger.info(`World "${key}" needs to be fixed: ${JSON.stringify(existing)}`)
+            logger.info(`World "${worldName}" needs to be fixed: ${JSON.stringify(existing)}`)
             await writeFile(key, migrated)
           }
         }
