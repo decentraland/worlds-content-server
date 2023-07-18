@@ -12,7 +12,7 @@ export function migrateConfiguration(worldName: string, worldConfiguration: Worl
     }
   }
 
-  const cloned = structuredClone(worldConfiguration) as any
+  const cloned = JSON.parse(JSON.stringify(worldConfiguration)) as any
   // Deprecated dclName
   if (cloned.dclName) {
     cloned.name = cloned.dclName
