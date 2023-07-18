@@ -75,10 +75,20 @@ test('deployment works', function ({ components, stubComponents }) {
     expect(await storage.exist(fileHash)).toEqual(true)
     expect(await storage.exist(entityId)).toEqual(true)
     expect(await storage.exist('name-my-super-name.dcl.eth')).toEqual(true)
+
     const content = await storage.retrieve('name-my-super-name.dcl.eth')
     const stored = JSON.parse((await streamToBuffer(await content!.asStream())).toString())
-
-    expect(stored).toMatchObject({ entityId, config: worldConfig })
+    expect(stored).toMatchObject({
+      entityId,
+      runtimeMetadata: {
+        name: 'my-super-name.dcl.eth',
+        entityIds: [entityId],
+        minimapDataImage: 'bafkreidiq6d5r7yujricy72476vp4lgfrdmga6pz32edatbgwdfztturyy',
+        minimapEstateImage: 'bafkreidiq6d5r7yujricy72476vp4lgfrdmga6pz32edatbgwdfztturyy',
+        minimapVisible: false,
+        skyboxTextures: ['bafkreidiq6d5r7yujricy72476vp4lgfrdmga6pz32edatbgwdfztturyy']
+      }
+    })
 
     Sinon.assert.calledWithMatch(metrics.increment, 'world_deployments_counter')
   })
@@ -160,7 +170,15 @@ test('deployment works when not owner but has permission', function ({ component
     const content = await storage.retrieve('name-my-super-name.dcl.eth')
     const stored = JSON.parse((await streamToBuffer(await content!.asStream())).toString())
 
-    expect(stored).toMatchObject({ entityId, acl: Authenticator.signPayload(ownerIdentity.authChain, payload) })
+    expect(stored).toMatchObject({
+      entityId,
+      runtimeMetadata: {
+        entityIds: [entityId],
+        minimapVisible: false,
+        name: 'my-super-name.dcl.eth'
+      },
+      acl: Authenticator.signPayload(ownerIdentity.authChain, payload)
+    })
 
     Sinon.assert.calledWithMatch(metrics.increment, 'world_deployments_counter')
   })
