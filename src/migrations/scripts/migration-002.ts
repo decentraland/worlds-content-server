@@ -1,6 +1,6 @@
 import { MigratorComponents, WorldMetadata } from '../../types'
 import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage/dist/content-item'
-import { migrateMetadata } from '../../logic/world-metadata-migrator'
+import { extractWorldRuntimeMetadata } from '../../logic/world-runtime-metadata-utils'
 import { stringToUtf8Bytes } from 'eth-connect'
 
 function deepEqual(a: any, b: any) {
@@ -47,15 +47,16 @@ export default {
 
     // Fix incorrectly stored ACLs
     for await (const key of await components.storage.allFileIds('name-')) {
-      if (key.startsWith('name-') && key.endsWith('.dcl.eth')) {
+      if (key.startsWith('name-')) {
         const existing = await readFile(key)
         if (existing) {
           const scene = (await readFile(existing.entityId)) as any
           const worldName = key.replace('name-', '')
-          const migrated = migrateMetadata(worldName, {
+          const runtimeMetadata = extractWorldRuntimeMetadata(worldName, { ...scene, id: existing.entityId })
+          const migrated = {
             ...existing,
-            config: scene.metadata.worldConfiguration
-          })
+            runtimeMetadata: runtimeMetadata
+          }
           if (!deepEqual(existing, migrated)) {
             logger.info(`World "${worldName}" needs to be fixed: ${JSON.stringify(existing)}`)
             await writeFile(key, migrated)

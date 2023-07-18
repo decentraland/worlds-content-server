@@ -11,7 +11,7 @@ import { IContentStorageComponent } from '@dcl/catalyst-storage'
 import { HTTPProvider } from 'eth-connect'
 import { ISubgraphComponent } from '@well-known-components/thegraph-component'
 import { IStatusComponent } from './adapters/status'
-import { AuthChain, AuthLink, Entity, EthAddress, WorldConfiguration } from '@dcl/schemas'
+import { AuthChain, AuthLink, Entity, EthAddress } from '@dcl/schemas'
 import { MigrationExecutor } from './migrations/migration-executor'
 
 export type GlobalContext = {
@@ -25,10 +25,22 @@ export type DeploymentToValidate = {
   contentHashesInStorage: Map<string, boolean>
 }
 
+export type WorldRuntimeMetadata = {
+  entityIds: string[]
+  name: string
+  minimapVisible: boolean
+  minimapDataImage?: string
+  minimapEstateImage?: string
+  skyboxFixedTime?: number
+  skyboxTextures?: string[]
+  fixedAdapter?: string
+  thumbnailFile?: string
+}
+
 export type WorldMetadata = {
   entityId: string
   acl?: AuthChain
-  config?: WorldConfiguration
+  runtimeMetadata: WorldRuntimeMetadata
 }
 
 export type AccessControlList = {

@@ -3,7 +3,6 @@ import LRU from 'lru-cache'
 import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage/dist/content-item'
 import { Entity } from '@dcl/schemas'
 import { stringToUtf8Bytes } from 'eth-connect'
-import { migrateMetadata } from '../logic/world-metadata-migrator'
 
 export async function createWorldsManagerComponent({
   logs,
@@ -37,7 +36,7 @@ export async function createWorldsManagerComponent({
       if (!content) {
         return staleValue
       }
-      return migrateMetadata(worldName, JSON.parse((await streamToBuffer(await content.asStream())).toString()))
+      return JSON.parse((await streamToBuffer(await content.asStream())).toString())
     }
   })
 
@@ -67,21 +66,14 @@ export async function createWorldsManagerComponent({
   }
 
   async function getMetadataForWorld(worldName: string): Promise<WorldMetadata | undefined> {
-    const worldMetadata = await worldsCache.fetch(worldName)
-    if (!worldMetadata) {
-      return undefined
-    }
-    return migrateMetadata(worldName, worldMetadata)
+    return await worldsCache.fetch(worldName)
   }
 
   async function storeWorldMetadata(worldName: string, worldMetadata: Partial<WorldMetadata>): Promise<void> {
     const content = await storage.retrieve(`name-${worldName.toLowerCase()}`)
     const metadata: Partial<WorldMetadata> = {}
     if (content) {
-      migrateMetadata(
-        worldName,
-        Object.assign(metadata, JSON.parse((await streamToBuffer(await content.asStream())).toString()))
-      )
+      Object.assign(metadata, JSON.parse((await streamToBuffer(await content.asStream())).toString()))
     }
     Object.assign(metadata, worldMetadata)
 

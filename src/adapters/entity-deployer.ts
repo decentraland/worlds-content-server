@@ -4,6 +4,7 @@ import { bufferToStream } from '@dcl/catalyst-storage/dist/content-item'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
 import { PublishCommand, SNSClient } from '@aws-sdk/client-sns'
+import { extractWorldRuntimeMetadata } from '../logic/world-runtime-metadata-utils'
 
 type PostDeploymentHook = (baseUrl: string, entity: Entity, authChain: AuthLink[]) => Promise<DeploymentResult>
 
@@ -70,7 +71,7 @@ export function createEntityDeployer(
 
     await worldsManager.storeWorldMetadata(worldName, {
       entityId: entity.id,
-      config: entity.metadata.worldConfiguration
+      runtimeMetadata: extractWorldRuntimeMetadata(worldName, entity)
     })
 
     metrics.increment('world_deployments_counter')

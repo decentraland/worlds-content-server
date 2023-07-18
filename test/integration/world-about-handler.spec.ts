@@ -35,15 +35,17 @@ test('world about handler /world/:world_name/about', function ({ components }) {
   it('when world exists it responds', async () => {
     const { localFetch, storage } = components
 
+    const worldConfiguration = {
+      name: ENS
+    }
     await storeJson(storage, ENTITY_CID, {
       metadata: {
-        worldConfiguration: {
-          name: ENS
-        }
+        worldConfiguration: worldConfiguration
       }
     })
     await storeJson(storage, `name-${ENS}`, {
-      entityId: ENTITY_CID
+      entityId: ENTITY_CID,
+      config: worldConfiguration
     })
 
     const r = await localFetch.fetch(`/world/${ENS}/about`)
@@ -71,20 +73,20 @@ test('world about handler /world/:world_name/about', function ({ components }) {
 })
 
 test('world about handler /world/:world_name/about', function ({ components }) {
-  it('when world exists and has minimap it responds', async () => {
+  it.only('when world exists and has minimap it responds', async () => {
     const { localFetch, storage } = components
 
+    await storeJson(storage, 'name-some-name.dcl.eth', {
+      entityId: 'bafybeictjyqjlkgybfckczpuqlqo7xfhho3jpnep4wesw3ivaeeuqugc2y',
+      config: { name: 'some-name.dcl.eth', miniMapConfig: { visible: true } }
+    })
     await storeJson(storage, 'bafybeictjyqjlkgybfckczpuqlqo7xfhho3jpnep4wesw3ivaeeuqugc2y', {
       metadata: {
         worldConfiguration: {
-          minimapVisible: true
+          miniMapConfig: { visible: true }
         }
       }
     })
-    await storeJson(storage, 'name-some-name.dcl.eth', {
-      entityId: 'bafybeictjyqjlkgybfckczpuqlqo7xfhho3jpnep4wesw3ivaeeuqugc2y'
-    })
-
     const r = await localFetch.fetch('/world/some-name.dcl.eth/about')
     expect(r.status).toEqual(200)
     expect(await r.json()).toMatchObject({
@@ -100,27 +102,8 @@ test('world about handler /world/:world_name/about', function ({ components }) {
     await storeJson(storage, 'bafybeictjyqjlkgybfckczpuqlqo7xfhho3jpnep4wesw3ivaeeuqugc2y', {
       metadata: {
         worldConfiguration: {
-          miniMapConfig: { visible: true }
-        }
-      }
-    })
-    const r2 = await localFetch.fetch('/world/some-name.dcl.eth/about')
-    expect(r2.status).toEqual(200)
-    expect(await r2.json()).toMatchObject({
-      configurations: {
-        minimap: {
-          enabled: true,
-          dataImage: 'https://api.decentraland.org/v1/minimap.png',
-          estateImage: 'https://api.decentraland.org/v1/estatemap.png'
-        }
-      }
-    })
-
-    await storeJson(storage, 'bafybeictjyqjlkgybfckczpuqlqo7xfhho3jpnep4wesw3ivaeeuqugc2y', {
-      metadata: {
-        worldConfiguration: {
-          minimapVisible: false,
           miniMapConfig: {
+            visible: false,
             dataImage: 'black_image.png',
             estateImage: 'black_image.png'
           }

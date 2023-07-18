@@ -4,17 +4,14 @@ import {
   AboutResponse_MinimapConfiguration,
   AboutResponse_SkyboxConfiguration
 } from '@dcl/protocol/out-js/decentraland/bff/http_endpoints.gen'
-import { streamToBuffer } from '@dcl/catalyst-storage/dist/content-item'
-import { ContentMapping } from '@dcl/schemas/dist/misc/content-mapping'
 import { l1Contracts, L1Network } from '@dcl/catalyst-contracts'
-import { WorldConfiguration } from '@dcl/schemas'
 
 export async function worldAboutHandler({
   params,
   url,
-  components: { config, status, storage, worldsManager }
+  components: { config, status, worldsManager }
 }: Pick<
-  HandlerContextWithPath<'config' | 'status' | 'storage' | 'worldsManager', '/world/:world_name/about'>,
+  HandlerContextWithPath<'config' | 'status' | 'worldsManager', '/world/:world_name/about'>,
   'components' | 'params' | 'url'
 >) {
   const worldMetadata = await worldsManager.getMetadataForWorld(params.world_name)
@@ -25,16 +22,7 @@ export async function worldAboutHandler({
     }
   }
 
-  const scene = await storage.retrieve(worldMetadata.entityId)
-  if (!scene) {
-    return {
-      status: 404,
-      body: `Scene "${worldMetadata.entityId}" not deployed in this server.`
-    }
-  }
-  const sceneJson = JSON.parse((await streamToBuffer(await scene?.asStream())).toString())
-
-  const worldConfiguration: WorldConfiguration = worldMetadata.config || sceneJson.metadata.worldConfiguration!
+  const runtimeMetadata = worldMetadata.runtimeMetadata
 
   const baseUrl = (await config.getString('HTTP_BASE_URL')) || `${url.protocol}//${url.host}`
 
@@ -47,7 +35,7 @@ export async function worldAboutHandler({
   }
 
   const roomPrefix = await config.requireString('COMMS_ROOM_PREFIX')
-  const fixedAdapter = await resolveFixedAdapter(params.world_name, worldConfiguration, baseUrl, roomPrefix)
+  const fixedAdapter = await resolveFixedAdapter(params.world_name, runtimeMetadata.fixedAdapter, baseUrl, roomPrefix)
 
   const globalScenesURN = await config.getString('GLOBAL_SCENES_URN')
 
@@ -56,35 +44,27 @@ export async function worldAboutHandler({
 
   function urlForFile(filename: string | undefined, defaultImage: string = ''): string {
     if (filename) {
-      const file = sceneJson.content.find((content: ContentMapping) => content.file === filename)
-      if (file) {
-        return `${baseUrl}/contents/${file.hash}`
-      }
+      return `${baseUrl}/contents/${filename}`
     }
     return defaultImage
   }
 
   const minimap: AboutResponse_MinimapConfiguration = {
-    enabled: worldConfiguration.minimapVisible || worldConfiguration.miniMapConfig?.visible || false
+    enabled: runtimeMetadata.minimapVisible
   }
-  if (minimap.enabled || worldConfiguration.miniMapConfig?.dataImage) {
-    minimap.dataImage = urlForFile(
-      worldConfiguration.miniMapConfig?.dataImage,
-      'https://api.decentraland.org/v1/minimap.png'
-    )
+  if (minimap.enabled || runtimeMetadata.minimapDataImage) {
+    minimap.dataImage = urlForFile(runtimeMetadata.minimapDataImage, 'https://api.decentraland.org/v1/minimap.png')
   }
-  if (minimap.enabled || worldConfiguration.miniMapConfig?.estateImage) {
+  if (minimap.enabled || runtimeMetadata.minimapEstateImage) {
     minimap.estateImage = urlForFile(
-      worldConfiguration.miniMapConfig?.estateImage,
+      runtimeMetadata.minimapEstateImage,
       'https://api.decentraland.org/v1/estatemap.png'
     )
   }
 
   const skybox: AboutResponse_SkyboxConfiguration = {
-    fixedHour: worldConfiguration.skyboxConfig?.fixedTime || worldConfiguration.skybox,
-    textures: worldConfiguration.skyboxConfig?.textures
-      ? worldConfiguration.skyboxConfig?.textures.map((texture: string) => urlForFile(texture))
-      : (undefined as any)
+    fixedHour: runtimeMetadata.skyboxFixedTime,
+    textures: runtimeMetadata.skyboxTextures?.map((texture: string) => urlForFile(texture)) || []
   }
 
   const healthy = contentStatus.healthy && lambdasStatus.healthy
@@ -122,11 +102,11 @@ export async function worldAboutHandler({
 
 async function resolveFixedAdapter(
   worldName: string,
-  worldConfiguration: WorldConfiguration,
+  fixedAdapter: string | undefined,
   baseUrl: string,
   roomPrefix: string
 ) {
-  if (worldConfiguration?.fixedAdapter === 'offline:offline') {
+  if (fixedAdapter === 'offline:offline') {
     return 'offline:offline'
   }
 
