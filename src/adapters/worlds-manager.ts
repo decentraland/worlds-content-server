@@ -71,10 +71,8 @@ export async function createWorldsManagerComponent({
 
   async function storeWorldMetadata(worldName: string, worldMetadata: Partial<WorldMetadata>): Promise<void> {
     const content = await storage.retrieve(`name-${worldName.toLowerCase()}`)
-    const metadata: Partial<WorldMetadata> = {}
-    if (content) {
-      Object.assign(metadata, JSON.parse((await streamToBuffer(await content.asStream())).toString()))
-    }
+    const contentMetadata = content ? JSON.parse((await streamToBuffer(await content.asStream())).toString()) : {}
+    const metadata: Partial<WorldMetadata> = Object.assign({}, contentMetadata, worldMetadata)
     Object.assign(metadata, worldMetadata)
 
     await storage.storeStream(
