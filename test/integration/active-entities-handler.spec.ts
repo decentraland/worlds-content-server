@@ -1,7 +1,7 @@
 import { test } from '../components'
 import { storeJson } from '../utils'
 
-const STORED_ENTITY = { metadata: { name: 'some-name.dcl.eth' } }
+const STORED_ENTITY = { metadata: {} }
 const ENTITY_CID = 'bafybeictjyqjlkgybfckczpuqlqo7xfhho3jpnep4wesw3ivaeeuqugc2y'
 const ENS = 'some-name.dcl.eth'
 
