@@ -3,8 +3,6 @@ import { Entity, WorldConfiguration } from '@dcl/schemas'
 import { ContentMapping } from '@dcl/schemas/dist/misc/content-mapping'
 
 export function migrateConfiguration(worldName: string, worldConfiguration: WorldConfiguration): WorldConfiguration {
-  // console.log('original metadata', metadata, typeof metadata)
-
   // Old deployments may not even have a worldConfiguration
   if (!worldConfiguration) {
     return {
@@ -31,7 +29,6 @@ export function migrateConfiguration(worldName: string, worldConfiguration: Worl
     delete cloned.skybox
   }
 
-  // console.log('migrated', cloned)
   return cloned as WorldConfiguration
 }
 
