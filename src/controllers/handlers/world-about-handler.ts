@@ -62,7 +62,6 @@ export async function worldAboutHandler({
     )
   }
 
-  console.log(runtimeMetadata.skyboxTextures)
   const skybox: AboutResponse_SkyboxConfiguration = {
     fixedHour: runtimeMetadata.skyboxFixedTime,
     textures: runtimeMetadata.skyboxTextures?.map((texture: string) => urlForFile(texture)) || []
