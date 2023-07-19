@@ -22,8 +22,10 @@ test('acl handler GET /acl/:world_name', function ({ components }) {
   it('returns an empty list of allowed when no acl exists', async () => {
     const { localFetch, storage } = components
 
+    const entityId = 'bafkreiax5plaxze77tnjbnozga7dsbefdh53horza4adf2xjzxo3k5i4xq'
     await storeJson(storage, 'name-my-world.dcl.eth', {
-      entityId: 'bafkreiax5plaxze77tnjbnozga7dsbefdh53horza4adf2xjzxo3k5i4xq'
+      entityId,
+      runtimeMetadata: { name: 'my-world.dcl.eth', entityIds: [entityId] }
     })
 
     const r = await localFetch.fetch('/acl/my-world.dcl.eth')
@@ -38,7 +40,7 @@ test('acl handler GET /acl/:world_name', function ({ components }) {
 })
 
 test('acl handler GET /acl/:world_name', function ({ components }) {
-  it('returns an empty list of allowed when existing acl is no longer the world owner', async () => {
+  it("returns an empty list of allowed when existing acl is no longer the world owner's", async () => {
     const { localFetch, storage } = components
 
     const delegatedIdentity = await getIdentity()
@@ -47,8 +49,10 @@ test('acl handler GET /acl/:world_name', function ({ components }) {
     const ts = new Date().toISOString()
     const payload = `{"resource":"my-world.dcl.eth","allowed":["${delegatedIdentity.realAccount.address}"],"timestamp":"${ts}"`
 
+    const entityId = 'bafkreiax5plaxze77tnjbnozga7dsbefdh53horza4adf2xjzxo3k5i4xq'
     await storeJson(storage, 'name-my-world.dcl.eth', {
-      entityId: 'bafkreiax5plaxze77tnjbnozga7dsbefdh53horza4adf2xjzxo3k5i4xq',
+      entityId,
+      runtimeMetadata: { name: 'my-world.dcl.eth', entityIds: [entityId] },
       acl: Authenticator.signPayload(ownerIdentity.authChain, payload)
     })
 
@@ -74,8 +78,10 @@ test('acl handler GET /acl/:world_name', function ({ components, stubComponents 
     const ts = new Date().toISOString()
     const payload = `{"resource":"my-world.dcl.eth","allowed":["${delegatedIdentity.realAccount.address}"],"timestamp":"${ts}"}`
 
+    const entityId = 'bafkreiax5plaxze77tnjbnozga7dsbefdh53horza4adf2xjzxo3k5i4xq'
     await storeJson(storage, 'name-my-world.dcl.eth', {
-      entityId: 'bafkreiax5plaxze77tnjbnozga7dsbefdh53horza4adf2xjzxo3k5i4xq',
+      entityId,
+      runtimeMetadata: { name: 'my-world.dcl.eth', entityIds: [entityId] },
       acl: Authenticator.signPayload(ownerIdentity.authChain, payload)
     })
 
@@ -102,8 +108,10 @@ test('acl handler POST /acl/:world_name', function ({ components, stubComponents
     const identity = await getIdentity()
     const delegatedIdentity = await getIdentity()
 
+    const entityId = 'bafkreiax5plaxze77tnjbnozga7dsbefdh53horza4adf2xjzxo3k5i4xq'
     await storeJson(storage, 'name-my-world.dcl.eth', {
-      entityId: 'bafkreiax5plaxze77tnjbnozga7dsbefdh53horza4adf2xjzxo3k5i4xq'
+      entityId,
+      runtimeMetadata: { name: 'my-world.dcl.eth', entityIds: [entityId] }
     })
 
     namePermissionChecker.checkPermission
@@ -130,7 +138,8 @@ test('acl handler POST /acl/:world_name', function ({ components, stubComponents
     const content = await storage.retrieve('name-my-world.dcl.eth')
     const stored = JSON.parse((await streamToBuffer(await content!.asStream())).toString())
     expect(stored).toMatchObject({
-      entityId: 'bafkreiax5plaxze77tnjbnozga7dsbefdh53horza4adf2xjzxo3k5i4xq',
+      entityId,
+      runtimeMetadata: { name: 'my-world.dcl.eth', entityIds: [entityId] },
       acl
     })
   })
@@ -183,8 +192,10 @@ test('acl handler POST /acl/:world_name', function ({ components, stubComponents
     const ts = new Date().toISOString()
     const payload = `{"resource":"another-world.dcl.eth","allowed":["${delegatedIdentity.realAccount.address}"],"timestamp":"${ts}"}`
 
+    const entityId = 'bafkreiax5plaxze77tnjbnozga7dsbefdh53horza4adf2xjzxo3k5i4xq'
     await storeJson(storage, 'name-my-world.dcl.eth', {
-      entityId: 'bafkreiax5plaxze77tnjbnozga7dsbefdh53horza4adf2xjzxo3k5i4xq'
+      entityId,
+      runtimeMetadata: { name: 'my-world.dcl.eth', entityIds: [entityId] }
     })
 
     namePermissionChecker.checkPermission
@@ -216,8 +227,10 @@ test('acl handler POST /acl/:world_name', function ({ components, stubComponents
     const ts = new Date().toISOString()
     const payload = `{"resource":"my-world.dcl.eth","allowed":["${identity.realAccount.address}"],"timestamp":"${ts}"}`
 
+    const entityId = 'bafkreiax5plaxze77tnjbnozga7dsbefdh53horza4adf2xjzxo3k5i4xq'
     await storeJson(storage, 'name-my-world.dcl.eth', {
-      entityId: 'bafkreiax5plaxze77tnjbnozga7dsbefdh53horza4adf2xjzxo3k5i4xq'
+      entityId,
+      runtimeMetadata: { name: 'my-world.dcl.eth', entityIds: [entityId] }
     })
 
     namePermissionChecker.checkPermission
@@ -250,8 +263,10 @@ test('acl handler POST /acl/:world_name', function ({ components, stubComponents
     const ts = new Date().toISOString()
     const payload = `{"resource":"my-world.dcl.eth","allowed":{"something":"${delegatedIdentity.realAccount.address}"},"timestamp":"${ts}"}`
 
+    const entityId = 'bafkreiax5plaxze77tnjbnozga7dsbefdh53horza4adf2xjzxo3k5i4xq'
     await storeJson(storage, 'name-my-world.dcl.eth', {
-      entityId: 'bafkreiax5plaxze77tnjbnozga7dsbefdh53horza4adf2xjzxo3k5i4xq'
+      entityId,
+      runtimeMetadata: { name: 'my-world.dcl.eth', entityIds: [entityId] }
     })
 
     namePermissionChecker.checkPermission
@@ -282,8 +297,10 @@ test('acl handler POST /acl/:world_name', function ({ components, stubComponents
     const ts = new Date().toISOString()
     const payload = `{"resource":"my-world.dcl.eth","allowed":["invalid"],"timestamp":"${ts}"}`
 
+    const entityId = 'bafkreiax5plaxze77tnjbnozga7dsbefdh53horza4adf2xjzxo3k5i4xq'
     await storeJson(storage, 'name-my-world.dcl.eth', {
-      entityId: 'bafkreiax5plaxze77tnjbnozga7dsbefdh53horza4adf2xjzxo3k5i4xq'
+      entityId,
+      runtimeMetadata: { name: 'my-world.dcl.eth', entityIds: [entityId] }
     })
 
     namePermissionChecker.checkPermission
@@ -315,8 +332,10 @@ test('acl handler POST /acl/:world_name', function ({ components, stubComponents
     const ts = new Date().toISOString()
     const payload = `{"resource":"my-world.dcl.eth","allowed":["${delegatedIdentity.realAccount.address}"],"timestamp":"${ts}"}`
 
+    const entityId = 'bafkreiax5plaxze77tnjbnozga7dsbefdh53horza4adf2xjzxo3k5i4xq'
     await storeJson(storage, 'name-my-world.dcl.eth', {
-      entityId: 'bafkreiax5plaxze77tnjbnozga7dsbefdh53horza4adf2xjzxo3k5i4xq'
+      entityId,
+      runtimeMetadata: { name: 'my-world.dcl.eth', entityIds: [entityId] }
     })
 
     namePermissionChecker.checkPermission
@@ -344,8 +363,10 @@ test('acl handler POST /acl/:world_name', function ({ components, stubComponents
 
     const identity = await getIdentity()
 
+    const entityId = 'bafkreiax5plaxze77tnjbnozga7dsbefdh53horza4adf2xjzxo3k5i4xq'
     await storeJson(storage, 'name-my-world.dcl.eth', {
-      entityId: 'bafkreiax5plaxze77tnjbnozga7dsbefdh53horza4adf2xjzxo3k5i4xq'
+      entityId,
+      runtimeMetadata: { name: 'my-world.dcl.eth', entityIds: [entityId] }
     })
 
     namePermissionChecker.checkPermission
@@ -461,8 +482,10 @@ test('acl handler POST /acl/:world_name', function ({ components, stubComponents
     const ts = new Date().toISOString()
     const payload = `{"resource":"my-world.dcl.eth","allowed":["${delegatedIdentity.realAccount.address}"],"timestamp":"${ts}"}`
 
+    const entityId = 'bafkreiax5plaxze77tnjbnozga7dsbefdh53horza4adf2xjzxo3k5i4xq'
     await storeJson(storage, 'name-my-world.dcl.eth', {
-      entityId: 'bafkreiax5plaxze77tnjbnozga7dsbefdh53horza4adf2xjzxo3k5i4xq',
+      entityId,
+      runtimeMetadata: { name: 'my-world.dcl.eth', entityIds: [entityId] },
       acl: Authenticator.signPayload(identity.authChain, payload)
     })
 
