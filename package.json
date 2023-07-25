@@ -15,7 +15,7 @@
     "@dcl/catalyst-contracts": "^4.0.6",
     "@dcl/catalyst-storage": "^2.0.4",
     "@dcl/crypto": "^3.4.3",
-    "@dcl/hashing": "^2.0.0",
+    "@dcl/hashing": "^3.0.1",
     "@dcl/protocol": "^1.0.0-5623934099.commit-07e0626",
     "@dcl/schemas": "^8.2.2",
     "@types/busboy": "^1.5.0",
