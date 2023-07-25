@@ -5,7 +5,7 @@ import verify from 'decentraland-crypto-middleware/lib/verify'
 import { allowedByAcl } from '../../logic/acl'
 import { AccessToken } from 'livekit-server-sdk'
 
-export async function meetAdapterHandler(
+export async function castAdapterHandler(
   context: HandlerContextWithPath<
     'config' | 'storage' | 'namePermissionChecker' | 'worldsManager',
     '/meet-adapter/:roomId'
