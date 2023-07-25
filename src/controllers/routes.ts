@@ -41,5 +41,6 @@ export async function setupRouter(_globalContext: GlobalContext): Promise<Router
 
   router.post('/get-comms-adapter/:roomId', commsAdapterHandler)
   router.post('/meet-adapter/:roomId', meetAdapterHandler)
+  router.post('/cast-adapter/:roomId', castAdapterHandler)
   return router
 }
