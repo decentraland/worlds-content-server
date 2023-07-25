@@ -3,17 +3,21 @@ import { IHttpServerComponent } from '@well-known-components/interfaces'
 import { DecentralandSignatureContext } from 'decentraland-crypto-middleware/lib/types'
 import verify from 'decentraland-crypto-middleware/lib/verify'
 import { allowedByAcl } from '../../logic/acl'
+import { AccessToken } from 'livekit-server-sdk'
 
 export async function meetAdapterHandler(
   context: HandlerContextWithPath<
-    'commsAdapter' | 'config' | 'storage' | 'namePermissionChecker' | 'worldsManager',
+    'config' | 'storage' | 'namePermissionChecker' | 'worldsManager',
     '/meet-adapter/:roomId'
   > &
     DecentralandSignatureContext<any>
 ): Promise<IHttpServerComponent.IResponse> {
   const {
-    components: { commsAdapter, config, storage }
+    components: { config, storage }
   } = context
+
+  const apiKey = await config.requireString('LIVEKIT_API_KEY')
+  const apiSecret = await config.requireString('LIVEKIT_API_SECRET')
 
   const baseUrl = (
     (await config.getString('HTTP_BASE_URL')) || `${context.url.protocol}//${context.url.host}`
@@ -47,24 +51,25 @@ export async function meetAdapterHandler(
     throw new NotFoundError(`World "${worldName}" does not exist.`)
   }
 
-  const hasPermission = await allowedByAcl(context.components, worldName, context.verification!.auth)
-  if (!hasPermission) {
-    return {
-      status: 401,
-      body: {
-        message: 'Only the owner can get a publisher token'
-      }
-    }
-  }
+  const identity = context.verification!.auth
+  const hasPermission = await allowedByAcl(context.components, worldName, identity)
 
+  const token = new AccessToken(apiKey, apiSecret, {
+    identity,
+    ttl: 5 * 60 // 5 minutes
+  })
+  token.addGrant({
+    roomJoin: true,
+    room: context.params.roomId,
+    roomList: false,
+    canSubscribe: true,
+    canPublishData: hasPermission,
+    canPublish: hasPermission
+  })
   return {
     status: 200,
     body: {
-      fixedAdapter: await commsAdapter.connectionString(
-        '0x0000000000000000000000000000000000000000',
-        context.params.roomId,
-        worldName
-      )
+      token: token.toJwt()
     }
   }
 }

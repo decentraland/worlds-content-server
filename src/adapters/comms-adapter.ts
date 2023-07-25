@@ -1,5 +1,5 @@
 import { AppComponents, CommsStatus, ICommsAdapter, WorldStatus } from '../types'
-import { AccessToken } from 'livekit-server-sdk'
+import { AccessToken, TrackSource } from 'livekit-server-sdk'
 import { EthAddress } from '@dcl/schemas'
 import LRU from 'lru-cache'
 
@@ -166,7 +166,15 @@ function createLiveKitAdapter(
         name,
         ttl: 5 * 60 // 5 minutes
       })
-      token.addGrant({ roomJoin: true, room: roomId, canPublish: true, canSubscribe: true })
+      token.addGrant({
+        roomJoin: true,
+        room: roomId,
+        roomList: false,
+        canPublish: true,
+        canSubscribe: true,
+        canPublishData: true,
+        canPublishSources: [TrackSource.MICROPHONE]
+      })
       return `livekit:wss://${host}?access_token=${token.toJwt()}`
     }
   }

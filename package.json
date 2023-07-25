@@ -29,7 +29,7 @@
     "busboy": "^1.6.0",
     "decentraland-crypto-middleware": "^1.1.0",
     "eth-connect": "^6.2.0",
-    "livekit-server-sdk": "^1.2.4",
+    "livekit-server-sdk": "^1.2.5",
     "lru-cache": "^7.18.3",
     "p-queue": "^6.6.2"
   },
