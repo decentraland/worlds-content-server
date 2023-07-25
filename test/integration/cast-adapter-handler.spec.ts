@@ -2,7 +2,7 @@ import { test } from '../components'
 import { Authenticator } from '@dcl/crypto'
 import { getAuthHeaders, getIdentity, storeJson, Identity } from '../utils'
 
-test('meet adapter handler /meet-adapter/:roomId', function ({ components, stubComponents }) {
+test('cast adapter handler /cast-adapter/:roomId', function ({ components, stubComponents }) {
   function makeRequest(path: string, identity: Identity) {
     const { localFetch } = components
     return localFetch.fetch(path, {
@@ -46,20 +46,20 @@ test('meet adapter handler /meet-adapter/:roomId', function ({ components, stubC
   it('works when signed-fetch request is correct', async () => {
     const { storage } = components
     await storeJson(storage, 'name-myRoom', '')
-    const r = await makeRequest('/meet-adapter/world-myRoom', identity)
+    const r = await makeRequest('/cast-adapter/world-myRoom', identity)
     expect(r.status).toEqual(200)
     const { token } = await r.json()
     expect(token).toBeTruthy()
   })
 
   it('fails when signed-fetch request metadata is correct but room id does not exist', async () => {
-    const r = await makeRequest('/meet-adapter/world-noRoom', identity)
+    const r = await makeRequest('/cast-adapter/world-noRoom', identity)
     expect(r.status).toEqual(404)
     expect(await r.json()).toMatchObject({ message: 'World "noRoom" does not exist.' })
   })
 
   it('fails when signed-fetch request metadata is correct but room id is invalid', async () => {
-    const path = '/meet-adapter/myRoom'
+    const path = '/cast-adapter/myRoom'
     const r = await makeRequest(path, identity)
 
     expect(r.status).toEqual(400)
@@ -68,7 +68,7 @@ test('meet adapter handler /meet-adapter/:roomId', function ({ components, stubC
 
   it('fails when signed-fetch request metadata is incorrect', async () => {
     const { localFetch } = components
-    const path = '/meet-adapter/myRoom'
+    const path = '/cast-adapter/myRoom'
 
     const r = await localFetch.fetch(path, {
       method: 'POST',
@@ -101,7 +101,7 @@ test('meet adapter handler /meet-adapter/:roomId', function ({ components, stubC
   it('fails when request is not a signed-fetch one', async () => {
     const { localFetch } = components
 
-    const r = await localFetch.fetch('/meet-adapter/roomId', {
+    const r = await localFetch.fetch('/cast-adapter/roomId', {
       method: 'POST'
     })
 
