@@ -1,18 +1,17 @@
 import { HandlerContextWithPath, InvalidRequestError, NotFoundError } from '../../types'
 import { IHttpServerComponent } from '@well-known-components/interfaces'
-import { DecentralandSignatureContext } from 'decentraland-crypto-middleware/lib/types'
-import verify from 'decentraland-crypto-middleware/lib/verify'
 import { allowedByAcl } from '../../logic/acl'
+import { verify, DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
 
 export async function meetAdapterHandler(
   context: HandlerContextWithPath<
-    'commsAdapter' | 'config' | 'storage' | 'namePermissionChecker' | 'worldsManager',
+    'commsAdapter' | 'config' | 'storage' | 'namePermissionChecker' | 'worldsManager' | 'fetch',
     '/meet-adapter/:roomId'
   > &
     DecentralandSignatureContext<any>
 ): Promise<IHttpServerComponent.IResponse> {
   const {
-    components: { commsAdapter, config, storage }
+    components: { commsAdapter, config, storage, fetch }
   } = context
 
   const baseUrl = (
@@ -21,7 +20,9 @@ export async function meetAdapterHandler(
   const path = new URL(baseUrl + context.url.pathname)
 
   try {
-    context.verification = await verify(context.request.method, path.pathname, context.request.headers.raw(), {})
+    context.verification = await verify(context.request.method, path.pathname, context.request.headers.raw(), {
+      fetcher: fetch
+    })
   } catch (e) {
     return {
       status: 401,

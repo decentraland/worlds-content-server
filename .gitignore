@@ -4,3 +4,4 @@ node_modules/
 coverage
 contents
 .env
+yarn-error.log

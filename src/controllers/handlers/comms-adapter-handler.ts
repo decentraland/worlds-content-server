@@ -1,14 +1,13 @@
 import { HandlerContextWithPath, InvalidRequestError, NotFoundError } from '../../types'
 import { IHttpServerComponent } from '@well-known-components/interfaces'
-import { DecentralandSignatureContext } from 'decentraland-crypto-middleware/lib/types'
-import verify from 'decentraland-crypto-middleware/lib/verify'
+import { verify, DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
 
 export async function commsAdapterHandler(
-  context: HandlerContextWithPath<'commsAdapter' | 'config' | 'storage', '/get-comms-adapter/:roomId'> &
+  context: HandlerContextWithPath<'commsAdapter' | 'config' | 'storage' | 'fetch', '/get-comms-adapter/:roomId'> &
     DecentralandSignatureContext<any>
 ): Promise<IHttpServerComponent.IResponse> {
   const {
-    components: { commsAdapter, config, storage }
+    components: { commsAdapter, config, storage, fetch }
   } = context
 
   const baseUrl = (await config.getString('HTTP_BASE_URL')) || `${context.url.protocol}//${context.url.host}`
@@ -16,7 +15,9 @@ export async function commsAdapterHandler(
   const path = new URL(baseUrl + context.url.pathname)
 
   try {
-    context.verification = await verify(context.request.method, path.pathname, context.request.headers.raw(), {})
+    context.verification = await verify(context.request.method, path.pathname, context.request.headers.raw(), {
+      fetcher: fetch
+    })
   } catch (e) {
     return {
       status: 401,

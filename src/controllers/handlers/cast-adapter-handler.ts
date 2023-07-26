@@ -1,19 +1,18 @@
 import { HandlerContextWithPath, InvalidRequestError, NotFoundError } from '../../types'
 import { IHttpServerComponent } from '@well-known-components/interfaces'
-import { DecentralandSignatureContext } from 'decentraland-crypto-middleware/lib/types'
-import verify from 'decentraland-crypto-middleware/lib/verify'
+import { DecentralandSignatureContext, verify } from '@dcl/platform-crypto-middleware'
 import { allowedByAcl } from '../../logic/acl'
 import { AccessToken } from 'livekit-server-sdk'
 
 export async function castAdapterHandler(
   context: HandlerContextWithPath<
-    'config' | 'storage' | 'namePermissionChecker' | 'worldsManager',
+    'config' | 'storage' | 'namePermissionChecker' | 'worldsManager' | 'fetch',
     '/meet-adapter/:roomId'
   > &
     DecentralandSignatureContext<any>
 ): Promise<IHttpServerComponent.IResponse> {
   const {
-    components: { config, storage }
+    components: { config, storage, fetch }
   } = context
 
   const apiKey = await config.requireString('LIVEKIT_API_KEY')
@@ -25,7 +24,9 @@ export async function castAdapterHandler(
   const path = new URL(baseUrl + context.url.pathname)
 
   try {
-    context.verification = await verify(context.request.method, path.pathname, context.request.headers.raw(), {})
+    context.verification = await verify(context.request.method, path.pathname, context.request.headers.raw(), {
+      fetcher: fetch
+    })
   } catch (e) {
     return {
       status: 401,
