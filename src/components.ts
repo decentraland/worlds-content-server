@@ -60,8 +60,8 @@ export async function initComponents(): Promise<AppComponents> {
   const fs = createFsComponent()
 
   const storage = bucket
-    ? await createAwsS3BasedFileSystemContentStorage({ fs, config }, bucket)
-    : await createFolderBasedFileSystemContentStorage({ fs }, storageFolder)
+    ? await createAwsS3BasedFileSystemContentStorage({ config, logs }, bucket)
+    : await createFolderBasedFileSystemContentStorage({ fs, logs }, storageFolder)
 
   const subGraphUrl = await config.requireString('MARKETPLACE_SUBGRAPH_URL')
   const marketplaceSubGraph = await createSubgraphComponent({ config, logs, metrics, fetch }, subGraphUrl)

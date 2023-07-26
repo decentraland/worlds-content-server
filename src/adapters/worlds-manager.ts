@@ -1,6 +1,6 @@
 import { AppComponents, IWorldsManager, WorldMetadata } from '../types'
 import LRU from 'lru-cache'
-import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage/dist/content-item'
+import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage'
 import { Entity } from '@dcl/schemas'
 import { stringToUtf8Bytes } from 'eth-connect'
 
