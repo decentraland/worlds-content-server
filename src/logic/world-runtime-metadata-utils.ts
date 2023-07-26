@@ -33,7 +33,7 @@ export function migrateConfiguration(worldName: string, worldConfiguration: Worl
 }
 
 export function extractWorldRuntimeMetadata(worldName: string, entity: Entity): WorldRuntimeMetadata {
-  const migratedWorldConfiguration = migrateConfiguration(worldName, entity.metadata.worldConfiguration)
+  const migratedWorldConfiguration = migrateConfiguration(worldName, entity.metadata?.worldConfiguration)
 
   function resolveFilename(filename: string | undefined): string | undefined {
     if (filename) {
@@ -56,6 +56,6 @@ export function extractWorldRuntimeMetadata(worldName: string, entity: Entity): 
     skyboxTextures: migratedWorldConfiguration.skyboxConfig?.textures
       ? migratedWorldConfiguration.skyboxConfig?.textures?.map((texture) => resolveFilename(texture)!)
       : undefined,
-    thumbnailFile: resolveFilename(entity.metadata.display?.navmapThumbnail)
+    thumbnailFile: resolveFilename(entity.metadata?.display?.navmapThumbnail)
   }
 }
