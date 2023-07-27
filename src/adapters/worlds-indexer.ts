@@ -1,5 +1,5 @@
 import { AppComponents, IWorldsIndexer, WorldData, WorldsIndex } from '../types'
-import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage'
+import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage/dist/content-item'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { ContentMapping } from '@dcl/schemas/dist/misc/content-mapping'
 import PQueue from 'p-queue'
@@ -76,7 +76,7 @@ export async function createWorldsIndexerComponent({
       index = await createIndex()
     } else {
       index = JSON.parse((await streamToBuffer(await content.asStream())).toString())
-      // if older than 10 minutes, create a new one
+      // if older than 10 minutes create a new one
       if (Date.now() - index.timestamp > 10 * 60 * 1000) {
         index = await createIndex()
       }

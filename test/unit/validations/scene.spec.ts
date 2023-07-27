@@ -8,7 +8,7 @@ import { createMockNamePermissionChecker } from '../../mocks/dcl-name-checker-mo
 import { getIdentity, Identity } from '../../utils'
 import { IConfigComponent } from '@well-known-components/interfaces'
 import { hashV1 } from '@dcl/hashing'
-import { bufferToStream } from '@dcl/catalyst-storage'
+import { bufferToStream } from '@dcl/catalyst-storage/dist/content-item'
 import { createWorldsManagerComponent } from '../../../src/adapters/worlds-manager'
 import { createLogComponent } from '@well-known-components/logger'
 import {

@@ -1,5 +1,5 @@
 import { test } from '../components'
-import { bufferToStream } from '@dcl/catalyst-storage'
+import { bufferToStream } from '@dcl/catalyst-storage/dist/content-item'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { WorldData } from '../../src/types'
 
