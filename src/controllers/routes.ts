@@ -9,7 +9,6 @@ import { commsAdapterHandler } from './handlers/comms-adapter-handler'
 import { activeEntitiesHandler } from './handlers/active-entities'
 import { getAclHandler, postAclHandler } from './handlers/acl-handlers'
 import { getIndexHandler } from './handlers/index-handler'
-import { meetAdapterHandler } from './handlers/meet-adapter-handler'
 import { getLiveDataHandler } from './handlers/live-data-handler'
 import { errorHandler } from './handlers/error-handler'
 import { castAdapterHandler } from './handlers/cast-adapter-handler'
@@ -41,7 +40,6 @@ export async function setupRouter(_globalContext: GlobalContext): Promise<Router
   router.get('/live-data', getLiveDataHandler)
 
   router.post('/get-comms-adapter/:roomId', commsAdapterHandler)
-  router.post('/meet-adapter/:roomId', meetAdapterHandler)
   router.post('/cast-adapter/:roomId', castAdapterHandler)
   return router
 }

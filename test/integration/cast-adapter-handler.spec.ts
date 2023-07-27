@@ -38,6 +38,7 @@ test('cast adapter handler /cast-adapter/:roomId', function ({ components, stubC
 
   beforeEach(() => {
     const { config } = stubComponents
+    config.requireString.withArgs('LIVEKIT_HOST').resolves('livekit.org')
     config.requireString.withArgs('LIVEKIT_API_KEY').resolves('livekit_key')
     config.requireString.withArgs('LIVEKIT_API_SECRET').resolves('livekit_secret')
     config.requireString.withArgs('COMMS_ROOM_PREFIX').resolves('world-')
@@ -48,7 +49,8 @@ test('cast adapter handler /cast-adapter/:roomId', function ({ components, stubC
     await storeJson(storage, 'name-myRoom', '')
     const r = await makeRequest('/cast-adapter/world-myRoom', identity)
     expect(r.status).toEqual(200)
-    const { token } = await r.json()
+    const { token, url } = await r.json()
+    expect(url).toEqual('wss://livekit.org')
     expect(token).toBeTruthy()
   })
 

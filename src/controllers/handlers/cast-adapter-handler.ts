@@ -15,8 +15,11 @@ export async function castAdapterHandler(
     components: { config, storage, fetch }
   } = context
 
-  const apiKey = await config.requireString('LIVEKIT_API_KEY')
-  const apiSecret = await config.requireString('LIVEKIT_API_SECRET')
+  const [host, apiKey, apiSecret] = await Promise.all([
+    config.requireString('LIVEKIT_HOST'),
+    config.requireString('LIVEKIT_API_KEY'),
+    config.requireString('LIVEKIT_API_SECRET')
+  ])
 
   const baseUrl = (
     (await config.getString('HTTP_BASE_URL')) || `${context.url.protocol}//${context.url.host}`
@@ -70,6 +73,7 @@ export async function castAdapterHandler(
   return {
     status: 200,
     body: {
+      url: `wss://${host}`,
       token: token.toJwt()
     }
   }
