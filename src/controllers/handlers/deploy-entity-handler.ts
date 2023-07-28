@@ -1,8 +1,8 @@
 import { Entity } from '@dcl/schemas'
 import { IHttpServerComponent } from '@well-known-components/interfaces'
 import { FormDataContext } from '../../logic/multipart'
-import { extractAuthChain } from '../../logic/extract-auth-chain'
 import { HandlerContextWithPath, InvalidRequestError } from '../../types'
+import { extractAuthChain } from '../../logic/extract-auth-chain'
 
 export function requireString(val: string | null | undefined): string {
   if (typeof val !== 'string') throw new Error('A string was expected')
