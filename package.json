@@ -11,7 +11,6 @@
     "test:coverage": "jest --forceExit --detectOpenHandles --coverage --verbose"
   },
   "dependencies": {
-    "@aws-sdk/client-sns": "^3.369.0",
     "@dcl/catalyst-contracts": "^4.0.6",
     "@dcl/catalyst-storage": "^4.0.0",
     "@dcl/crypto": "^3.4.3",
@@ -26,6 +25,7 @@
     "@well-known-components/logger": "^3.1.2",
     "@well-known-components/metrics": "^2.0.1",
     "@well-known-components/thegraph-component": "^1.6.0",
+    "aws-sdk": "^2.1427.0",
     "busboy": "^1.6.0",
     "eth-connect": "^6.2.0",
     "livekit-server-sdk": "^1.2.5",
