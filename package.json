@@ -13,7 +13,7 @@
   "dependencies": {
     "@aws-sdk/client-sns": "^3.369.0",
     "@dcl/catalyst-contracts": "^4.0.6",
-    "@dcl/catalyst-storage": "^2.0.4",
+    "@dcl/catalyst-storage": "^4.0.0",
     "@dcl/crypto": "^3.4.3",
     "@dcl/hashing": "^3.0.1",
     "@dcl/platform-crypto-middleware": "^1.0.1",
