@@ -3,8 +3,8 @@ import { AuthLink, Entity, EntityType } from '@dcl/schemas'
 import { bufferToStream } from '@dcl/catalyst-storage/dist/content-item'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
-import { PublishCommand, SNSClient } from '@aws-sdk/client-sns'
 import { extractWorldRuntimeMetadata } from '../logic/world-runtime-metadata-utils'
+import { SNS } from 'aws-sdk'
 
 type PostDeploymentHook = (baseUrl: string, entity: Entity, authChain: AuthLink[]) => Promise<DeploymentResult>
 
@@ -85,12 +85,13 @@ export function createEntityDeployer(
         },
         contentServerUrls: [baseUrl]
       }
-      const snsClient = new SNSClient({})
-      const command = new PublishCommand({
-        TopicArn: sns.arn,
-        Message: JSON.stringify(deploymentToSqs)
-      })
-      const receipt = await snsClient.send(command)
+      const snsClient = new SNS()
+      const receipt = await snsClient
+        .publish({
+          TopicArn: sns.arn,
+          Message: JSON.stringify(deploymentToSqs)
+        })
+        .promise()
       logger.info('notification sent', {
         MessageId: receipt.MessageId as any,
         SequenceNumber: receipt.SequenceNumber as any
