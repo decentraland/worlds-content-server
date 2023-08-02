@@ -4,7 +4,7 @@
 import { createLocalFetchCompoment, createRunner } from '@well-known-components/test-helpers'
 
 import { main } from '../src/service'
-import { SnsComponent, TestComponents } from '../src/types'
+import { INameDenyListChecker, SnsComponent, TestComponents } from '../src/types'
 import { initComponents as originalInitComponents } from '../src/components'
 import { createMockMarketplaceSubGraph } from './mocks/marketplace-subgraph-mock'
 import { createMockNamePermissionChecker } from './mocks/dcl-name-checker-mock'
@@ -20,6 +20,8 @@ import { createValidator } from '../src/logic/validations'
 import { createTestMetricsComponent } from '@well-known-components/metrics'
 import { metricDeclarations } from '../src/metrics'
 import { createEntityDeployer } from '../src/adapters/entity-deployer'
+import { createNameDenyListChecker } from '../src/adapters/name-deny-list-checker'
+import { createMockNameDenyListChecker } from './mocks/dcl-name-deny-list-checker-mock'
 
 /**
  * Behaves like Jest "describe" function, used to describe a test for a
@@ -41,6 +43,8 @@ async function initComponents(): Promise<TestComponents> {
   const metrics = createTestMetricsComponent(metricDeclarations)
 
   const storage = createInMemoryStorage()
+
+  const nameDenyListChecker = createMockNameDenyListChecker()
 
   const namePermissionChecker = createMockNamePermissionChecker()
 
@@ -76,6 +80,7 @@ async function initComponents(): Promise<TestComponents> {
   const validator = createValidator({
     config,
     storage,
+    nameDenyListChecker,
     namePermissionChecker,
     limitsManager,
     worldsManager

@@ -60,7 +60,7 @@ export type ValidationResult = {
 
 export type ValidatorComponents = Pick<
   AppComponents,
-  'config' | 'namePermissionChecker' | 'limitsManager' | 'storage' | 'worldsManager'
+  'config' | 'limitsManager' | 'nameDenyListChecker' | 'namePermissionChecker' | 'storage' | 'worldsManager'
 >
 
 export type MigratorComponents = Pick<AppComponents, 'logs' | 'storage' | 'worldsManager'>
@@ -71,7 +71,14 @@ export type IWorldNamePermissionChecker = {
   checkPermission(ethAddress: EthAddress, worldName: string): Promise<boolean>
 }
 
-export type WorldStatus = { worldName: string; users: number }
+export type INameDenyListChecker = {
+  checkNameDenyList(worldName: string): Promise<boolean>
+}
+
+export type WorldStatus = {
+  worldName: string
+  users: number
+}
 
 export type WorldData = {
   name: string
@@ -152,6 +159,7 @@ export type BaseComponents = {
   marketplaceSubGraph: ISubgraphComponent
   metrics: IMetricsComponent<keyof typeof metricDeclarations>
   migrationExecutor: MigrationExecutor
+  nameDenyListChecker: INameDenyListChecker
   namePermissionChecker: IWorldNamePermissionChecker
   server: IHttpServerComponent<GlobalContext>
   sns: SnsComponent

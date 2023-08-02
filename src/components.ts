@@ -4,7 +4,14 @@ import { createLogComponent } from '@well-known-components/logger'
 import { createFetchComponent } from './adapters/fetch'
 import { createMetricsComponent, instrumentHttpServerWithMetrics } from '@well-known-components/metrics'
 import { createSubgraphComponent } from '@well-known-components/thegraph-component'
-import { AppComponents, GlobalContext, ICommsAdapter, IWorldNamePermissionChecker, SnsComponent } from './types'
+import {
+  AppComponents,
+  GlobalContext,
+  ICommsAdapter,
+  INameDenyListChecker,
+  IWorldNamePermissionChecker,
+  SnsComponent
+} from './types'
 import { metricDeclarations } from './metrics'
 import { HTTPProvider } from 'eth-connect'
 import {
@@ -22,6 +29,7 @@ import { createWorldsIndexerComponent } from './adapters/worlds-indexer'
 import { createValidator } from './logic/validations'
 import { createEntityDeployer } from './adapters/entity-deployer'
 import { createMigrationExecutor } from './migrations/migration-executor'
+import { createNameDenyListChecker } from './adapters/name-deny-list-checker'
 
 async function determineNameValidator(
   components: Pick<AppComponents, 'config' | 'ethereumProvider' | 'logs' | 'marketplaceSubGraph'>
@@ -74,6 +82,12 @@ export async function initComponents(): Promise<AppComponents> {
     arn: snsArn
   }
 
+  const nameDenyListChecker: INameDenyListChecker = await createNameDenyListChecker({
+    config,
+    ethereumProvider,
+    logs
+  })
+
   const namePermissionChecker: IWorldNamePermissionChecker = await determineNameValidator({
     config,
     ethereumProvider,
@@ -93,6 +107,7 @@ export async function initComponents(): Promise<AppComponents> {
   const entityDeployer = createEntityDeployer({ config, logs, metrics, storage, sns, worldsManager })
   const validator = createValidator({
     config,
+    nameDenyListChecker,
     namePermissionChecker,
     limitsManager,
     storage,
@@ -112,6 +127,7 @@ export async function initComponents(): Promise<AppComponents> {
     marketplaceSubGraph,
     metrics,
     migrationExecutor,
+    nameDenyListChecker,
     namePermissionChecker,
     server,
     sns,

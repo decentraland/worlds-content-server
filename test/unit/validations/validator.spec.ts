@@ -1,6 +1,12 @@
 import { createConfigComponent } from '@well-known-components/env-config-provider'
 import { createInMemoryStorage, IContentStorageComponent } from '@dcl/catalyst-storage'
-import { ILimitsManager, IWorldNamePermissionChecker, IWorldsManager, ValidatorComponents } from '../../../src/types'
+import {
+  ILimitsManager,
+  INameDenyListChecker,
+  IWorldNamePermissionChecker,
+  IWorldsManager,
+  ValidatorComponents
+} from '../../../src/types'
 import { createMockLimitsManagerComponent } from '../../mocks/limits-manager-mock'
 import { createMockNamePermissionChecker } from '../../mocks/dcl-name-checker-mock'
 import { getIdentity, Identity } from '../../utils'
@@ -9,11 +15,13 @@ import { createWorldsManagerComponent } from '../../../src/adapters/worlds-manag
 import { createLogComponent } from '@well-known-components/logger'
 import { createSceneDeployment } from './shared'
 import { createValidator } from '../../../src/logic/validations'
+import { createMockNameDenyListChecker } from '../../mocks/dcl-name-deny-list-checker-mock'
 
 describe('validator', function () {
   let config: IConfigComponent
   let storage: IContentStorageComponent
   let limitsManager: ILimitsManager
+  let nameDenyListChecker: INameDenyListChecker
   let worldNamePermissionChecker: IWorldNamePermissionChecker
   let worldsManager: IWorldsManager
   let identity: Identity
@@ -25,6 +33,7 @@ describe('validator', function () {
     })
     storage = createInMemoryStorage()
     limitsManager = createMockLimitsManagerComponent()
+    nameDenyListChecker = createMockNameDenyListChecker(['whatever.dcl.eth'])
     worldNamePermissionChecker = createMockNamePermissionChecker(['whatever.dcl.eth'])
     worldsManager = await createWorldsManagerComponent({
       logs: await createLogComponent({ config }),
@@ -36,6 +45,7 @@ describe('validator', function () {
       config,
       storage,
       limitsManager,
+      nameDenyListChecker,
       namePermissionChecker: worldNamePermissionChecker,
       worldsManager
     }

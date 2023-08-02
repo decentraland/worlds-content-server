@@ -6,7 +6,7 @@ import { AccessToken } from 'livekit-server-sdk'
 
 export async function castAdapterHandler(
   context: HandlerContextWithPath<
-    'config' | 'storage' | 'namePermissionChecker' | 'worldsManager' | 'fetch',
+    'config' | 'fetch' | 'nameDenyListChecker' | 'namePermissionChecker' | 'storage' | 'worldsManager',
     '/meet-adapter/:roomId'
   > &
     DecentralandSignatureContext<any>

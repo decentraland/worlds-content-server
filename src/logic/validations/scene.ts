@@ -42,7 +42,7 @@ export const validateDeprecatedConfig: Validation = async (
 }
 
 export function createValidateDeploymentPermission(
-  components: Pick<ValidatorComponents, 'namePermissionChecker' | 'worldsManager'>
+  components: Pick<ValidatorComponents, 'nameDenyListChecker' | 'namePermissionChecker' | 'worldsManager'>
 ) {
   return async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
     const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())

@@ -2,10 +2,13 @@ import { AccessControlList, ValidatorComponents } from '../types'
 import { EthAddress } from '@dcl/schemas'
 
 export async function allowedByAcl(
-  components: Pick<ValidatorComponents, 'namePermissionChecker' | 'worldsManager'>,
+  components: Pick<ValidatorComponents, 'nameDenyListChecker' | 'namePermissionChecker' | 'worldsManager'>,
   worldName: string,
   address: EthAddress
 ): Promise<boolean> {
+  if (!(await components.nameDenyListChecker.checkNameDenyList(worldName))) {
+    return false
+  }
   if (await components.namePermissionChecker.checkPermission(address, worldName)) {
     return true
   }

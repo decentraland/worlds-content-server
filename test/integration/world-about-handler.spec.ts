@@ -54,7 +54,7 @@ test('world about handler /world/:world_name/about', function ({ components }) {
       healthy: true,
       acceptingUsers: true,
       configurations: {
-        networkId: 5,
+        networkId: 1,
         globalScenesUrn: [],
         scenesUrn: [`urn:decentraland:entity:${ENTITY_CID}?=&baseUrl=http://0.0.0.0:3000/contents/`],
         minimap: {
