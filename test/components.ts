@@ -4,7 +4,7 @@
 import { createLocalFetchCompoment, createRunner } from '@well-known-components/test-helpers'
 
 import { main } from '../src/service'
-import { INameDenyListChecker, SnsComponent, TestComponents } from '../src/types'
+import { SnsComponent, TestComponents } from '../src/types'
 import { initComponents as originalInitComponents } from '../src/components'
 import { createMockMarketplaceSubGraph } from './mocks/marketplace-subgraph-mock'
 import { createMockNamePermissionChecker } from './mocks/dcl-name-checker-mock'
@@ -20,7 +20,6 @@ import { createValidator } from '../src/logic/validations'
 import { createTestMetricsComponent } from '@well-known-components/metrics'
 import { metricDeclarations } from '../src/metrics'
 import { createEntityDeployer } from '../src/adapters/entity-deployer'
-import { createNameDenyListChecker } from '../src/adapters/name-deny-list-checker'
 import { createMockNameDenyListChecker } from './mocks/dcl-name-deny-list-checker-mock'
 
 /**
