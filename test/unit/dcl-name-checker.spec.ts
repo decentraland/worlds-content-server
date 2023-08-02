@@ -90,11 +90,13 @@ describe('dcl name checker: on-chain', function () {
     const dclNameChecker = await createOnChainDclNameChecker({
       config,
       logs,
-      ethereumProvider: createHttpProviderMock({
-        jsonrpc: '2.0',
-        id: 1,
-        result: '0x0000000000000000000000000000000000000000000000000000000000000000'
-      })
+      ethereumProvider: createHttpProviderMock([
+        {
+          jsonrpc: '2.0',
+          id: 1,
+          result: '0x0000000000000000000000000000000000000000000000000000000000000000'
+        }
+      ])
     })
 
     const identity = await getIdentity()
@@ -106,11 +108,13 @@ describe('dcl name checker: on-chain', function () {
     const dclNameChecker = await createOnChainDclNameChecker({
       config,
       logs,
-      ethereumProvider: createHttpProviderMock({
-        jsonrpc: '2.0',
-        id: 1,
-        result: '0x0000000000000000000000000000000000000000000000000000000000000001'
-      })
+      ethereumProvider: createHttpProviderMock([
+        {
+          jsonrpc: '2.0',
+          id: 1,
+          result: '0x0000000000000000000000000000000000000000000000000000000000000001'
+        }
+      ])
     })
 
     const identity = await getIdentity()
