@@ -16,6 +16,21 @@ describe('name deny list checker', function () {
     logs = await createLogComponent({ config })
   })
 
+  it('when invalid network configured, it fails to create component', async () => {
+    config = createConfigComponent({
+      ETH_NETWORK: 'invalid',
+      LOG_LEVEL: 'DEBUG'
+    })
+
+    await expect(
+      createNameDenyListChecker({
+        config,
+        logs,
+        ethereumProvider: createHttpProviderMock()
+      })
+    ).rejects.toThrowError('Invalid ETH_NETWORK: invalid')
+  })
+
   it('when on chain validation returns false', async () => {
     const nameDenyListChecker = await createNameDenyListChecker({
       config,
