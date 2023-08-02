@@ -23,7 +23,7 @@ export async function createNameDenyListChecker(
     fetchMethod: async (_: string): Promise<string[]> => {
       logger.info(`Fetching name deny list from contract ${contracts.nameDenylist}`)
       const list = await getNameDenylistFromContract(nameDenyList)
-      logger.debug(`Fetched name deny list: ${list}`)
+      logger.debug(`Fetched list: ${list}`)
       return list
     }
   })
