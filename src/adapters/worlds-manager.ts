@@ -32,11 +32,18 @@ export async function createWorldsManagerComponent({
     max: 100,
     ttl: 2 * 1000, // cache for 2 seconds (should be enough for multiple accesses during the same request)
     fetchMethod: async (worldName, staleValue): Promise<WorldMetadata | undefined> => {
+      console.info('about to request ' + worldName)
       const content = await storage.retrieve(`name-${worldName.toLowerCase()}`)
+      console.info('after response ' + worldName)
       if (!content) {
+        console.info('no content')
         return staleValue
       }
-      return JSON.parse((await streamToBuffer(await content.asStream())).toString())
+      console.info('before consuming stream')
+      const buffer = await streamToBuffer(await content.asStream())
+      console.info('after buffer')
+
+      return JSON.parse(buffer.toString())
     }
   })
 
@@ -71,7 +78,13 @@ export async function createWorldsManagerComponent({
 
   async function storeWorldMetadata(worldName: string, worldMetadata: Partial<WorldMetadata>): Promise<void> {
     const content = await storage.retrieve(`name-${worldName.toLowerCase()}`)
-    const contentMetadata = content ? JSON.parse((await streamToBuffer(await content.asStream())).toString()) : {}
+    // logger.info('storeWorldMetadata content', content)
+    const contentAsStream = await content?.asStream()
+    // logger.info('storeWorldMetadata contentAsStream', contentAsStream)
+    const buffer = contentAsStream ? await streamToBuffer(contentAsStream) : {}
+    // logger.info('storeWorldMetadata buffer', buffer)
+    const contentMetadata = content ? JSON.parse(buffer.toString()) : {}
+    logger.info('storeWorldMetadata contentMetadata', contentMetadata)
     const metadata: Partial<WorldMetadata> = Object.assign({}, contentMetadata, worldMetadata)
     Object.assign(metadata, worldMetadata)
 

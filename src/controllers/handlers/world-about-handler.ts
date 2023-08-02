@@ -14,7 +14,9 @@ export async function worldAboutHandler({
   HandlerContextWithPath<'config' | 'status' | 'worldsManager', '/world/:world_name/about'>,
   'components' | 'params' | 'url'
 >) {
+  console.info('about 1')
   const worldMetadata = await worldsManager.getMetadataForWorld(params.world_name)
+  console.info('about 2')
   if (!worldMetadata || !worldMetadata.entityId) {
     return {
       status: 404,
