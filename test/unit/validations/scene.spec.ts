@@ -29,7 +29,7 @@ import {
   validateThumbnail
 } from '../../../src/logic/validations/scene'
 import { createSceneDeployment } from './shared'
-import { createMockNameDenyListChecker } from '../../mocks/dcl-name-deny-list-checker-mock'
+import { createMockNameDenyListChecker } from '../../mocks/name-deny-list-checker-mock'
 
 describe('scene validations', function () {
   let config: IConfigComponent

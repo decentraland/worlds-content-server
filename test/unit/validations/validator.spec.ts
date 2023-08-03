@@ -15,7 +15,7 @@ import { createWorldsManagerComponent } from '../../../src/adapters/worlds-manag
 import { createLogComponent } from '@well-known-components/logger'
 import { createSceneDeployment } from './shared'
 import { createValidator } from '../../../src/logic/validations'
-import { createMockNameDenyListChecker } from '../../mocks/dcl-name-deny-list-checker-mock'
+import { createMockNameDenyListChecker } from '../../mocks/name-deny-list-checker-mock'
 
 describe('validator', function () {
   let config: IConfigComponent

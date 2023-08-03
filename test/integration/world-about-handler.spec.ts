@@ -183,7 +183,7 @@ test('world about handler /world/:world_name/about', function ({ components }) {
 
     const r = await localFetch.fetch('/world/missing-world.dcl.eth/about')
     expect(r.status).toEqual(404)
-    expect(await r.text()).toEqual('World "missing-world.dcl.eth" has no scene deployed.')
+    expect(await r.json()).toMatchObject({ message: `World "missing-world.dcl.eth" has no scene deployed.` })
   })
 })
 
@@ -192,7 +192,6 @@ test('world about handler /world/:world_name/about', function ({ components }) {
     const { localFetch, storage } = components
 
     await storeJson(storage, 'name-some-name.dcl.eth', {
-      // entityId: ENTITY_CID,
       runtimeMetadata: {
         entityIds: [],
         name: 'some-name.dcl.eth'
@@ -201,6 +200,32 @@ test('world about handler /world/:world_name/about', function ({ components }) {
 
     const r = await localFetch.fetch('/world/some-name.dcl.eth/about')
     expect(r.status).toEqual(404)
-    expect(await r.text()).toEqual('World "some-name.dcl.eth" has no scene deployed.')
+    expect(await r.json()).toMatchObject({ message: `World "${ENS}" has no scene deployed.` })
+  })
+})
+
+test('world about handler /world/:world_name/about', function ({ components, stubComponents }) {
+  it('when name is deny-listed it responds 404', async () => {
+    const { localFetch, storage } = components
+    const { nameDenyListChecker } = stubComponents
+
+    nameDenyListChecker.checkNameDenyList.withArgs(ENS.replace('.dcl.eth', '')).resolves(false)
+
+    await storeJson(storage, `name-${ENS}`, {
+      entityId: ENTITY_CID,
+      runtimeMetadata: {
+        entityIds: [ENTITY_CID],
+        minimapDataImage: undefined,
+        minimapEstateImage: undefined,
+        minimapVisible: false,
+        name: `${ENS}`,
+        skyboxTextures: [],
+        thumbnailFile: undefined
+      }
+    })
+
+    const r = await localFetch.fetch(`/world/${ENS}/about`)
+    expect(r.status).toEqual(404)
+    expect(await r.json()).toMatchObject({ message: `World "${ENS}" has no scene deployed.` })
   })
 })

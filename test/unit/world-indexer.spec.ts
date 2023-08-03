@@ -2,26 +2,29 @@ import { createWorldsIndexerComponent } from '../../src/adapters/worlds-indexer'
 import { createLogComponent } from '@well-known-components/logger'
 import { IConfigComponent, ILoggerComponent } from '@well-known-components/interfaces'
 import { createConfigComponent } from '@well-known-components/env-config-provider'
-import { createInMemoryStorage, IContentStorageComponent } from '@dcl/catalyst-storage'
+import { bufferToStream, createInMemoryStorage, IContentStorageComponent, streamToBuffer } from '@dcl/catalyst-storage'
 import { createWorldsManagerComponent } from '../../src/adapters/worlds-manager'
-import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage'
 import { stringToUtf8Bytes } from 'eth-connect'
-import { IWorldsIndexer, IWorldsManager, WorldData } from '../../src/types'
+import { INameDenyListChecker, IWorldsIndexer, IWorldsManager, WorldData } from '../../src/types'
+import { createMockNameDenyListChecker } from '../mocks/name-deny-list-checker-mock'
 
 describe('All data from worlds', function () {
   let config: IConfigComponent
+  let nameDenyListChecker: INameDenyListChecker
   let logs: ILoggerComponent
   let storage: IContentStorageComponent
   let worldsManager: IWorldsManager
   let worldsIndexer: IWorldsIndexer
 
   beforeEach(async () => {
-    config = await createConfigComponent({})
+    config = createConfigComponent({})
     logs = await createLogComponent({ config })
-    storage = await createInMemoryStorage()
+    storage = createInMemoryStorage()
+    nameDenyListChecker = createMockNameDenyListChecker(['banned-name'])
     worldsManager = await createWorldsManagerComponent({ logs, storage })
     worldsIndexer = await createWorldsIndexerComponent({
       logs,
+      nameDenyListChecker,
       storage,
       worldsManager
     })
@@ -46,6 +49,10 @@ describe('All data from worlds', function () {
     )
     await storage.storeStream(
       'name-missing-world-name.dcl.eth',
+      bufferToStream(Buffer.from(stringToUtf8Bytes(JSON.stringify({ acl: [] }))))
+    )
+    await storage.storeStream(
+      'name-banned-name.dcl.eth',
       bufferToStream(Buffer.from(stringToUtf8Bytes(JSON.stringify({ acl: [] }))))
     )
     await storage.storeStream(

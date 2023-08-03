@@ -3,11 +3,14 @@ import { IHttpServerComponent } from '@well-known-components/interfaces'
 import { verify, DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
 
 export async function commsAdapterHandler(
-  context: HandlerContextWithPath<'commsAdapter' | 'config' | 'storage' | 'fetch', '/get-comms-adapter/:roomId'> &
+  context: HandlerContextWithPath<
+    'commsAdapter' | 'fetch' | 'config' | 'nameDenyListChecker' | 'storage',
+    '/get-comms-adapter/:roomId'
+  > &
     DecentralandSignatureContext<any>
 ): Promise<IHttpServerComponent.IResponse> {
   const {
-    components: { commsAdapter, config, storage, fetch }
+    components: { commsAdapter, config, fetch, nameDenyListChecker, storage }
   } = context
 
   const baseUrl = (await config.getString('HTTP_BASE_URL')) || `${context.url.protocol}//${context.url.host}`
@@ -31,13 +34,17 @@ export async function commsAdapterHandler(
   if (!validateMetadata(context.verification!.authMetadata)) {
     throw new InvalidRequestError('Access denied, invalid metadata')
   }
-
   const roomPrefix = await config.requireString('COMMS_ROOM_PREFIX')
+
   if (!context.params.roomId.startsWith(roomPrefix)) {
     throw new InvalidRequestError('Invalid room id requested.')
   }
 
   const worldName = context.params.roomId.substring(roomPrefix.length)
+
+  if (!(await nameDenyListChecker.checkNameDenyList(worldName))) {
+    throw new NotFoundError(`World "${worldName}" does not exist.`)
+  }
 
   if (!(await storage.exist('name-' + worldName))) {
     throw new NotFoundError(`World "${worldName}" does not exist.`)

@@ -8,9 +8,10 @@ const GLOBAL_INDEX_FILE = 'global-index.json'
 
 export async function createWorldsIndexerComponent({
   logs,
+  nameDenyListChecker,
   storage,
   worldsManager
-}: Pick<AppComponents, 'logs' | 'storage' | 'worldsManager'>): Promise<IWorldsIndexer> {
+}: Pick<AppComponents, 'logs' | 'nameDenyListChecker' | 'storage' | 'worldsManager'>): Promise<IWorldsIndexer> {
   const logger = logs.getLogger('worlds-indexer')
 
   async function fetchWorldsData(deployedWorldsNames: string[]) {
@@ -18,6 +19,9 @@ export async function createWorldsIndexerComponent({
 
     const byName = new Map<string, WorldData | undefined>()
     for (const worldName of deployedWorldsNames) {
+      if (!(await nameDenyListChecker.checkNameDenyList(worldName))) {
+        continue
+      }
       queue
         .add(async () => {
           const entity = await worldsManager.getEntityForWorld(worldName)

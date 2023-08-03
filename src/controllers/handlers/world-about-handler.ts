@@ -1,4 +1,4 @@
-import { HandlerContextWithPath } from '../../types'
+import { HandlerContextWithPath, NotFoundError } from '../../types'
 import {
   AboutResponse,
   AboutResponse_MinimapConfiguration,
@@ -9,17 +9,18 @@ import { l1Contracts, L1Network } from '@dcl/catalyst-contracts'
 export async function worldAboutHandler({
   params,
   url,
-  components: { config, status, worldsManager }
+  components: { config, nameDenyListChecker, status, worldsManager }
 }: Pick<
-  HandlerContextWithPath<'config' | 'status' | 'worldsManager', '/world/:world_name/about'>,
+  HandlerContextWithPath<'config' | 'nameDenyListChecker' | 'status' | 'worldsManager', '/world/:world_name/about'>,
   'components' | 'params' | 'url'
 >) {
+  if (!(await nameDenyListChecker.checkNameDenyList(params.world_name))) {
+    throw new NotFoundError(`World "${params.world_name}" has no scene deployed.`)
+  }
+
   const worldMetadata = await worldsManager.getMetadataForWorld(params.world_name)
   if (!worldMetadata || !worldMetadata.entityId) {
-    return {
-      status: 404,
-      body: `World "${params.world_name}" has no scene deployed.`
-    }
+    throw new NotFoundError(`World "${params.world_name}" has no scene deployed.`)
   }
 
   const runtimeMetadata = worldMetadata.runtimeMetadata

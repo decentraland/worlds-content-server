@@ -60,6 +60,15 @@ test('cast adapter handler /cast-adapter/:roomId', function ({ components, stubC
     expect(await r.json()).toMatchObject({ message: 'World "noRoom" does not exist.' })
   })
 
+  it('fails when signed-fetch request metadata is correct but name is deny listed', async () => {
+    const { nameDenyListChecker } = stubComponents
+    nameDenyListChecker.checkNameDenyList.withArgs('myRoom').resolves(false)
+
+    const r = await makeRequest('/cast-adapter/world-noRoom', identity)
+    expect(r.status).toEqual(404)
+    expect(await r.json()).toMatchObject({ message: 'World "noRoom" does not exist.' })
+  })
+
   it('fails when signed-fetch request metadata is correct but room id is invalid', async () => {
     const path = '/cast-adapter/myRoom'
     const r = await makeRequest(path, identity)

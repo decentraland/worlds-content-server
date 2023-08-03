@@ -84,6 +84,49 @@ test('comms adapter handler /get-comms-adapter/:roomId', function ({ components 
   })
 })
 
+test('comms adapter handler /get-comms-adapter/:roomId', function ({ components, stubComponents }) {
+  it('fails when signed-fetch request metadata is correct but name is deny listed', async () => {
+    const { localFetch, storage } = components
+    const { nameDenyListChecker } = stubComponents
+
+    nameDenyListChecker.checkNameDenyList.withArgs('myRoom').resolves(false)
+
+    const identity = await getIdentity()
+    await storeJson(storage, 'name-myRoom', '')
+
+    const path = '/get-comms-adapter/world-myRoom'
+    const actualInit = {
+      method: 'POST',
+      headers: {
+        ...getAuthHeaders(
+          'post',
+          path,
+          {
+            origin: 'https://play.decentraland.org',
+            intent: 'dcl:explorer:comms-handshake',
+            signer: 'dcl:explorer',
+            isGuest: 'false'
+          },
+          (payload) =>
+            Authenticator.signPayload(
+              {
+                ephemeralIdentity: identity.ephemeralIdentity,
+                expiration: new Date(),
+                authChain: identity.authChain.authChain
+              },
+              payload
+            )
+        )
+      }
+    }
+
+    const r = await localFetch.fetch(path, actualInit)
+
+    expect(r.status).toEqual(404)
+    expect(await r.json()).toMatchObject({ message: 'World "myRoom" does not exist.' })
+  })
+})
+
 test('comms adapter handler /get-comms-adapter/:roomId', function ({ components }) {
   it('fails when signed-fetch request metadata is correct but room id is invalid', async () => {
     const { localFetch } = components
