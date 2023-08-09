@@ -16,7 +16,7 @@
     "@dcl/crypto": "^3.4.3",
     "@dcl/hashing": "^3.0.1",
     "@dcl/platform-crypto-middleware": "^1.0.1",
-    "@dcl/protocol": "^1.0.0-5716101271.commit-c36ca28",
+    "@dcl/protocol": "^1.0.0-5752058730.commit-921fc5d",
     "@dcl/schemas": "^9.0.0",
     "@types/busboy": "^1.5.0",
     "@well-known-components/env-config-provider": "^1.2.0",
