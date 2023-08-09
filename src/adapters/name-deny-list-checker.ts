@@ -5,7 +5,7 @@ export async function createNameDenyListChecker(
   components: Pick<AppComponents, 'config' | 'logs' | 'fetch'>
 ): Promise<INameDenyListChecker> {
   const logger = components.logs.getLogger('name-deny-list-provider')
-  const url = await components.config.getString('DCL_NAME_STATS_URL')
+  const url = await components.config.getString('DCL_LISTS_URL')
   if (url) {
     logger.info(`Using name deny list from ${url}.`)
   } else {

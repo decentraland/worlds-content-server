@@ -10,7 +10,7 @@ describe('name deny list checker', function () {
 
   beforeEach(async () => {
     config = createConfigComponent({
-      DCL_NAME_STATS_URL: 'https://some-api.dcl.net',
+      DCL_LISTS_URL: 'https://some-api.dcl.net',
       LOG_LEVEL: 'DEBUG'
     })
     logs = await createLogComponent({ config })
