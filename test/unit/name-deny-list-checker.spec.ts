@@ -1,8 +1,8 @@
 import { createConfigComponent } from '@well-known-components/env-config-provider'
 import { createLogComponent } from '@well-known-components/logger'
 import { IConfigComponent, ILoggerComponent } from '@well-known-components/interfaces'
-import { createHttpProviderMock } from '../mocks/http-provider-mock'
 import { createNameDenyListChecker } from '../../src/adapters/name-deny-list-checker'
+import { createFetchComponent } from '../../src/adapters/fetch'
 
 describe('name deny list checker', function () {
   let logs: ILoggerComponent
@@ -10,40 +10,41 @@ describe('name deny list checker', function () {
 
   beforeEach(async () => {
     config = createConfigComponent({
-      ETH_NETWORK: 'mainnet',
+      DCL_LISTS_URL: 'https://some-api.dcl.net',
       LOG_LEVEL: 'DEBUG'
     })
     logs = await createLogComponent({ config })
   })
 
-  it('when invalid network configured, it fails to create component', async () => {
+  it('when no url provided, it creates a component that does not validate anything, always accepts the names', async () => {
     config = createConfigComponent({
-      ETH_NETWORK: 'invalid',
       LOG_LEVEL: 'DEBUG'
     })
+    const fetch = await createFetchComponent()
+    fetch.fetch = jest.fn().mockRejectedValue('should never be called')
 
-    await expect(
-      createNameDenyListChecker({
-        config,
-        logs,
-        ethereumProvider: createHttpProviderMock()
-      })
-    ).rejects.toThrowError('Invalid ETH_NETWORK: invalid')
-  })
-
-  it('when on chain validation returns false', async () => {
     const nameDenyListChecker = await createNameDenyListChecker({
       config,
       logs,
-      ethereumProvider: createHttpProviderMock([
-        { jsonrpc: '2.0', id: 1, result: '0x0000000000000000000000000000000000000000000000000000000000000001' },
-        {
-          jsonrpc: '2.0',
-          id: 2,
-          result:
-            '0x0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000b62616E6E65642D6E616D65000000000000000000000000000000000000000000'
-        }
-      ])
+      fetch
+    })
+    await expect(nameDenyListChecker.checkNameDenyList('banned-name.dcl.eth')).resolves.toBeTruthy()
+    await expect(nameDenyListChecker.checkNameDenyList('good-name.dcl.eth')).resolves.toBeTruthy()
+  })
+
+  it('does the right validation depending on the obtained list', async () => {
+    const fetch = await createFetchComponent()
+    fetch.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          data: ['banned-name']
+        })
+    })
+    const nameDenyListChecker = await createNameDenyListChecker({
+      config,
+      logs,
+      fetch
     })
 
     await expect(nameDenyListChecker.checkNameDenyList('banned-name.dcl.eth')).resolves.toBeFalsy()

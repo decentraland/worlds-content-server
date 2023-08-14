@@ -84,7 +84,7 @@ export async function initComponents(): Promise<AppComponents> {
 
   const nameDenyListChecker: INameDenyListChecker = await createNameDenyListChecker({
     config,
-    ethereumProvider,
+    fetch,
     logs
   })
 
