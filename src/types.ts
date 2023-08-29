@@ -13,6 +13,7 @@ import { ISubgraphComponent } from '@well-known-components/thegraph-component'
 import { IStatusComponent } from './adapters/status'
 import { AuthChain, AuthLink, Entity, EthAddress, IPFSv2 } from '@dcl/schemas'
 import { MigrationExecutor } from './migrations/migration-executor'
+import { IPgComponent } from '@well-known-components/pg-component'
 
 export type GlobalContext = {
   components: BaseComponents
@@ -162,6 +163,7 @@ export type BaseComponents = {
   migrationExecutor: MigrationExecutor
   nameDenyListChecker: INameDenyListChecker
   namePermissionChecker: IWorldNamePermissionChecker
+  pg: IPgComponent
   server: IHttpServerComponent<GlobalContext>
   sns: SnsComponent
   status: IStatusComponent
