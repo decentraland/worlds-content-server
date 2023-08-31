@@ -9,7 +9,7 @@ import { initComponents as originalInitComponents } from '../src/components'
 import { createMockMarketplaceSubGraph } from './mocks/marketplace-subgraph-mock'
 import { createMockNamePermissionChecker } from './mocks/dcl-name-checker-mock'
 import { createMockLimitsManagerComponent } from './mocks/limits-manager-mock'
-import { createWorldsManagerComponent } from '../src/adapters/worlds-manager'
+import { createWorldsManagerMockComponent } from './mocks/worlds-manager-mock'
 import { createMockStatusComponent } from './mocks/status-mock'
 import { createInMemoryStorage } from '@dcl/catalyst-storage'
 import { createMockCommsAdapterComponent } from './mocks/comms-adapter-mock'
@@ -65,7 +65,7 @@ async function initComponents(): Promise<TestComponents> {
 
   const commsAdapter = createMockCommsAdapterComponent()
 
-  const worldsManager = await createWorldsManagerComponent({ logs, pg: components.pg, storage })
+  const worldsManager = await createWorldsManagerMockComponent({ storage })
   const worldsIndexer = await createWorldsIndexerComponent({
     logs,
     nameDenyListChecker,
