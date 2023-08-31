@@ -11,7 +11,9 @@ jobs:
       postgres:
         image: postgres
         env:
-          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: worlds_content_server
+          POSTGRES_PASSWORD: pass1234
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -36,5 +38,5 @@ jobs:
       - name: test
         run: yarn test
         env:
-          PG_COMPONENT_PSQL_CONNECTION_STRING: postgres://postgres:postgres@localhost/worlds_content_server
+          PG_COMPONENT_PSQL_CONNECTION_STRING: postgres://postgres:pass1234@localhost/worlds_content_server
 
