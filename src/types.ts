@@ -120,7 +120,8 @@ export type IWorldsManager = {
   getDeployedWorldsNames(): Promise<string[]>
   getMetadataForWorld(worldName: string): Promise<WorldMetadata | undefined>
   getEntityForWorld(worldName: string): Promise<Entity | undefined>
-  storeWorldMetadata(worldName: string, metadata: Partial<WorldMetadata>): Promise<void>
+  deployScene(worldName: string, scene: Entity): Promise<void>
+  storeAcl(worldName: string, acl: AuthChain): Promise<void>
 }
 
 export type WorldsIndex = {

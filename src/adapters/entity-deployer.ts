@@ -3,7 +3,6 @@ import { AuthLink, Entity, EntityType } from '@dcl/schemas'
 import { bufferToStream } from '@dcl/catalyst-storage/dist/content-item'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
-import { extractWorldRuntimeMetadata } from '../logic/world-runtime-metadata-utils'
 import { SNS } from 'aws-sdk'
 
 type PostDeploymentHook = (baseUrl: string, entity: Entity, authChain: AuthLink[]) => Promise<DeploymentResult>
@@ -69,10 +68,7 @@ export function createEntityDeployer(
     const worldName = entity.metadata.worldConfiguration.name
     logger.debug(`Deployment for scene "${entity.id}" under world name "${worldName}"`)
 
-    await worldsManager.storeWorldMetadata(worldName, {
-      entityId: entity.id,
-      runtimeMetadata: extractWorldRuntimeMetadata(worldName, entity)
-    })
+    await worldsManager.deployScene(worldName, entity)
 
     metrics.increment('world_deployments_counter')
 

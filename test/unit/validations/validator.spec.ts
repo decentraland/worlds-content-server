@@ -11,11 +11,10 @@ import { createMockLimitsManagerComponent } from '../../mocks/limits-manager-moc
 import { createMockNamePermissionChecker } from '../../mocks/dcl-name-checker-mock'
 import { getIdentity, Identity } from '../../utils'
 import { IConfigComponent } from '@well-known-components/interfaces'
-import { createWorldsManagerComponent } from '../../../src/adapters/worlds-manager'
-import { createLogComponent } from '@well-known-components/logger'
 import { createSceneDeployment } from './shared'
 import { createValidator } from '../../../src/logic/validations'
 import { createMockNameDenyListChecker } from '../../mocks/name-deny-list-checker-mock'
+import { createWorldsManagerMockComponent } from '../../mocks/worlds-manager-mock'
 
 describe('validator', function () {
   let config: IConfigComponent
@@ -35,10 +34,7 @@ describe('validator', function () {
     limitsManager = createMockLimitsManagerComponent()
     nameDenyListChecker = createMockNameDenyListChecker(['whatever.dcl.eth'])
     worldNamePermissionChecker = createMockNamePermissionChecker(['whatever.dcl.eth'])
-    worldsManager = await createWorldsManagerComponent({
-      logs: await createLogComponent({ config }),
-      storage
-    })
+    worldsManager = await createWorldsManagerMockComponent({ storage })
 
     identity = await getIdentity()
     components = {

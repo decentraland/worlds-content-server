@@ -3,10 +3,10 @@ import { createLogComponent } from '@well-known-components/logger'
 import { IConfigComponent, ILoggerComponent } from '@well-known-components/interfaces'
 import { createConfigComponent } from '@well-known-components/env-config-provider'
 import { bufferToStream, createInMemoryStorage, IContentStorageComponent, streamToBuffer } from '@dcl/catalyst-storage'
-import { createWorldsManagerComponent } from '../../src/adapters/worlds-manager'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { INameDenyListChecker, IWorldsIndexer, IWorldsManager, WorldData } from '../../src/types'
 import { createMockNameDenyListChecker } from '../mocks/name-deny-list-checker-mock'
+import { createWorldsManagerMockComponent } from '../mocks/worlds-manager-mock'
 
 describe('All data from worlds', function () {
   let config: IConfigComponent
@@ -21,7 +21,7 @@ describe('All data from worlds', function () {
     logs = await createLogComponent({ config })
     storage = createInMemoryStorage()
     nameDenyListChecker = createMockNameDenyListChecker(['banned-name'])
-    worldsManager = await createWorldsManagerComponent({ logs, storage })
+    worldsManager = await createWorldsManagerMockComponent({ storage })
     worldsIndexer = await createWorldsIndexerComponent({
       logs,
       nameDenyListChecker,

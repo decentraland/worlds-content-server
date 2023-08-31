@@ -1,5 +1,5 @@
 import { createConfigComponent } from '@well-known-components/env-config-provider'
-import { createInMemoryStorage, IContentStorageComponent } from '@dcl/catalyst-storage'
+import { bufferToStream, createInMemoryStorage, IContentStorageComponent } from '@dcl/catalyst-storage'
 import {
   ILimitsManager,
   INameDenyListChecker,
@@ -14,9 +14,7 @@ import { createMockNamePermissionChecker } from '../../mocks/dcl-name-checker-mo
 import { getIdentity, Identity } from '../../utils'
 import { IConfigComponent } from '@well-known-components/interfaces'
 import { hashV1 } from '@dcl/hashing'
-import { bufferToStream } from '@dcl/catalyst-storage'
-import { createWorldsManagerComponent } from '../../../src/adapters/worlds-manager'
-import { createLogComponent } from '@well-known-components/logger'
+import { createWorldsManagerMockComponent } from '../../mocks/worlds-manager-mock'
 import {
   createValidateDeploymentPermission,
   createValidateSceneDimensions,
@@ -49,10 +47,7 @@ describe('scene validations', function () {
     limitsManager = createMockLimitsManagerComponent()
     nameDenyListChecker = createMockNameDenyListChecker(['whatever.dcl.eth'])
     worldNamePermissionChecker = createMockNamePermissionChecker(['whatever.dcl.eth'])
-    worldsManager = await createWorldsManagerComponent({
-      logs: await createLogComponent({ config }),
-      storage
-    })
+    worldsManager = await createWorldsManagerMockComponent({ storage })
 
     identity = await getIdentity()
     components = {

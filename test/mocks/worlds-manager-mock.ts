@@ -1,48 +1,18 @@
-import { AppComponents, IWorldsManager, WorldMetadata } from '../types'
-import LRU from 'lru-cache'
+import { AppComponents, IWorldsManager, WorldMetadata } from '../../src/types'
 import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage'
 import { AuthChain, Entity } from '@dcl/schemas'
 import { stringToUtf8Bytes } from 'eth-connect'
-import { extractWorldRuntimeMetadata } from '../logic/world-runtime-metadata-utils'
+import { extractWorldRuntimeMetadata } from '../../src/logic/world-runtime-metadata-utils'
 
-export async function createWorldsManagerComponent({
-  logs,
+export async function createWorldsManagerMockComponent({
   storage
-}: Pick<AppComponents, 'logs' | 'storage'>): Promise<IWorldsManager> {
-  const logger = logs.getLogger('worlds-manager')
-  const WORLDS_KEY = 'worlds'
-
-  const cache = new LRU<string, string[]>({
-    max: 1,
-    ttl: 10 * 60 * 1000, // cache for 10 minutes
-    fetchMethod: async (_, staleValue): Promise<string[] | undefined> => {
-      try {
-        const worlds = []
-        for await (const key of storage.allFileIds('name-')) {
-          worlds.push(key.substring(5)) // remove "name-" prefix
-        }
-        return worlds
-      } catch (_: any) {
-        logger.warn(`Error retrieving worlds from storage: ${_.message}`)
-        return staleValue
-      }
-    }
-  })
-
-  const worldsCache = new LRU<string, WorldMetadata>({
-    max: 100,
-    ttl: 2 * 1000, // cache for 2 seconds (should be enough for multiple accesses during the same request)
-    fetchMethod: async (worldName, staleValue): Promise<WorldMetadata | undefined> => {
-      const content = await storage.retrieve(`name-${worldName.toLowerCase()}`)
-      if (!content) {
-        return staleValue
-      }
-      return JSON.parse((await streamToBuffer(await content.asStream())).toString())
-    }
-  })
-
+}: Pick<AppComponents, 'storage'>): Promise<IWorldsManager> {
   async function getDeployedWorldsNames(): Promise<string[]> {
-    return (await cache.fetch(WORLDS_KEY))!
+    const worlds = []
+    for await (const key of storage.allFileIds('name-')) {
+      worlds.push(key.substring(5)) // remove "name-" prefix
+    }
+    return worlds
   }
 
   async function getEntityForWorld(worldName: string): Promise<Entity | undefined> {
@@ -67,12 +37,15 @@ export async function createWorldsManagerComponent({
   }
 
   async function getMetadataForWorld(worldName: string): Promise<WorldMetadata | undefined> {
-    return await worldsCache.fetch(worldName)
+    const content = await storage.retrieve(`name-${worldName.toLowerCase()}`)
+    if (!content) {
+      return undefined
+    }
+    return JSON.parse((await streamToBuffer(await content.asStream())).toString())
   }
 
   async function storeWorldMetadata(worldName: string, worldMetadata: Partial<WorldMetadata>): Promise<void> {
-    const content = await storage.retrieve(`name-${worldName.toLowerCase()}`)
-    const contentMetadata = content ? JSON.parse((await streamToBuffer(await content.asStream())).toString()) : {}
+    const contentMetadata = (await getMetadataForWorld(worldName.toLowerCase())) || {}
     const metadata: Partial<WorldMetadata> = Object.assign({}, contentMetadata, worldMetadata)
     Object.assign(metadata, worldMetadata)
 
@@ -80,8 +53,6 @@ export async function createWorldsManagerComponent({
       `name-${worldName.toLowerCase()}`,
       bufferToStream(stringToUtf8Bytes(JSON.stringify(metadata)))
     )
-
-    worldsCache.delete(worldName)
   }
 
   async function deployScene(worldName: string, scene: Entity): Promise<void> {
