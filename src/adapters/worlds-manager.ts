@@ -7,7 +7,6 @@ import SQL from 'sql-template-strings'
 import { extractWorldRuntimeMetadata } from '../logic/world-runtime-metadata-utils'
 
 type WorldRecord = {
-  id: number
   name: string
   owner: string
   deployer: string
@@ -18,6 +17,7 @@ type WorldRecord = {
   created_at: Date
   updated_at: Date
 }
+
 export async function createWorldsManagerComponent({
   logs,
   pg,

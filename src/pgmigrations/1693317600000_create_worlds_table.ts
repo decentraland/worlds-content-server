@@ -2,8 +2,7 @@ import { MigrationBuilder, PgType } from 'node-pg-migrate'
 
 export async function up(pgm: MigrationBuilder): Promise<void> {
   pgm.createTable('worlds', {
-    id: { type: PgType.SERIAL, notNull: true, primaryKey: true },
-    name: { type: PgType.VARCHAR, notNull: true },
+    name: { type: PgType.VARCHAR, notNull: true, primaryKey: true },
     owner: { type: PgType.VARCHAR, notNull: false },
     deployer: { type: PgType.VARCHAR, notNull: false },
     entity_id: { type: PgType.VARCHAR, notNull: false },
@@ -14,7 +13,6 @@ export async function up(pgm: MigrationBuilder): Promise<void> {
     updated_at: { type: PgType.TIMESTAMP, notNull: true }
   })
 
-  pgm.createIndex('worlds', 'name', { unique: true })
   pgm.createIndex('worlds', 'deployer')
 }
 
