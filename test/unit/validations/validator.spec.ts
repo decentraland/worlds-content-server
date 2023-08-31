@@ -30,6 +30,7 @@ describe('validator', function () {
     config = createConfigComponent({
       DEPLOYMENT_TTL: '10000'
     })
+
     storage = createInMemoryStorage()
     limitsManager = createMockLimitsManagerComponent()
     nameDenyListChecker = createMockNameDenyListChecker(['whatever.dcl.eth'])

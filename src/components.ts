@@ -30,8 +30,7 @@ import { createValidator } from './logic/validations'
 import { createEntityDeployer } from './adapters/entity-deployer'
 import { createMigrationExecutor } from './migrations/migration-executor'
 import { createNameDenyListChecker } from './adapters/name-deny-list-checker'
-import { createPgComponent } from '@well-known-components/pg-component'
-import path from 'path'
+import { createDatabase } from './adapters/pg-component'
 
 async function determineNameValidator(
   components: Pick<AppComponents, 'config' | 'ethereumProvider' | 'logs' | 'marketplaceSubGraph'>
@@ -99,7 +98,9 @@ export async function initComponents(): Promise<AppComponents> {
 
   const limitsManager = await createLimitsManagerComponent({ config, fetch, logs })
 
-  const worldsManager = await createWorldsManagerComponent({ logs, storage })
+  const pg = await createDatabase({ config, logs, metrics })
+
+  const worldsManager = await createWorldsManagerComponent({ logs, pg, storage })
   const worldsIndexer = await createWorldsIndexerComponent({
     logs,
     nameDenyListChecker,
@@ -117,20 +118,7 @@ export async function initComponents(): Promise<AppComponents> {
     worldsManager
   })
 
-  const migrationExecutor = createMigrationExecutor({ logs, storage, worldsManager })
-
-  const pg = await createPgComponent(
-    { config, logs, metrics },
-    {
-      migration: {
-        dir: path.resolve(__dirname, 'pgmigrations'),
-        migrationsTable: 'migrations',
-        direction: 'up',
-        databaseUrl: await config.requireString('PG_COMPONENT_PSQL_CONNECTION_STRING'),
-        ignorePattern: '.*\\.map' // avoid sourcemaps
-      }
-    }
-  )
+  const migrationExecutor = createMigrationExecutor({ logs, pg, storage, worldsManager })
 
   return {
     commsAdapter,

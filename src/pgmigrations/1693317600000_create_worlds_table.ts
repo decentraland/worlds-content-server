@@ -9,6 +9,7 @@ export async function up(pgm: MigrationBuilder): Promise<void> {
     entity_id: { type: PgType.VARCHAR, notNull: false },
     deployment_auth_chain: { type: PgType.JSON, notNull: false },
     metadata: { type: PgType.JSON, notNull: false },
+    acl: { type: PgType.JSON, notNull: false },
     created_at: { type: PgType.TIMESTAMP, notNull: true },
     updated_at: { type: PgType.TIMESTAMP, notNull: true }
   })

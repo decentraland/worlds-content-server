@@ -1,6 +1,6 @@
 import { createWorldsIndexerComponent } from '../../src/adapters/worlds-indexer'
 import { createLogComponent } from '@well-known-components/logger'
-import { IConfigComponent, ILoggerComponent } from '@well-known-components/interfaces'
+import { IConfigComponent, ILoggerComponent, IMetricsComponent } from '@well-known-components/interfaces'
 import { createConfigComponent } from '@well-known-components/env-config-provider'
 import { bufferToStream, createInMemoryStorage, IContentStorageComponent, streamToBuffer } from '@dcl/catalyst-storage'
 import { stringToUtf8Bytes } from 'eth-connect'

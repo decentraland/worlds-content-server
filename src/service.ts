@@ -9,9 +9,6 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
     components
   }
 
-  // first of all, run the migrations
-  await components.migrationExecutor.run()
-
   // wire the HTTP router (make it automatic? TBD)
   const router = await setupRouter(globalContext)
   // register routes middleware
@@ -23,4 +20,7 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
 
   // start ports: db, listeners, synchronizations, etc
   await startComponents()
+
+  // first of all, run the migrations
+  await components.migrationExecutor.run()
 }

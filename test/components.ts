@@ -65,7 +65,7 @@ async function initComponents(): Promise<TestComponents> {
 
   const commsAdapter = createMockCommsAdapterComponent()
 
-  const worldsManager = await createWorldsManagerComponent({ logs, storage })
+  const worldsManager = await createWorldsManagerComponent({ logs, pg: components.pg, storage })
   const worldsIndexer = await createWorldsIndexerComponent({
     logs,
     nameDenyListChecker,
@@ -80,10 +80,10 @@ async function initComponents(): Promise<TestComponents> {
 
   const validator = createValidator({
     config,
-    storage,
+    limitsManager,
     nameDenyListChecker,
     namePermissionChecker,
-    limitsManager,
+    storage,
     worldsManager
   })
   const status = createMockStatusComponent()
