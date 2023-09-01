@@ -3,10 +3,8 @@ import { Authenticator, AuthIdentity, IdentityType } from '@dcl/crypto'
 import { Readable } from 'stream'
 import { IContentStorageComponent } from '@dcl/catalyst-storage'
 import { stringToUtf8Bytes } from 'eth-connect'
-import { AuthChain, Entity, EntityType, IPFSv2 } from '@dcl/schemas'
+import { AuthChain } from '@dcl/schemas'
 import { AUTH_CHAIN_HEADER_PREFIX, AUTH_METADATA_HEADER, AUTH_TIMESTAMP_HEADER } from '@dcl/platform-crypto-middleware'
-import { DeploymentBuilder } from 'dcl-catalyst-client'
-import { TextDecoder } from 'util'
 
 export async function storeJson(storage: IContentStorageComponent, fileId: string, data: any) {
   const buffer = stringToUtf8Bytes(JSON.stringify(data))
