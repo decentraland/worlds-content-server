@@ -1,54 +1,60 @@
 import { test } from '../components'
 import { getIdentity, storeJson } from '../utils'
 import { Authenticator } from '@dcl/crypto'
+import { stringToUtf8Bytes } from 'eth-connect'
 
-const ENTITY_CID = 'bafybeictjyqjlkgybfckczpuqlqo7xfhho3jpnep4wesw3ivaeeuqugc2y'
-const ENS = 'some-name.dcl.eth'
-
-test('world about handler /world/:world_name/about', function ({ components }) {
+test('world about handler /world/:world_name/about', function ({ components, stubComponents }) {
   it('when world is not yet deployed it responds 404', async () => {
-    const { localFetch } = components
-    const r = await localFetch.fetch(`/world/${ENS}/about`)
+    const { localFetch, worldCreator } = components
+    const r = await localFetch.fetch(`/world/${worldCreator.randomWorldName()}/about`)
     expect(r.status).toEqual(404)
   })
-})
 
-test('world about handler /world/:world_name/about', function ({ components }) {
   it('when world is not yet deployed but ACL exists it responds 404', async () => {
-    const { localFetch, storage } = components
+    const { localFetch, worldsManager, worldCreator } = components
 
     const delegatedIdentity = await getIdentity()
     const ownerIdentity = await getIdentity()
 
     const payload = `{"resource":"my-world.dcl.eth","allowed":["${delegatedIdentity.realAccount.address}"]}`
 
-    await storeJson(storage, 'name-my-world.dcl.eth', {
-      acl: Authenticator.signPayload(ownerIdentity.authChain, payload)
-    })
+    const worldName = worldCreator.randomWorldName()
+    await worldsManager.storeAcl(worldName, Authenticator.signPayload(ownerIdentity.authChain, payload))
 
-    const r = await localFetch.fetch(`/world/${ENS}/about`)
+    const r = await localFetch.fetch(`/world/${worldName}/about`)
     expect(r.status).toEqual(404)
   })
-})
 
-test('world about handler /world/:world_name/about', function ({ components }) {
   it('when world exists it responds', async () => {
-    const { localFetch, storage } = components
+    const { localFetch, worldCreator } = components
 
-    await storeJson(storage, `name-${ENS}`, {
-      entityId: ENTITY_CID,
-      runtimeMetadata: {
-        entityIds: [ENTITY_CID],
-        minimapDataImage: 'bafkreidduubi76bntd27dewz4cvextrfl3qyd4td6mtztuisxi26q64dnq',
-        minimapEstateImage: undefined,
-        minimapVisible: false,
-        name: 'some-name.dcl.eth',
-        skyboxTextures: ['bafkreidduubi76bntd27dewz4cvextrfl3qyd4td6mtztuisxi26q64dnq'],
-        thumbnailFile: 'bafkreic4chubh3cavwuzgsvszpmhi4zqpf5kfgt6goufuarwbzv4yrkdqq'
-      }
+    const worldName = worldCreator.randomWorldName()
+    const files = new Map<string, Uint8Array>()
+    files.set('abc.png', Buffer.from(stringToUtf8Bytes('Hello world')))
+
+    const { entityId, entity } = await worldCreator.createWorldWithScene({
+      worldName: worldName,
+      metadata: {
+        main: 'abc.txt',
+        scene: {
+          base: '20,24',
+          parcels: ['20,24']
+        },
+        worldConfiguration: {
+          name: worldName,
+          miniMapConfig: {
+            dataImage: 'abc.png'
+          },
+          skyboxConfig: {
+            textures: ['abc.png']
+          }
+        }
+      },
+      files: files
     })
 
-    const r = await localFetch.fetch(`/world/${ENS}/about`)
+    const r = await localFetch.fetch(`/world/${worldName}/about`)
+
     expect(r.status).toEqual(200)
     expect(await r.json()).toEqual({
       healthy: true,
@@ -56,116 +62,158 @@ test('world about handler /world/:world_name/about', function ({ components }) {
       configurations: {
         networkId: 1,
         globalScenesUrn: [],
-        scenesUrn: [`urn:decentraland:entity:${ENTITY_CID}?=&baseUrl=http://0.0.0.0:3000/contents/`],
+        scenesUrn: [`urn:decentraland:entity:${entityId}?=&baseUrl=http://0.0.0.0:3000/contents/`],
         minimap: {
           enabled: false,
-          dataImage: 'http://0.0.0.0:3000/contents/bafkreidduubi76bntd27dewz4cvextrfl3qyd4td6mtztuisxi26q64dnq'
+          dataImage: `http://0.0.0.0:3000/contents/${entity.content[0].hash}`
         },
         skybox: {
-          textures: ['http://0.0.0.0:3000/contents/bafkreidduubi76bntd27dewz4cvextrfl3qyd4td6mtztuisxi26q64dnq']
+          textures: [`http://0.0.0.0:3000/contents/${entity.content[0].hash}`]
         },
-        realmName: ENS
+        realmName: worldName
       },
       content: { healthy: true, publicUrl: 'https://peer.com/content' },
       lambdas: { healthy: true, publicUrl: 'https://peer.com/lambdas' },
       comms: {
         healthy: true,
         protocol: 'v3',
-        fixedAdapter: `signed-login:http://0.0.0.0:3000/get-comms-adapter/world-${ENS}`
+        fixedAdapter: `signed-login:http://0.0.0.0:3000/get-comms-adapter/world-${worldName}`
       }
     })
   })
-})
 
-test('world about handler /world/:world_name/about', function ({ components }) {
   it('when world exists and has minimap it responds', async () => {
-    const { localFetch, storage } = components
+    const { localFetch, worldCreator } = components
 
-    await storeJson(storage, 'name-some-name.dcl.eth', {
-      entityId: ENTITY_CID,
-      runtimeMetadata: {
-        entityIds: [ENTITY_CID],
-        minimapVisible: true,
-        name: 'some-name.dcl.eth'
-      }
-    })
-
-    const r = await localFetch.fetch('/world/some-name.dcl.eth/about')
-    expect(r.status).toEqual(200)
-    expect(await r.json()).toMatchObject({
-      configurations: {
-        minimap: {
-          enabled: true,
-          dataImage: 'https://api.decentraland.org/v1/minimap.png',
-          estateImage: 'https://api.decentraland.org/v1/estatemap.png'
+    // minimap with default images
+    {
+      const worldName = worldCreator.randomWorldName()
+      await worldCreator.createWorldWithScene({
+        worldName: worldName,
+        metadata: {
+          main: 'abc.txt',
+          scene: {
+            base: '20,24',
+            parcels: ['20,24']
+          },
+          worldConfiguration: {
+            name: worldName,
+            miniMapConfig: {
+              visible: true
+            }
+          }
         }
-      }
-    })
+      })
 
-    await storeJson(storage, 'name-some-other-name.dcl.eth', {
-      entityId: ENTITY_CID,
-      runtimeMetadata: {
-        entityIds: [ENTITY_CID],
-        minimapVisible: false,
-        name: 'some-name.dcl.eth',
-        minimapDataImage: 'bafkreidduubi76bntd27dewz4cvextrfl3qyd4td6mtztuisxi26q64dnq',
-        minimapEstateImage: 'bafkreic4chubh3cavwuzgsvszpmhi4zqpf5kfgt6goufuarwbzv4yrkdqq'
-      }
-    })
+      const r = await localFetch.fetch(`/world/${worldName}/about`)
 
-    const r2 = await localFetch.fetch('/world/some-other-name.dcl.eth/about')
-    expect(r2.status).toEqual(200)
-    expect(await r2.json()).toMatchObject({
-      configurations: {
-        minimap: {
-          enabled: false,
-          dataImage: 'http://0.0.0.0:3000/contents/bafkreidduubi76bntd27dewz4cvextrfl3qyd4td6mtztuisxi26q64dnq',
-          estateImage: 'http://0.0.0.0:3000/contents/bafkreic4chubh3cavwuzgsvszpmhi4zqpf5kfgt6goufuarwbzv4yrkdqq'
+      expect(r.status).toEqual(200)
+      expect(await r.json()).toMatchObject({
+        configurations: {
+          minimap: {
+            enabled: true,
+            dataImage: 'https://api.decentraland.org/v1/minimap.png',
+            estateImage: 'https://api.decentraland.org/v1/estatemap.png'
+          }
         }
-      }
-    })
+      })
+    }
+
+    // minimap with dataImage and estateImage
+    {
+      const files = new Map<string, Uint8Array>()
+      files.set('abc.png', Buffer.from(stringToUtf8Bytes('Hello world')))
+      files.set('def.png', Buffer.from(stringToUtf8Bytes('Bye bye world')))
+      const worldName = worldCreator.randomWorldName()
+      const { entity } = await worldCreator.createWorldWithScene({
+        worldName: worldName,
+        metadata: {
+          main: 'abc.txt',
+          scene: {
+            base: '20,24',
+            parcels: ['20,24']
+          },
+          worldConfiguration: {
+            name: worldName,
+            miniMapConfig: {
+              dataImage: 'abc.png',
+              estateImage: 'def.png'
+            }
+          }
+        },
+        files
+      })
+
+      const r2 = await localFetch.fetch(`/world/${worldName}/about`)
+      expect(r2.status).toEqual(200)
+      expect(await r2.json()).toMatchObject({
+        configurations: {
+          minimap: {
+            enabled: false,
+            dataImage: `http://0.0.0.0:3000/contents/${entity.content[0].hash}`,
+            estateImage: `http://0.0.0.0:3000/contents/${entity.content[1].hash}`
+          }
+        }
+      })
+    }
   })
-})
 
-test('world about handler /world/:world_name/about', function ({ components }) {
   it('when world exists and has skybox textures it responds', async () => {
-    const { localFetch, storage } = components
+    const { localFetch, worldCreator } = components
 
-    await storeJson(storage, 'name-some-name.dcl.eth', {
-      entityId: ENTITY_CID,
-      runtimeMetadata: {
-        entityIds: [ENTITY_CID],
-        name: 'some-name.dcl.eth',
-        skyboxTextures: ['bafkreidduubi76bntd27dewz4cvextrfl3qyd4td6mtztuisxi26q64dnq']
-      }
+    const worldName = worldCreator.randomWorldName()
+    const files = new Map<string, Uint8Array>()
+    files.set('abc.png', Buffer.from(stringToUtf8Bytes('Hello world')))
+
+    const { entity } = await worldCreator.createWorldWithScene({
+      worldName: worldName,
+      metadata: {
+        main: 'abc.txt',
+        scene: {
+          base: '20,24',
+          parcels: ['20,24']
+        },
+        worldConfiguration: {
+          name: worldName,
+          skyboxConfig: {
+            textures: ['abc.png']
+          }
+        }
+      },
+      files: files
     })
 
-    const r = await localFetch.fetch('/world/some-name.dcl.eth/about')
+    const r = await localFetch.fetch(`/world/${worldName}/about`)
     expect(r.status).toEqual(200)
     expect(await r.json()).toMatchObject({
       configurations: {
         skybox: {
-          textures: ['http://0.0.0.0:3000/contents/bafkreidduubi76bntd27dewz4cvextrfl3qyd4td6mtztuisxi26q64dnq']
+          textures: [`http://0.0.0.0:3000/contents/${entity.content[0].hash}`]
         }
       }
     })
   })
-})
 
-test('world about handler /world/:world_name/about', function ({ components }) {
   it('when world exists and uses offline comms', async () => {
-    const { localFetch, storage } = components
+    const { localFetch, worldCreator } = components
 
-    await storeJson(storage, 'name-some-name.dcl.eth', {
-      entityId: ENTITY_CID,
-      runtimeMetadata: {
-        entityIds: [ENTITY_CID],
-        name: 'some-name.dcl.eth',
-        fixedAdapter: 'offline:offline'
+    const worldName = worldCreator.randomWorldName()
+    await worldCreator.createWorldWithScene({
+      worldName: worldName,
+      metadata: {
+        main: 'abc.txt',
+        scene: {
+          base: '20,24',
+          parcels: ['20,24']
+        },
+        worldConfiguration: {
+          name: worldName,
+          fixedAdapter: 'offline:offline'
+        }
       }
     })
 
-    const r = await localFetch.fetch('/world/some-name.dcl.eth/about')
+    const r = await localFetch.fetch(`/world/${worldName}/about`)
     expect(r.status).toEqual(200)
     expect(await r.json()).toMatchObject({
       comms: {
@@ -175,57 +223,40 @@ test('world about handler /world/:world_name/about', function ({ components }) {
       }
     })
   })
-})
 
-test('world about handler /world/:world_name/about', function ({ components }) {
   it('when world does not exist it responds with 404', async () => {
-    const { localFetch } = components
+    const { localFetch, worldCreator } = components
 
-    const r = await localFetch.fetch('/world/missing-world.dcl.eth/about')
+    const worldName = worldCreator.randomWorldName()
+
+    const r = await localFetch.fetch(`/world/${worldName}/about`)
     expect(r.status).toEqual(404)
-    expect(await r.json()).toMatchObject({ message: `World "missing-world.dcl.eth" has no scene deployed.` })
+    expect(await r.json()).toMatchObject({ message: `World "${worldName}" has no scene deployed.` })
   })
-})
 
-test('world about handler /world/:world_name/about', function ({ components }) {
   it('when world exists but the scene does not, it responds with 404', async () => {
-    const { localFetch, storage } = components
+    const { localFetch, worldCreator, worldsManager } = components
 
-    await storeJson(storage, 'name-some-name.dcl.eth', {
-      runtimeMetadata: {
-        entityIds: [],
-        name: 'some-name.dcl.eth'
-      }
-    })
+    const identity = await getIdentity()
+    const worldName = worldCreator.randomWorldName()
 
-    const r = await localFetch.fetch('/world/some-name.dcl.eth/about')
+    await worldsManager.storeAcl(worldName, Authenticator.signPayload(identity.authChain, ''))
+
+    const r = await localFetch.fetch(`/world/${worldName}/about`)
     expect(r.status).toEqual(404)
-    expect(await r.json()).toMatchObject({ message: `World "${ENS}" has no scene deployed.` })
+    expect(await r.json()).toMatchObject({ message: `World "${worldName}" has no scene deployed.` })
   })
-})
 
-test('world about handler /world/:world_name/about', function ({ components, stubComponents }) {
   it('when name is deny-listed it responds 404', async () => {
-    const { localFetch, storage } = components
+    const { localFetch, worldCreator } = components
     const { nameDenyListChecker } = stubComponents
 
-    nameDenyListChecker.checkNameDenyList.withArgs(ENS.replace('.dcl.eth', '')).resolves(false)
+    const { worldName } = await worldCreator.createWorldWithScene()
 
-    await storeJson(storage, `name-${ENS}`, {
-      entityId: ENTITY_CID,
-      runtimeMetadata: {
-        entityIds: [ENTITY_CID],
-        minimapDataImage: undefined,
-        minimapEstateImage: undefined,
-        minimapVisible: false,
-        name: `${ENS}`,
-        skyboxTextures: [],
-        thumbnailFile: undefined
-      }
-    })
+    nameDenyListChecker.checkNameDenyList.withArgs(worldName.replace('.dcl.eth', '')).resolves(false)
 
-    const r = await localFetch.fetch(`/world/${ENS}/about`)
+    const r = await localFetch.fetch(`/world/${worldName}/about`)
     expect(r.status).toEqual(404)
-    expect(await r.json()).toMatchObject({ message: `World "${ENS}" has no scene deployed.` })
+    expect(await r.json()).toMatchObject({ message: `World "${worldName}" has no scene deployed.` })
   })
 })
