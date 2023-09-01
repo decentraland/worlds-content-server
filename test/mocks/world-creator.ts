@@ -8,23 +8,27 @@ export function createWorldCreator({
   storage,
   worldsManager
 }: Pick<AppComponents, 'storage' | 'worldsManager'>): IWorldCreator {
-  async function createWorldWithScene(
-    worldName: string = `w-${makeid(10)}.dcl.eth`
-  ): Promise<{ worldName: string; entityId: IPFSv2; entity: Entity }> {
+  async function createWorldWithScene(data?: {
+    worldName?: string
+    metadata?: any
+    files?: Map<string, ArrayBuffer>
+  }): Promise<{ worldName: string; entityId: IPFSv2; entity: Entity }> {
+    const worldName: string = data?.worldName || `w-${makeid(10)}.dcl.eth`
+    const metadata = data?.metadata || {
+      main: 'abc.txt',
+      scene: {
+        base: '20,24',
+        parcels: ['20,24']
+      },
+      worldConfiguration: {
+        name: worldName
+      }
+    }
     const { files, entityId } = await DeploymentBuilder.buildEntity({
       type: EntityType.SCENE as any,
-      pointers: ['0,0'],
-      files: new Map(),
-      metadata: {
-        main: 'abc.txt',
-        scene: {
-          base: '20,24',
-          parcels: ['20,24']
-        },
-        worldConfiguration: {
-          name: worldName
-        }
-      }
+      pointers: metadata.scene.parcels,
+      files: data?.files || new Map(),
+      metadata
     })
 
     const entityWithoutId = JSON.parse(new TextDecoder().decode(files.get(entityId)))

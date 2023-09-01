@@ -174,7 +174,11 @@ export type BaseComponents = {
 export type SnsComponent = { arn?: string }
 
 export type IWorldCreator = {
-  createWorldWithScene(): Promise<{ worldName: string; entityId: IPFSv2; entity: Entity }>
+  createWorldWithScene(data?: {
+    worldName?: string
+    metadata?: any
+    files?: Map<string, ArrayBuffer>
+  }): Promise<{ worldName: string; entityId: IPFSv2; entity: Entity }>
   randomWorldName(): string
 }
 

@@ -1,45 +1,49 @@
 import { test } from '../components'
-import { bufferToStream } from '@dcl/catalyst-storage'
 import { stringToUtf8Bytes } from 'eth-connect'
-import { WorldData } from '../../src/types'
 
 test('index handler GET /index', function ({ components }) {
   it('returns an error when world does not exist', async () => {
-    const { localFetch, storage } = components
+    const { localFetch, worldCreator } = components
 
-    const worldData1: WorldData = {
-      name: 'world-name.dcl.eth',
-      scenes: [
-        {
-          id: 'bafkreielwj3ki46munydwn4ayazdvmjln76khmz2xyaf5v6dkmo6yoebbi',
-          title: 'Mi propia escena',
-          description: 'Mi lugar en el mundo',
-          thumbnail: 'bafkreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku',
-          pointers: ['20,24'],
-          timestamp: 1683916946483
+    const worldName1 = worldCreator.randomWorldName()
+    const w1 = await worldCreator.createWorldWithScene({
+      worldName: worldName1,
+      metadata: {
+        main: 'abc.txt',
+        display: {
+          title: 'My own scene',
+          description: 'My own place in the world',
+          navmapThumbnail: 'abc.png'
+        },
+        scene: {
+          base: '20,24',
+          parcels: ['20,24']
+        },
+        worldConfiguration: {
+          name: worldName1
         }
-      ]
-    }
+      },
+      files: new Map<string, Uint8Array>([['abc.png', Buffer.from(stringToUtf8Bytes('Hello world'))]])
+    })
 
-    const worldData2: WorldData = {
-      name: 'another-world-name.dcl.eth',
-      scenes: [
-        {
-          id: 'bafkreielwj3ki46munydwn4ayazdvmjln76khmz2xyaf5v6dkmo6yoebbi',
-          title: 'Mi propia escena',
-          description: 'Mi lugar en el mundo',
-          pointers: ['20,24'],
-          timestamp: 1683916946483
+    const worldName2 = worldCreator.randomWorldName()
+    const w2 = await worldCreator.createWorldWithScene({
+      worldName: worldName2,
+      metadata: {
+        main: 'cde.txt',
+        display: {
+          title: "Someone else's scene",
+          description: 'Their own place in the world'
+        },
+        scene: {
+          base: '1,6',
+          parcels: ['1,6']
+        },
+        worldConfiguration: {
+          name: worldName2
         }
-      ]
-    }
-
-    await storage.storeStream(
-      'global-index.json',
-      bufferToStream(
-        Buffer.from(stringToUtf8Bytes(JSON.stringify({ index: [worldData1, worldData2], timestamp: Date.now() })))
-      )
-    )
+      }
+    })
 
     const r = await localFetch.fetch('/index')
 
@@ -47,13 +51,29 @@ test('index handler GET /index', function ({ components }) {
     expect(await r.json()).toEqual({
       data: [
         {
-          ...worldData1,
+          name: w1.worldName,
           scenes: [
-            { ...worldData1.scenes[0], thumbnail: `http://0.0.0.0:3000/contents/${worldData1.scenes[0].thumbnail}` }
+            {
+              id: w1.entityId,
+              title: w1.entity.metadata.display.title,
+              description: w1.entity.metadata.display.description,
+              thumbnail: `http://0.0.0.0:3000/contents/${w1.entity.content[0].hash}`,
+              pointers: w1.entity.pointers,
+              timestamp: w1.entity.timestamp
+            }
           ]
         },
         {
-          ...worldData2
+          name: w2.worldName,
+          scenes: [
+            {
+              id: w2.entityId,
+              title: w2.entity.metadata.display.title,
+              description: w2.entity.metadata.display.description,
+              pointers: w2.entity.pointers,
+              timestamp: w2.entity.timestamp
+            }
+          ]
         }
       ],
       lastUpdated: expect.any(String)
