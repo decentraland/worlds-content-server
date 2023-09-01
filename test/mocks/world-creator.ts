@@ -39,7 +39,13 @@ export function createWorldCreator({
       entity
     }
   }
+
+  function randomWorldName(): string {
+    return `w-${makeid(10)}.dcl.eth`
+  }
+
   return {
-    createWorldWithScene
+    createWorldWithScene,
+    randomWorldName
   }
 }
