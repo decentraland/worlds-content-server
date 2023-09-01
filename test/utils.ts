@@ -3,8 +3,10 @@ import { Authenticator, AuthIdentity, IdentityType } from '@dcl/crypto'
 import { Readable } from 'stream'
 import { IContentStorageComponent } from '@dcl/catalyst-storage'
 import { stringToUtf8Bytes } from 'eth-connect'
-import { AuthChain } from '@dcl/schemas'
+import { AuthChain, Entity, EntityType, IPFSv2 } from '@dcl/schemas'
 import { AUTH_CHAIN_HEADER_PREFIX, AUTH_METADATA_HEADER, AUTH_TIMESTAMP_HEADER } from '@dcl/platform-crypto-middleware'
+import { DeploymentBuilder } from 'dcl-catalyst-client'
+import { TextDecoder } from 'util'
 
 export async function storeJson(storage: IContentStorageComponent, fileId: string, data: any) {
   const buffer = stringToUtf8Bytes(JSON.stringify(data))
@@ -66,4 +68,16 @@ export function getAuthHeaders(
   headers[AUTH_METADATA_HEADER] = metadataJSON
 
   return headers
+}
+
+export function makeid(length) {
+  let result = ''
+  const characters = 'abcdefghijklmnopqrstuvwxyz0123456789'
+  const charactersLength = characters.length
+  let counter = 0
+  while (counter < length) {
+    result += characters.charAt(Math.floor(Math.random() * charactersLength))
+    counter += 1
+  }
+  return result
 }

@@ -21,6 +21,7 @@ import { createTestMetricsComponent } from '@well-known-components/metrics'
 import { metricDeclarations } from '../src/metrics'
 import { createEntityDeployer } from '../src/adapters/entity-deployer'
 import { createMockNameDenyListChecker } from './mocks/name-deny-list-checker-mock'
+import { createWorldCreator } from './mocks/world-creator'
 
 /**
  * Behaves like Jest "describe" function, used to describe a test for a
@@ -87,6 +88,8 @@ async function initComponents(): Promise<TestComponents> {
   })
   const status = createMockStatusComponent()
 
+  const worldCreator = createWorldCreator({ storage, worldsManager })
+
   return {
     ...components,
     commsAdapter,
@@ -100,6 +103,7 @@ async function initComponents(): Promise<TestComponents> {
     status,
     storage,
     validator,
+    worldCreator,
     worldsIndexer,
     worldsManager
   }
