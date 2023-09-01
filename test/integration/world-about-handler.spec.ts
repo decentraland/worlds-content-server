@@ -1,5 +1,5 @@
 import { test } from '../components'
-import { getIdentity, storeJson } from '../utils'
+import { getIdentity } from '../utils'
 import { Authenticator } from '@dcl/crypto'
 import { stringToUtf8Bytes } from 'eth-connect'
 
