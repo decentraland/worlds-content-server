@@ -2,7 +2,8 @@ import { AppComponents, IWorldCreator } from '../../src/types'
 import { Entity, EntityType, IPFSv2 } from '@dcl/schemas'
 import { DeploymentBuilder } from 'dcl-catalyst-client'
 import { TextDecoder } from 'util'
-import { makeid, storeJson } from '../utils'
+import { getIdentity, Identity, makeid, storeJson } from '../utils'
+import { Authenticator } from '@dcl/crypto'
 
 export function createWorldCreator({
   storage,
@@ -12,6 +13,7 @@ export function createWorldCreator({
     worldName?: string
     metadata?: any
     files?: Map<string, ArrayBuffer>
+    identity?: Identity
   }): Promise<{ worldName: string; entityId: IPFSv2; entity: Entity }> {
     const worldName: string = data?.worldName || `w-${makeid(10)}.dcl.eth`
     const metadata = data?.metadata || {
@@ -24,6 +26,7 @@ export function createWorldCreator({
         name: worldName
       }
     }
+    const identity = data?.identity || (await getIdentity())
     const { files, entityId } = await DeploymentBuilder.buildEntity({
       type: EntityType.SCENE as any,
       pointers: metadata.scene.parcels,
@@ -33,6 +36,10 @@ export function createWorldCreator({
 
     const entityWithoutId = JSON.parse(new TextDecoder().decode(files.get(entityId)))
     await storeJson(storage, entityId, entityWithoutId)
+
+    const authChain = Authenticator.signPayload(identity.authChain, entityId)
+    await storeJson(storage, entityId + '.auth', authChain)
+
     const entity = { id: entityId, ...entityWithoutId }
 
     await worldsManager.deployScene(worldName, entity)

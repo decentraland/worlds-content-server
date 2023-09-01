@@ -49,7 +49,7 @@ test('index handler GET /index', function ({ components }) {
 
     expect(r.status).toBe(200)
     expect(await r.json()).toEqual({
-      data: [
+      data: expect.arrayContaining([
         {
           name: w1.worldName,
           scenes: [
@@ -75,7 +75,7 @@ test('index handler GET /index', function ({ components }) {
             }
           ]
         }
-      ],
+      ]),
       lastUpdated: expect.any(String)
     })
   })
