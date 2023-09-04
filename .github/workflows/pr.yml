@@ -5,7 +5,7 @@ on:
 
 jobs:
   pr:
-    uses: decentraland/platform-actions/.github/workflows/apps-pr.yml@main
+    uses: decentraland/platform-actions/.github/workflows/apps-with-db-pr.yml@build-app-with-db
     with:
       service-name: worlds-content-server
       dockerfile-url: https://raw.githubusercontent.com/decentraland/platform-actions/main/Dockerfile.alpine
