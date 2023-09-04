@@ -5,8 +5,7 @@ on:
 
 jobs:
   pr:
-    uses: decentraland/platform-actions/.github/workflows/apps-with-db-pr.yml@build-app-with-db
+    uses: decentraland/platform-actions/.github/workflows/apps-pr.yml@main
     with:
       service-name: worlds-content-server
-      dockerfile-url: https://raw.githubusercontent.com/decentraland/platform-actions/main/Dockerfile.alpine
     secrets: inherit
