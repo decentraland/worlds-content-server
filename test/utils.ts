@@ -5,6 +5,7 @@ import { IContentStorageComponent } from '@dcl/catalyst-storage'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { AuthChain } from '@dcl/schemas'
 import { AUTH_CHAIN_HEADER_PREFIX, AUTH_METADATA_HEADER, AUTH_TIMESTAMP_HEADER } from '@dcl/platform-crypto-middleware'
+import { IPgComponent } from '@well-known-components/pg-component'
 
 export async function storeJson(storage: IContentStorageComponent, fileId: string, data: any) {
   const buffer = stringToUtf8Bytes(JSON.stringify(data))
@@ -24,6 +25,16 @@ export async function storeJson(storage: IContentStorageComponent, fileId: strin
       }
     })
   )
+}
+
+export async function cleanup(storage: IContentStorageComponent, db: IPgComponent): Promise<void> {
+  const files = []
+  for await (const key of storage.allFileIds()) {
+    files.push(key)
+  }
+  await storage.delete(files)
+
+  await db.query(`TRUNCATE worlds`)
 }
 
 export type Identity = { authChain: AuthIdentity; realAccount: IdentityType; ephemeralIdentity: IdentityType }

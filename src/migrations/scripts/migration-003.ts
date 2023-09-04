@@ -25,7 +25,7 @@ export default {
     }
 
     // Migrate worlds to a database
-    for await (const key of await storage.allFileIds('name-')) {
+    for await (const key of storage.allFileIds('name-')) {
       if (key.startsWith('name-')) {
         const worldName = key.replace('name-', '')
         const existing = await readFile(key)

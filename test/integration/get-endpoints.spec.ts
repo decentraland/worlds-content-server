@@ -1,10 +1,12 @@
 import { test } from '../components'
 import { Entity } from '@dcl/schemas'
+import { cleanup } from '../utils'
 
 test('consume get endpoints', function ({ components }) {
   let entity: Entity
 
   beforeAll(async () => {
+    await cleanup(components.storage, components.pg)
     const { worldCreator } = components
     const created = await worldCreator.createWorldWithScene()
     entity = created.entity
@@ -47,7 +49,7 @@ test('consume get endpoints', function ({ components }) {
     expect(await r.json()).toMatchObject({
       content: {
         commitHash: expect.any(String),
-        worldsCount: expect.any(Number)
+        worldsCount: 1
       },
       comms: {
         rooms: 1,

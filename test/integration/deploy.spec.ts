@@ -5,16 +5,12 @@ import { Authenticator } from '@dcl/crypto'
 import Sinon from 'sinon'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { hashV1 } from '@dcl/hashing'
-import { getIdentity, storeJson } from '../utils'
+import { cleanup, getIdentity, storeJson } from '../utils'
 import { streamToBuffer } from '@dcl/catalyst-storage'
 
 test('deployment works', function ({ components, stubComponents }) {
   beforeEach(async () => {
-    const files = []
-    for await (const key of await components.storage.allFileIds()) {
-      files.push(key)
-    }
-    await components.storage.delete(files)
+    await cleanup(components.storage, components.pg)
   })
 
   it('creates an entity and deploys it (owner)', async () => {
