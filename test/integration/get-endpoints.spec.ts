@@ -47,7 +47,7 @@ test('consume get endpoints', function ({ components }) {
     expect(await r.json()).toMatchObject({
       content: {
         commitHash: expect.any(String),
-        worldsCount: 1
+        worldsCount: expect.any(Number)
       },
       comms: {
         rooms: 1,

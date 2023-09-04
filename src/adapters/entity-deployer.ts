@@ -35,27 +35,21 @@ export function createEntityDeployer(
     await storage.storeStream(entity.id, bufferToStream(stringToUtf8Bytes(entityJson)))
     await storage.storeStream(entity.id + '.auth', bufferToStream(stringToUtf8Bytes(JSON.stringify(authChain))))
 
-    return await postDeployment(baseUrl, entity, entityJson, authChain)
+    return await postDeployment(baseUrl, entity, authChain)
   }
 
   const postDeploymentHooks: Partial<Record<EntityType, PostDeploymentHook>> = {
     [EntityType.SCENE]: postSceneDeployment
   }
 
-  async function postDeployment(
-    baseUrl: string,
-    entity: Entity,
-    entityMetadataJson: any,
-    authChain: AuthLink[]
-  ): Promise<DeploymentResult> {
+  async function postDeployment(baseUrl: string, entity: Entity, authChain: AuthLink[]): Promise<DeploymentResult> {
     const hookForType = postDeploymentHooks[entity.type] || noPostDeploymentHook
-    return hookForType(baseUrl, entity, entityMetadataJson, authChain)
+    return hookForType(baseUrl, entity, authChain)
   }
 
   async function noPostDeploymentHook(
     _baseUrl: string,
     _entity: Entity,
-    _entityMetadataJson: any,
     _authChain: AuthLink[]
   ): Promise<DeploymentResult> {
     return { message: 'No post deployment hook for this entity type' }

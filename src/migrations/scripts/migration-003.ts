@@ -53,7 +53,7 @@ export default {
         }
 
         const sql = SQL`
-              INSERT INTO worlds (name, owner, deployer, entity_id, deployment_auth_chain, metadata, acl, created_at, updated_at)
+              INSERT INTO worlds (name, owner, deployer, entity_id, deployment_auth_chain, entity, acl, created_at, updated_at)
               VALUES (${worldName}, ${owner}, ${deployer}, ${existing.entityId},
                       ${deploymentAuthChainString}::json,
                       ${sceneString}::json,
