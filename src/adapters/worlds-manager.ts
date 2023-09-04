@@ -66,7 +66,7 @@ export async function createWorldsManagerComponent({
     const tempWorldMetadata: Partial<WorldMetadata> = {}
     if (row.entity) {
       tempWorldMetadata.entityId = row.entity_id
-      tempWorldMetadata.runtimeMetadata = extractWorldRuntimeMetadata(worldName, row.entity)
+      tempWorldMetadata.runtimeMetadata = extractWorldRuntimeMetadata(worldName, { ...row.entity, id: row.entity_id })
     }
     if (row.acl) {
       tempWorldMetadata.acl = row.acl
