@@ -35,7 +35,7 @@
     "p-queue": "^6.6.2"
   },
   "devDependencies": {
-    "@dcl/eslint-config": "^1.1.9",
+    "@dcl/eslint-config": "^1.1.12",
     "@types/node": "^18.16.19",
     "@well-known-components/test-helpers": "^1.5.3",
     "dcl-catalyst-client": "^21.5.5",
