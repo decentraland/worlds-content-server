@@ -20,12 +20,22 @@ type WorldRecord = {
 export async function createWorldsManagerComponent({
   logs,
   database,
+  nameDenyListChecker,
   storage
-}: Pick<AppComponents, 'logs' | 'database' | 'storage'>): Promise<IWorldsManager> {
+}: Pick<AppComponents, 'logs' | 'database' | 'nameDenyListChecker' | 'storage'>): Promise<IWorldsManager> {
   const logger = logs.getLogger('worlds-manager')
 
   async function getMetadataForWorld(worldName: string): Promise<WorldMetadata | undefined> {
-    const result = await database.query<WorldRecord>(SQL`SELECT * FROM worlds WHERE name = ${worldName.toLowerCase()}`)
+    if (!(await nameDenyListChecker.checkNameDenyList(worldName))) {
+      logger.warn(`Attempt to access world ${worldName} which is banned.`)
+      return undefined
+    }
+
+    const result = await database.query<WorldRecord>(
+      SQL`SELECT *
+              FROM worlds
+              WHERE name = ${worldName.toLowerCase()}`
+    )
 
     if (result.rowCount === 0) {
       const isInStorage = await storage.exist(`name-${worldName.toLowerCase()}`)
@@ -129,14 +139,19 @@ export async function createWorldsManagerComponent({
   })
 
   async function getDeployedWorldEntities(): Promise<Entity[]> {
-    const result = await database.query<Pick<WorldRecord, 'entity_id' | 'entity'>>(
-      'SELECT entity_id, entity FROM worlds WHERE entity_id IS NOT NULL ORDER BY name'
+    const result = await database.query<Pick<WorldRecord, 'name' | 'entity_id' | 'entity'>>(
+      'SELECT name, entity_id, entity FROM worlds WHERE entity_id IS NOT NULL ORDER BY name'
     )
 
-    return result.rows.map(mapEntity)
+    return result.rows.filter(async (row) => await nameDenyListChecker.checkNameDenyList(row.name)).map(mapEntity)
   }
 
   async function getEntityForWorld(worldName: string): Promise<Entity | undefined> {
+    if (!(await nameDenyListChecker.checkNameDenyList(worldName))) {
+      logger.warn(`Attempt to access entity for world ${worldName} which is banned.`)
+      return undefined
+    }
+
     const result = await database.query<Pick<WorldRecord, 'entity_id' | 'entity'>>(
       SQL`SELECT entity_id, entity FROM worlds WHERE name = ${worldName.toLowerCase()} AND entity_id IS NOT NULL ORDER BY name`
     )

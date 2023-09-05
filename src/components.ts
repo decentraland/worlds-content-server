@@ -100,7 +100,7 @@ export async function initComponents(): Promise<AppComponents> {
 
   const database = await createDatabaseComponent({ config, logs, metrics })
 
-  const worldsManager = await createWorldsManagerComponent({ logs, database: database, storage })
+  const worldsManager = await createWorldsManagerComponent({ logs, database, nameDenyListChecker, storage })
   const worldsIndexer = await createWorldsIndexerComponent({ worldsManager })
 
   const entityDeployer = createEntityDeployer({ config, logs, metrics, storage, sns, worldsManager })

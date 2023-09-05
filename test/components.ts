@@ -65,7 +65,7 @@ async function initComponents(): Promise<TestComponents> {
 
   const commsAdapter = createMockCommsAdapterComponent()
 
-  const worldsManager = await createWorldsManagerComponent({ logs, database: database, storage })
+  const worldsManager = await createWorldsManagerComponent({ logs, database, nameDenyListChecker, storage })
   const worldsIndexer = await createWorldsIndexerComponent({ worldsManager })
 
   const sns: SnsComponent = {
