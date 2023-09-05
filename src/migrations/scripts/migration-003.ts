@@ -6,7 +6,7 @@ export default {
   run: async (components: Pick<MigratorComponents, 'logs' | 'database' | 'storage'>) => {
     const { logs, database, storage } = components
     const logger = logs.getLogger('migration-003')
-    logger.info('running migration 003')
+    logger.info('running migration 003 - migration of worlds to database')
 
     async function readFile(key: string): Promise<WorldMetadata | undefined> {
       const content = await storage.retrieve(key)
@@ -46,6 +46,8 @@ export default {
           deployer = JSON.parse(deploymentAuthChainString!)[0].payload.toLowerCase()
         }
 
+        logger.info(`Migrating world ${worldName} to database`)
+
         const sql = SQL`
               INSERT INTO worlds (name, deployer, entity_id, deployment_auth_chain, entity, acl, created_at, updated_at)
               VALUES (${worldName}, ${deployer}, ${existing.entityId},
@@ -56,5 +58,6 @@ export default {
         await database.query(sql)
       }
     }
+    logger.info(`Finished migrating worlds to database.`)
   }
 }
