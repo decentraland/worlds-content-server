@@ -36,7 +36,6 @@ export default {
         const sceneString = (await readFileAsString(existing.entityId)) as any
         let deploymentAuthChainString = undefined
         let deployer = undefined
-        let owner = undefined
 
         if (existing.entityId) {
           deploymentAuthChainString = await readFileAsString(existing.entityId + '.auth')
@@ -45,16 +44,11 @@ export default {
           }
 
           deployer = JSON.parse(deploymentAuthChainString!)[0].payload.toLowerCase()
-          owner = deployer
-        }
-
-        if (existing.acl) {
-          owner = existing.acl[0].payload.toLowerCase()
         }
 
         const sql = SQL`
-              INSERT INTO worlds (name, owner, deployer, entity_id, deployment_auth_chain, entity, acl, created_at, updated_at)
-              VALUES (${worldName}, ${owner}, ${deployer}, ${existing.entityId},
+              INSERT INTO worlds (name, deployer, entity_id, deployment_auth_chain, entity, acl, created_at, updated_at)
+              VALUES (${worldName}, ${deployer}, ${existing.entityId},
                       ${deploymentAuthChainString}::json,
                       ${sceneString}::json,
                       ${existing.acl ? JSON.stringify(existing.acl) : null}::json,
