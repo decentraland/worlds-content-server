@@ -13,7 +13,7 @@
   "dependencies": {
     "@dcl/catalyst-contracts": "^4.1.0",
     "@dcl/catalyst-storage": "^4.0.0",
-    "@dcl/crypto": "^3.4.3",
+    "@dcl/crypto": "^3.4.5",
     "@dcl/hashing": "^3.0.4",
     "@dcl/platform-crypto-middleware": "^1.0.1",
     "@dcl/protocol": "^1.0.0-5824184720.commit-b3b5ebf",
