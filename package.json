@@ -15,7 +15,7 @@
     "@dcl/catalyst-storage": "^4.0.0",
     "@dcl/crypto": "^3.4.5",
     "@dcl/hashing": "^3.0.4",
-    "@dcl/platform-crypto-middleware": "^1.0.1",
+    "@dcl/platform-crypto-middleware": "^1.0.2",
     "@dcl/protocol": "^1.0.0-5824184720.commit-b3b5ebf",
     "@dcl/schemas": "^9.1.1",
     "@types/busboy": "^1.5.0",

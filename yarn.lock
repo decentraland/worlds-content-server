@@ -543,10 +543,10 @@
   resolved "https://registry.yarnpkg.com/@dcl/hashing/-/hashing-3.0.4.tgz#4df2a4cb3a8114765aed34cb57b91c93bf33bfb3"
   integrity sha512-Cg+MoIOn+BYmQV2q8zSFnNYY+GldlnUazwBnfgrq3i66ZxOaZ65h01btd8OUtSAlfWG4VTNIOHDjtKqmuwJNBg==
 
-"@dcl/platform-crypto-middleware@^1.0.1":
-  version "1.0.1"
-  resolved "https://registry.yarnpkg.com/@dcl/platform-crypto-middleware/-/platform-crypto-middleware-1.0.1.tgz#a0de2e59c02043d50d61c086e2dcf2276190328a"
-  integrity sha512-lp8kNYArcGG8unTFs46h42TGvYf1VYSAMfIWvcejjnUCTZL0QgM2YQLJvRszJZPvtZJopio6EjogZGkbQ0ImeQ==
+"@dcl/platform-crypto-middleware@^1.0.2":
+  version "1.0.2"
+  resolved "https://registry.yarnpkg.com/@dcl/platform-crypto-middleware/-/platform-crypto-middleware-1.0.2.tgz#3daf9af7f04bd95f833dcf2c421171b37ea1bea6"
+  integrity sha512-V99zV5XntoXmZclSj5t4S8Ioi0s7jULep7dw1UmpvnXDvozQjUNX9w5sWnXrcAalTocXHbf7bL7xK6sHHDZ0Mw==
   dependencies:
     "@dcl/crypto" "^3.4.3"
     "@well-known-components/fetch-component" "^2.0.2"
