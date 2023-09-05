@@ -8,7 +8,6 @@ import { deepEqual } from '../logic/deep-equal'
 
 type WorldRecord = {
   name: string
-  owner: string
   deployer: string
   entity_id: string
   deployment_auth_chain: AuthChain
