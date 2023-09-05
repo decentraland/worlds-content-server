@@ -24,10 +24,10 @@ export async function activeEntitiesHandler(
     }
   }
 
-  const results = await Promise.all(pointers.map((_) => context.components.worldsManager.getEntityForWorld(_)))
+  const result = await context.components.worldsManager.getEntityForWorld(pointers[0])
 
   return {
     status: 200,
-    body: results.filter(Boolean)
+    body: [result].filter(Boolean)
   }
 }

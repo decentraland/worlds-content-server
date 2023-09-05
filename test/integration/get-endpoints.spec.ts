@@ -6,7 +6,7 @@ test('consume get endpoints', function ({ components }) {
   let entity: Entity
 
   beforeAll(async () => {
-    await cleanup(components.storage, components.pg)
+    await cleanup(components.storage, components.database)
     const { worldCreator } = components
     const created = await worldCreator.createWorldWithScene()
     entity = created.entity

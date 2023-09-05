@@ -10,7 +10,7 @@ import { streamToBuffer } from '@dcl/catalyst-storage'
 
 test('deployment works', function ({ components, stubComponents }) {
   beforeEach(async () => {
-    await cleanup(components.storage, components.pg)
+    await cleanup(components.storage, components.database)
   })
 
   it('creates an entity and deploys it (owner)', async () => {

@@ -30,7 +30,7 @@ import { createValidator } from './logic/validations'
 import { createEntityDeployer } from './adapters/entity-deployer'
 import { createMigrationExecutor } from './migrations/migration-executor'
 import { createNameDenyListChecker } from './adapters/name-deny-list-checker'
-import { createDatabase } from './adapters/pg-component'
+import { createDatabaseComponent } from './adapters/pg-component'
 
 async function determineNameValidator(
   components: Pick<AppComponents, 'config' | 'ethereumProvider' | 'logs' | 'marketplaceSubGraph'>
@@ -98,15 +98,10 @@ export async function initComponents(): Promise<AppComponents> {
 
   const limitsManager = await createLimitsManagerComponent({ config, fetch, logs })
 
-  const pg = await createDatabase({ config, logs, metrics })
+  const database = await createDatabaseComponent({ config, logs, metrics })
 
-  const worldsManager = await createWorldsManagerComponent({ logs, pg, storage })
-  const worldsIndexer = await createWorldsIndexerComponent({
-    logs,
-    nameDenyListChecker,
-    storage,
-    worldsManager
-  })
+  const worldsManager = await createWorldsManagerComponent({ logs, database: database, storage })
+  const worldsIndexer = await createWorldsIndexerComponent({ worldsManager })
 
   const entityDeployer = createEntityDeployer({ config, logs, metrics, storage, sns, worldsManager })
   const validator = createValidator({
@@ -118,7 +113,7 @@ export async function initComponents(): Promise<AppComponents> {
     worldsManager
   })
 
-  const migrationExecutor = createMigrationExecutor({ logs, pg, storage, worldsManager })
+  const migrationExecutor = createMigrationExecutor({ logs, database: database, storage, worldsManager })
 
   return {
     commsAdapter,
@@ -133,7 +128,7 @@ export async function initComponents(): Promise<AppComponents> {
     migrationExecutor,
     nameDenyListChecker,
     namePermissionChecker,
-    pg,
+    database,
     server,
     sns,
     status,

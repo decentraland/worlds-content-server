@@ -3,8 +3,8 @@ import { streamToBuffer } from '@dcl/catalyst-storage/dist/content-item'
 import SQL from 'sql-template-strings'
 
 export default {
-  run: async (components: Pick<MigratorComponents, 'logs' | 'pg' | 'storage'>) => {
-    const { logs, pg, storage } = components
+  run: async (components: Pick<MigratorComponents, 'logs' | 'database' | 'storage'>) => {
+    const { logs, database, storage } = components
     const logger = logs.getLogger('migration-003')
     logger.info('running migration 003')
 
@@ -59,7 +59,7 @@ export default {
                       ${sceneString}::json,
                       ${existing.acl ? JSON.stringify(existing.acl) : null}::json,
                       ${new Date()}, ${new Date()})`
-        await pg.query(sql)
+        await database.query(sql)
       }
     }
   }

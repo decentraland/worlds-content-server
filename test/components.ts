@@ -38,7 +38,7 @@ export const test = createRunner<TestComponents>({
 async function initComponents(): Promise<TestComponents> {
   const components = await originalInitComponents()
 
-  const { config, logs, pg } = components
+  const { config, logs, database } = components
 
   const metrics = createTestMetricsComponent(metricDeclarations)
 
@@ -65,13 +65,8 @@ async function initComponents(): Promise<TestComponents> {
 
   const commsAdapter = createMockCommsAdapterComponent()
 
-  const worldsManager = await createWorldsManagerComponent({ logs, pg, storage })
-  const worldsIndexer = await createWorldsIndexerComponent({
-    logs,
-    nameDenyListChecker,
-    storage,
-    worldsManager
-  })
+  const worldsManager = await createWorldsManagerComponent({ logs, database: database, storage })
+  const worldsIndexer = await createWorldsIndexerComponent({ worldsManager })
 
   const sns: SnsComponent = {
     arn: undefined

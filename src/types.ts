@@ -64,7 +64,7 @@ export type ValidatorComponents = Pick<
   'config' | 'limitsManager' | 'nameDenyListChecker' | 'namePermissionChecker' | 'storage' | 'worldsManager'
 >
 
-export type MigratorComponents = Pick<AppComponents, 'logs' | 'pg' | 'storage' | 'worldsManager'>
+export type MigratorComponents = Pick<AppComponents, 'logs' | 'database' | 'storage' | 'worldsManager'>
 
 export type Validation = (deployment: DeploymentToValidate) => ValidationResult | Promise<ValidationResult>
 
@@ -118,7 +118,8 @@ export type ILimitsManager = {
 }
 
 export type IWorldsManager = {
-  getDeployedWorldsNames(): Promise<string[]>
+  getDeployedWorldCount(): Promise<number>
+  getDeployedWorldEntities(): Promise<Entity[]>
   getMetadataForWorld(worldName: string): Promise<WorldMetadata | undefined>
   getEntityForWorld(worldName: string): Promise<Entity | undefined>
   deployScene(worldName: string, scene: Entity): Promise<void>
@@ -163,7 +164,7 @@ export type BaseComponents = {
   migrationExecutor: MigrationExecutor
   nameDenyListChecker: INameDenyListChecker
   namePermissionChecker: IWorldNamePermissionChecker
-  pg: IPgComponent
+  database: IPgComponent
   server: IHttpServerComponent<GlobalContext>
   sns: SnsComponent
   status: IStatusComponent

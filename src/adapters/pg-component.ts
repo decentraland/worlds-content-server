@@ -1,7 +1,7 @@
 import { createPgComponent, IPgComponent } from '@well-known-components/pg-component'
 import path from 'path'
 
-export async function createDatabase(components: createPgComponent.NeededComponents): Promise<IPgComponent> {
+export async function createDatabaseComponent(components: createPgComponent.NeededComponents): Promise<IPgComponent> {
   return await createPgComponent(components, {
     migration: {
       dir: path.resolve(__dirname, '../pgmigrations'),

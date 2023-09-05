@@ -20,39 +20,13 @@ type WorldRecord = {
 
 export async function createWorldsManagerComponent({
   logs,
-  pg,
+  database,
   storage
-}: Pick<AppComponents, 'logs' | 'pg' | 'storage'>): Promise<IWorldsManager> {
+}: Pick<AppComponents, 'logs' | 'database' | 'storage'>): Promise<IWorldsManager> {
   const logger = logs.getLogger('worlds-manager')
 
-  async function getDeployedWorldsNames(): Promise<string[]> {
-    const result = await pg.query('SELECT name FROM worlds ORDER BY name')
-    return result.rows.map((row) => row.name)
-  }
-
-  async function getEntityForWorld(worldName: string): Promise<Entity | undefined> {
-    const metadata = await getMetadataForWorld(worldName)
-    if (!metadata || !metadata.entityId) {
-      return undefined
-    }
-
-    const content = await storage.retrieve(metadata.entityId)
-    if (!content) {
-      return undefined
-    }
-
-    const json = JSON.parse((await streamToBuffer(await content?.asStream())).toString())
-
-    return {
-      // the timestamp is not stored in the entity :/
-      timestamp: 0,
-      ...json,
-      id: metadata.entityId
-    }
-  }
-
   async function getMetadataForWorld(worldName: string): Promise<WorldMetadata | undefined> {
-    const result = await pg.query<WorldRecord>(SQL`SELECT * FROM worlds WHERE name = ${worldName.toLowerCase()}`)
+    const result = await database.query<WorldRecord>(SQL`SELECT * FROM worlds WHERE name = ${worldName.toLowerCase()}`)
 
     if (result.rowCount === 0) {
       const isInStorage = await storage.exist(`name-${worldName.toLowerCase()}`)
@@ -120,7 +94,7 @@ export async function createWorldsManagerComponent({
                                 deployment_auth_chain = ${deploymentAuthChainString}::json,
                                 updated_at = ${new Date()}
     `
-    await pg.query(sql)
+    await database.query(sql)
 
     // TODO remove once we are sure everything works fine with DB
     await storeWorldMetadata(worldName, {
@@ -137,14 +111,47 @@ export async function createWorldsManagerComponent({
                   DO UPDATE SET acl = ${JSON.stringify(acl)}::json,
                                 updated_at = ${new Date()}
     `
-    await pg.query(sql)
+    await database.query(sql)
 
     // TODO remove once we are sure everything works fine with DB
     await storeWorldMetadata(worldName, { acl })
   }
 
+  async function getDeployedWorldCount(): Promise<number> {
+    const result = await database.query<{ count: string }>(
+      'SELECT COUNT(name) AS count FROM worlds WHERE entity_id IS NOT NULL'
+    )
+    return parseInt(result.rows[0].count)
+  }
+
+  const mapEntity = (row: Pick<WorldRecord, 'entity_id' | 'entity'>) => ({
+    ...row.entity,
+    id: row.entity_id
+  })
+
+  async function getDeployedWorldEntities(): Promise<Entity[]> {
+    const result = await database.query<Pick<WorldRecord, 'entity_id' | 'entity'>>(
+      'SELECT entity_id, entity FROM worlds WHERE entity_id IS NOT NULL ORDER BY name'
+    )
+
+    return result.rows.map(mapEntity)
+  }
+
+  async function getEntityForWorld(worldName: string): Promise<Entity | undefined> {
+    const result = await database.query<Pick<WorldRecord, 'entity_id' | 'entity'>>(
+      SQL`SELECT entity_id, entity FROM worlds WHERE name = ${worldName.toLowerCase()} AND entity_id IS NOT NULL ORDER BY name`
+    )
+
+    if (result.rowCount === 0) {
+      return undefined
+    }
+
+    return mapEntity(result.rows[0])
+  }
+
   return {
-    getDeployedWorldsNames,
+    getDeployedWorldCount,
+    getDeployedWorldEntities,
     getMetadataForWorld,
     getEntityForWorld,
     deployScene,

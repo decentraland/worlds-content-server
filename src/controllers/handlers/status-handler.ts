@@ -18,13 +18,13 @@ export async function statusHandler(
 
   const commitHash = (await config.getString('COMMIT_HASH')) || 'unknown'
 
-  const deployedWorlds = await worldsManager.getDeployedWorldsNames()
+  const worldsCount = await worldsManager.getDeployedWorldCount()
   const commsStatus = await commsAdapter.status()
 
   const status: StatusResponse = {
     content: {
       commitHash,
-      worldsCount: deployedWorlds.length
+      worldsCount
     },
     comms: {
       ...commsStatus,

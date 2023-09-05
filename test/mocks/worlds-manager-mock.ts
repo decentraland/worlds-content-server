@@ -7,14 +7,6 @@ import { extractWorldRuntimeMetadata } from '../../src/logic/world-runtime-metad
 export async function createWorldsManagerMockComponent({
   storage
 }: Pick<AppComponents, 'storage'>): Promise<IWorldsManager> {
-  async function getDeployedWorldsNames(): Promise<string[]> {
-    const worlds = []
-    for await (const key of storage.allFileIds('name-')) {
-      worlds.push(key.substring(5)) // remove "name-" prefix
-    }
-    return worlds
-  }
-
   async function getEntityForWorld(worldName: string): Promise<Entity | undefined> {
     const metadata = await getMetadataForWorld(worldName)
     if (!metadata || !metadata.entityId) {
@@ -29,8 +21,6 @@ export async function createWorldsManagerMockComponent({
     const json = JSON.parse((await streamToBuffer(await content?.asStream())).toString())
 
     return {
-      // the timestamp is not stored in the entity :/
-      timestamp: 0,
       ...json,
       id: metadata.entityId
     }
@@ -66,8 +56,28 @@ export async function createWorldsManagerMockComponent({
     await storeWorldMetadata(worldName, { acl })
   }
 
+  async function getDeployedWorldCount(): Promise<number> {
+    let count = 0
+    for await (const _ of storage.allFileIds('name-')) {
+      count++
+    }
+    return count
+  }
+
+  async function getDeployedWorldEntities(): Promise<Entity[]> {
+    const worlds: Entity[] = []
+    for await (const key of storage.allFileIds('name-')) {
+      const entity = await getEntityForWorld(key.substring(5))
+      if (entity) {
+        worlds.push(entity)
+      }
+    }
+    return worlds
+  }
+
   return {
-    getDeployedWorldsNames,
+    getDeployedWorldCount,
+    getDeployedWorldEntities,
     getMetadataForWorld,
     getEntityForWorld,
     deployScene,
