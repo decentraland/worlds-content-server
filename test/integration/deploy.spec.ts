@@ -171,7 +171,7 @@ test('deployment works', function ({ components, stubComponents }) {
     Sinon.assert.calledWithMatch(metrics.increment, 'world_deployments_counter')
   })
 
-  it.only('creates an entity and deploys it using uppercase letters in the name', async () => {
+  it('creates an entity and deploys it using uppercase letters in the name', async () => {
     const { config, storage, worldCreator, worldsManager } = components
     const { namePermissionChecker, metrics } = stubComponents
 
