@@ -171,6 +171,68 @@ test('deployment works', function ({ components, stubComponents }) {
     Sinon.assert.calledWithMatch(metrics.increment, 'world_deployments_counter')
   })
 
+  it.only('creates an entity and deploys it using uppercase letters in the name', async () => {
+    const { config, storage, worldCreator, worldsManager } = components
+    const { namePermissionChecker, metrics } = stubComponents
+
+    const contentClient = createContentClient({
+      url: `http://${await config.requireString('HTTP_SERVER_HOST')}:${await config.requireNumber('HTTP_SERVER_PORT')}`,
+      fetcher: components.fetch
+    })
+
+    const entityFiles = new Map<string, Uint8Array>()
+
+    // Build the entity
+    const worldName = worldCreator.randomWorldName().toUpperCase()
+    const { files, entityId } = await DeploymentBuilder.buildEntity({
+      type: EntityType.SCENE as any,
+      pointers: ['0,0'],
+      files: entityFiles,
+      metadata: {
+        main: 'abc.txt',
+        scene: {
+          base: '20,24',
+          parcels: ['20,24']
+        },
+        worldConfiguration: {
+          name: worldName
+        }
+      }
+    })
+
+    // Sign entity id
+    const identity = await getIdentity()
+
+    namePermissionChecker.checkPermission.withArgs(identity.authChain.authChain[0].payload, worldName).resolves(true)
+
+    const authChain = Authenticator.signPayload(identity.authChain, entityId)
+
+    // Deploy entity
+    const response = (await contentClient.deploy({ files, entityId, authChain })) as Response
+    expect(await response.json()).toMatchObject({
+      message: `Your scene was deployed to a Worlds Content Server!\nAccess world ${worldName}: https://play.decentraland.org/?realm=https%3A%2F%2F0.0.0.0%3A3000%2Fworld%2F${worldName}`
+    })
+
+    Sinon.assert.calledWith(namePermissionChecker.checkPermission, identity.authChain.authChain[0].payload, worldName)
+
+    expect(await storage.exist(`name-${worldName.toLowerCase()}`)).toEqual(true)
+
+    expect(await worldsManager.getMetadataForWorld(worldName)).toBeDefined()
+
+    const content = await storage.retrieve(`name-${worldName.toLowerCase()}`)
+    const stored = JSON.parse((await streamToBuffer(await content!.asStream())).toString())
+    expect(stored).toMatchObject({
+      entityId,
+      runtimeMetadata: {
+        name: worldName,
+        entityIds: [entityId],
+        minimapVisible: false
+      }
+    })
+
+    Sinon.assert.calledWithMatch(metrics.increment, 'world_deployments_counter')
+  })
+
   it('fails because user does not own requested name', async () => {
     const { config, storage, worldCreator } = components
     const { namePermissionChecker, metrics } = stubComponents

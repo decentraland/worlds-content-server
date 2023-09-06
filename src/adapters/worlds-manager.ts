@@ -93,7 +93,7 @@ export async function createWorldsManagerComponent({
 
     const sql = SQL`
               INSERT INTO worlds (name, entity_id, deployer, deployment_auth_chain, entity, created_at, updated_at)
-              VALUES (${worldName}, ${scene.id}, ${deployer}, ${deploymentAuthChainString}::json,
+              VALUES (${worldName.toLowerCase()}, ${scene.id}, ${deployer}, ${deploymentAuthChainString}::json,
                       ${scene}::json,
                       ${new Date()}, ${new Date()})
               ON CONFLICT (name) 
@@ -115,7 +115,7 @@ export async function createWorldsManagerComponent({
   async function storeAcl(worldName: string, acl: AuthChain): Promise<void> {
     const sql = SQL`
               INSERT INTO worlds (name, acl, created_at, updated_at)
-              VALUES (${worldName}, ${JSON.stringify(acl)}::json, ${new Date()}, ${new Date()})
+              VALUES (${worldName.toLowerCase()}, ${JSON.stringify(acl)}::json, ${new Date()}, ${new Date()})
               ON CONFLICT (name) 
                   DO UPDATE SET acl = ${JSON.stringify(acl)}::json,
                                 updated_at = ${new Date()}
