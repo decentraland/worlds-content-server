@@ -33,11 +33,12 @@ export default {
           throw new Error(`World ${worldName} not found`)
         }
 
-        const sceneString = (await readFileAsString(existing.entityId)) as any
+        let sceneString = undefined
         let deploymentAuthChainString = undefined
         let deployer = undefined
 
         if (existing.entityId) {
+          sceneString = (await readFileAsString(existing.entityId)) as any
           deploymentAuthChainString = await readFileAsString(existing.entityId + '.auth')
           if (!deploymentAuthChainString) {
             throw new Error(`World ${worldName} has a deployment but no auth chain`)
