@@ -3,7 +3,7 @@ import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage'
 import { AuthChain, Entity } from '@dcl/schemas'
 import { stringToUtf8Bytes } from 'eth-connect'
 import SQL from 'sql-template-strings'
-import { extractWorldRuntimeMetadata } from '../logic/world-runtime-metadata-utils'
+import { extractWorldRuntimeMetadata, migrateConfiguration } from '../logic/world-runtime-metadata-utils'
 import { deepEqual } from '../logic/deep-equal'
 
 type WorldRecord = {
@@ -133,8 +133,12 @@ export async function createWorldsManagerComponent({
     return parseInt(result.rows[0].count)
   }
 
-  const mapEntity = (row: Pick<WorldRecord, 'entity_id' | 'entity'>) => ({
+  const mapEntity = (row: Pick<WorldRecord, 'name' | 'entity_id' | 'entity'>) => ({
     ...row.entity,
+    metadata: {
+      ...row.entity.metadata,
+      worldConfiguration: migrateConfiguration(row.name, row.entity.worldConfiguration)
+    },
     id: row.entity_id
   })
 
@@ -152,8 +156,8 @@ export async function createWorldsManagerComponent({
       return undefined
     }
 
-    const result = await database.query<Pick<WorldRecord, 'entity_id' | 'entity'>>(
-      SQL`SELECT entity_id, entity FROM worlds WHERE name = ${worldName.toLowerCase()} AND entity_id IS NOT NULL ORDER BY name`
+    const result = await database.query<Pick<WorldRecord, 'name' | 'entity_id' | 'entity'>>(
+      SQL`SELECT name, entity_id, entity FROM worlds WHERE name = ${worldName.toLowerCase()} AND entity_id IS NOT NULL ORDER BY name`
     )
 
     if (result.rowCount === 0) {
