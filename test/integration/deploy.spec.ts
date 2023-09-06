@@ -217,8 +217,6 @@ test('deployment works', function ({ components, stubComponents }) {
 
     expect(await storage.exist(`name-${worldName.toLowerCase()}`)).toEqual(true)
 
-    expect(await worldsManager.getMetadataForWorld(worldName)).toBeDefined()
-
     const content = await storage.retrieve(`name-${worldName.toLowerCase()}`)
     const stored = JSON.parse((await streamToBuffer(await content!.asStream())).toString())
     expect(stored).toMatchObject({
@@ -229,6 +227,10 @@ test('deployment works', function ({ components, stubComponents }) {
         minimapVisible: false
       }
     })
+
+    const fromDb = await worldsManager.getMetadataForWorld(worldName)
+    expect(fromDb).toBeDefined()
+    expect(stored).toMatchObject(fromDb)
 
     Sinon.assert.calledWithMatch(metrics.increment, 'world_deployments_counter')
   })
