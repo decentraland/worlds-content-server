@@ -46,7 +46,7 @@ export function extractWorldRuntimeMetadata(worldName: string, entity: Entity): 
   }
 
   return {
-    name: worldName,
+    name: entity.metadata?.worldConfiguration?.name || worldName,
     entityIds: [entity.id],
     fixedAdapter: migratedWorldConfiguration.fixedAdapter,
     minimapDataImage: resolveFilename(migratedWorldConfiguration.miniMapConfig?.dataImage),

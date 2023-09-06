@@ -1,6 +1,7 @@
-import { MigratorComponents, WorldMetadata } from '../../types'
+import { MigratorComponents } from '../../types'
 import { streamToBuffer } from '@dcl/catalyst-storage/dist/content-item'
 import SQL from 'sql-template-strings'
+import { migrateConfiguration } from '../../logic/world-runtime-metadata-utils'
 
 export default {
   run: async (components: Pick<MigratorComponents, 'logs' | 'database' | 'storage'>) => {
@@ -8,12 +9,12 @@ export default {
     const logger = logs.getLogger('migration-003')
     logger.info('running migration 003 - migration of worlds to database')
 
-    async function readFile(key: string): Promise<WorldMetadata | undefined> {
+    async function readFile(key: string): Promise<any | undefined> {
       const content = await storage.retrieve(key)
       if (!content) {
         return undefined
       }
-      return JSON.parse((await streamToBuffer(await content.asStream())).toString()) as WorldMetadata
+      return JSON.parse((await streamToBuffer(await content.asStream())).toString())
     }
 
     async function readFileAsString(key: string): Promise<string | undefined> {
@@ -38,7 +39,18 @@ export default {
         let deployer = undefined
 
         if (existing.entityId) {
-          sceneString = (await readFileAsString(existing.entityId)) as any
+          sceneString = await readFileAsString(existing.entityId)
+          if (sceneString) {
+            const entity = JSON.parse(sceneString)
+            const migrated = {
+              ...entity,
+              metadata: {
+                ...entity.metadata,
+                worldConfiguration: migrateConfiguration(worldName, entity.metadata.worldConfiguration)
+              }
+            }
+            sceneString = JSON.stringify(migrated)
+          }
           deploymentAuthChainString = await readFileAsString(existing.entityId + '.auth')
           if (!deploymentAuthChainString) {
             throw new Error(`World ${worldName} has a deployment but no auth chain`)

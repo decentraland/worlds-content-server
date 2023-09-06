@@ -78,7 +78,7 @@ export async function worldAboutHandler({
       scenesUrn: [urn],
       minimap,
       skybox,
-      realmName: params.world_name
+      realmName: runtimeMetadata.name
     },
     content: {
       healthy: contentStatus.healthy,
