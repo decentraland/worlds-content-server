@@ -3,6 +3,7 @@ import {
   AccessDeniedError,
   HandlerContextWithPath,
   InvalidRequestError,
+  IWorldNamePermissionChecker,
   Permission,
   Permissions,
   PermissionType
@@ -18,6 +19,13 @@ function removeSecrets(permissions: Permissions): Permissions {
     }
   }
   return noSecrets
+}
+
+async function checkOwnership(namePermissionChecker: IWorldNamePermissionChecker, signer: string, worldName: string) {
+  const hasPermission = await namePermissionChecker.checkPermission(signer, worldName)
+  if (!hasPermission) {
+    throw new AccessDeniedError(`Your wallet does not own "${worldName}", you can not set access control lists for it.`)
+  }
 }
 
 export async function getPermissionsHandler(
@@ -48,11 +56,7 @@ export async function postPermissionsHandler(
   const worldName = ctx.params.world_name
   const permissionName = ctx.params.permission_name as Permission
 
-  const signer = ctx.verification!.auth
-  const permission = await namePermissionChecker.checkPermission(signer, worldName)
-  if (!permission) {
-    throw new AccessDeniedError(`Your wallet does not own "${worldName}", you can not set access control lists for it.`)
-  }
+  await checkOwnership(namePermissionChecker, ctx.verification!.auth, worldName)
 
   const { type, ...extras } = ctx.verification!.authMetadata
   if (
@@ -103,13 +107,8 @@ export async function putPermissionsAddressHandler(
 
   const worldName = ctx.params.world_name
   const permissionName = ctx.params.permission_name as Permission
-  const address = ctx.params.address.toLowerCase()
 
-  const signer = ctx.verification!.auth
-  const hasPermission = await namePermissionChecker.checkPermission(signer, worldName)
-  if (!hasPermission) {
-    throw new AccessDeniedError(`Your wallet does not own "${worldName}", you can not set access control lists for it.`)
-  }
+  await checkOwnership(namePermissionChecker, ctx.verification!.auth, worldName)
 
   const metadata = await worldsManager.getMetadataForWorld(worldName)
   if (!metadata || !metadata.permissions || !metadata.permissions[permissionName]) {
@@ -123,6 +122,7 @@ export async function putPermissionsAddressHandler(
     )
   }
 
+  const address = ctx.params.address.toLowerCase()
   if (permissionConfig.wallets.includes(address)) {
     throw new InvalidRequestError(
       `World ${worldName} already has address ${address} in the allow list for permission '${permissionName}'.`
@@ -147,13 +147,8 @@ export async function deletePermissionsAddressHandler(
 
   const worldName = ctx.params.world_name
   const permissionName = ctx.params.permission_name as Permission
-  const address = ctx.params.address.toLowerCase()
 
-  const signer = ctx.verification!.auth
-  const hasPermission = await namePermissionChecker.checkPermission(signer, worldName)
-  if (!hasPermission) {
-    throw new AccessDeniedError(`Your wallet does not own "${worldName}", you can not set access control lists for it.`)
-  }
+  await checkOwnership(namePermissionChecker, ctx.verification!.auth, worldName)
 
   const metadata = await worldsManager.getMetadataForWorld(worldName)
   if (!metadata || !metadata.permissions || !metadata.permissions[permissionName]) {
@@ -167,6 +162,7 @@ export async function deletePermissionsAddressHandler(
     )
   }
 
+  const address = ctx.params.address.toLowerCase()
   if (!permissionConfig.wallets.includes(address)) {
     throw new InvalidRequestError(
       `World ${worldName} does not have address ${address} in the allow list for permission '${permissionName}'.`

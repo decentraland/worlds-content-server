@@ -1,6 +1,5 @@
 import { createInMemoryStorage, IContentStorageComponent } from '@dcl/catalyst-storage'
 import { IPermissionsManager, IWorldCreator, IWorldsManager, PermissionType } from '../../src/types'
-import { readJson, storeJson } from '../utils'
 import { defaultPermissions } from '../../src/logic/permissions-checker'
 import { createWorldsManagerMockComponent } from '../mocks/worlds-manager-mock'
 import { createPermissionsManagerComponent } from '../../src/adapters/permissions-manager'
