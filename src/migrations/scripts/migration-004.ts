@@ -22,7 +22,7 @@ export default {
           permissions
         }
         if (!deepEqual(existing, migrated)) {
-          logger.info(`World "${worldName}" needs to be fixed: ${JSON.stringify(existing)}`)
+          logger.info(`World "${worldName}" needs to be fixed: ${JSON.stringify(permissions)}`)
           logger.info(`Writing "${key}" : ${JSON.stringify(migrated)}`)
           await writeFile(components.storage, key, migrated)
         }
