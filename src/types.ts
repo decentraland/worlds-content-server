@@ -14,7 +14,6 @@ import { IStatusComponent } from './adapters/status'
 import { AuthChain, AuthLink, Entity, EthAddress, IPFSv2 } from '@dcl/schemas'
 import { MigrationExecutor } from './migrations/migration-executor'
 import { IPgComponent } from '@well-known-components/pg-component'
-import { Identity } from '../test/utils'
 
 export type GlobalContext = {
   components: BaseComponents
@@ -236,7 +235,6 @@ export type IWorldCreator = {
     worldName?: string
     metadata?: any
     files?: Map<string, ArrayBuffer>
-    identity?: Identity
     permissions?: Permissions
   }): Promise<{ worldName: string; entityId: IPFSv2; entity: Entity }>
   randomWorldName(): string
