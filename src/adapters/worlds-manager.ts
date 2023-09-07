@@ -1,10 +1,20 @@
-import { AppComponents, IWorldsManager, WorldMetadata } from '../types'
+import {
+  AllowListPermissionSetting,
+  AppComponents,
+  IPermissionChecker,
+  IWorldsManager,
+  Permission,
+  PermissionType,
+  WorldMetadata
+} from '../types'
 import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage'
 import { AuthChain, Entity } from '@dcl/schemas'
 import { stringToUtf8Bytes } from 'eth-connect'
 import SQL from 'sql-template-strings'
 import { extractWorldRuntimeMetadata } from '../logic/world-runtime-metadata-utils'
 import { deepEqual } from '../logic/deep-equal'
+import { createPermissionChecker, defaultPermissions } from '../logic/permissions-checker'
+import bcrypt from 'bcrypt'
 
 type WorldRecord = {
   name: string
@@ -16,6 +26,8 @@ type WorldRecord = {
   created_at: Date
   updated_at: Date
 }
+
+const saltRounds = 10
 
 export async function createWorldsManagerComponent({
   logs,
@@ -163,12 +175,71 @@ export async function createWorldsManagerComponent({
     return mapEntity(result.rows[0])
   }
 
+  async function permissionCheckerForWorld(worldName: string): Promise<IPermissionChecker> {
+    const metadata = await getMetadataForWorld(worldName)
+    return createPermissionChecker(metadata?.permissions || defaultPermissions())
+  }
+
+  async function setPermissionType(
+    worldName: string,
+    permission: Permission,
+    type: PermissionType,
+    extras: any
+  ): Promise<void> {
+    const metadata = await getMetadataForWorld(worldName)
+
+    const extraOptions: any = {}
+    if (type === PermissionType.SharedSecret) {
+      extraOptions.secret = bcrypt.hashSync(extras.secret, saltRounds)
+    } else if (type === PermissionType.NFTOwnership) {
+      extraOptions.nft = extras.nft
+    } else if (type === PermissionType.AllowList) {
+      extraOptions.wallets = []
+    }
+
+    const permissions = metadata?.permissions || defaultPermissions()
+    permissions[permission] = { type, ...extraOptions }
+    await storeWorldMetadata(worldName, { permissions })
+  }
+
+  async function addAddressToAllowList(worldName: string, permission: Permission, address: string): Promise<void> {
+    const metadata = await getMetadataForWorld(worldName)
+
+    const permissionSetting = metadata!.permissions[permission] as AllowListPermissionSetting
+    if (permissionSetting.type !== PermissionType.AllowList) {
+      throw new Error(`Permission ${permission} is not an allow list`)
+    }
+
+    if (!permissionSetting.wallets.includes(address)) {
+      permissionSetting.wallets.push(address)
+    }
+    await storeWorldMetadata(worldName, { permissions: metadata!.permissions })
+  }
+
+  async function deleteAddressFromAllowList(worldName: string, permission: Permission, address: string): Promise<void> {
+    const metadata = await getMetadataForWorld(worldName)
+
+    const permissionSetting = metadata!.permissions[permission] as AllowListPermissionSetting
+    if (permissionSetting.type !== PermissionType.AllowList) {
+      throw new Error(`Permission ${permission} is not an allow list`)
+    }
+
+    if (permissionSetting.wallets.includes(address)) {
+      permissionSetting.wallets = permissionSetting.wallets.filter((w) => w !== address)
+    }
+    await storeWorldMetadata(worldName, { permissions: metadata!.permissions })
+  }
+
   return {
     getDeployedWorldCount,
     getDeployedWorldEntities,
     getMetadataForWorld,
     getEntityForWorld,
     deployScene,
-    storeAcl
+    storeAcl,
+    permissionCheckerForWorld,
+    setPermissionType,
+    addAddressToAllowList,
+    deleteAddressFromAllowList
   }
 }

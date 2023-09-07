@@ -41,6 +41,7 @@ export type WorldRuntimeMetadata = {
 export type WorldMetadata = {
   entityId: string
   acl?: AuthChain
+  permissions: Permissions
   runtimeMetadata: WorldRuntimeMetadata
 }
 
@@ -124,6 +125,54 @@ export type IWorldsManager = {
   getEntityForWorld(worldName: string): Promise<Entity | undefined>
   deployScene(worldName: string, scene: Entity): Promise<void>
   storeAcl(worldName: string, acl: AuthChain): Promise<void>
+  permissionCheckerForWorld(worldName: string): Promise<IPermissionChecker>
+  setPermissionType(worldName: string, permission: Permission, type: PermissionType, authMetadata: any): Promise<void>
+  addAddressToAllowList(worldName: string, permission: Permission, address: string): Promise<void>
+  deleteAddressFromAllowList(worldName: string, permission: Permission, address: string): Promise<void>
+}
+
+export enum PermissionType {
+  Unrestricted = 'unrestricted',
+  SharedSecret = 'shared-secret',
+  NFTOwnership = 'nft-ownership',
+  AllowList = 'allow-list'
+}
+
+export type UnrestrictedPermissionSetting = {
+  type: PermissionType.Unrestricted
+}
+
+export type SharedSecretPermissionSetting = {
+  type: PermissionType.SharedSecret
+  secret: string
+}
+
+export type NftOwnershipPermissionSetting = {
+  type: PermissionType.NFTOwnership
+  nft: string
+}
+
+export type AllowListPermissionSetting = {
+  type: PermissionType.AllowList
+  wallets: string[]
+}
+
+export type AccessPermissionSetting =
+  | UnrestrictedPermissionSetting
+  | SharedSecretPermissionSetting
+  | NftOwnershipPermissionSetting
+  | AllowListPermissionSetting
+
+export type Permissions = {
+  deployment: AllowListPermissionSetting
+  access: AccessPermissionSetting
+  streaming: UnrestrictedPermissionSetting | AllowListPermissionSetting
+}
+
+export type Permission = keyof Permissions
+
+export type IPermissionChecker = {
+  checkPermission(permission: Permission, ethAddress: EthAddress, extras?: any): Promise<boolean>
 }
 
 export type WorldsIndex = {
@@ -216,6 +265,13 @@ export class InvalidRequestError extends Error {
 }
 
 export class NotFoundError extends Error {
+  constructor(message: string) {
+    super(message)
+    Error.captureStackTrace(this, this.constructor)
+  }
+}
+
+export class AccessDeniedError extends Error {
   constructor(message: string) {
     super(message)
     Error.captureStackTrace(this, this.constructor)

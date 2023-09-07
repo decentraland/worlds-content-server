@@ -1,7 +1,7 @@
 import { createUnsafeIdentity } from '@dcl/crypto/dist/crypto'
 import { Authenticator, AuthIdentity, IdentityType } from '@dcl/crypto'
 import { Readable } from 'stream'
-import { IContentStorageComponent } from '@dcl/catalyst-storage'
+import { IContentStorageComponent, streamToBuffer } from '@dcl/catalyst-storage'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { AuthChain } from '@dcl/schemas'
 import { AUTH_CHAIN_HEADER_PREFIX, AUTH_METADATA_HEADER, AUTH_TIMESTAMP_HEADER } from '@dcl/platform-crypto-middleware'
@@ -35,6 +35,14 @@ export async function cleanup(storage: IContentStorageComponent, db: IPgComponen
   await storage.delete(files)
 
   await db.query(`TRUNCATE worlds`)
+}
+
+export async function readJson(storage: IContentStorageComponent, fileId: string): Promise<any> {
+  const content = await storage.retrieve(fileId)
+  if (!content) {
+    throw new Error(`File ${fileId} not found`)
+  }
+  return JSON.parse((await streamToBuffer(await content!.asStream())).toString())
 }
 
 export type Identity = { authChain: AuthIdentity; realAccount: IdentityType; ephemeralIdentity: IdentityType }

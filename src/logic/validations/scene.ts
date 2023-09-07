@@ -1,7 +1,6 @@
 import { DeploymentToValidate, Validation, ValidationResult, ValidatorComponents } from '../../types'
 import { Entity, Scene } from '@dcl/schemas'
 import { createValidationResult, OK } from './utils'
-import { allowedByAcl } from '../acl'
 import { ContentMapping } from '@dcl/schemas/dist/misc/content-mapping'
 
 export const validateSceneEntity: Validation = async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
@@ -49,7 +48,14 @@ export function createValidateDeploymentPermission(
     const worldSpecifiedName = sceneJson.metadata.worldConfiguration.name
     const signer = deployment.authChain[0].payload
 
-    const allowed = await allowedByAcl(components, worldSpecifiedName, signer)
+    // Check the address owns the name
+    if (await components.namePermissionChecker.checkPermission(signer, worldSpecifiedName)) {
+      return OK
+    }
+
+    // Check the address has permission to deploy in the world
+    const permissionChecker = await components.worldsManager.permissionCheckerForWorld(worldSpecifiedName)
+    const allowed = await permissionChecker.checkPermission('deployment', signer)
     if (allowed) {
       return OK
     }

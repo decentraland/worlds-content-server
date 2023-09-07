@@ -1,5 +1,5 @@
 import { IHttpServerComponent } from '@well-known-components/interfaces'
-import { ErrorResponse, InvalidRequestError, NotFoundError } from '../../types'
+import { AccessDeniedError, ErrorResponse, InvalidRequestError, NotFoundError } from '../../types'
 
 function handleError(url: URL, error: any): { status: number; body: ErrorResponse } {
   if (error instanceof InvalidRequestError) {
@@ -17,6 +17,16 @@ function handleError(url: URL, error: any): { status: number; body: ErrorRespons
       status: 404,
       body: {
         error: 'Not Found',
+        message: error.message
+      }
+    }
+  }
+
+  if (error instanceof AccessDeniedError) {
+    return {
+      status: 403,
+      body: {
+        error: 'Access denied',
         message: error.message
       }
     }

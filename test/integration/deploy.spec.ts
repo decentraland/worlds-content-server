@@ -7,6 +7,8 @@ import { stringToUtf8Bytes } from 'eth-connect'
 import { hashV1 } from '@dcl/hashing'
 import { cleanup, getIdentity, storeJson } from '../utils'
 import { streamToBuffer } from '@dcl/catalyst-storage'
+import { defaultPermissions } from '../../src/logic/permissions-checker'
+import { PermissionType } from '../../src/types'
 
 test('deployment works', function ({ components, stubComponents }) {
   beforeEach(async () => {
@@ -106,6 +108,15 @@ test('deployment works', function ({ components, stubComponents }) {
     const payload = `{"resource":"${worldName}","allowed":["${delegatedIdentity.realAccount.address}"]}`
 
     await worldsManager.storeAcl(worldName, Authenticator.signPayload(ownerIdentity.authChain, payload))
+    // await storeJson(storage, 'name-my-super-name.dcl.eth', {
+    //   permissions: {
+    //     ...defaultPermissions(),
+    //     deployment: {
+    //       type: PermissionType.AllowList,
+    //       wallets: [delegatedIdentity.realAccount.address]
+    //     }
+    //   }
+    // })
 
     const entityFiles = new Map<string, Uint8Array>()
     entityFiles.set('abc.txt', stringToUtf8Bytes('asd'))
@@ -129,9 +140,6 @@ test('deployment works', function ({ components, stubComponents }) {
       }
     })
 
-    namePermissionChecker.checkPermission
-      .withArgs(ownerIdentity.authChain.authChain[0].payload, worldName)
-      .resolves(true)
     namePermissionChecker.checkPermission
       .withArgs(delegatedIdentity.authChain.authChain[0].payload, worldName)
       .resolves(false)

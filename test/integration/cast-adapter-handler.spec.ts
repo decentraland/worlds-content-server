@@ -1,6 +1,7 @@
 import { test } from '../components'
 import { Authenticator } from '@dcl/crypto'
 import { getAuthHeaders, getIdentity, Identity } from '../utils'
+import { defaultPermissions } from '../../src/logic/permissions-checker'
 
 test('cast adapter handler /cast-adapter/:roomId', function ({ components, stubComponents }) {
   function makeRequest(path: string, identity: Identity) {
@@ -46,7 +47,11 @@ test('cast adapter handler /cast-adapter/:roomId', function ({ components, stubC
 
   it('works when signed-fetch request is correct', async () => {
     const { worldCreator } = components
-    const { worldName } = await worldCreator.createWorldWithScene()
+    const { worldName } = await worldCreator.createWorldWithScene({
+      permissions: {
+        ...defaultPermissions()
+      }
+    })
 
     const r = await makeRequest(`/cast-adapter/world-${worldName}`, identity)
 

@@ -1,7 +1,6 @@
 import { HandlerContextWithPath, InvalidRequestError, NotFoundError } from '../../types'
 import { IHttpServerComponent } from '@well-known-components/interfaces'
 import { DecentralandSignatureContext, verify } from '@dcl/platform-crypto-middleware'
-import { allowedByAcl } from '../../logic/acl'
 import { AccessToken } from 'livekit-server-sdk'
 
 export async function castAdapterHandler(
@@ -12,7 +11,7 @@ export async function castAdapterHandler(
     DecentralandSignatureContext<any>
 ): Promise<IHttpServerComponent.IResponse> {
   const {
-    components: { config, fetch, nameDenyListChecker, storage }
+    components: { config, fetch, nameDenyListChecker, namePermissionChecker, worldsManager }
   } = context
 
   const [host, apiKey, apiSecret] = await Promise.all([
@@ -55,12 +54,16 @@ export async function castAdapterHandler(
     throw new NotFoundError(`World "${worldName}" does not exist.`)
   }
 
-  if (!(await storage.exist('name-' + worldName))) {
+  const worldMetadata = await worldsManager.getMetadataForWorld(worldName)
+  if (!worldMetadata) {
     throw new NotFoundError(`World "${worldName}" does not exist.`)
   }
 
   const identity = context.verification!.auth
-  const hasPermission = await allowedByAcl(context.components, worldName, identity)
+  const permissionChecker = await worldsManager.permissionCheckerForWorld(worldName)
+  const hasPermission =
+    (await namePermissionChecker.checkPermission(identity, worldName)) ||
+    (await permissionChecker.checkPermission('streaming', identity))
 
   const token = new AccessToken(apiKey, apiSecret, {
     identity,

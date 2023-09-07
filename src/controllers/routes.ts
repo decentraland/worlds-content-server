@@ -12,10 +12,23 @@ import { getIndexHandler } from './handlers/index-handler'
 import { getLiveDataHandler } from './handlers/live-data-handler'
 import { errorHandler } from './handlers/error-handler'
 import { castAdapterHandler } from './handlers/cast-adapter-handler'
+import { wellKnownComponents } from '@dcl/platform-crypto-middleware'
+import {
+  deletePermissionsAddressHandler,
+  getPermissionsHandler,
+  postPermissionsHandler,
+  putPermissionsAddressHandler
+} from './handlers/permissions-handlers'
 
-export async function setupRouter(_globalContext: GlobalContext): Promise<Router<GlobalContext>> {
+export async function setupRouter(globalContext: GlobalContext): Promise<Router<GlobalContext>> {
   const router = new Router<GlobalContext>()
   router.use(errorHandler)
+
+  const signedFetchMiddleware = wellKnownComponents({
+    fetcher: globalContext.components.fetch,
+    optional: false,
+    onError: (err) => ({ error: err.message, message: 'This endpoint requires a signed fetch request. See ADR-44.' })
+  })
 
   router.get('/world/:world_name/about', worldAboutHandler)
 
@@ -33,6 +46,18 @@ export async function setupRouter(_globalContext: GlobalContext): Promise<Router
 
   router.get('/acl/:world_name', getAclHandler)
   router.post('/acl/:world_name', postAclHandler)
+  router.get('/world/:world_name/permissions', getPermissionsHandler)
+  router.post('/world/:world_name/permissions/:permission_name', signedFetchMiddleware, postPermissionsHandler)
+  router.put(
+    '/world/:world_name/permissions/:permission_name/:address',
+    signedFetchMiddleware,
+    putPermissionsAddressHandler
+  )
+  router.delete(
+    '/world/:world_name/permissions/:permission_name/:address',
+    signedFetchMiddleware,
+    deletePermissionsAddressHandler
+  )
 
   router.get('/status', statusHandler)
 

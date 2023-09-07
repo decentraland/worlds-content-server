@@ -1,16 +1,20 @@
-import { HandlerContextWithPath, InvalidRequestError, NotFoundError } from '../../types'
+import { AccessDeniedError, HandlerContextWithPath, InvalidRequestError, NotFoundError } from '../../types'
 import { IHttpServerComponent } from '@well-known-components/interfaces'
 import { verify, DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
 
+type CommsMetadata = {
+  secret?: string
+}
+
 export async function commsAdapterHandler(
   context: HandlerContextWithPath<
-    'commsAdapter' | 'fetch' | 'config' | 'nameDenyListChecker' | 'storage',
+    'commsAdapter' | 'fetch' | 'config' | 'nameDenyListChecker' | 'namePermissionChecker' | 'worldsManager',
     '/get-comms-adapter/:roomId'
   > &
-    DecentralandSignatureContext<any>
+    DecentralandSignatureContext<CommsMetadata>
 ): Promise<IHttpServerComponent.IResponse> {
   const {
-    components: { commsAdapter, config, fetch, nameDenyListChecker, storage }
+    components: { commsAdapter, config, fetch, nameDenyListChecker, namePermissionChecker, worldsManager }
   } = context
 
   const baseUrl = (await config.getString('HTTP_BASE_URL')) || `${context.url.protocol}//${context.url.host}`
@@ -31,9 +35,11 @@ export async function commsAdapterHandler(
     }
   }
 
-  if (!validateMetadata(context.verification!.authMetadata)) {
+  const authMetadata = context.verification!.authMetadata
+  if (!validateMetadata(authMetadata)) {
     throw new InvalidRequestError('Access denied, invalid metadata')
   }
+
   const roomPrefix = await config.requireString('COMMS_ROOM_PREFIX')
 
   if (!context.params.roomId.startsWith(roomPrefix)) {
@@ -46,14 +52,25 @@ export async function commsAdapterHandler(
     throw new NotFoundError(`World "${worldName}" does not exist.`)
   }
 
-  if (!(await storage.exist('name-' + worldName))) {
+  const worldMetadata = await worldsManager.getMetadataForWorld(worldName)
+  if (!worldMetadata) {
     throw new NotFoundError(`World "${worldName}" does not exist.`)
+  }
+
+  const identity = context.verification!.auth
+  const permissionChecker = await worldsManager.permissionCheckerForWorld(worldName)
+  const hasPermission =
+    // TODO See if we can avoid the first check
+    (await namePermissionChecker.checkPermission(identity, worldName)) ||
+    (await permissionChecker.checkPermission('access', identity, authMetadata.secret))
+  if (!hasPermission) {
+    throw new AccessDeniedError(`You are not allowed to access world "${worldName}".`)
   }
 
   return {
     status: 200,
     body: {
-      fixedAdapter: await commsAdapter.connectionString(context.verification!.auth, context.params.roomId)
+      fixedAdapter: await commsAdapter.connectionString(identity, context.params.roomId)
     }
   }
 }
