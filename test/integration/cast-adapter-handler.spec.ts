@@ -1,7 +1,6 @@
 import { test } from '../components'
 import { Authenticator } from '@dcl/crypto'
 import { getAuthHeaders, getIdentity, Identity } from '../utils'
-import { defaultPermissions } from '../../src/logic/permissions-checker'
 
 test('cast adapter handler /cast-adapter/:roomId', function ({ components, stubComponents }) {
   function makeRequest(path: string, identity: Identity) {
