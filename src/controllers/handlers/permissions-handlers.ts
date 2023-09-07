@@ -38,12 +38,12 @@ export async function getPermissionsHandler(
 
 export async function postPermissionsHandler(
   ctx: HandlerContextWithPath<
-    'namePermissionChecker' | 'worldsManager',
+    'namePermissionChecker' | 'permissionsManager',
     '/world/:world_name/permissions/:permission_name'
   > &
     DecentralandSignatureContext<any>
 ): Promise<IHttpServerComponent.IResponse> {
-  const { namePermissionChecker, worldsManager } = ctx.components
+  const { namePermissionChecker, permissionsManager } = ctx.components
 
   const worldName = ctx.params.world_name
   const permissionName = ctx.params.permission_name as Permission
@@ -85,7 +85,7 @@ export async function postPermissionsHandler(
     )
   }
 
-  await worldsManager.setPermissionType(worldName, permissionName, type, extras)
+  await permissionsManager.setPermissionType(worldName, permissionName, type, extras)
 
   return {
     status: 204
@@ -94,12 +94,12 @@ export async function postPermissionsHandler(
 
 export async function putPermissionsAddressHandler(
   ctx: HandlerContextWithPath<
-    'namePermissionChecker' | 'worldsManager',
+    'namePermissionChecker' | 'permissionsManager' | 'worldsManager',
     '/world/:world_name/permissions/:permission_name/:address'
   > &
     DecentralandSignatureContext<any>
 ): Promise<IHttpServerComponent.IResponse> {
-  const { namePermissionChecker, worldsManager } = ctx.components
+  const { namePermissionChecker, permissionsManager, worldsManager } = ctx.components
 
   const worldName = ctx.params.world_name
   const permissionName = ctx.params.permission_name as Permission
@@ -129,7 +129,7 @@ export async function putPermissionsAddressHandler(
     )
   }
 
-  await worldsManager.addAddressToAllowList(worldName, permissionName, address)
+  await permissionsManager.addAddressToAllowList(worldName, permissionName, address)
 
   return {
     status: 204
@@ -138,12 +138,12 @@ export async function putPermissionsAddressHandler(
 
 export async function deletePermissionsAddressHandler(
   ctx: HandlerContextWithPath<
-    'namePermissionChecker' | 'worldsManager',
+    'namePermissionChecker' | 'permissionsManager' | 'worldsManager',
     '/world/:world_name/permissions/:permission_name/:address'
   > &
     DecentralandSignatureContext<any>
 ): Promise<IHttpServerComponent.IResponse> {
-  const { namePermissionChecker, worldsManager } = ctx.components
+  const { namePermissionChecker, permissionsManager, worldsManager } = ctx.components
 
   const worldName = ctx.params.world_name
   const permissionName = ctx.params.permission_name as Permission
@@ -173,7 +173,7 @@ export async function deletePermissionsAddressHandler(
     )
   }
 
-  await worldsManager.deleteAddressFromAllowList(worldName, permissionName, address)
+  await permissionsManager.deleteAddressFromAllowList(worldName, permissionName, address)
 
   return {
     status: 204

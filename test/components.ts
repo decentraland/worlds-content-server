@@ -22,6 +22,7 @@ import { createEntityDeployer } from '../src/adapters/entity-deployer'
 import { createMockNameDenyListChecker } from './mocks/name-deny-list-checker-mock'
 import { createWorldCreator } from './mocks/world-creator'
 import { createWorldsManagerComponent } from '../src/adapters/worlds-manager'
+import { createPermissionsManagerComponent } from '../src/adapters/permissions-manager'
 
 /**
  * Behaves like Jest "describe" function, used to describe a test for a
@@ -67,6 +68,7 @@ async function initComponents(): Promise<TestComponents> {
 
   const worldsManager = await createWorldsManagerComponent({ logs, database, nameDenyListChecker, storage })
   const worldsIndexer = await createWorldsIndexerComponent({ worldsManager })
+  const permissionsManager = await createPermissionsManagerComponent({ worldsManager })
 
   const sns: SnsComponent = {
     arn: undefined
@@ -95,6 +97,7 @@ async function initComponents(): Promise<TestComponents> {
     marketplaceSubGraph: createMockMarketplaceSubGraph(),
     metrics,
     namePermissionChecker,
+    permissionsManager,
     status,
     storage,
     validator,

@@ -47,11 +47,7 @@ test('cast adapter handler /cast-adapter/:roomId', function ({ components, stubC
 
   it('works when signed-fetch request is correct', async () => {
     const { worldCreator } = components
-    const { worldName } = await worldCreator.createWorldWithScene({
-      permissions: {
-        ...defaultPermissions()
-      }
-    })
+    const { worldName } = await worldCreator.createWorldWithScene()
 
     const r = await makeRequest(`/cast-adapter/world-${worldName}`, identity)
 

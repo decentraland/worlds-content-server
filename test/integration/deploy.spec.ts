@@ -107,16 +107,14 @@ test('deployment works', function ({ components, stubComponents }) {
     const worldName = worldCreator.randomWorldName()
     const payload = `{"resource":"${worldName}","allowed":["${delegatedIdentity.realAccount.address}"]}`
 
-    await worldsManager.storeAcl(worldName, Authenticator.signPayload(ownerIdentity.authChain, payload))
-    // await storeJson(storage, 'name-my-super-name.dcl.eth', {
-    //   permissions: {
-    //     ...defaultPermissions(),
-    //     deployment: {
-    //       type: PermissionType.AllowList,
-    //       wallets: [delegatedIdentity.realAccount.address]
-    //     }
-    //   }
-    // })
+    await worldsManager.storeAcl(worldName, Authenticator.signPayload(ownerIdentity.authChain, payload)) // TODO Remove
+    await worldsManager.storePermissions(worldName, {
+      ...defaultPermissions(),
+      deployment: {
+        type: PermissionType.AllowList,
+        wallets: [delegatedIdentity.realAccount.address]
+      }
+    })
 
     const entityFiles = new Map<string, Uint8Array>()
     entityFiles.set('abc.txt', stringToUtf8Bytes('asd'))

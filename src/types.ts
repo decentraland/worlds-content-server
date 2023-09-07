@@ -14,6 +14,7 @@ import { IStatusComponent } from './adapters/status'
 import { AuthChain, AuthLink, Entity, EthAddress, IPFSv2 } from '@dcl/schemas'
 import { MigrationExecutor } from './migrations/migration-executor'
 import { IPgComponent } from '@well-known-components/pg-component'
+import { Identity } from '../test/utils'
 
 export type GlobalContext = {
   components: BaseComponents
@@ -125,7 +126,11 @@ export type IWorldsManager = {
   getEntityForWorld(worldName: string): Promise<Entity | undefined>
   deployScene(worldName: string, scene: Entity): Promise<void>
   storeAcl(worldName: string, acl: AuthChain): Promise<void>
+  storePermissions(worldName: string, permissions: Permissions): Promise<void>
   permissionCheckerForWorld(worldName: string): Promise<IPermissionChecker>
+}
+
+export type IPermissionsManager = {
   setPermissionType(worldName: string, permission: Permission, type: PermissionType, authMetadata: any): Promise<void>
   addAddressToAllowList(worldName: string, permission: Permission, address: string): Promise<void>
   deleteAddressFromAllowList(worldName: string, permission: Permission, address: string): Promise<void>
@@ -203,6 +208,7 @@ export type IEntityDeployer = {
 export type BaseComponents = {
   commsAdapter: ICommsAdapter
   config: IConfigComponent
+  database: IPgComponent
   entityDeployer: IEntityDeployer
   ethereumProvider: HTTPProvider
   fetch: IFetchComponent
@@ -213,7 +219,7 @@ export type BaseComponents = {
   migrationExecutor: MigrationExecutor
   nameDenyListChecker: INameDenyListChecker
   namePermissionChecker: IWorldNamePermissionChecker
-  database: IPgComponent
+  permissionsManager: IPermissionsManager
   server: IHttpServerComponent<GlobalContext>
   sns: SnsComponent
   status: IStatusComponent
@@ -230,6 +236,8 @@ export type IWorldCreator = {
     worldName?: string
     metadata?: any
     files?: Map<string, ArrayBuffer>
+    identity?: Identity
+    permissions?: Permissions
   }): Promise<{ worldName: string; entityId: IPFSv2; entity: Entity }>
   randomWorldName(): string
 }

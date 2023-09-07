@@ -87,7 +87,7 @@ export function getAuthHeaders(
   return headers
 }
 
-export function makeid(length) {
+export function makeid(length: number) {
   let result = ''
   const characters = 'abcdefghijklmnopqrstuvwxyz0123456789'
   const charactersLength = characters.length

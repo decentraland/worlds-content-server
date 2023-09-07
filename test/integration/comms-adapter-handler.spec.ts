@@ -1,8 +1,8 @@
 import { test } from '../components'
 import { Authenticator } from '@dcl/crypto'
 import { getAuthHeaders, getIdentity, Identity, storeJson } from '../utils'
-import { defaultPermissions } from "../../src/logic/permissions-checker";
-import { PermissionType } from "../../src/types";
+import { defaultPermissions } from '../../src/logic/permissions-checker'
+import { PermissionType } from '../../src/types'
 
 test('comms adapter handler /get-comms-adapter/:roomId', function ({ components, stubComponents }) {
   function makeRequest(path: string, identity: Identity) {
@@ -50,7 +50,7 @@ test('comms adapter handler /get-comms-adapter/:roomId', function ({ components,
 
   it('works when signed-fetch request is correct', async () => {
     const { worldCreator } = components
-    const { worldName } = await worldCreator.createWorldWithScene({permissions: defaultPermissions()})
+    const { worldName } = await worldCreator.createWorldWithScene()
 
     const r = await makeRequest(`/get-comms-adapter/world-${worldName}`, identity)
 

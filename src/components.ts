@@ -31,6 +31,7 @@ import { createEntityDeployer } from './adapters/entity-deployer'
 import { createMigrationExecutor } from './migrations/migration-executor'
 import { createNameDenyListChecker } from './adapters/name-deny-list-checker'
 import { createDatabaseComponent } from './adapters/database-component'
+import { createPermissionsManagerComponent } from './adapters/permissions-manager'
 
 async function determineNameValidator(
   components: Pick<AppComponents, 'config' | 'ethereumProvider' | 'logs' | 'marketplaceSubGraph'>
@@ -102,6 +103,7 @@ export async function initComponents(): Promise<AppComponents> {
 
   const worldsManager = await createWorldsManagerComponent({ logs, database, nameDenyListChecker, storage })
   const worldsIndexer = await createWorldsIndexerComponent({ worldsManager })
+  const permissionsManager = await createPermissionsManagerComponent({ worldsManager })
 
   const entityDeployer = createEntityDeployer({ config, logs, metrics, storage, sns, worldsManager })
   const validator = createValidator({
@@ -118,6 +120,7 @@ export async function initComponents(): Promise<AppComponents> {
   return {
     commsAdapter,
     config,
+    database,
     entityDeployer,
     ethereumProvider,
     fetch,
@@ -128,7 +131,7 @@ export async function initComponents(): Promise<AppComponents> {
     migrationExecutor,
     nameDenyListChecker,
     namePermissionChecker,
-    database,
+    permissionsManager,
     server,
     sns,
     status,

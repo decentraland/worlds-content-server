@@ -1,23 +1,19 @@
-import { createLogComponent } from '@well-known-components/logger'
-import { IConfigComponent, ILoggerComponent } from '@well-known-components/interfaces'
-import { createConfigComponent } from '@well-known-components/env-config-provider'
 import { createInMemoryStorage, IContentStorageComponent } from '@dcl/catalyst-storage'
-import { createWorldsManagerComponent } from '../../src/adapters/worlds-manager'
-import { IWorldsManager, PermissionType } from '../../src/types'
+import { IPermissionsManager, IWorldsManager, PermissionType } from '../../src/types'
 import { readJson, storeJson } from '../utils'
 import { defaultPermissions } from '../../src/logic/permissions-checker'
+import { createWorldsManagerMockComponent } from '../mocks/worlds-manager-mock'
+import { createPermissionsManagerComponent } from '../../src/adapters/permissions-manager'
 
-describe('WorldsManager', function () {
-  let config: IConfigComponent
-  let logs: ILoggerComponent
+describe('PermissionsManager', function () {
   let storage: IContentStorageComponent
   let worldsManager: IWorldsManager
+  let permissionsManager: IPermissionsManager
 
   beforeEach(async () => {
-    config = createConfigComponent({})
-    logs = await createLogComponent({ config })
     storage = createInMemoryStorage()
-    worldsManager = await createWorldsManagerComponent({ logs, storage })
+    worldsManager = await createWorldsManagerMockComponent({ storage })
+    permissionsManager = await createPermissionsManagerComponent({ worldsManager })
   })
 
   describe('addAddressToAllowList', () => {
@@ -26,7 +22,7 @@ describe('WorldsManager', function () {
         permissions: defaultPermissions()
       })
 
-      await worldsManager.addAddressToAllowList('world-name.dcl.eth', 'deployment', '0x1234')
+      await permissionsManager.addAddressToAllowList('world-name.dcl.eth', 'deployment', '0x1234')
 
       const stored = await readJson(storage, 'name-world-name.dcl.eth')
       expect(stored).toMatchObject({
@@ -45,7 +41,7 @@ describe('WorldsManager', function () {
         permissions: defaultPermissions()
       })
 
-      await expect(worldsManager.addAddressToAllowList('world-name.dcl.eth', 'access', '0x1234')).rejects.toThrow(
+      await expect(permissionsManager.addAddressToAllowList('world-name.dcl.eth', 'access', '0x1234')).rejects.toThrow(
         'Permission access is not an allow list'
       )
 
@@ -70,7 +66,7 @@ describe('WorldsManager', function () {
         }
       })
 
-      await worldsManager.deleteAddressFromAllowList('world-name.dcl.eth', 'deployment', '0x1234')
+      await permissionsManager.deleteAddressFromAllowList('world-name.dcl.eth', 'deployment', '0x1234')
 
       const stored = await readJson(storage, 'name-world-name.dcl.eth')
       expect(stored).toMatchObject({
@@ -83,9 +79,9 @@ describe('WorldsManager', function () {
         permissions: defaultPermissions()
       })
 
-      await expect(worldsManager.deleteAddressFromAllowList('world-name.dcl.eth', 'access', '0x1234')).rejects.toThrow(
-        'Permission access is not an allow list'
-      )
+      await expect(
+        permissionsManager.deleteAddressFromAllowList('world-name.dcl.eth', 'access', '0x1234')
+      ).rejects.toThrow('Permission access is not an allow list')
 
       const stored = await readJson(storage, 'name-world-name.dcl.eth')
       expect(stored).toMatchObject({

@@ -1,9 +1,10 @@
-import { AppComponents, IWorldCreator } from '../../src/types'
+import { AppComponents, IWorldCreator, Permissions } from '../../src/types'
 import { Entity, EntityType, IPFSv2 } from '@dcl/schemas'
 import { DeploymentBuilder } from 'dcl-catalyst-client'
 import { TextDecoder } from 'util'
 import { getIdentity, Identity, makeid, storeJson } from '../utils'
 import { Authenticator } from '@dcl/crypto'
+import { defaultPermissions } from '../../src/logic/permissions-checker'
 
 export function createWorldCreator({
   storage,
@@ -14,6 +15,7 @@ export function createWorldCreator({
     metadata?: any
     files?: Map<string, ArrayBuffer>
     identity?: Identity
+    permissions?: Permissions
   }): Promise<{ worldName: string; entityId: IPFSv2; entity: Entity }> {
     const worldName: string = data?.worldName || `w-${makeid(10)}.dcl.eth`
     const metadata = data?.metadata || {
@@ -33,6 +35,7 @@ export function createWorldCreator({
       files: data?.files || new Map(),
       metadata
     })
+    const permissions = data?.permissions || defaultPermissions()
 
     const entityWithoutId = JSON.parse(new TextDecoder().decode(files.get(entityId)))
     await storeJson(storage, entityId, entityWithoutId)
@@ -43,6 +46,7 @@ export function createWorldCreator({
     const entity = { id: entityId, ...entityWithoutId }
 
     await worldsManager.deployScene(worldName, entity)
+    await worldsManager.storePermissions(worldName, permissions)
 
     return {
       worldName,
