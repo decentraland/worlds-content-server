@@ -1,7 +1,6 @@
 import { MigratorComponents } from '../../types'
 import { extractWorldRuntimeMetadata } from '../../logic/world-runtime-metadata-utils'
-import { deepEqual } from '../../logic/deep-equal'
-import { readFile, writeFile } from '../utils'
+import { deepEqual, readFile, writeFile } from '../utils'
 
 export default {
   run: async (components: Pick<MigratorComponents, 'logs' | 'storage'>) => {

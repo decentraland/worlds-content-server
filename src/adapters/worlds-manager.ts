@@ -4,8 +4,8 @@ import { AuthChain, Entity } from '@dcl/schemas'
 import { stringToUtf8Bytes } from 'eth-connect'
 import SQL from 'sql-template-strings'
 import { extractWorldRuntimeMetadata } from '../logic/world-runtime-metadata-utils'
-import { deepEqual } from '../logic/deep-equal'
 import { createPermissionChecker, defaultPermissions } from '../logic/permissions-checker'
+import { deepEqual } from '../migrations/utils'
 
 type WorldRecord = {
   name: string
