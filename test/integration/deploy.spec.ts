@@ -1,37 +1,53 @@
 import { test } from '../components'
-import { createContentClient, DeploymentBuilder } from 'dcl-catalyst-client'
+import { ContentClient, createContentClient, DeploymentBuilder } from 'dcl-catalyst-client'
 import { EntityType } from '@dcl/schemas'
 import { Authenticator } from '@dcl/crypto'
 import Sinon from 'sinon'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { hashV1 } from '@dcl/hashing'
-import { cleanup, getIdentity, storeJson } from '../utils'
-import { streamToBuffer } from '@dcl/catalyst-storage'
+import { getIdentity, Identity, makeid } from '../utils'
 import { defaultPermissions } from '../../src/logic/permissions-checker'
-import { PermissionType } from '../../src/types'
+import { IWorldCreator, IWorldsManager, Permissions, PermissionType } from '../../src/types'
+import { IContentStorageComponent } from '@dcl/catalyst-storage'
 
 test('deployment works', function ({ components, stubComponents }) {
+  let contentClient: ContentClient
+  let identity: Identity
+  let worldName: string
+  let worldCreator: IWorldCreator
+  let worldsManager: IWorldsManager
+  let storage: IContentStorageComponent
+
+  const entityFiles = new Map<string, Uint8Array>()
+
   beforeEach(async () => {
-    await cleanup(components.storage, components.database)
-  })
+    const { config } = components
 
-  it('creates an entity and deploys it (owner)', async () => {
-    const { config, storage, worldCreator } = components
-    const { namePermissionChecker, metrics } = stubComponents
+    worldCreator = components.worldCreator
+    worldsManager = components.worldsManager
+    storage = components.storage
 
-    const contentClient = createContentClient({
+    identity = await getIdentity()
+    worldName = components.worldCreator.randomWorldName()
+
+    contentClient = createContentClient({
       url: `http://${await config.requireString('HTTP_SERVER_HOST')}:${await config.requireNumber('HTTP_SERVER_PORT')}`,
       fetcher: components.fetch
     })
 
-    const entityFiles = new Map<string, Uint8Array>()
-    entityFiles.set('abc.txt', stringToUtf8Bytes('asd'))
+    stubComponents.namePermissionChecker.checkPermission
+      .withArgs(identity.authChain.authChain[0].payload, worldName)
+      .resolves(true)
+    stubComponents.metrics.increment.withArgs('world_deployments_counter')
+  })
+
+  it('creates an entity and deploys it (owner)', async () => {
+    const { storage, worldsManager } = components
+
+    entityFiles.set('abc.txt', stringToUtf8Bytes(makeid(100)))
     const fileHash = await hashV1(entityFiles.get('abc.txt')!)
 
-    expect(await storage.exist(fileHash)).toEqual(false)
-
     // Build the entity
-    const worldName = worldCreator.randomWorldName()
     const { files, entityId } = await DeploymentBuilder.buildEntity({
       type: EntityType.SCENE as any,
       pointers: ['0,0'],
@@ -56,70 +72,55 @@ test('deployment works', function ({ components, stubComponents }) {
       }
     })
 
-    // Sign entity id
-    const identity = await getIdentity()
-
-    namePermissionChecker.checkPermission.withArgs(identity.authChain.authChain[0].payload, worldName).resolves(true)
-
     const authChain = Authenticator.signPayload(identity.authChain, entityId)
 
-    // Deploy entity
     const response = (await contentClient.deploy({ files, entityId, authChain })) as Response
     expect(await response.json()).toMatchObject({
       message: `Your scene was deployed to a Worlds Content Server!\nAccess world ${worldName}: https://play.decentraland.org/?realm=https%3A%2F%2F0.0.0.0%3A3000%2Fworld%2F${worldName}`
     })
 
-    Sinon.assert.calledWith(namePermissionChecker.checkPermission, identity.authChain.authChain[0].payload, worldName)
+    Sinon.assert.calledWith(
+      stubComponents.namePermissionChecker.checkPermission,
+      identity.authChain.authChain[0].payload,
+      worldName
+    )
 
-    expect(await storage.exist(fileHash)).toEqual(true)
-    expect(await storage.exist(entityId)).toEqual(true)
-    expect(await storage.exist(`name-${worldName}`)).toEqual(true)
+    expect(await storage.exist(fileHash)).toBeTruthy()
+    expect(await storage.exist(entityId)).toBeTruthy()
+    expect(await storage.exist(`name-${worldName}`)).toBeTruthy()
 
-    const content = await storage.retrieve(`name-${worldName}`)
-    const stored = JSON.parse((await streamToBuffer(await content!.asStream())).toString())
+    const stored = await worldsManager.getMetadataForWorld(worldName)
     expect(stored).toMatchObject({
       entityId,
       runtimeMetadata: {
         name: worldName,
         entityIds: [entityId],
-        minimapDataImage: 'bafkreidiq6d5r7yujricy72476vp4lgfrdmga6pz32edatbgwdfztturyy',
-        minimapEstateImage: 'bafkreidiq6d5r7yujricy72476vp4lgfrdmga6pz32edatbgwdfztturyy',
+        minimapDataImage: fileHash,
+        minimapEstateImage: fileHash,
         minimapVisible: false,
-        skyboxTextures: ['bafkreidiq6d5r7yujricy72476vp4lgfrdmga6pz32edatbgwdfztturyy']
+        skyboxTextures: [fileHash]
       }
     })
 
-    Sinon.assert.calledWithMatch(metrics.increment, 'world_deployments_counter')
+    Sinon.assert.calledWithMatch(stubComponents.metrics.increment, 'world_deployments_counter')
   })
 
   it('creates an entity and deploys it (authorized wallet)', async () => {
-    const { config, storage, worldCreator, worldsManager } = components
-    const { namePermissionChecker, metrics } = stubComponents
-
-    const contentClient = createContentClient({
-      url: `http://${await config.requireString('HTTP_SERVER_HOST')}:${await config.requireNumber('HTTP_SERVER_PORT')}`,
-      fetcher: components.fetch
-    })
+    const { storage, worldsManager } = components
 
     const delegatedIdentity = await getIdentity()
-    const ownerIdentity = await getIdentity()
 
-    const worldName = worldCreator.randomWorldName()
-    const payload = `{"resource":"${worldName}","allowed":["${delegatedIdentity.realAccount.address}"]}`
-
-    await worldsManager.storeAcl(worldName, Authenticator.signPayload(ownerIdentity.authChain, payload)) // TODO Remove
-    await worldsManager.storePermissions(worldName, {
+    const permissions: Permissions = {
       ...defaultPermissions(),
       deployment: {
         type: PermissionType.AllowList,
         wallets: [delegatedIdentity.realAccount.address]
       }
-    })
+    }
+    await worldsManager.storePermissions(worldName, permissions)
 
-    const entityFiles = new Map<string, Uint8Array>()
-    entityFiles.set('abc.txt', stringToUtf8Bytes('asd'))
+    entityFiles.set('abc.txt', stringToUtf8Bytes(makeid(100)))
     const fileHash = await hashV1(entityFiles.get('abc.txt')!)
-    await storeJson(storage, fileHash, {})
 
     // Build the entity
     const { files, entityId } = await DeploymentBuilder.buildEntity({
@@ -138,32 +139,20 @@ test('deployment works', function ({ components, stubComponents }) {
       }
     })
 
-    namePermissionChecker.checkPermission
-      .withArgs(delegatedIdentity.authChain.authChain[0].payload, worldName)
-      .resolves(false)
-
     const authChain = Authenticator.signPayload(delegatedIdentity.authChain, entityId)
 
-    // Deploy entity
     await contentClient.deploy({ files, entityId, authChain })
 
     Sinon.assert.calledWith(
-      namePermissionChecker.checkPermission,
-      ownerIdentity.authChain.authChain[0].payload,
-      worldName
-    )
-
-    Sinon.assert.calledWith(
-      namePermissionChecker.checkPermission,
+      stubComponents.namePermissionChecker.checkPermission,
       delegatedIdentity.authChain.authChain[0].payload,
       worldName
     )
 
-    expect(await storage.exist(fileHash)).toEqual(true)
-    expect(await storage.exist(entityId)).toEqual(true)
-    const content = await storage.retrieve(`name-${worldName}`)
-    const stored = JSON.parse((await streamToBuffer(await content!.asStream())).toString())
+    expect(await storage.exist(fileHash)).toBeTruthy()
+    expect(await storage.exist(entityId)).toBeTruthy()
 
+    const stored = await worldsManager.getMetadataForWorld(worldName)
     expect(stored).toMatchObject({
       entityId,
       runtimeMetadata: {
@@ -171,25 +160,19 @@ test('deployment works', function ({ components, stubComponents }) {
         minimapVisible: false,
         name: worldName
       },
-      acl: Authenticator.signPayload(ownerIdentity.authChain, payload)
+      permissions
     })
 
-    Sinon.assert.calledWithMatch(metrics.increment, 'world_deployments_counter')
+    Sinon.assert.calledWithMatch(stubComponents.metrics.increment, 'world_deployments_counter')
   })
 
   it('creates an entity and deploys it using uppercase letters in the name', async () => {
-    const { config, storage, worldCreator, worldsManager } = components
-    const { namePermissionChecker, metrics } = stubComponents
-
-    const contentClient = createContentClient({
-      url: `http://${await config.requireString('HTTP_SERVER_HOST')}:${await config.requireNumber('HTTP_SERVER_PORT')}`,
-      fetcher: components.fetch
-    })
-
-    const entityFiles = new Map<string, Uint8Array>()
-
     // Build the entity
     const worldName = worldCreator.randomWorldName().toUpperCase()
+    stubComponents.namePermissionChecker.checkPermission
+      .withArgs(identity.authChain.authChain[0].payload, worldName)
+      .resolves(true)
+
     const { files, entityId } = await DeploymentBuilder.buildEntity({
       type: EntityType.SCENE as any,
       pointers: ['0,0'],
@@ -206,25 +189,22 @@ test('deployment works', function ({ components, stubComponents }) {
       }
     })
 
-    // Sign entity id
-    const identity = await getIdentity()
-
-    namePermissionChecker.checkPermission.withArgs(identity.authChain.authChain[0].payload, worldName).resolves(true)
-
     const authChain = Authenticator.signPayload(identity.authChain, entityId)
 
-    // Deploy entity
     const response = (await contentClient.deploy({ files, entityId, authChain })) as Response
     expect(await response.json()).toMatchObject({
       message: `Your scene was deployed to a Worlds Content Server!\nAccess world ${worldName}: https://play.decentraland.org/?realm=https%3A%2F%2F0.0.0.0%3A3000%2Fworld%2F${worldName}`
     })
 
-    Sinon.assert.calledWith(namePermissionChecker.checkPermission, identity.authChain.authChain[0].payload, worldName)
+    Sinon.assert.calledWith(
+      stubComponents.namePermissionChecker.checkPermission,
+      identity.authChain.authChain[0].payload,
+      worldName
+    )
 
-    expect(await storage.exist(`name-${worldName.toLowerCase()}`)).toEqual(true)
+    expect(await storage.exist(`name-${worldName.toLowerCase()}`)).toBeTruthy()
 
-    const content = await storage.retrieve(`name-${worldName.toLowerCase()}`)
-    const stored = JSON.parse((await streamToBuffer(await content!.asStream())).toString())
+    const stored = await worldsManager.getMetadataForWorld(worldName)
     expect(stored).toMatchObject({
       entityId,
       runtimeMetadata: {
@@ -234,26 +214,15 @@ test('deployment works', function ({ components, stubComponents }) {
       }
     })
 
-    const fromDb = await worldsManager.getMetadataForWorld(worldName)
-    expect(fromDb).toBeDefined()
-    expect(stored).toMatchObject(fromDb)
-
-    Sinon.assert.calledWithMatch(metrics.increment, 'world_deployments_counter')
+    Sinon.assert.calledWithMatch(stubComponents.metrics.increment, 'world_deployments_counter')
   })
 
   it('fails because user does not own requested name', async () => {
-    const { config, storage, worldCreator } = components
-    const { namePermissionChecker, metrics } = stubComponents
+    stubComponents.namePermissionChecker.checkPermission
+      .withArgs(identity.authChain.authChain[0].payload, worldName)
+      .resolves(false)
 
-    const contentClient = createContentClient({
-      url: `http://${await config.requireString('HTTP_SERVER_HOST')}:${await config.requireNumber('HTTP_SERVER_PORT')}`,
-      fetcher: components.fetch
-    })
-
-    const worldName = worldCreator.randomWorldName()
-
-    const entityFiles = new Map<string, Uint8Array>()
-    entityFiles.set('abc.txt', stringToUtf8Bytes('asd'))
+    entityFiles.set('abc.txt', stringToUtf8Bytes(makeid(100)))
     const fileHash = await hashV1(entityFiles.get('abc.txt')!)
 
     expect(await storage.exist(fileHash)).toEqual(false)
@@ -275,39 +244,30 @@ test('deployment works', function ({ components, stubComponents }) {
       }
     })
 
-    // Sign entity id
-    const identity = await getIdentity()
-
-    namePermissionChecker.checkPermission.withArgs(identity.authChain.authChain[0].payload, worldName).resolves(false)
+    stubComponents.namePermissionChecker.checkPermission
+      .withArgs(identity.authChain.authChain[0].payload, worldName)
+      .resolves(false)
 
     const authChain = Authenticator.signPayload(identity.authChain, entityId)
 
-    // Deploy entity
     await expect(() => contentClient.deploy({ files, entityId, authChain })).rejects.toThrow(
       `Your wallet has no permission to publish this scene because it does not have permission to deploy under \\"${worldName}\\". Check scene.json to select a name that either you own or you were given permission to deploy.`
     )
 
-    Sinon.assert.calledWith(namePermissionChecker.checkPermission, identity.authChain.authChain[0].payload, worldName)
+    Sinon.assert.calledWith(
+      stubComponents.namePermissionChecker.checkPermission,
+      identity.authChain.authChain[0].payload,
+      worldName
+    )
 
     expect(await storage.exist(fileHash)).toEqual(false)
     expect(await storage.exist(entityId)).toEqual(false)
 
-    Sinon.assert.notCalled(metrics.increment)
+    Sinon.assert.notCalled(stubComponents.metrics.increment)
   })
 
   it('fails because user did not specify any names', async () => {
-    const { config, storage, worldCreator } = components
-    const { namePermissionChecker, metrics } = stubComponents
-
-    const contentClient = createContentClient({
-      url: `http://${await config.requireString('HTTP_SERVER_HOST')}:${await config.requireNumber('HTTP_SERVER_PORT')}`,
-      fetcher: components.fetch
-    })
-
-    const worldName = worldCreator.randomWorldName()
-
-    const entityFiles = new Map<string, Uint8Array>()
-    entityFiles.set('abc.txt', stringToUtf8Bytes('asd'))
+    entityFiles.set('abc.txt', stringToUtf8Bytes(makeid(100)))
     const fileHash = await hashV1(entityFiles.get('abc.txt')!)
 
     expect(await storage.exist(fileHash)).toEqual(false)
@@ -326,23 +286,17 @@ test('deployment works', function ({ components, stubComponents }) {
       }
     })
 
-    // Sign entity id
-    const identity = await getIdentity()
-
-    namePermissionChecker.checkPermission.withArgs(identity.authChain.authChain[0].payload, worldName).resolves(false)
-
     const authChain = Authenticator.signPayload(identity.authChain, entityId)
 
-    // Deploy entity
     await expect(() => contentClient.deploy({ files, entityId, authChain })).rejects.toThrow(
       'Deployment failed: scene.json needs to specify a worldConfiguration section with a valid name inside.'
     )
 
-    Sinon.assert.notCalled(namePermissionChecker.checkPermission)
+    Sinon.assert.notCalled(stubComponents.namePermissionChecker.checkPermission)
 
     expect(await storage.exist(fileHash)).toEqual(false)
     expect(await storage.exist(entityId)).toEqual(false)
 
-    Sinon.assert.notCalled(metrics.increment)
+    Sinon.assert.notCalled(stubComponents.metrics.increment)
   })
 })
