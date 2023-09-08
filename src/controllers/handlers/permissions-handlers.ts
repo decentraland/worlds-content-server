@@ -127,9 +127,7 @@ export async function postPermissionsHandler(
           break
         }
         default: {
-          throw new InvalidRequestError(
-            `Invalid payload received. Streaming permission needs to be either '${PermissionType.Unrestricted}' or '${PermissionType.AllowList}'.`
-          )
+          throw new InvalidRequestError(`Invalid payload received. Invalid permission.`)
         }
       }
       break
