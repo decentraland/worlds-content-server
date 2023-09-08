@@ -3,7 +3,7 @@ import { Entity, EntityType, IPFSv2 } from '@dcl/schemas'
 import { DeploymentBuilder } from 'dcl-catalyst-client'
 import { TextDecoder } from 'util'
 import { getIdentity, makeid, storeJson } from '../utils'
-import { Authenticator } from '@dcl/crypto'
+import { Authenticator, AuthIdentity } from '@dcl/crypto'
 import { defaultPermissions } from '../../src/logic/permissions-checker'
 
 export function createWorldCreator({
@@ -15,7 +15,8 @@ export function createWorldCreator({
     metadata?: any
     files?: Map<string, ArrayBuffer>
     permissions?: Permissions
-  }): Promise<{ worldName: string; entityId: IPFSv2; entity: Entity }> {
+    owner?: AuthIdentity
+  }): Promise<{ worldName: string; entityId: IPFSv2; entity: Entity; owner: AuthIdentity }> {
     const worldName: string = data?.worldName || `w-${makeid(10)}.dcl.eth`
     const metadata = data?.metadata || {
       main: 'abc.txt',
@@ -28,7 +29,7 @@ export function createWorldCreator({
       }
     }
 
-    const identity = await getIdentity()
+    const signer = data?.owner || (await getIdentity())?.authChain
     const { files, entityId } = await DeploymentBuilder.buildEntity({
       type: EntityType.SCENE as any,
       pointers: metadata.scene.parcels,
@@ -40,7 +41,7 @@ export function createWorldCreator({
     const entityWithoutId = JSON.parse(new TextDecoder().decode(files.get(entityId)))
     await storeJson(storage, entityId, entityWithoutId)
 
-    const authChain = Authenticator.signPayload(identity.authChain, entityId)
+    const authChain = Authenticator.signPayload(signer, entityId)
     await storeJson(storage, entityId + '.auth', authChain)
 
     const entity = { id: entityId, ...entityWithoutId }
@@ -51,7 +52,8 @@ export function createWorldCreator({
     return {
       worldName,
       entityId,
-      entity
+      entity,
+      owner: signer
     }
   }
 

@@ -1,4 +1,4 @@
-import { AppComponents, IPermissionChecker, IWorldsManager, Permissions, WorldMetadata } from '../types'
+import { AppComponents, IPermissionChecker, IWorldsManager, Permissions, PermissionType, WorldMetadata } from '../types'
 import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage'
 import { AuthChain, Entity } from '@dcl/schemas'
 import { stringToUtf8Bytes } from 'eth-connect'
@@ -118,23 +118,33 @@ export async function createWorldsManagerComponent({
   }
 
   async function storeAcl(worldName: string, acl: AuthChain): Promise<void> {
+    const worldMetadata = await getMetadataForWorld(worldName)
+    const permissions = worldMetadata?.permissions || defaultPermissions()
+    permissions.deployment.wallets = JSON.parse(acl.slice(-1).pop()!.payload).allowed
+    if (permissions.streaming.type === PermissionType.AllowList) {
+      permissions.streaming.wallets = permissions.deployment.wallets
+    }
+
     const sql = SQL`
-              INSERT INTO worlds (name, acl, created_at, updated_at)
-              VALUES (${worldName.toLowerCase()}, ${JSON.stringify(acl)}::json, ${new Date()}, ${new Date()})
+              INSERT INTO worlds (name, acl, permissions, created_at, updated_at)
+              VALUES (${worldName.toLowerCase()}, ${JSON.stringify(acl)}::json, ${JSON.stringify(permissions)}::json,
+                      ${new Date()}, ${new Date()})
               ON CONFLICT (name) 
                   DO UPDATE SET acl = ${JSON.stringify(acl)}::json,
+                                permissions = ${JSON.stringify(permissions)}::json,
                                 updated_at = ${new Date()}
     `
     await database.query(sql)
 
     // TODO remove once we are sure everything works fine with DB
-    await storeWorldMetadata(worldName, { acl })
+    await storeWorldMetadata(worldName, { acl, permissions })
   }
 
   async function storePermissions(worldName: string, permissions: Permissions): Promise<void> {
     const sql = SQL`
               INSERT INTO worlds (name, permissions, created_at, updated_at)
-              VALUES (${worldName.toLowerCase()}, ${JSON.stringify(permissions)}::json, ${new Date()}, ${new Date()})
+              VALUES (${worldName.toLowerCase()}, ${JSON.stringify(permissions)}::json,
+                      ${new Date()}, ${new Date()})
               ON CONFLICT (name) 
                   DO UPDATE SET permissions = ${JSON.stringify(permissions)}::json,
                                 updated_at = ${new Date()}

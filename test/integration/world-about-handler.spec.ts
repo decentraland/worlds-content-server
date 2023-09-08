@@ -234,13 +234,21 @@ test('world about handler /world/:world_name/about', function ({ components, stu
     expect(await r.json()).toMatchObject({ message: `World "${worldName}" has no scene deployed.` })
   })
 
-  it('when world exists but the scene does not, it responds with 404', async () => {
+  it('when world exists but with no scene deployed, it responds with 404', async () => {
     const { localFetch, worldCreator, worldsManager } = components
 
     const identity = await getIdentity()
     const worldName = worldCreator.randomWorldName()
 
-    await worldsManager.storeAcl(worldName, Authenticator.signPayload(identity.authChain, ''))
+    const delegatedIdentity = await getIdentity()
+
+    const payload = JSON.stringify({
+      resource: worldName,
+      allowed: [delegatedIdentity.realAccount.address],
+      timestamp: new Date().toISOString()
+    })
+
+    await worldsManager.storeAcl(worldName, Authenticator.signPayload(identity.authChain, payload))
 
     const r = await localFetch.fetch(`/world/${worldName}/about`)
     expect(r.status).toEqual(404)

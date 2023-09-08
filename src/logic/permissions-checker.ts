@@ -11,7 +11,8 @@ const _defaultPermissions: Permissions = {
     type: PermissionType.Unrestricted
   },
   streaming: {
-    type: PermissionType.Unrestricted
+    type: PermissionType.AllowList,
+    wallets: []
   }
 }
 
