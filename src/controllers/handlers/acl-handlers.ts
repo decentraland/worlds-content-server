@@ -3,30 +3,16 @@ import { AccessControlList, HandlerContextWithPath, InvalidRequestError } from '
 import { AuthChain, EthAddress } from '@dcl/schemas'
 
 export async function getAclHandler(
-  ctx: HandlerContextWithPath<'namePermissionChecker' | 'worldsManager', '/acl/:world_name'>
+  ctx: HandlerContextWithPath<'worldsManager', '/acl/:world_name'>
 ): Promise<IHttpServerComponent.IResponse> {
-  const { namePermissionChecker, worldsManager } = ctx.components
+  const { worldsManager } = ctx.components
 
   const worldName = ctx.params.world_name
 
   const worldMetadata = await worldsManager.getMetadataForWorld(worldName)
-  if (!worldMetadata || !worldMetadata.acl) {
-    return {
-      status: 200,
-      body: {
-        resource: worldName,
-        allowed: [],
-        timestamp: ''
-      } as AccessControlList
-    }
-  }
-
-  // Check that the ACL was signed by the wallet that currently owns the world, or else return empty
-  const ethAddress = worldMetadata.acl[0].payload
-  const permission = await namePermissionChecker.checkPermission(ethAddress, worldName)
   const acl: AccessControlList = {
     resource: worldName,
-    allowed: permission ? worldMetadata.permissions.deployment.wallets : [],
+    allowed: worldMetadata?.permissions?.deployment.wallets || [],
     timestamp: ''
   }
 

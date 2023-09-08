@@ -52,30 +52,6 @@ test('acl handlers', function ({ components, stubComponents }) {
       })
     })
 
-    it("returns an empty acl when existing acl is no longer the world owner's", async () => {
-      stubComponents.namePermissionChecker.checkPermission
-        .withArgs(ownerIdentity.authChain.authChain[0].payload, worldName)
-        .resolves(false)
-
-      const timestamp = new Date().toISOString()
-      const payload = JSON.stringify({
-        resource: worldName,
-        allowed: [(await getIdentity()).realAccount.address],
-        timestamp
-      })
-
-      await worldsManager.storeAcl(worldName, Authenticator.signPayload(ownerIdentity.authChain, payload))
-
-      const r = await localFetch.fetch(`/acl/${worldName}`)
-
-      expect(r.status).toBe(200)
-      expect(await r.json()).toEqual({
-        resource: worldName,
-        allowed: [],
-        timestamp: ''
-      })
-    })
-
     it('returns acl from auth-chain when acl exists', async () => {
       const delegatedIdentity = await getIdentity()
 
