@@ -1,6 +1,7 @@
 import { IHttpServerComponent } from '@well-known-components/interfaces'
 import { AccessControlList, HandlerContextWithPath, InvalidRequestError } from '../../types'
 import { AuthChain, EthAddress } from '@dcl/schemas'
+import { defaultPermissions } from '../../logic/permissions-checker'
 
 export async function getAclHandler(
   ctx: HandlerContextWithPath<'namePermissionChecker' | 'worldsManager', '/acl/:world_name'>
@@ -100,6 +101,11 @@ export async function postAclHandler(
   }
 
   await worldsManager.storeAcl(worldName, authChain)
+
+  const permissions = worldMetadata?.permissions || defaultPermissions()
+  permissions.deployment.wallets = JSON.parse(authChain.slice(-1).pop()!.payload).allowed
+  console.warn('Storing permissions', permissions)
+  await worldsManager.storePermissions(worldName, permissions)
 
   return {
     status: 200,
