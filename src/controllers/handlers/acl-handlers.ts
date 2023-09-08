@@ -25,14 +25,11 @@ export async function getAclHandler(
   // Check that the ACL was signed by the wallet that currently owns the world, or else return empty
   const ethAddress = worldMetadata.acl[0].payload
   const permission = await namePermissionChecker.checkPermission(ethAddress, worldName)
-  const acl: AccessControlList = !permission
-    ? {
-        resource: worldName,
-        allowed: [],
-        timestamp: ''
-      }
-    : // Get the last element of the auth chain. The payload must contain the AccessControlList
-      JSON.parse(worldMetadata.acl.slice(-1).pop()!.payload)
+  const acl: AccessControlList = {
+    resource: worldName,
+    allowed: permission ? worldMetadata.permissions.deployment.wallets : [],
+    timestamp: ''
+  }
 
   return {
     status: 200,
