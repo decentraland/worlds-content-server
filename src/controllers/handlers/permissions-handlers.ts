@@ -9,7 +9,6 @@ import {
   PermissionType
 } from '../../types'
 import { DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
-import { defaultPermissions } from '../../logic/permissions-checker'
 import bcrypt from 'bcrypt'
 
 const saltRounds = 10
@@ -32,12 +31,11 @@ async function checkOwnership(namePermissionChecker: IWorldNamePermissionChecker
 }
 
 export async function getPermissionsHandler(
-  ctx: HandlerContextWithPath<'worldsManager', '/world/:world_name/permissions'>
+  ctx: HandlerContextWithPath<'permissionsManager', '/world/:world_name/permissions'>
 ): Promise<IHttpServerComponent.IResponse> {
-  const { worldsManager } = ctx.components
+  const { permissionsManager } = ctx.components
 
-  const worldMetadata = await worldsManager.getMetadataForWorld(ctx.params.world_name)
-  const permissions = worldMetadata?.permissions || defaultPermissions()
+  const permissions = await permissionsManager.getPermissions(ctx.params.world_name)
 
   const noSecrets = removeSecrets(permissions)
 
