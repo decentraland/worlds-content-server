@@ -10,6 +10,9 @@ import {
 } from '../../types'
 import { DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
 import { defaultPermissions } from '../../logic/permissions-checker'
+import bcrypt from 'bcrypt'
+
+const saltRounds = 10
 
 function removeSecrets(permissions: Permissions): Permissions {
   const noSecrets = JSON.parse(JSON.stringify(permissions)) as Permissions
@@ -59,37 +62,78 @@ export async function postPermissionsHandler(
   await checkOwnership(namePermissionChecker, ctx.verification!.auth, worldName)
 
   const { type, ...extras } = ctx.verification!.authMetadata
-  if (
-    !type ||
-    ![
-      PermissionType.Unrestricted,
-      PermissionType.SharedSecret,
-      PermissionType.NFTOwnership,
-      PermissionType.AllowList
-    ].includes(type)
-  ) {
-    throw new InvalidRequestError(`Invalid payload received. Need to provide a valid permission type: ${type}.`)
-  } else if (type === PermissionType.SharedSecret && !extras.secret) {
-    throw new InvalidRequestError('Invalid payload received. For shared secret there needs to be a valid secret.')
-  } else if (type === PermissionType.NFTOwnership && !extras.nft) {
-    throw new InvalidRequestError('Invalid payload received. For nft ownership there needs to be a valid nft.')
-  }
 
-  if (permissionName === 'deployment' && type !== PermissionType.AllowList) {
-    throw new InvalidRequestError(
-      `Invalid payload received. Deployment permission needs to be '${PermissionType.AllowList}'.`
-    )
-  } else if (
-    permissionName === 'streaming' &&
-    type !== PermissionType.AllowList &&
-    type !== PermissionType.Unrestricted
-  ) {
-    throw new InvalidRequestError(
-      `Invalid payload received. Streaming permission needs to be either '${PermissionType.Unrestricted}' or '${PermissionType.AllowList}'.`
-    )
+  const permissions = await permissionsManager.getPermissions(worldName)
+  switch (permissionName) {
+    case 'deployment': {
+      switch (type) {
+        case PermissionType.AllowList: {
+          permissions.deployment = { type: PermissionType.AllowList, wallets: [] }
+          break
+        }
+        default: {
+          throw new InvalidRequestError(
+            `Invalid payload received. Deployment permission needs to be '${PermissionType.AllowList}'.`
+          )
+        }
+      }
+      break
+    }
+    case 'streaming': {
+      switch (type) {
+        case PermissionType.AllowList: {
+          permissions.streaming = { type: PermissionType.AllowList, wallets: [] }
+          break
+        }
+        case PermissionType.Unrestricted: {
+          permissions.streaming = { type: PermissionType.Unrestricted }
+          break
+        }
+        default: {
+          throw new InvalidRequestError(
+            `Invalid payload received. Streaming permission needs to be either '${PermissionType.Unrestricted}' or '${PermissionType.AllowList}'.`
+          )
+        }
+      }
+      break
+    }
+    case 'access': {
+      switch (type) {
+        case PermissionType.AllowList: {
+          permissions.access = { type: PermissionType.AllowList, wallets: [] }
+          break
+        }
+        case PermissionType.Unrestricted: {
+          permissions.access = { type: PermissionType.Unrestricted }
+          break
+        }
+        case PermissionType.NFTOwnership: {
+          if (!extras.nft) {
+            throw new InvalidRequestError('Invalid payload received. For nft ownership there needs to be a valid nft.')
+          }
+          permissions.access = { type: PermissionType.NFTOwnership, nft: extras.nft }
+          break
+        }
+        case PermissionType.SharedSecret: {
+          if (!extras.secret) {
+            throw new InvalidRequestError(
+              'Invalid payload received. For shared secret there needs to be a valid secret.'
+            )
+          }
+          permissions.access = {
+            type: PermissionType.SharedSecret,
+            secret: bcrypt.hashSync(extras.secret, saltRounds)
+          }
+          break
+        }
+        default: {
+          throw new InvalidRequestError(`Invalid payload received. Need to provide a valid permission type: ${type}.`)
+        }
+      }
+      break
+    }
   }
-
-  await permissionsManager.setPermissionType(worldName, permissionName, type, extras)
+  await permissionsManager.storePermissions(worldName, permissions)
 
   return {
     status: 204

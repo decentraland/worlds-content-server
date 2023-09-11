@@ -131,7 +131,8 @@ export type IWorldsManager = {
 }
 
 export type IPermissionsManager = {
-  setPermissionType(worldName: string, permission: Permission, type: PermissionType, authMetadata: any): Promise<void>
+  getPermissions(worldName: string): Promise<Permissions>
+  storePermissions(worldName: string, permissions: Permissions): Promise<void>
   addAddressToAllowList(worldName: string, permission: Permission, address: string): Promise<void>
   deleteAddressFromAllowList(worldName: string, permission: Permission, address: string): Promise<void>
 }

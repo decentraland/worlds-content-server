@@ -1,31 +1,16 @@
-import { AppComponents, IPermissionsManager, Permission, PermissionType } from '../types'
+import { AppComponents, IPermissionsManager, Permission, PermissionType, Permissions } from '../types'
 import { defaultPermissions } from '../logic/permissions-checker'
-import bcrypt from 'bcrypt'
-
-const saltRounds = 10
 
 export async function createPermissionsManagerComponent({
   worldsManager
 }: Pick<AppComponents, 'worldsManager'>): Promise<IPermissionsManager> {
-  async function setPermissionType(
-    worldName: string,
-    permission: Permission,
-    type: PermissionType,
-    extras: any
-  ): Promise<void> {
+  async function getPermissions(worldName: string): Promise<Permissions> {
     const metadata = await worldsManager.getMetadataForWorld(worldName)
 
-    const extraOptions: any = {}
-    if (type === PermissionType.SharedSecret) {
-      extraOptions.secret = bcrypt.hashSync(extras.secret, saltRounds)
-    } else if (type === PermissionType.NFTOwnership) {
-      extraOptions.nft = extras.nft
-    } else if (type === PermissionType.AllowList) {
-      extraOptions.wallets = []
-    }
+    return metadata?.permissions || defaultPermissions()
+  }
 
-    const permissions = metadata?.permissions || defaultPermissions()
-    permissions[permission] = { type, ...extraOptions }
+  async function storePermissions(worldName: string, permissions: Permissions): Promise<void> {
     await worldsManager.storePermissions(worldName, permissions)
   }
 
@@ -64,7 +49,8 @@ export async function createPermissionsManagerComponent({
   }
 
   return {
-    setPermissionType,
+    getPermissions,
+    storePermissions,
     addAddressToAllowList,
     deleteAddressFromAllowList
   }
