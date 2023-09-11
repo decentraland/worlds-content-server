@@ -127,7 +127,7 @@ export async function postPermissionsHandler(
           break
         }
         default: {
-          throw new InvalidRequestError(`Invalid payload received. Invalid permission.`)
+          throw new InvalidRequestError(`Invalid payload received. Need to provide a valid permission type: ${type}.`)
         }
       }
       break
