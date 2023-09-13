@@ -11,7 +11,6 @@ type WorldRecord = {
   entity_id: string
   deployment_auth_chain: AuthChain
   entity: any
-  acl: any
   permissions: Permissions
   created_at: Date
   updated_at: Date
@@ -46,9 +45,6 @@ export async function createWorldsManagerComponent({
     if (row.entity) {
       tempWorldMetadata.entityId = row.entity_id
       tempWorldMetadata.runtimeMetadata = extractWorldRuntimeMetadata(worldName, { ...row.entity, id: row.entity_id })
-    }
-    if (row.acl) {
-      tempWorldMetadata.acl = row.acl
     }
     if (row.permissions) {
       tempWorldMetadata.permissions = row.permissions
@@ -88,12 +84,11 @@ export async function createWorldsManagerComponent({
     }
 
     const sql = SQL`
-              INSERT INTO worlds (name, acl, permissions, created_at, updated_at)
-              VALUES (${worldName.toLowerCase()}, ${JSON.stringify(acl)}::json, ${JSON.stringify(permissions)}::json,
+              INSERT INTO worlds (name, permissions, created_at, updated_at)
+              VALUES (${worldName.toLowerCase()}, ${JSON.stringify(permissions)}::json,
                       ${new Date()}, ${new Date()})
               ON CONFLICT (name) 
-                  DO UPDATE SET acl = ${JSON.stringify(acl)}::json,
-                                permissions = ${JSON.stringify(permissions)}::json,
+                  DO UPDATE SET permissions = ${JSON.stringify(permissions)}::json,
                                 updated_at = ${new Date()}
     `
     await database.query(sql)

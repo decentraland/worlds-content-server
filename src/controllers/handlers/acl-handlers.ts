@@ -74,14 +74,6 @@ export async function postAclHandler(
     throw new InvalidRequestError('Timestamp is not recent. Please sign a new ACL change request.')
   }
 
-  const worldMetadata = await worldsManager.getMetadataForWorld(worldName)
-  if (worldMetadata && worldMetadata.acl) {
-    const oldAcl = JSON.parse(worldMetadata.acl.slice(-1).pop()!.payload) as AccessControlList
-    if (oldAcl.timestamp && ts < Date.parse(oldAcl.timestamp)) {
-      throw new InvalidRequestError('There is a newer ACL stored. Please sign a new ACL change request.')
-    }
-  }
-
   await worldsManager.storeAcl(worldName, authChain)
 
   return {

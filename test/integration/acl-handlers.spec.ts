@@ -101,7 +101,6 @@ test('acl handlers', function ({ components, stubComponents }) {
 
       const stored = await worldsManager.getMetadataForWorld(worldName)
       expect(stored).toMatchObject({
-        acl,
         permissions: {
           ...defaultPermissions(),
           deployment: {
@@ -116,7 +115,7 @@ test('acl handlers', function ({ components, stubComponents }) {
       })
     })
 
-    it('stores the ACL in a file with the world name in lowercase when all is correct', async () => {
+    it('stores the ACL with the world name in lowercase when all is correct', async () => {
       const delegatedIdentity = await getIdentity()
 
       const timestamp = new Date().toISOString()
@@ -142,7 +141,6 @@ test('acl handlers', function ({ components, stubComponents }) {
 
       const stored = await worldsManager.getMetadataForWorld(worldName)
       expect(stored).toMatchObject({
-        acl,
         permissions: {
           ...defaultPermissions(),
           deployment: {
@@ -335,37 +333,6 @@ test('acl handlers', function ({ components, stubComponents }) {
       expect(r.status).toEqual(400)
       expect(await r.json()).toMatchObject({
         message: `Timestamp is not recent. Please sign a new ACL change request.`
-      })
-    })
-
-    it('fails when new timestamp is after currently stored ACL', async () => {
-      const delegatedIdentity = await getIdentity()
-
-      const ts = new Date().toISOString()
-      const payload = JSON.stringify({
-        resource: worldName,
-        allowed: [delegatedIdentity.realAccount.address],
-        timestamp: ts
-      })
-
-      await worldsManager.storeAcl(worldName, Authenticator.signPayload(ownerIdentity.authChain, payload))
-
-      const newPayload = JSON.stringify({
-        resource: worldName,
-        allowed: [delegatedIdentity.realAccount.address],
-        timestamp: new Date(Date.parse(ts) - 1).toISOString()
-      })
-
-      const signature = Authenticator.createSignature(ownerIdentity.realAccount, newPayload)
-      const acl = Authenticator.createSimpleAuthChain(newPayload, ownerIdentity.realAccount.address, signature)
-      const r = await localFetch.fetch(`/acl/${worldName}`, {
-        body: JSON.stringify(acl),
-        method: 'POST'
-      })
-
-      expect(r.status).toEqual(400)
-      expect(await r.json()).toMatchObject({
-        message: 'There is a newer ACL stored. Please sign a new ACL change request.'
       })
     })
   })
