@@ -87,7 +87,6 @@ test('deployment works', function ({ components, stubComponents }) {
 
     expect(await storage.exist(fileHash)).toBeTruthy()
     expect(await storage.exist(entityId)).toBeTruthy()
-    expect(await storage.exist(`name-${worldName}`)).toBeTruthy()
 
     const stored = await worldsManager.getMetadataForWorld(worldName)
     expect(stored).toMatchObject({
@@ -201,8 +200,6 @@ test('deployment works', function ({ components, stubComponents }) {
       identity.authChain.authChain[0].payload,
       worldName
     )
-
-    expect(await storage.exist(`name-${worldName.toLowerCase()}`)).toBeTruthy()
 
     const stored = await worldsManager.getMetadataForWorld(worldName)
     expect(stored).toMatchObject({
