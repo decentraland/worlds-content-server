@@ -277,6 +277,25 @@ test('PermissionsHandler', function ({ components, stubComponents }) {
         })
       })
 
+      it('sets the streaming permissions to unrestricted', async () => {
+        await worldsManager.storePermissions(worldName, {
+          ...defaultPermissions(),
+          streaming: { type: PermissionType.AllowList, wallets: [] }
+        })
+
+        const r = await makeRequest(localFetch, `/world/${worldName}/permissions/streaming`, identity, {
+          type: PermissionType.Unrestricted
+        })
+        expect(r.status).toBe(204)
+
+        const metadata = await worldsManager.getMetadataForWorld(worldName)
+        expect(metadata).toMatchObject({
+          permissions: {
+            streaming: { type: PermissionType.Unrestricted }
+          }
+        })
+      })
+
       it("rejects when invalid permission check for 'streaming' permissions", async () => {
         const r = await makeRequest(localFetch, `/world/${worldName}/permissions/streaming`, identity, {
           type: PermissionType.SharedSecret,
@@ -376,6 +395,48 @@ test('PermissionsHandler', function ({ components, stubComponents }) {
       })
     })
 
+    it('fails to add an address when there is no permission type set', async () => {
+      await worldsManager.storePermissions(worldName, {
+        ...defaultPermissions(),
+        deployment: undefined
+      })
+
+      const r = await makeRequest(
+        localFetch,
+        `/world/${worldName}/permissions/deployment/${alreadyAllowedWallet.realAccount.address}`,
+        identity,
+        {},
+        'PUT'
+      )
+
+      expect(r.status).toEqual(400)
+      expect(await r.json()).toMatchObject({
+        error: 'Bad request',
+        message: `World ${worldName} does not have any permission type set for 'deployment'.`
+      })
+    })
+
+    it('fails to add an address when permission type is not allow list', async () => {
+      await worldsManager.storePermissions(worldName, {
+        ...defaultPermissions(),
+        access: { type: PermissionType.Unrestricted }
+      })
+
+      const r = await makeRequest(
+        localFetch,
+        `/world/${worldName}/permissions/access/${alreadyAllowedWallet.realAccount.address}`,
+        identity,
+        {},
+        'PUT'
+      )
+
+      expect(r.status).toEqual(400)
+      expect(await r.json()).toMatchObject({
+        error: 'Bad request',
+        message: `World ${worldName} is configured as unrestricted (not 'allow-list') for permission 'access'.`
+      })
+    })
+
     it('removes an address from the allow list', async () => {
       const r = await makeRequest(
         localFetch,
@@ -414,6 +475,48 @@ test('PermissionsHandler', function ({ components, stubComponents }) {
       expect(await r.json()).toMatchObject({
         error: 'Bad request',
         message: `World ${worldName} does not have address ${addressToRemove.realAccount.address.toLowerCase()} in the allow list for permission 'deployment'.`
+      })
+    })
+
+    it('fails to remove an address when there is no permission type set', async () => {
+      await worldsManager.storePermissions(worldName, {
+        ...defaultPermissions(),
+        deployment: undefined
+      })
+
+      const r = await makeRequest(
+        localFetch,
+        `/world/${worldName}/permissions/deployment/${alreadyAllowedWallet.realAccount.address}`,
+        identity,
+        {},
+        'DELETE'
+      )
+
+      expect(r.status).toEqual(400)
+      expect(await r.json()).toMatchObject({
+        error: 'Bad request',
+        message: `World ${worldName} does not have any permission type set for 'deployment'.`
+      })
+    })
+
+    it('fails to remove an address when permission type is not allow list', async () => {
+      await worldsManager.storePermissions(worldName, {
+        ...defaultPermissions(),
+        access: { type: PermissionType.Unrestricted }
+      })
+
+      const r = await makeRequest(
+        localFetch,
+        `/world/${worldName}/permissions/access/${alreadyAllowedWallet.realAccount.address}`,
+        identity,
+        {},
+        'DELETE'
+      )
+
+      expect(r.status).toEqual(400)
+      expect(await r.json()).toMatchObject({
+        error: 'Bad request',
+        message: `World ${worldName} is configured as unrestricted (not 'allow-list') for permission 'access'.`
       })
     })
   })
