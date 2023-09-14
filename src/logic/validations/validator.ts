@@ -10,6 +10,7 @@ import {
   validateSupportedEntityType
 } from './common'
 import {
+  createValidateBannedNames,
   createValidateDeploymentPermission,
   createValidateSceneDimensions,
   createValidateSize,
@@ -46,6 +47,7 @@ export function createValidateFns(components: ValidatorComponents): Validation[]
         validateMiniMapImages,
         validateSkyboxTextures,
         validateThumbnail,
+        createValidateBannedNames(components),
         // validateSdkVersion(components) TODO re-enable (and test) once SDK7 is ready
         createValidateSize(components), // Slow
         createValidateDeploymentPermission(components) // Slow

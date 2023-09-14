@@ -40,8 +40,26 @@ export const validateDeprecatedConfig: Validation = async (
   return OK
 }
 
+export function createValidateBannedNames(
+  components: Pick<ValidatorComponents, 'nameDenyListChecker' | 'worldsManager'>
+) {
+  return async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
+    const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())
+    const worldSpecifiedName = sceneJson.metadata.worldConfiguration.name
+
+    // Check the name is not banned
+    if (await components.nameDenyListChecker.checkNameDenyList(worldSpecifiedName)) {
+      return OK
+    }
+
+    return createValidationResult([
+      `Deployment failed: World "${worldSpecifiedName}" can not be deployed because the name is in the name deny list managed by Decentraland DAO.`
+    ])
+  }
+}
+
 export function createValidateDeploymentPermission(
-  components: Pick<ValidatorComponents, 'nameDenyListChecker' | 'namePermissionChecker' | 'worldsManager'>
+  components: Pick<ValidatorComponents, 'namePermissionChecker' | 'worldsManager'>
 ) {
   return async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
     const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())
