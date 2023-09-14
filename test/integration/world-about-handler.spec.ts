@@ -1,7 +1,8 @@
 import { test } from '../components'
 import { getIdentity } from '../utils'
-import { Authenticator } from '@dcl/crypto'
 import { stringToUtf8Bytes } from 'eth-connect'
+import { defaultPermissions } from '../../src/logic/permissions-checker'
+import { PermissionType } from '../../src/types'
 
 test('world about handler /world/:world_name/about', function ({ components, stubComponents }) {
   it('when world is not yet deployed it responds 404', async () => {
@@ -14,13 +15,15 @@ test('world about handler /world/:world_name/about', function ({ components, stu
     const { localFetch, worldsManager, worldCreator } = components
 
     const delegatedIdentity = await getIdentity()
-    const ownerIdentity = await getIdentity()
-
-    const payload = `{"resource":"my-world.dcl.eth","allowed":["${delegatedIdentity.realAccount.address}"]}`
 
     const worldName = worldCreator.randomWorldName()
-    await worldsManager.storeAcl(worldName, Authenticator.signPayload(ownerIdentity.authChain, payload))
-
+    await worldsManager.storePermissions(worldName, {
+      ...defaultPermissions(),
+      deployment: {
+        type: PermissionType.AllowList,
+        wallets: [delegatedIdentity.realAccount.address]
+      }
+    })
     const r = await localFetch.fetch(`/world/${worldName}/about`)
     expect(r.status).toEqual(404)
   })
@@ -237,19 +240,17 @@ test('world about handler /world/:world_name/about', function ({ components, stu
   it('when world exists but with no scene deployed, it responds with 404', async () => {
     const { localFetch, worldCreator, worldsManager } = components
 
-    const identity = await getIdentity()
     const worldName = worldCreator.randomWorldName()
 
     const delegatedIdentity = await getIdentity()
 
-    const payload = JSON.stringify({
-      resource: worldName,
-      allowed: [delegatedIdentity.realAccount.address],
-      timestamp: new Date().toISOString()
+    await worldsManager.storePermissions(worldName, {
+      ...defaultPermissions(),
+      deployment: {
+        type: PermissionType.AllowList,
+        wallets: [delegatedIdentity.realAccount.address]
+      }
     })
-
-    await worldsManager.storeAcl(worldName, Authenticator.signPayload(identity.authChain, payload))
-
     const r = await localFetch.fetch(`/world/${worldName}/about`)
     expect(r.status).toEqual(404)
     expect(await r.json()).toMatchObject({ message: `World "${worldName}" has no scene deployed.` })

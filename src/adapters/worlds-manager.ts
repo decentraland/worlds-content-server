@@ -1,4 +1,4 @@
-import { AppComponents, IPermissionChecker, IWorldsManager, Permissions, PermissionType, WorldMetadata } from '../types'
+import { AppComponents, IPermissionChecker, IWorldsManager, Permissions, WorldMetadata } from '../types'
 import { streamToBuffer } from '@dcl/catalyst-storage'
 import { AuthChain, Entity } from '@dcl/schemas'
 import SQL from 'sql-template-strings'
@@ -75,25 +75,6 @@ export async function createWorldsManagerComponent({
     await database.query(sql)
   }
 
-  async function storeAcl(worldName: string, acl: AuthChain): Promise<void> {
-    const worldMetadata = await getMetadataForWorld(worldName)
-    const permissions = worldMetadata?.permissions || defaultPermissions()
-    permissions.deployment.wallets = JSON.parse(acl.slice(-1).pop()!.payload).allowed
-    if (permissions.streaming.type === PermissionType.AllowList) {
-      permissions.streaming.wallets = permissions.deployment.wallets
-    }
-
-    const sql = SQL`
-              INSERT INTO worlds (name, permissions, created_at, updated_at)
-              VALUES (${worldName.toLowerCase()}, ${JSON.stringify(permissions)}::json,
-                      ${new Date()}, ${new Date()})
-              ON CONFLICT (name) 
-                  DO UPDATE SET permissions = ${JSON.stringify(permissions)}::json,
-                                updated_at = ${new Date()}
-    `
-    await database.query(sql)
-  }
-
   async function storePermissions(worldName: string, permissions: Permissions): Promise<void> {
     const sql = SQL`
               INSERT INTO worlds (name, permissions, created_at, updated_at)
@@ -154,7 +135,6 @@ export async function createWorldsManagerComponent({
     getMetadataForWorld,
     getEntityForWorld,
     deployScene,
-    storeAcl,
     storePermissions,
     permissionCheckerForWorld
   }

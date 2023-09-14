@@ -125,7 +125,6 @@ export type IWorldsManager = {
   getMetadataForWorld(worldName: string): Promise<WorldMetadata | undefined>
   getEntityForWorld(worldName: string): Promise<Entity | undefined>
   deployScene(worldName: string, scene: Entity): Promise<void>
-  storeAcl(worldName: string, acl: AuthChain): Promise<void>
   storePermissions(worldName: string, permissions: Permissions): Promise<void>
   permissionCheckerForWorld(worldName: string): Promise<IPermissionChecker>
 }

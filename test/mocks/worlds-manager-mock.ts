@@ -53,10 +53,6 @@ export async function createWorldsManagerMockComponent({
     })
   }
 
-  async function storeAcl(worldName: string, acl: AuthChain): Promise<void> {
-    await storeWorldMetadata(worldName, { acl })
-  }
-
   async function storePermissions(worldName: string, permissions: Permissions): Promise<void> {
     await storeWorldMetadata(worldName, { permissions })
   }
@@ -91,7 +87,6 @@ export async function createWorldsManagerMockComponent({
     getMetadataForWorld,
     getEntityForWorld,
     deployScene,
-    storeAcl,
     storePermissions,
     permissionCheckerForWorld
   }

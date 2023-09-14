@@ -52,16 +52,17 @@ test('acl handlers', function ({ components, stubComponents }) {
       })
     })
 
-    it('returns acl from auth-chain when acl exists', async () => {
+    it('returns acl when deployment permission exists', async () => {
       const delegatedIdentity = await getIdentity()
 
-      const payload = JSON.stringify({
-        resource: worldName,
-        allowed: [delegatedIdentity.realAccount.address],
-        timestamp: new Date().toISOString()
+      await worldsManager.storePermissions(worldName, {
+        ...defaultPermissions(),
+        deployment: {
+          type: PermissionType.AllowList,
+          wallets: [delegatedIdentity.realAccount.address]
+        }
       })
 
-      await worldsManager.storeAcl(worldName, Authenticator.signPayload(ownerIdentity.authChain, payload))
       const r = await localFetch.fetch(`/acl/${worldName}`)
 
       expect(r.status).toBe(200)

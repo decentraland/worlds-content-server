@@ -1,6 +1,7 @@
 import { IHttpServerComponent } from '@well-known-components/interfaces'
-import { AccessControlList, HandlerContextWithPath, InvalidRequestError } from '../../types'
+import { AccessControlList, HandlerContextWithPath, InvalidRequestError, PermissionType } from '../../types'
 import { AuthChain, EthAddress } from '@dcl/schemas'
+import { defaultPermissions } from '../../logic/permissions-checker'
 
 export async function getAclHandler(
   ctx: HandlerContextWithPath<'worldsManager', '/acl/:world_name'>
@@ -74,7 +75,14 @@ export async function postAclHandler(
     throw new InvalidRequestError('Timestamp is not recent. Please sign a new ACL change request.')
   }
 
-  await worldsManager.storeAcl(worldName, authChain)
+  // Convert acl to permissions and store
+  const worldMetadata = await worldsManager.getMetadataForWorld(worldName)
+  const permissions = worldMetadata?.permissions || defaultPermissions()
+  permissions.deployment.wallets = acl.allowed
+  if (permissions.streaming.type === PermissionType.AllowList) {
+    permissions.streaming.wallets = permissions.deployment.wallets
+  }
+  await worldsManager.storePermissions(worldName, permissions)
 
   return {
     status: 200,
