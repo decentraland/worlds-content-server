@@ -1,6 +1,6 @@
 import { AppComponents, IPermissionChecker, IWorldsManager, Permissions, WorldMetadata } from '../../src/types'
 import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage'
-import { AuthChain, Entity } from '@dcl/schemas'
+import { Entity } from '@dcl/schemas'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { extractWorldRuntimeMetadata } from '../../src/logic/world-runtime-metadata-utils'
 import { createPermissionChecker, defaultPermissions } from '../../src/logic/permissions-checker'
