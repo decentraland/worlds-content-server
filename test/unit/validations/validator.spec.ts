@@ -33,7 +33,7 @@ describe('validator', function () {
 
     storage = createInMemoryStorage()
     limitsManager = createMockLimitsManagerComponent()
-    nameDenyListChecker = createMockNameDenyListChecker(['whatever'])
+    nameDenyListChecker = createMockNameDenyListChecker([])
     worldNamePermissionChecker = createMockNamePermissionChecker(['whatever.dcl.eth'])
     worldsManager = await createWorldsManagerMockComponent({ storage })
 
