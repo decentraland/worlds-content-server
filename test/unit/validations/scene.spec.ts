@@ -46,7 +46,7 @@ describe('scene validations', function () {
     })
     storage = createInMemoryStorage()
     limitsManager = createMockLimitsManagerComponent()
-    nameDenyListChecker = createMockNameDenyListChecker(['whatever'])
+    nameDenyListChecker = createMockNameDenyListChecker(['banned'])
     worldNamePermissionChecker = createMockNamePermissionChecker(['whatever.dcl.eth'])
     worldsManager = await createWorldsManagerMockComponent({ storage })
 
@@ -179,17 +179,7 @@ describe('scene validations', function () {
 
   describe('validateBannedNames', () => {
     it('with all ok', async () => {
-      const deployment = await createSceneDeployment(identity.authChain, {
-        type: EntityType.SCENE,
-        pointers: ['0,0'],
-        timestamp: Date.now(),
-        metadata: {
-          worldConfiguration: {
-            name: 'ok.dcl.eth'
-          }
-        },
-        files: []
-      })
+      const deployment = await createSceneDeployment(identity.authChain)
 
       const validateBannedNames = createValidateBannedNames(components)
       const result = await validateBannedNames(deployment)
@@ -197,13 +187,23 @@ describe('scene validations', function () {
     })
 
     it('with a dcl name that is banned', async () => {
-      const deployment = await createSceneDeployment(identity.authChain)
+      const deployment = await createSceneDeployment(identity.authChain, {
+        type: EntityType.SCENE,
+        pointers: ['0,0'],
+        timestamp: Date.now(),
+        metadata: {
+          worldConfiguration: {
+            name: 'banned.dcl.eth'
+          }
+        },
+        files: []
+      })
 
       const validateBannedNames = createValidateBannedNames(components)
       const result = await validateBannedNames(deployment)
       expect(result.ok()).toBeFalsy()
       expect(result.errors).toContain(
-        `Deployment failed: World "whatever.dcl.eth" can not be deployed because the name is in the name deny list managed by Decentraland DAO.`
+        `Deployment failed: World "banned.dcl.eth" can not be deployed because the name is in the name deny list managed by Decentraland DAO.`
       )
     })
   })
