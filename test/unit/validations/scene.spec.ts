@@ -16,6 +16,7 @@ import { IConfigComponent } from '@well-known-components/interfaces'
 import { hashV1 } from '@dcl/hashing'
 import { createWorldsManagerMockComponent } from '../../mocks/worlds-manager-mock'
 import {
+  createValidateBannedNames,
   createValidateDeploymentPermission,
   createValidateSceneDimensions,
   createValidateSdkVersion,
@@ -45,7 +46,7 @@ describe('scene validations', function () {
     })
     storage = createInMemoryStorage()
     limitsManager = createMockLimitsManagerComponent()
-    nameDenyListChecker = createMockNameDenyListChecker(['whatever.dcl.eth'])
+    nameDenyListChecker = createMockNameDenyListChecker(['whatever'])
     worldNamePermissionChecker = createMockNamePermissionChecker(['whatever.dcl.eth'])
     worldsManager = await createWorldsManagerMockComponent({ storage })
 
@@ -172,6 +173,37 @@ describe('scene validations', function () {
       expect(result.ok()).toBeFalsy()
       expect(result.errors).toContain(
         '`skybox` in scene.json is deprecated in favor of `{ skyboxConfig: { fixedTime } }`. Please update your scene.json accordingly.'
+      )
+    })
+  })
+
+  describe('validateBannedNames', () => {
+    it('with all ok', async () => {
+      const deployment = await createSceneDeployment(identity.authChain, {
+        type: EntityType.SCENE,
+        pointers: ['0,0'],
+        timestamp: Date.now(),
+        metadata: {
+          worldConfiguration: {
+            name: 'ok.dcl.eth'
+          }
+        },
+        files: []
+      })
+
+      const validateBannedNames = createValidateBannedNames(components)
+      const result = await validateBannedNames(deployment)
+      expect(result.ok()).toBeTruthy()
+    })
+
+    it('with a dcl name that is banned', async () => {
+      const deployment = await createSceneDeployment(identity.authChain)
+
+      const validateBannedNames = createValidateBannedNames(components)
+      const result = await validateBannedNames(deployment)
+      expect(result.ok()).toBeFalsy()
+      expect(result.errors).toContain(
+        `Deployment failed: World "whatever.dcl.eth" can not be deployed because the name is in the name deny list managed by Decentraland DAO.`
       )
     })
   })
