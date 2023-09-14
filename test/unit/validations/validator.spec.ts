@@ -49,7 +49,7 @@ describe('validator', function () {
   })
 
   it('all validations pass for scene', async () => {
-    const validator = await createValidator(components)
+    const validator = createValidator(components)
 
     const deployment = await createSceneDeployment(identity.authChain)
 
