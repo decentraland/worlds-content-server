@@ -1,14 +1,10 @@
 import { createConfigComponent } from '@well-known-components/env-config-provider'
-import { createDclNameChecker, createOnChainDclNameChecker, NamesResponse } from '../../src/adapters/dcl-name-checker'
+import { createDclNameChecker, createOnChainDclNameChecker } from '../../src/adapters/dcl-name-checker'
 import { createLogComponent } from '@well-known-components/logger'
 import { IConfigComponent, ILoggerComponent } from '@well-known-components/interfaces'
 import { getIdentity } from '../utils'
 import { createHttpProviderMock } from '../mocks/http-provider-mock'
-import { createMockMarketplaceSubGraph } from '../mocks/marketplace-subgraph-mock'
-
-const emptyResponse: NamesResponse = {
-  nfts: []
-}
+import { createMockNameSubGraph } from '../mocks/name-subgraph-mock'
 
 describe('dcl name checker: TheGraph', function () {
   let logs: ILoggerComponent
@@ -24,8 +20,8 @@ describe('dcl name checker: TheGraph', function () {
   it('when permission asked for invalid name returns false', async () => {
     const dclNameChecker = createDclNameChecker({
       logs,
-      ensSubGraph: createMockMarketplaceSubGraph(emptyResponse),
-      marketplaceSubGraph: createMockMarketplaceSubGraph(emptyResponse)
+      ensSubGraph: createMockNameSubGraph(),
+      marketplaceSubGraph: createMockNameSubGraph()
     })
 
     await expect(dclNameChecker.checkPermission('0xb', '')).resolves.toBeFalsy()
@@ -35,8 +31,8 @@ describe('dcl name checker: TheGraph', function () {
     it('when no names returned from TheGraph returns false', async () => {
       const dclNameChecker = createDclNameChecker({
         logs,
-        ensSubGraph: createMockMarketplaceSubGraph(emptyResponse),
-        marketplaceSubGraph: createMockMarketplaceSubGraph(emptyResponse)
+        ensSubGraph: createMockNameSubGraph(),
+        marketplaceSubGraph: createMockNameSubGraph()
       })
 
       await expect(dclNameChecker.checkPermission('0xb', 'my-super-name.dcl.eth')).resolves.toBeFalsy()
@@ -45,8 +41,8 @@ describe('dcl name checker: TheGraph', function () {
     it('when requested name is returned from TheGraph returns true', async () => {
       const dclNameChecker = createDclNameChecker({
         logs,
-        ensSubGraph: createMockMarketplaceSubGraph(emptyResponse),
-        marketplaceSubGraph: createMockMarketplaceSubGraph({
+        ensSubGraph: createMockNameSubGraph(),
+        marketplaceSubGraph: createMockNameSubGraph({
           nfts: [
             {
               name: 'my-super-name',
@@ -66,8 +62,8 @@ describe('dcl name checker: TheGraph', function () {
     it('when no names returned from TheGraph returns false', async () => {
       const dclNameChecker = createDclNameChecker({
         logs,
-        ensSubGraph: createMockMarketplaceSubGraph(emptyResponse),
-        marketplaceSubGraph: createMockMarketplaceSubGraph(emptyResponse)
+        ensSubGraph: createMockNameSubGraph(),
+        marketplaceSubGraph: createMockNameSubGraph()
       })
 
       await expect(dclNameChecker.checkPermission('0xb', 'my-super-name.eth')).resolves.toBeFalsy()
@@ -76,7 +72,7 @@ describe('dcl name checker: TheGraph', function () {
     it('when requested name is returned from TheGraph returns true', async () => {
       const dclNameChecker = createDclNameChecker({
         logs,
-        ensSubGraph: createMockMarketplaceSubGraph({
+        ensSubGraph: createMockNameSubGraph({
           nfts: [
             {
               name: 'my-super-name.eth',
@@ -86,7 +82,7 @@ describe('dcl name checker: TheGraph', function () {
             }
           ]
         }),
-        marketplaceSubGraph: createMockMarketplaceSubGraph(emptyResponse)
+        marketplaceSubGraph: createMockNameSubGraph()
       })
 
       await expect(dclNameChecker.checkPermission('0xb', 'my-super-name.eth')).resolves.toBeTruthy()
@@ -109,7 +105,7 @@ describe('dcl name checker: on-chain', function () {
   it.each(['', 'name'])('when permission asked for invalid name returns false', async (name) => {
     const dclNameChecker = await createOnChainDclNameChecker({
       config,
-      ensSubGraph: createMockMarketplaceSubGraph(emptyResponse),
+      ensSubGraph: createMockNameSubGraph(),
       logs,
       ethereumProvider: createHttpProviderMock()
     })
@@ -123,7 +119,7 @@ describe('dcl name checker: on-chain', function () {
         config: (config = createConfigComponent({
           ETH_NETWORK: 'invalid'
         })),
-        ensSubGraph: createMockMarketplaceSubGraph(emptyResponse),
+        ensSubGraph: createMockNameSubGraph(),
         logs,
         ethereumProvider: createHttpProviderMock([])
       })
@@ -134,7 +130,7 @@ describe('dcl name checker: on-chain', function () {
     it('when on chain validation returns false', async () => {
       const dclNameChecker = await createOnChainDclNameChecker({
         config,
-        ensSubGraph: createMockMarketplaceSubGraph(emptyResponse),
+        ensSubGraph: createMockNameSubGraph(),
         logs,
         ethereumProvider: createHttpProviderMock([
           {
@@ -153,7 +149,7 @@ describe('dcl name checker: on-chain', function () {
     it('when on chain validation returns true', async () => {
       const dclNameChecker = await createOnChainDclNameChecker({
         config,
-        ensSubGraph: createMockMarketplaceSubGraph(emptyResponse),
+        ensSubGraph: createMockNameSubGraph(),
         logs,
         ethereumProvider: createHttpProviderMock([
           {
@@ -174,7 +170,7 @@ describe('dcl name checker: on-chain', function () {
     it('when on chain validation returns false', async () => {
       const dclNameChecker = await createOnChainDclNameChecker({
         config,
-        ensSubGraph: createMockMarketplaceSubGraph(emptyResponse),
+        ensSubGraph: createMockNameSubGraph(),
         logs,
         ethereumProvider: createHttpProviderMock()
       })
@@ -190,7 +186,7 @@ describe('dcl name checker: on-chain', function () {
 
       const dclNameChecker = await createOnChainDclNameChecker({
         config,
-        ensSubGraph: createMockMarketplaceSubGraph({
+        ensSubGraph: createMockNameSubGraph({
           nfts: [
             {
               name: 'my-super-name.eth',

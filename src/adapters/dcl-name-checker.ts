@@ -5,7 +5,7 @@ import { ContractFactory, RequestManager } from 'eth-connect'
 import { checkerAbi, l1Contracts, L1Network } from '@dcl/catalyst-contracts'
 import { ISubgraphComponent } from '@well-known-components/thegraph-component'
 
-export type NamesResponse = {
+type NamesResponse = {
   nfts: { name: string; owner: { id: string } }[]
 }
 
