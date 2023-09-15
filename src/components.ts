@@ -34,7 +34,7 @@ import { createDatabaseComponent } from './adapters/database-component'
 import { createPermissionsManagerComponent } from './adapters/permissions-manager'
 
 async function determineNameValidator(
-  components: Pick<AppComponents, 'config' | 'ethereumProvider' | 'logs' | 'marketplaceSubGraph'>
+  components: Pick<AppComponents, 'config' | 'ensSubGraph' | 'ethereumProvider' | 'logs' | 'marketplaceSubGraph'>
 ) {
   const nameValidatorStrategy = await components.config.requireString('NAME_VALIDATOR')
   switch (nameValidatorStrategy) {
@@ -75,7 +75,8 @@ export async function initComponents(): Promise<AppComponents> {
 
   const subGraphUrl = await config.requireString('MARKETPLACE_SUBGRAPH_URL')
   const marketplaceSubGraph = await createSubgraphComponent({ config, logs, metrics, fetch }, subGraphUrl)
-
+  const ensSubgraphUrl = await config.requireString('ENS_SUBGRAPH_URL')
+  const ensSubGraph = await createSubgraphComponent({ config, logs, metrics, fetch }, ensSubgraphUrl)
   const snsArn = await config.getString('SNS_ARN')
 
   const status = await createStatusComponent({ logs, fetch, config })
@@ -92,6 +93,7 @@ export async function initComponents(): Promise<AppComponents> {
 
   const namePermissionChecker: IWorldNamePermissionChecker = await determineNameValidator({
     config,
+    ensSubGraph,
     ethereumProvider,
     logs,
     marketplaceSubGraph
@@ -121,6 +123,7 @@ export async function initComponents(): Promise<AppComponents> {
     commsAdapter,
     config,
     database,
+    ensSubGraph,
     entityDeployer,
     ethereumProvider,
     fetch,

@@ -95,6 +95,7 @@ async function initComponents(): Promise<TestComponents> {
     limitsManager,
     localFetch: await createLocalFetchCompoment(config),
     marketplaceSubGraph: createMockMarketplaceSubGraph(),
+    ensSubGraph: createMockMarketplaceSubGraph(),
     metrics,
     namePermissionChecker,
     permissionsManager,

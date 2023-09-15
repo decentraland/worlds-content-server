@@ -1,10 +1,14 @@
 import { createConfigComponent } from '@well-known-components/env-config-provider'
-import { Variables } from '@well-known-components/thegraph-component/dist/types'
-import { createDclNameChecker, createOnChainDclNameChecker } from '../../src/adapters/dcl-name-checker'
+import { createDclNameChecker, createOnChainDclNameChecker, NamesResponse } from '../../src/adapters/dcl-name-checker'
 import { createLogComponent } from '@well-known-components/logger'
 import { IConfigComponent, ILoggerComponent } from '@well-known-components/interfaces'
 import { getIdentity } from '../utils'
 import { createHttpProviderMock } from '../mocks/http-provider-mock'
+import { createMockMarketplaceSubGraph } from '../mocks/marketplace-subgraph-mock'
+
+const emptyResponse: NamesResponse = {
+  nfts: []
+}
 
 describe('dcl name checker: TheGraph', function () {
   let logs: ILoggerComponent
@@ -20,34 +24,29 @@ describe('dcl name checker: TheGraph', function () {
   it('when permission asked for invalid name returns false', async () => {
     const dclNameChecker = createDclNameChecker({
       logs,
-      marketplaceSubGraph: {
-        query: async (_query: string, _variables?: Variables, _remainingAttempts?: number): Promise<any> => ({
-          names: []
-        })
-      }
+      ensSubGraph: createMockMarketplaceSubGraph(emptyResponse),
+      marketplaceSubGraph: createMockMarketplaceSubGraph(emptyResponse)
     })
 
     await expect(dclNameChecker.checkPermission('0xb', '')).resolves.toBeFalsy()
   })
 
-  it('when no names returned from TheGraph returns false', async () => {
-    const dclNameChecker = createDclNameChecker({
-      logs,
-      marketplaceSubGraph: {
-        query: async (_query: string, _variables?: Variables, _remainingAttempts?: number): Promise<any> => ({
-          nfts: []
-        })
-      }
+  describe('for dcl names', () => {
+    it('when no names returned from TheGraph returns false', async () => {
+      const dclNameChecker = createDclNameChecker({
+        logs,
+        ensSubGraph: createMockMarketplaceSubGraph(emptyResponse),
+        marketplaceSubGraph: createMockMarketplaceSubGraph(emptyResponse)
+      })
+
+      await expect(dclNameChecker.checkPermission('0xb', 'my-super-name.dcl.eth')).resolves.toBeFalsy()
     })
 
-    await expect(dclNameChecker.checkPermission('0xb', 'my-super-name.dcl.eth')).resolves.toBeFalsy()
-  })
-
-  it('when requested name is returned from TheGraph returns true', async () => {
-    const dclNameChecker = createDclNameChecker({
-      logs,
-      marketplaceSubGraph: {
-        query: async (_query: string, _variables?: Variables, _remainingAttempts?: number): Promise<any> => ({
+    it('when requested name is returned from TheGraph returns true', async () => {
+      const dclNameChecker = createDclNameChecker({
+        logs,
+        ensSubGraph: createMockMarketplaceSubGraph(emptyResponse),
+        marketplaceSubGraph: createMockMarketplaceSubGraph({
           nfts: [
             {
               name: 'my-super-name',
@@ -57,10 +56,41 @@ describe('dcl name checker: TheGraph', function () {
             }
           ]
         })
-      }
+      })
+
+      await expect(dclNameChecker.checkPermission('0xb', 'my-super-name.dcl.eth')).resolves.toBeTruthy()
+    })
+  })
+
+  describe('for ens names', () => {
+    it('when no names returned from TheGraph returns false', async () => {
+      const dclNameChecker = createDclNameChecker({
+        logs,
+        ensSubGraph: createMockMarketplaceSubGraph(emptyResponse),
+        marketplaceSubGraph: createMockMarketplaceSubGraph(emptyResponse)
+      })
+
+      await expect(dclNameChecker.checkPermission('0xb', 'my-super-name.eth')).resolves.toBeFalsy()
     })
 
-    await expect(dclNameChecker.checkPermission('0xb', 'my-super-name.dcl.eth')).resolves.toBeTruthy()
+    it('when requested name is returned from TheGraph returns true', async () => {
+      const dclNameChecker = createDclNameChecker({
+        logs,
+        ensSubGraph: createMockMarketplaceSubGraph({
+          nfts: [
+            {
+              name: 'my-super-name.eth',
+              owner: {
+                id: '0xb'
+              }
+            }
+          ]
+        }),
+        marketplaceSubGraph: createMockMarketplaceSubGraph(emptyResponse)
+      })
+
+      await expect(dclNameChecker.checkPermission('0xb', 'my-super-name.eth')).resolves.toBeTruthy()
+    })
   })
 })
 
@@ -79,6 +109,7 @@ describe('dcl name checker: on-chain', function () {
   it.each(['', 'name'])('when permission asked for invalid name returns false', async (name) => {
     const dclNameChecker = await createOnChainDclNameChecker({
       config,
+      ensSubGraph: createMockMarketplaceSubGraph(emptyResponse),
       logs,
       ethereumProvider: createHttpProviderMock()
     })
@@ -86,39 +117,94 @@ describe('dcl name checker: on-chain', function () {
     await expect(dclNameChecker.checkPermission('0xb', name)).resolves.toBeFalsy()
   })
 
-  it('when on chain validation returns false', async () => {
-    const dclNameChecker = await createOnChainDclNameChecker({
-      config,
-      logs,
-      ethereumProvider: createHttpProviderMock([
-        {
-          jsonrpc: '2.0',
-          id: 1,
-          result: '0x0000000000000000000000000000000000000000000000000000000000000000'
-        }
-      ])
-    })
-
-    const identity = await getIdentity()
-    const address = identity.authChain.authChain[0].payload
-    await expect(dclNameChecker.checkPermission(address, 'my-super-name.dcl.eth')).resolves.toBeFalsy()
+  it('fails to create when wrong network', async () => {
+    await expect(
+      createOnChainDclNameChecker({
+        config: (config = createConfigComponent({
+          ETH_NETWORK: 'invalid'
+        })),
+        ensSubGraph: createMockMarketplaceSubGraph(emptyResponse),
+        logs,
+        ethereumProvider: createHttpProviderMock([])
+      })
+    ).rejects.toThrowError('Invalid ETH_NETWORK: invalid')
   })
 
-  it('when on chain validation returns true', async () => {
-    const dclNameChecker = await createOnChainDclNameChecker({
-      config,
-      logs,
-      ethereumProvider: createHttpProviderMock([
-        {
-          jsonrpc: '2.0',
-          id: 1,
-          result: '0x0000000000000000000000000000000000000000000000000000000000000001'
-        }
-      ])
+  describe('for dcl names', () => {
+    it('when on chain validation returns false', async () => {
+      const dclNameChecker = await createOnChainDclNameChecker({
+        config,
+        ensSubGraph: createMockMarketplaceSubGraph(emptyResponse),
+        logs,
+        ethereumProvider: createHttpProviderMock([
+          {
+            jsonrpc: '2.0',
+            id: 1,
+            result: '0x0000000000000000000000000000000000000000000000000000000000000000'
+          }
+        ])
+      })
+
+      const identity = await getIdentity()
+      const address = identity.authChain.authChain[0].payload
+      await expect(dclNameChecker.checkPermission(address, 'my-super-name.dcl.eth')).resolves.toBeFalsy()
     })
 
-    const identity = await getIdentity()
-    const address = identity.authChain.authChain[0].payload
-    await expect(dclNameChecker.checkPermission(address, 'my-super-name.dcl.eth')).resolves.toBeTruthy()
+    it('when on chain validation returns true', async () => {
+      const dclNameChecker = await createOnChainDclNameChecker({
+        config,
+        ensSubGraph: createMockMarketplaceSubGraph(emptyResponse),
+        logs,
+        ethereumProvider: createHttpProviderMock([
+          {
+            jsonrpc: '2.0',
+            id: 1,
+            result: '0x0000000000000000000000000000000000000000000000000000000000000001'
+          }
+        ])
+      })
+
+      const identity = await getIdentity()
+      const address = identity.authChain.authChain[0].payload
+      await expect(dclNameChecker.checkPermission(address, 'my-super-name.dcl.eth')).resolves.toBeTruthy()
+    })
+  })
+
+  describe('for ens names', () => {
+    it('when on chain validation returns false', async () => {
+      const dclNameChecker = await createOnChainDclNameChecker({
+        config,
+        ensSubGraph: createMockMarketplaceSubGraph(emptyResponse),
+        logs,
+        ethereumProvider: createHttpProviderMock()
+      })
+
+      const identity = await getIdentity()
+      const address = identity.authChain.authChain[0].payload
+      await expect(dclNameChecker.checkPermission(address, 'my-super-name.eth')).resolves.toBeFalsy()
+    })
+
+    it('when on chain validation returns true', async () => {
+      const identity = await getIdentity()
+      const address = identity.realAccount.address
+
+      const dclNameChecker = await createOnChainDclNameChecker({
+        config,
+        ensSubGraph: createMockMarketplaceSubGraph({
+          nfts: [
+            {
+              name: 'my-super-name.eth',
+              owner: {
+                id: address
+              }
+            }
+          ]
+        }),
+        logs,
+        ethereumProvider: createHttpProviderMock()
+      })
+
+      await expect(dclNameChecker.checkPermission(address, 'my-super-name.eth')).resolves.toBeTruthy()
+    })
   })
 })

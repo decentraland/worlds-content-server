@@ -214,6 +214,7 @@ export type BaseComponents = {
   fetch: IFetchComponent
   limitsManager: ILimitsManager
   logs: ILoggerComponent
+  ensSubGraph: ISubgraphComponent
   marketplaceSubGraph: ISubgraphComponent
   metrics: IMetricsComponent<keyof typeof metricDeclarations>
   migrationExecutor: MigrationExecutor

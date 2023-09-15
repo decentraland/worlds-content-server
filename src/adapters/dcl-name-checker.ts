@@ -3,13 +3,61 @@ import { EthAddress } from '@dcl/schemas'
 import LRU from 'lru-cache'
 import { ContractFactory, RequestManager } from 'eth-connect'
 import { checkerAbi, l1Contracts, L1Network } from '@dcl/catalyst-contracts'
+import { ISubgraphComponent } from '@well-known-components/thegraph-component'
 
-type NamesResponse = {
+export type NamesResponse = {
   nfts: { name: string; owner: { id: string } }[]
 }
 
+async function checkEnsOwner(ensSubgraph: ISubgraphComponent, ensName: string): Promise<EthAddress | undefined> {
+  const result = await ensSubgraph.query<NamesResponse>(
+    `query FetchOwnerForEnsName($ensName: String) {
+      nfts: domains(where: {name_in: [$ensName]}) {
+        name
+        owner {
+          id
+        }
+      }
+    }`,
+    { ensName }
+  )
+
+  const owners = result.nfts.map(({ owner }) => owner.id.toLowerCase())
+  return owners.length > 0 ? owners[0] : undefined
+}
+
+async function checkDclNameOwner(ensSubgraph: ISubgraphComponent, worldName: string): Promise<EthAddress | undefined> {
+  /*
+  DCL owners are case-sensitive, so when searching by dcl name in TheGraph we
+  need to do a case-insensitive search because the worldName provided as fetch key
+  may not be in the exact same case of the registered name. There are several methods
+  suffixed _nocase, but not one for equality, so this is a bit hackish, but it works.
+   */
+  const result = await ensSubgraph.query<NamesResponse>(
+    `query FetchOwnerForDclName($worldName: String) {
+      nfts(
+        where: {name_starts_with_nocase: $worldName, name_ends_with_nocase: $worldName, category: ens}
+        orderBy: name
+        first: 1000
+      ) {
+        name
+        owner {
+          id
+        }
+      }
+    }`,
+
+    { worldName: worldName.toLowerCase().replace('.dcl.eth', '') }
+  )
+
+  const owners = result.nfts
+    .filter((nft) => `${nft.name.toLowerCase()}.dcl.eth` === worldName.toLowerCase())
+    .map(({ owner }) => owner.id.toLowerCase())
+  return owners.length > 0 ? owners[0] : undefined
+}
+
 export const createDclNameChecker = (
-  components: Pick<AppComponents, 'logs' | 'marketplaceSubGraph'>
+  components: Pick<AppComponents, 'ensSubGraph' | 'logs' | 'marketplaceSubGraph'>
 ): IWorldNamePermissionChecker => {
   const logger = components.logs.getLogger('check-permissions')
   logger.info('Using TheGraph DclNameChecker')
@@ -18,37 +66,12 @@ export const createDclNameChecker = (
     max: 100,
     ttl: 5 * 60 * 1000, // cache for 5 minutes
     fetchMethod: async (worldName: string): Promise<string | undefined> => {
-      /*
-      DCL owners are case-sensitive, so when searching by dcl name in TheGraph we
-      need to do a case-insensitive search because the worldName provided as fetch key
-      may not be in the exact same case of the registered name. There are several methods
-      suffixed _nocase, but not one for equality, so this is a bit hackish, but it works.
-       */
-      const result = await components.marketplaceSubGraph.query<NamesResponse>(
-        `
-        query FetchOwnerForDclName($worldName: String) {
-          nfts(
-            where: {name_starts_with_nocase: $worldName, name_ends_with_nocase: $worldName, category: ens}
-            orderBy: name
-            first: 1000
-          ) {
-            name
-            owner {
-              id
-            }
-          }
-        }`,
-        {
-          worldName: worldName.toLowerCase().replace('.dcl.eth', '')
-        }
-      )
-      logger.info(`Fetched owner of world ${worldName}: ${result.nfts.map(({ owner }) => owner.id.toLowerCase())}`)
-
-      const owners = result.nfts
-        .filter((nft) => `${nft.name.toLowerCase()}.dcl.eth` === worldName.toLowerCase())
-        .map(({ owner }) => owner.id.toLowerCase())
-
-      return owners.length > 0 ? owners[0] : undefined
+      const result =
+        worldName.endsWith('.eth') && !worldName.endsWith('.dcl.eth')
+          ? await checkEnsOwner(components.ensSubGraph, worldName)
+          : await checkDclNameOwner(components.marketplaceSubGraph, worldName)
+      logger.info(`Fetched owner of world ${worldName}: ${result}`)
+      return result
     }
   })
 
@@ -58,7 +81,11 @@ export const createDclNameChecker = (
     }
 
     const owner = await cache.fetch(worldName)
-    return !!owner && owner === ethAddress.toLowerCase()
+    const hasPermission = !!owner && owner === ethAddress.toLowerCase()
+
+    logger.debug(`Checking name ${worldName} for address ${ethAddress}: ${hasPermission}`)
+
+    return hasPermission
   }
 
   return {
@@ -67,7 +94,7 @@ export const createDclNameChecker = (
 }
 
 export const createOnChainDclNameChecker = async (
-  components: Pick<AppComponents, 'config' | 'logs' | 'ethereumProvider'>
+  components: Pick<AppComponents, 'config' | 'ensSubGraph' | 'logs' | 'ethereumProvider'>
 ): Promise<IWorldNamePermissionChecker> => {
   const logger = components.logs.getLogger('check-permissions')
   logger.info('Using OnChain DclNameChecker')
@@ -80,16 +107,24 @@ export const createOnChainDclNameChecker = async (
   const checker = (await factory.at(contracts.checker)) as any
 
   const checkPermission = async (ethAddress: EthAddress, worldName: string): Promise<boolean> => {
-    if (worldName.length === 0 || !worldName.endsWith('.dcl.eth')) {
+    if (worldName.length === 0 || !worldName.endsWith('.eth')) {
       return false
     }
 
-    const hasPermission = await checker.checkName(
-      ethAddress,
-      contracts.registrar,
-      worldName.replace('.dcl.eth', ''),
-      'latest'
-    )
+    let hasPermission = false
+    if (worldName.endsWith('.eth') && !worldName.endsWith('.dcl.eth')) {
+      const owner = await checkEnsOwner(components.ensSubGraph, worldName)
+      if (ethAddress.toLowerCase() === owner?.toLowerCase()) {
+        hasPermission = true
+      }
+    } else {
+      hasPermission = await checker.checkName(
+        ethAddress,
+        contracts.registrar,
+        worldName.replace('.dcl.eth', ''),
+        'latest'
+      )
+    }
 
     logger.debug(`Checking name ${worldName} for address ${ethAddress}: ${hasPermission}`)
 
