@@ -26,14 +26,17 @@ async function checkEnsOwner(ensSubgraph: ISubgraphComponent, ensName: string): 
   return owners.length > 0 ? owners[0] : undefined
 }
 
-async function checkDclNameOwner(ensSubgraph: ISubgraphComponent, worldName: string): Promise<EthAddress | undefined> {
+async function checkDclNameOwner(
+  marketplaceSubgraph: ISubgraphComponent,
+  worldName: string
+): Promise<EthAddress | undefined> {
   /*
   DCL owners are case-sensitive, so when searching by dcl name in TheGraph we
   need to do a case-insensitive search because the worldName provided as fetch key
   may not be in the exact same case of the registered name. There are several methods
   suffixed _nocase, but not one for equality, so this is a bit hackish, but it works.
    */
-  const result = await ensSubgraph.query<NamesResponse>(
+  const result = await marketplaceSubgraph.query<NamesResponse>(
     `query FetchOwnerForDclName($worldName: String) {
       nfts(
         where: {name_starts_with_nocase: $worldName, name_ends_with_nocase: $worldName, category: ens}
