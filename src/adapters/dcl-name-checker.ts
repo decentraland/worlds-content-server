@@ -115,7 +115,7 @@ export const createOnChainDclNameChecker = async (
     }
 
     let hasPermission = false
-    if (worldName.endsWith('.eth') && !worldName.endsWith('.dcl.eth')) {
+    if (!worldName.endsWith('.dcl.eth')) {
       const owner = await checkEnsOwner(components.ensSubGraph, worldName)
       if (ethAddress.toLowerCase() === owner?.toLowerCase()) {
         hasPermission = true
