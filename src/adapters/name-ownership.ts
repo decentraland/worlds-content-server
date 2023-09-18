@@ -8,7 +8,7 @@ type NamesResponse = {
   nfts: { name: string; owner: { id: string } }[]
 }
 
-async function determineNameValidator(
+async function createDclNameOwnership(
   components: Pick<AppComponents, 'config' | 'ensSubGraph' | 'ethereumProvider' | 'logs' | 'marketplaceSubGraph'>
 ) {
   const nameValidatorStrategy = await components.config.requireString('NAME_VALIDATOR')
@@ -30,7 +30,7 @@ export async function createNameOwnership(
   logger.info('Using NameOwnership')
 
   const ensNameOwnership = await createEnsNameOwnership(components)
-  const dclNameOwnership = await determineNameValidator(components)
+  const dclNameOwnership = await createDclNameOwnership(components)
 
   async function findOwner(worldName: string): Promise<EthAddress | undefined> {
     const result =
@@ -147,6 +147,7 @@ export async function createOnChainDclNameOwnership(
     findOwner
   }
 }
+
 export async function createCachingNameOwnership(nameOwnership: INameOwnership): Promise<INameOwnership> {
   const cache = new LRU<string, EthAddress | undefined>({
     max: 100,
