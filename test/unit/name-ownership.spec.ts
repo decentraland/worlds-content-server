@@ -1,6 +1,6 @@
 import { createConfigComponent } from '@well-known-components/env-config-provider'
 import { createLogComponent } from '@well-known-components/logger'
-import { IConfigComponent, ILoggerComponent } from '@well-known-components/interfaces'
+import { IConfigComponent, ILoggerComponent, IMetricsComponent } from '@well-known-components/interfaces'
 import { createHttpProviderMock } from '../mocks/http-provider-mock'
 import { createMockNameSubGraph } from '../mocks/name-subgraph-mock'
 import {
@@ -9,15 +9,24 @@ import {
   createNameOwnership,
   createOnChainDclNameOwnership
 } from '../../src/adapters/name-ownership'
+import { createFetchComponent } from '../../src/adapters/fetch'
+import { IFetchComponent } from '@well-known-components/http-server'
+import { createTestMetricsComponent } from '@well-known-components/metrics'
+import { metricDeclarations } from '../../src/metrics'
+import { Response } from 'node-fetch'
 
 describe('Name Ownership', () => {
   let logs: ILoggerComponent
+  let fetch: IFetchComponent
+  let metrics: IMetricsComponent<keyof typeof metricDeclarations>
   beforeEach(async () => {
     logs = await createLogComponent({
       config: createConfigComponent({
         LOG_LEVEL: 'DEBUG'
       })
     })
+    fetch = await createFetchComponent()
+    metrics = createTestMetricsComponent(metricDeclarations)
   })
 
   describe('createNameOwnership', function () {
@@ -29,7 +38,8 @@ describe('Name Ownership', () => {
         }),
         logs,
         ethereumProvider: createHttpProviderMock(),
-        ensSubGraph: createMockNameSubGraph(),
+        fetch,
+        metrics,
         marketplaceSubGraph: createMockNameSubGraph()
       })
       await expect(nameOwnership.findOwner('my-super-name.eth')).resolves.toBeUndefined()
@@ -46,7 +56,8 @@ describe('Name Ownership', () => {
         ethereumProvider: createHttpProviderMock([
           { jsonrpc: '2.0', id: 1, result: '0x0000000000000000000000005de9e77627c79ff6ec787295e4191aeeeea4acab' }
         ]),
-        ensSubGraph: createMockNameSubGraph(),
+        fetch,
+        metrics,
         marketplaceSubGraph: createMockNameSubGraph()
       })
       await expect(nameOwnership.findOwner('my-super-name.eth')).resolves.toBeUndefined()
@@ -64,7 +75,8 @@ describe('Name Ownership', () => {
           }),
           logs,
           ethereumProvider: createHttpProviderMock(),
-          ensSubGraph: createMockNameSubGraph(),
+          fetch,
+          metrics,
           marketplaceSubGraph: createMockNameSubGraph()
         })
       ).rejects.toThrowError('Invalid nameValidatorStrategy selected: INVALID')
@@ -72,15 +84,64 @@ describe('Name Ownership', () => {
   })
 
   describe('ens name ownership', function () {
+    let fetch: any
+    beforeEach(async () => {
+      fetch = createFetchComponent()
+      fetch = {
+        fetch: jest.fn()
+      }
+    })
+
+    it('when no ens subgraph url provided it always returns undefined', async () => {
+      const config = createConfigComponent({})
+      const nameOwnership = await createEnsNameOwnership({ config, logs, fetch, metrics })
+      await expect(nameOwnership.findOwner('my-super-name.eth')).resolves.toBeUndefined()
+      expect(fetch.fetch).not.toHaveBeenCalled()
+    })
+
     it('when no owner returned from TheGraph returns undefined', async () => {
-      const nameOwnership = await createEnsNameOwnership({ logs, ensSubGraph: createMockNameSubGraph() })
+      const config = createConfigComponent({
+        ENS_SUBGRAPH_URL: 'http://localhost'
+      })
+      fetch.fetch.mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              nfts: []
+            }
+          })
+        )
+      )
+
+      const nameOwnership = await createEnsNameOwnership({ config, logs, fetch, metrics })
       await expect(nameOwnership.findOwner('my-super-name.eth')).resolves.toBeUndefined()
     })
 
     it('when an owner is returned from the subgraph it returns it', async () => {
+      const config = createConfigComponent({
+        ENS_SUBGRAPH_URL: 'http://localhost'
+      })
+      fetch.fetch.mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              nfts: [
+                {
+                  name: 'something.eth',
+                  owner: {
+                    id: '0x1'
+                  }
+                }
+              ]
+            }
+          })
+        )
+      )
       const nameOwnership = await createEnsNameOwnership({
+        config,
         logs,
-        ensSubGraph: createMockNameSubGraph({ nfts: [{ name: 'something.eth', owner: { id: '0x1' } }] })
+        fetch,
+        metrics
       })
       await expect(nameOwnership.findOwner('something.eth')).resolves.toBe('0x1')
     })
@@ -124,7 +185,7 @@ describe('Name Ownership', () => {
       ).rejects.toThrowError()
     })
 
-    it('when no owner returned from TheGraph returns undefined', async () => {
+    it('when no owner returned from call returns undefined', async () => {
       const nameOwnership = await createOnChainDclNameOwnership({
         config,
         logs,
@@ -143,7 +204,7 @@ describe('Name Ownership', () => {
       await expect(nameOwnership.findOwner('my-super-name.dcl.eth')).resolves.toBeUndefined()
     })
 
-    it('when an owner is returned from the subgraph it returns it', async () => {
+    it('when an owner is returned from call it returns it', async () => {
       const nameOwnership = await createOnChainDclNameOwnership({
         config,
         logs,
