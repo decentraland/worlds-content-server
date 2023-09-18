@@ -61,8 +61,6 @@ export async function initComponents(): Promise<AppComponents> {
 
   const subGraphUrl = await config.requireString('MARKETPLACE_SUBGRAPH_URL')
   const marketplaceSubGraph = await createSubgraphComponent({ config, logs, metrics, fetch }, subGraphUrl)
-  const ensSubgraphUrl = await config.requireString('ENS_SUBGRAPH_URL')
-  const ensSubGraph = await createSubgraphComponent({ config, logs, metrics, fetch }, ensSubgraphUrl)
   const snsArn = await config.getString('SNS_ARN')
 
   const status = await createStatusComponent({ logs, fetch, config })
@@ -77,7 +75,14 @@ export async function initComponents(): Promise<AppComponents> {
     logs
   })
 
-  const nameOwnership = await createNameOwnership({ config, logs, ensSubGraph, ethereumProvider, marketplaceSubGraph })
+  const nameOwnership = await createNameOwnership({
+    config,
+    ethereumProvider,
+    fetch,
+    logs,
+    marketplaceSubGraph,
+    metrics
+  })
   const namePermissionChecker: IWorldNamePermissionChecker = createNameChecker({
     logs,
     nameOwnership
@@ -107,7 +112,6 @@ export async function initComponents(): Promise<AppComponents> {
     commsAdapter,
     config,
     database,
-    ensSubGraph,
     entityDeployer,
     ethereumProvider,
     fetch,

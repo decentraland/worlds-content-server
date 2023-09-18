@@ -3,13 +3,14 @@ import { EthAddress } from '@dcl/schemas'
 import { ContractFactory, RequestManager } from 'eth-connect'
 import { l1Contracts, L1Network, registrarAbi } from '@dcl/catalyst-contracts'
 import LRU from 'lru-cache'
+import { createSubgraphComponent } from '@well-known-components/thegraph-component'
 
 type NamesResponse = {
   nfts: { name: string; owner: { id: string } }[]
 }
 
 async function createDclNameOwnership(
-  components: Pick<AppComponents, 'config' | 'ensSubGraph' | 'ethereumProvider' | 'logs' | 'marketplaceSubGraph'>
+  components: Pick<AppComponents, 'config' | 'ethereumProvider' | 'logs' | 'marketplaceSubGraph'>
 ) {
   const nameValidatorStrategy = await components.config.requireString('NAME_VALIDATOR')
   switch (nameValidatorStrategy) {
@@ -24,7 +25,7 @@ async function createDclNameOwnership(
 }
 
 export async function createNameOwnership(
-  components: Pick<AppComponents, 'config' | 'logs' | 'ensSubGraph' | 'ethereumProvider' | 'marketplaceSubGraph'>
+  components: Pick<AppComponents, 'config' | 'ethereumProvider' | 'fetch' | 'logs' | 'marketplaceSubGraph' | 'metrics'>
 ): Promise<INameOwnership> {
   const logger = components.logs.getLogger('name-ownership')
   logger.info('Using NameOwnership')
@@ -44,14 +45,29 @@ export async function createNameOwnership(
   return createCachingNameOwnership({ findOwner })
 }
 
+export async function createDummyNameOwnership(): Promise<INameOwnership> {
+  async function findOwner() {
+    return undefined
+  }
+  return {
+    findOwner
+  }
+}
+
 export async function createEnsNameOwnership(
-  components: Pick<AppComponents, 'logs' | 'ensSubGraph'>
+  components: Pick<AppComponents, 'config' | 'fetch' | 'logs' | 'metrics'>
 ): Promise<INameOwnership> {
   const logger = components.logs.getLogger('ens-name-ownership')
   logger.info('Using ENS NameOwnership')
 
+  const ensSubgraphUrl = await components.config.getString('ENS_SUBGRAPH_URL')
+  if (!ensSubgraphUrl) {
+    return await createDummyNameOwnership()
+  }
+
+  const ensSubGraph = await createSubgraphComponent(components, ensSubgraphUrl)
   async function findOwner(ensName: string): Promise<EthAddress | undefined> {
-    const result = await components.ensSubGraph.query<NamesResponse>(
+    const result = await ensSubGraph.query<NamesResponse>(
       `query FetchOwnerForEnsName($ensName: String) {
       nfts: domains(where: {name_in: [$ensName]}) {
         name
