@@ -49,6 +49,7 @@ export async function initComponents(): Promise<AppComponents> {
 
   const rpcUrl = await config.requireString('RPC_URL')
   const ethereumProvider = new HTTPProvider(rpcUrl, fetch)
+  ethereumProvider.debug = true
 
   const storageFolder = (await config.getString('STORAGE_FOLDER')) || 'contents'
 
@@ -78,11 +79,10 @@ export async function initComponents(): Promise<AppComponents> {
   const nameOwnership = await createNameOwnership({
     config,
     ethereumProvider,
-    fetch,
     logs,
-    marketplaceSubGraph,
-    metrics
+    marketplaceSubGraph
   })
+
   const namePermissionChecker: IWorldNamePermissionChecker = createNameChecker({
     logs,
     nameOwnership
