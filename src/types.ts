@@ -70,6 +70,10 @@ export type MigratorComponents = Pick<AppComponents, 'logs' | 'database' | 'stor
 
 export type Validation = (deployment: DeploymentToValidate) => ValidationResult | Promise<ValidationResult>
 
+export type INameOwnership = {
+  findOwner(worldName: string): Promise<EthAddress | undefined>
+}
+
 export type IWorldNamePermissionChecker = {
   checkPermission(ethAddress: EthAddress, worldName: string): Promise<boolean>
 }
@@ -218,6 +222,7 @@ export type BaseComponents = {
   metrics: IMetricsComponent<keyof typeof metricDeclarations>
   migrationExecutor: MigrationExecutor
   nameDenyListChecker: INameDenyListChecker
+  nameOwnership: INameOwnership
   namePermissionChecker: IWorldNamePermissionChecker
   permissionsManager: IPermissionsManager
   server: IHttpServerComponent<GlobalContext>

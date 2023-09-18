@@ -20,7 +20,6 @@ import {
   createFsComponent
 } from '@dcl/catalyst-storage'
 import { createStatusComponent } from './adapters/status'
-import { createDclNameChecker, createOnChainDclNameChecker } from './adapters/dcl-name-checker'
 import { createLimitsManagerComponent } from './adapters/limits-manager'
 import { createWorldsManagerComponent } from './adapters/worlds-manager'
 import { createCommsAdapterComponent } from './adapters/comms-adapter'
@@ -32,21 +31,8 @@ import { createMigrationExecutor } from './migrations/migration-executor'
 import { createNameDenyListChecker } from './adapters/name-deny-list-checker'
 import { createDatabaseComponent } from './adapters/database-component'
 import { createPermissionsManagerComponent } from './adapters/permissions-manager'
-
-async function determineNameValidator(
-  components: Pick<AppComponents, 'config' | 'ethereumProvider' | 'logs' | 'marketplaceSubGraph'>
-) {
-  const nameValidatorStrategy = await components.config.requireString('NAME_VALIDATOR')
-  switch (nameValidatorStrategy) {
-    case 'DCL_NAME_CHECKER':
-      return createDclNameChecker(components)
-    case 'ON_CHAIN_DCL_NAME_CHECKER':
-      return await createOnChainDclNameChecker(components)
-
-    // Add more name validator strategies as needed here
-  }
-  throw Error(`Invalid nameValidatorStrategy selected: ${nameValidatorStrategy}`)
-}
+import { createNameOwnership } from './adapters/name-ownership'
+import { createNameChecker } from './adapters/dcl-name-checker'
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
@@ -75,7 +61,6 @@ export async function initComponents(): Promise<AppComponents> {
 
   const subGraphUrl = await config.requireString('MARKETPLACE_SUBGRAPH_URL')
   const marketplaceSubGraph = await createSubgraphComponent({ config, logs, metrics, fetch }, subGraphUrl)
-
   const snsArn = await config.getString('SNS_ARN')
 
   const status = await createStatusComponent({ logs, fetch, config })
@@ -90,11 +75,17 @@ export async function initComponents(): Promise<AppComponents> {
     logs
   })
 
-  const namePermissionChecker: IWorldNamePermissionChecker = await determineNameValidator({
+  const nameOwnership = await createNameOwnership({
     config,
     ethereumProvider,
+    fetch,
     logs,
-    marketplaceSubGraph
+    marketplaceSubGraph,
+    metrics
+  })
+  const namePermissionChecker: IWorldNamePermissionChecker = createNameChecker({
+    logs,
+    nameOwnership
   })
 
   const limitsManager = await createLimitsManagerComponent({ config, fetch, logs })
@@ -130,6 +121,7 @@ export async function initComponents(): Promise<AppComponents> {
     metrics,
     migrationExecutor,
     nameDenyListChecker,
+    nameOwnership,
     namePermissionChecker,
     permissionsManager,
     server,

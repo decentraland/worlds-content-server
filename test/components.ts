@@ -6,7 +6,7 @@ import { createLocalFetchCompoment, createRunner } from '@well-known-components/
 import { main } from '../src/service'
 import { SnsComponent, TestComponents } from '../src/types'
 import { initComponents as originalInitComponents } from '../src/components'
-import { createMockMarketplaceSubGraph } from './mocks/marketplace-subgraph-mock'
+import { createMockNameSubGraph } from './mocks/name-subgraph-mock'
 import { createMockNamePermissionChecker } from './mocks/dcl-name-checker-mock'
 import { createMockLimitsManagerComponent } from './mocks/limits-manager-mock'
 import { createMockStatusComponent } from './mocks/status-mock'
@@ -94,7 +94,7 @@ async function initComponents(): Promise<TestComponents> {
     fetch,
     limitsManager,
     localFetch: await createLocalFetchCompoment(config),
-    marketplaceSubGraph: createMockMarketplaceSubGraph(),
+    marketplaceSubGraph: createMockNameSubGraph(),
     metrics,
     namePermissionChecker,
     permissionsManager,

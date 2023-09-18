@@ -19,6 +19,7 @@ export async function createLimitsManagerComponent({
   const logger = logs.getLogger('limits-manager')
   const hardMaxParcels = await config.requireNumber('MAX_PARCELS')
   const hardMaxSize = await config.requireNumber('MAX_SIZE')
+  const hardMaxSizeForEns = await config.requireNumber('ENS_MAX_SIZE')
   const hardAllowSdk6 = (await config.requireString('ALLOW_SDK6')) === 'true'
   const whitelistUrl = await config.requireString('WHITELIST_URL')
 
@@ -51,6 +52,10 @@ export async function createLimitsManagerComponent({
       return whitelist[worldName]?.max_parcels || hardMaxParcels
     },
     async getMaxAllowedSizeInMbFor(worldName: string): Promise<number> {
+      if (worldName.endsWith('.eth') && !worldName.endsWith('.dcl.eth')) {
+        return hardMaxSizeForEns
+      }
+
       const whitelist = (await cache.fetch(CONFIG_KEY))!
       return whitelist[worldName]?.max_size_in_mb || hardMaxSize
     }
