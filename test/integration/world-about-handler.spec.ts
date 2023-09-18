@@ -5,6 +5,12 @@ import { defaultPermissions } from '../../src/logic/permissions-checker'
 import { PermissionType } from '../../src/types'
 
 test('world about handler /world/:world_name/about', function ({ components, stubComponents }) {
+  beforeEach(async () => {
+    const { config } = stubComponents
+    config.requireString.withArgs('ETH_NETWORK').resolves('mainnet')
+    config.requireString.withArgs('COMMS_ROOM_PREFIX').resolves('world-')
+  })
+
   it('when world is not yet deployed it responds 404', async () => {
     const { localFetch, worldCreator } = components
     const r = await localFetch.fetch(`/world/${worldCreator.randomWorldName()}/about`)

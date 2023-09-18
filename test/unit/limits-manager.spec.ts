@@ -9,6 +9,7 @@ describe('limits manager', function () {
     const config = createConfigComponent({
       MAX_PARCELS: '4',
       MAX_SIZE: '200',
+      ENS_MAX_SIZE: '25',
       ALLOW_SDK6: 'false',
       WHITELIST_URL: 'http://localhost/whitelist.json'
     })
