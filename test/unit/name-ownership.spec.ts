@@ -9,8 +9,6 @@ import {
   createNameOwnership,
   createOnChainDclNameOwnership
 } from '../../src/adapters/name-ownership'
-import { createFetchComponent } from '../../src/adapters/fetch'
-import { Response } from 'node-fetch'
 
 describe('Name Ownership', () => {
   let logs: ILoggerComponent
