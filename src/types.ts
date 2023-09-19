@@ -66,7 +66,10 @@ export type ValidatorComponents = Pick<
   'config' | 'limitsManager' | 'nameDenyListChecker' | 'namePermissionChecker' | 'storage' | 'worldsManager'
 >
 
-export type MigratorComponents = Pick<AppComponents, 'logs' | 'database' | 'storage' | 'worldsManager'>
+export type MigratorComponents = Pick<
+  AppComponents,
+  'logs' | 'database' | 'nameOwnership' | 'storage' | 'worldsManager'
+>
 
 export type Validation = (deployment: DeploymentToValidate) => ValidationResult | Promise<ValidationResult>
 

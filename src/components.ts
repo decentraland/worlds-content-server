@@ -111,7 +111,7 @@ export async function initComponents(): Promise<AppComponents> {
     worldsManager
   })
 
-  const migrationExecutor = createMigrationExecutor({ logs, database: database, storage, worldsManager })
+  const migrationExecutor = createMigrationExecutor({ logs, database: database, nameOwnership, storage, worldsManager })
 
   return {
     commsAdapter,
