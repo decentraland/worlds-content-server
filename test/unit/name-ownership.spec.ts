@@ -49,7 +49,7 @@ describe('Name Ownership', () => {
       })
       await expect(nameOwnership.findOwner('my-super-name.eth')).resolves.toBeUndefined()
       await expect(nameOwnership.findOwner('my-super-name.dcl.eth')).resolves.toBe(
-        '0x5De9e77627c79fF6ec787295E4191AEEeea4aCaB'
+        '0x5de9e77627c79ff6ec787295e4191aeeeea4acab'
       )
     })
 
@@ -175,7 +175,7 @@ describe('Name Ownership', () => {
         ])
       })
       await expect(nameOwnership.findOwner('mariano.dcl.eth')).resolves.toBe(
-        '0x5De9e77627c79fF6ec787295E4191AEEeea4aCaB'
+        '0x5de9e77627c79ff6ec787295e4191aeeeea4acab'
       )
     })
   })

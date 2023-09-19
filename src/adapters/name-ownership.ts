@@ -79,11 +79,7 @@ export async function createEnsNameOwnership(
   const ensRegistryContract = (await factory.at(ensRegistryContractAddress)) as any
 
   async function findOwner(ensName: string): Promise<EthAddress | undefined> {
-    const owner = (await ensRegistryContract.owner(hash(ensName))).toLowerCase()
-
-    logger.debug(`Owner of ENS name '${ensName}' is ${owner}`)
-
-    return owner
+    return (await ensRegistryContract.owner(hash(ensName))).toLowerCase()
   }
 
   return {
@@ -150,9 +146,7 @@ export async function createOnChainDclNameOwnership(
 
   async function findOwner(dclName: string): Promise<EthAddress | undefined> {
     try {
-      const owner = await registrarContract.getOwnerOf(dclName.replace('.dcl.eth', ''))
-      logger.debug(`Owner of DCL name '${dclName}' is ${owner}`)
-      return owner
+      return (await registrarContract.getOwnerOf(dclName.replace('.dcl.eth', ''))).toLowerCase()
     } catch (e) {
       return undefined
     }
