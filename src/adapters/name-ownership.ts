@@ -3,9 +3,7 @@ import { EthAddress } from '@dcl/schemas'
 import { ContractFactory, RequestManager } from 'eth-connect'
 import { l1Contracts, L1Network, registrarAbi } from '@dcl/catalyst-contracts'
 import LRU from 'lru-cache'
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore
-import namehash from '@ensdomains/eth-ens-namehash'
+import { hash } from '@ensdomains/eth-ens-namehash'
 
 type NamesResponse = {
   nfts: { name: string; owner: { id: string } }[]
@@ -81,7 +79,7 @@ export async function createEnsNameOwnership(
   const ensRegistryContract = (await factory.at(ensRegistryContractAddress)) as any
 
   async function findOwner(ensName: string): Promise<EthAddress | undefined> {
-    const owner = (await ensRegistryContract.owner(namehash.hash(ensName))).toLowerCase()
+    const owner = (await ensRegistryContract.owner(hash(ensName))).toLowerCase()
 
     logger.debug(`Owner of ENS name '${ensName}' is ${owner}`)
 
