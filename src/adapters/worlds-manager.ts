@@ -20,8 +20,12 @@ export async function createWorldsManagerComponent({
   logs,
   database,
   nameDenyListChecker,
+  nameOwnership,
   storage
-}: Pick<AppComponents, 'logs' | 'database' | 'nameDenyListChecker' | 'storage'>): Promise<IWorldsManager> {
+}: Pick<
+  AppComponents,
+  'logs' | 'database' | 'nameDenyListChecker' | 'nameOwnership' | 'storage'
+>): Promise<IWorldsManager> {
   const logger = logs.getLogger('worlds-manager')
 
   async function getMetadataForWorld(worldName: string): Promise<WorldMetadata | undefined> {
@@ -60,13 +64,17 @@ export async function createWorldsManagerComponent({
 
     const deployer = deploymentAuthChain[0].payload.toLowerCase()
 
+    const owner = await nameOwnership.findOwner(worldName)
+
     const sql = SQL`
-              INSERT INTO worlds (name, entity_id, deployer, deployment_auth_chain, entity, created_at, updated_at)
-              VALUES (${worldName.toLowerCase()}, ${scene.id}, ${deployer}, ${deploymentAuthChainString}::json,
+              INSERT INTO worlds (name, entity_id, owner, deployer, deployment_auth_chain, entity, created_at, updated_at)
+              VALUES (${worldName.toLowerCase()}, ${scene.id},
+                      ${owner}, ${deployer}, ${deploymentAuthChainString}::json,
                       ${scene}::json,
                       ${new Date()}, ${new Date()})
               ON CONFLICT (name) 
                   DO UPDATE SET entity_id = ${scene.id}, 
+                                owner = ${owner},
                                 deployer = ${deployer},
                                 entity = ${scene}::json,
                                 deployment_auth_chain = ${deploymentAuthChainString}::json,
