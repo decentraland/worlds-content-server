@@ -93,6 +93,22 @@ describe('Name Ownership', () => {
       )
     })
 
+    it('when the owner is NameWrapper we ask that contract and return the response', async () => {
+      const config = createConfigComponent({
+        ETH_NETWORK: 'mainnet',
+        ALLOW_ENS_DOMAINS: 'true'
+      })
+      const nameOwnership = await createEnsNameOwnership({
+        config,
+        ethereumProvider: createHttpProviderMock([
+          { jsonrpc: '2.0', id: 2, result: '0x000000000000000000000000D4416b13d2b3a9aBae7AcD5D6C2BbDBE25686401' },
+          { jsonrpc: '2.0', id: 2, result: '0x000000000000000000000000d76a10326397f3d07fa0d1fa5296933ec2747f18' }
+        ]),
+        logs
+      })
+      await expect(nameOwnership.findOwner('something.eth')).resolves.toBe('0xd76a10326397f3d07fa0d1fa5296933ec2747f18')
+    })
+
     it('when an owner is returned from the RPC call it returns it', async () => {
       const config = createConfigComponent({
         ETH_NETWORK: 'mainnet',

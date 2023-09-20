@@ -92,14 +92,14 @@ export async function createEnsNameOwnership(
       // It's a 2-level domain, so it's a direct registration
       const labelName = getLabelHash(labels[0])
       const ownerOfNft = await baseRegistrarImplementation.ownerOf(labelName)
-      if (ownerOfNft !== ensContracts[ethNetwork].nameWrapper) {
+      if (ownerOfNft.toLowerCase() !== ensContracts[ethNetwork].nameWrapper.toLowerCase()) {
         // The owner is not the NameWrapper contract, so return the owner
         return ownerOfNft.toLowerCase()
       }
     }
 
     // Check with the NameWrapper contract. This could validate domains with more than 2 levels.
-    const ownerOfName = await nameWrapper.owner(namehash.hash(ensName))
+    const ownerOfName = await nameWrapper.ownerOf(namehash.hash(ensName))
     return ownerOfName.toLowerCase()
   }
 
@@ -201,7 +201,7 @@ export async function createCachingNameOwnership(nameOwnership: INameOwnership):
 const ensContracts: Record<L1Network, { baseRegistrarImplementation: string; nameWrapper: string }> = {
   mainnet: {
     baseRegistrarImplementation: '0x57f1887a8BF19b14fC0dF6Fd9B2acc9Af147eA85',
-    nameWrapper: '0xd4416b13d2b3a9abae7acd5d6c2bbdbe25686401'
+    nameWrapper: '0xD4416b13d2b3a9aBae7AcD5D6C2BbDBE25686401'
   },
   sepolia: {
     baseRegistrarImplementation: '0x57f1887a8BF19b14fC0dF6Fd9B2acc9Af147eA85',
@@ -227,9 +227,9 @@ const baseRegistrarImplementationAbi = [
 
 const nameWrapperAbi = [
   {
-    inputs: [{ internalType: 'bytes32', name: 'node', type: 'bytes32' }],
-    name: 'owner',
-    outputs: [{ internalType: 'address', name: '', type: 'address' }],
+    inputs: [{ internalType: 'uint256', name: 'id', type: 'uint256' }],
+    name: 'ownerOf',
+    outputs: [{ internalType: 'address', name: 'owner', type: 'address' }],
     stateMutability: 'view',
     type: 'function'
   }
