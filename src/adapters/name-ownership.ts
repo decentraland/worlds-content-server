@@ -1,9 +1,10 @@
 import { AppComponents, INameOwnership } from '../types'
 import { EthAddress } from '@dcl/schemas'
-import { ContractFactory, RequestManager } from 'eth-connect'
+import { bytesToHex, ContractFactory, RequestManager } from 'eth-connect'
 import { l1Contracts, L1Network, registrarAbi } from '@dcl/catalyst-contracts'
 import LRU from 'lru-cache'
-import { hash } from '@ensdomains/eth-ens-namehash'
+import namehash from '@ensdomains/eth-ens-namehash'
+import { keccak_256 as keccak256 } from '@noble/hashes/sha3'
 
 type NamesResponse = {
   nfts: { name: string; owner: { id: string } }[]
@@ -71,15 +72,35 @@ export async function createEnsNameOwnership(
     throw new Error(`Invalid ETH_NETWORK: ${ethNetwork}`)
   }
 
-  // Same address in all networks: https://github.com/ensdomains/ens-subgraph/blob/master/networks.json#L60
-  const ensRegistryContractAddress = '0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e'
-
   const requestManager = new RequestManager(components.ethereumProvider)
-  const factory = new ContractFactory(requestManager, ensAbi)
-  const ensRegistryContract = (await factory.at(ensRegistryContractAddress)) as any
+  const baseRegistrarImplementationFactory = new ContractFactory(requestManager, baseRegistrarImplementationAbi)
+  const baseRegistrarImplementation = (await baseRegistrarImplementationFactory.at(
+    ensContracts[ethNetwork].baseRegistrarImplementation
+  )) as any
+
+  const nameWrapperImplementationFactory = new ContractFactory(requestManager, nameWrapperAbi)
+  const nameWrapper = (await nameWrapperImplementationFactory.at(ensContracts[ethNetwork].nameWrapper)) as any
+
+  function getLabelHash(input: string) {
+    return '0x' + bytesToHex(keccak256(input))
+  }
 
   async function findOwner(ensName: string): Promise<EthAddress | undefined> {
-    return (await ensRegistryContract.owner(hash(ensName))).toLowerCase()
+    const normalized = namehash.normalize(ensName)
+    const labels = normalized.split('.')
+    if (labels.length === 2) {
+      // It's a 2-level domain, so it's a direct registration
+      const labelName = getLabelHash(labels[0])
+      const ownerOfNft = await baseRegistrarImplementation.ownerOf(labelName)
+      if (ownerOfNft !== ensContracts[ethNetwork].nameWrapper) {
+        // The owner is not the NameWrapper contract, so return the owner
+        return ownerOfNft.toLowerCase()
+      }
+    }
+
+    // Check with the NameWrapper contract. This could validate domains with more than 2 levels.
+    const ownerOfName = await nameWrapper.owner(namehash.hash(ensName))
+    return ownerOfName.toLowerCase()
   }
 
   return {
@@ -175,13 +196,40 @@ export async function createCachingNameOwnership(nameOwnership: INameOwnership):
   }
 }
 
-const ensAbi = [
+// baseRegistrarImplementation has the same address in all networks:
+// https://github.com/ensdomains/ens-subgraph/blob/master/networks.json#L60
+const ensContracts: Record<L1Network, { baseRegistrarImplementation: string; nameWrapper: string }> = {
+  mainnet: {
+    baseRegistrarImplementation: '0x57f1887a8BF19b14fC0dF6Fd9B2acc9Af147eA85',
+    nameWrapper: '0xd4416b13d2b3a9abae7acd5d6c2bbdbe25686401'
+  },
+  sepolia: {
+    baseRegistrarImplementation: '0x57f1887a8BF19b14fC0dF6Fd9B2acc9Af147eA85',
+    nameWrapper: '0x0635513f179D50A207757E05759CbD106d7dFcE8'
+  },
+  goerli: {
+    baseRegistrarImplementation: '',
+    nameWrapper: ''
+  }
+}
+
+const baseRegistrarImplementationAbi = [
   {
     constant: true,
+    inputs: [{ internalType: 'uint256', name: 'tokenId', type: 'uint256' }],
+    name: 'ownerOf',
+    outputs: [{ internalType: 'address', name: '', type: 'address' }],
+    payable: false,
+    stateMutability: 'view',
+    type: 'function'
+  }
+]
+
+const nameWrapperAbi = [
+  {
     inputs: [{ internalType: 'bytes32', name: 'node', type: 'bytes32' }],
     name: 'owner',
     outputs: [{ internalType: 'address', name: '', type: 'address' }],
-    payable: false,
     stateMutability: 'view',
     type: 'function'
   }
