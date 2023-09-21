@@ -23,6 +23,7 @@ import { createMockNameDenyListChecker } from './mocks/name-deny-list-checker-mo
 import { createWorldCreator } from './mocks/world-creator'
 import { createWorldsManagerComponent } from '../src/adapters/worlds-manager'
 import { createPermissionsManagerComponent } from '../src/adapters/permissions-manager'
+import { createMockNameOwnership } from './mocks/name-ownership-mock'
 
 /**
  * Behaves like Jest "describe" function, used to describe a test for a
@@ -66,8 +67,18 @@ async function initComponents(): Promise<TestComponents> {
 
   const commsAdapter = createMockCommsAdapterComponent()
 
-  const worldsManager = await createWorldsManagerComponent({ logs, database, nameDenyListChecker, storage })
+  const nameOwnership = createMockNameOwnership()
+
+  const worldsManager = await createWorldsManagerComponent({
+    logs,
+    database,
+    nameDenyListChecker,
+    nameOwnership,
+    storage
+  })
+
   const worldsIndexer = await createWorldsIndexerComponent({ worldsManager })
+
   const permissionsManager = await createPermissionsManagerComponent({ worldsManager })
 
   const sns: SnsComponent = {
