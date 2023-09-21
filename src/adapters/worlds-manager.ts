@@ -65,18 +65,22 @@ export async function createWorldsManagerComponent({
     const deployer = deploymentAuthChain[0].payload.toLowerCase()
 
     const owner = await nameOwnership.findOwner(worldName)
+    const fileInfos = await storage.fileInfoMultiple(scene.content?.map((c) => c.hash) || [])
+    const size = scene.content?.reduce((acc, c) => acc + (fileInfos.get(c.hash)?.size || 0), 0) || 0
 
     const sql = SQL`
-              INSERT INTO worlds (name, entity_id, owner, deployer, deployment_auth_chain, entity, created_at, updated_at)
+              INSERT INTO worlds (name, entity_id, owner, deployer, deployment_auth_chain, entity, size, created_at, updated_at)
               VALUES (${worldName.toLowerCase()}, ${scene.id},
                       ${owner}, ${deployer}, ${deploymentAuthChainString}::json,
                       ${scene}::json,
+                      ${size},
                       ${new Date()}, ${new Date()})
               ON CONFLICT (name) 
                   DO UPDATE SET entity_id = ${scene.id}, 
                                 owner = ${owner},
                                 deployer = ${deployer},
                                 entity = ${scene}::json,
+                                size = ${size},
                                 deployment_auth_chain = ${deploymentAuthChainString}::json,
                                 updated_at = ${new Date()}
     `
