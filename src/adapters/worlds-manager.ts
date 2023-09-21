@@ -69,10 +69,11 @@ export async function createWorldsManagerComponent({
     const size = scene.content?.reduce((acc, c) => acc + (fileInfos.get(c.hash)?.size || 0), 0) || 0
 
     const sql = SQL`
-              INSERT INTO worlds (name, entity_id, owner, deployer, deployment_auth_chain, entity, size, created_at, updated_at)
+              INSERT INTO worlds (name, entity_id, owner, deployer, deployment_auth_chain, entity, permissions, size, created_at, updated_at)
               VALUES (${worldName.toLowerCase()}, ${scene.id},
                       ${owner}, ${deployer}, ${deploymentAuthChainString}::json,
                       ${scene}::json,
+                      ${JSON.stringify(defaultPermissions())}::json,
                       ${size},
                       ${new Date()}, ${new Date()})
               ON CONFLICT (name) 
