@@ -70,58 +70,125 @@ describe('Name Ownership', () => {
 
   describe('ens name ownership', function () {
     it('when ens domains are not allowed it always returns undefined', async () => {
-      const config = createConfigComponent({})
+      const config = createConfigComponent({
+        ETH_NETWORK: 'mainnet',
+        ALLOW_ENS_DOMAINS: 'false'
+      })
       const nameOwnership = await createEnsNameOwnership({ config, ethereumProvider: createHttpProviderMock(), logs })
       await expect(nameOwnership.findOwner('my-super-name.eth')).resolves.toBeUndefined()
     })
 
-    it('when no owner returned from the RPC call it returns 0x0', async () => {
+    it('when ens domains are allowed but wrong network it fails to create object', async () => {
       const config = createConfigComponent({
-        ETH_NETWORK: 'mainnet',
+        ETH_NETWORK: 'invalid',
         ALLOW_ENS_DOMAINS: 'true'
       })
-
-      const nameOwnership = await createEnsNameOwnership({
-        config,
-        ethereumProvider: createHttpProviderMock([
-          { jsonrpc: '2.0', id: 3, result: '0x0000000000000000000000000000000000000000000000000000000000000000' }
-        ]),
-        logs
-      })
-      await expect(nameOwnership.findOwner('my-super-name.eth')).resolves.toBe(
-        '0x0000000000000000000000000000000000000000'
-      )
+      await expect(
+        createEnsNameOwnership({ config, ethereumProvider: createHttpProviderMock(), logs })
+      ).rejects.toThrowError('Invalid ETH_NETWORK: invalid')
     })
 
-    it('when the owner is NameWrapper we ask that contract and return the response', async () => {
-      const config = createConfigComponent({
-        ETH_NETWORK: 'mainnet',
-        ALLOW_ENS_DOMAINS: 'true'
+    describe('Unwrapped name', function () {
+      it('when ens name does not exist or has already expired it returns undefined', async () => {
+        const config = createConfigComponent({
+          ETH_NETWORK: 'mainnet',
+          ALLOW_ENS_DOMAINS: 'true'
+        })
+
+        const nameOwnership = await createEnsNameOwnership({
+          config,
+          ethereumProvider: createHttpProviderMock([
+            { jsonrpc: '2.0', id: 1, error: { code: -32000, message: 'execution reverted' } }
+          ]),
+          logs
+        })
+        await expect(nameOwnership.findOwner('my-super-name.eth')).resolves.toBeUndefined()
       })
-      const nameOwnership = await createEnsNameOwnership({
-        config,
-        ethereumProvider: createHttpProviderMock([
-          { jsonrpc: '2.0', id: 2, result: '0x000000000000000000000000D4416b13d2b3a9aBae7AcD5D6C2BbDBE25686401' },
-          { jsonrpc: '2.0', id: 2, result: '0x000000000000000000000000d76a10326397f3d07fa0d1fa5296933ec2747f18' }
-        ]),
-        logs
+
+      it('when an owner is returned from the RPC call it returns it', async () => {
+        const config = createConfigComponent({
+          ETH_NETWORK: 'mainnet',
+          ALLOW_ENS_DOMAINS: 'true'
+        })
+        const nameOwnership = await createEnsNameOwnership({
+          config,
+          ethereumProvider: createHttpProviderMock([
+            { jsonrpc: '2.0', id: 2, result: '0x0000000000000000000000004cb6118ec2949ad2a06293268072659f4267a012' }
+          ]),
+          logs
+        })
+        await expect(nameOwnership.findOwner('something.eth')).resolves.toBe(
+          '0x4cb6118ec2949ad2a06293268072659f4267a012'
+        )
       })
-      await expect(nameOwnership.findOwner('something.eth')).resolves.toBe('0xd76a10326397f3d07fa0d1fa5296933ec2747f18')
     })
 
-    it('when an owner is returned from the RPC call it returns it', async () => {
-      const config = createConfigComponent({
-        ETH_NETWORK: 'mainnet',
-        ALLOW_ENS_DOMAINS: 'true'
+    describe('Wrapped name', function () {
+      it('when ens name does not exist or has already expired it returns undefined', async () => {
+        const config = createConfigComponent({
+          ETH_NETWORK: 'mainnet',
+          ALLOW_ENS_DOMAINS: 'true'
+        })
+
+        const nameOwnership = await createEnsNameOwnership({
+          config,
+          ethereumProvider: createHttpProviderMock([
+            { jsonrpc: '2.0', id: 1, error: { code: -32000, message: 'execution reverted' } }
+          ]),
+          logs
+        })
+        await expect(nameOwnership.findOwner('my-super-name.eth')).resolves.toBeUndefined()
       })
-      const nameOwnership = await createEnsNameOwnership({
-        config,
-        ethereumProvider: createHttpProviderMock([
-          { jsonrpc: '2.0', id: 2, result: '0x0000000000000000000000004cb6118ec2949ad2a06293268072659f4267a012' }
-        ]),
-        logs
+
+      it('when the owner is NameWrapper we ask that contract and return the response', async () => {
+        const config = createConfigComponent({
+          ETH_NETWORK: 'mainnet',
+          ALLOW_ENS_DOMAINS: 'true'
+        })
+        const nameOwnership = await createEnsNameOwnership({
+          config,
+          ethereumProvider: createHttpProviderMock([
+            { jsonrpc: '2.0', id: 2, result: '0x000000000000000000000000D4416b13d2b3a9aBae7AcD5D6C2BbDBE25686401' },
+            { jsonrpc: '2.0', id: 2, result: '0x000000000000000000000000d76a10326397f3d07fa0d1fa5296933ec2747f18' }
+          ]),
+          logs
+        })
+        await expect(nameOwnership.findOwner('something.eth')).resolves.toBe(
+          '0xd76a10326397f3d07fa0d1fa5296933ec2747f18'
+        )
       })
-      await expect(nameOwnership.findOwner('something.eth')).resolves.toBe('0x4cb6118ec2949ad2a06293268072659f4267a012')
+
+      it('attempts to resolve non registered 3-level domain and returns the response', async () => {
+        const config = createConfigComponent({
+          ETH_NETWORK: 'mainnet',
+          ALLOW_ENS_DOMAINS: 'true'
+        })
+        const nameOwnership = await createEnsNameOwnership({
+          config,
+          ethereumProvider: createHttpProviderMock([
+            { jsonrpc: '2.0', id: 2, result: '0x0000000000000000000000000000000000000000000000000000000000000000' }
+          ]),
+          logs
+        })
+        await expect(nameOwnership.findOwner('something.something.eth')).resolves.toBeUndefined()
+      })
+
+      it('attempts to resolve a registered 3-level domain and returns the response', async () => {
+        const config = createConfigComponent({
+          ETH_NETWORK: 'mainnet',
+          ALLOW_ENS_DOMAINS: 'true'
+        })
+        const nameOwnership = await createEnsNameOwnership({
+          config,
+          ethereumProvider: createHttpProviderMock([
+            { jsonrpc: '2.0', id: 1, result: '0x0000000000000000000000002ecfd3d4d9d53fa91904641b09cba7e09e66a121' }
+          ]),
+          logs
+        })
+        await expect(nameOwnership.findOwner('something.something.eth')).resolves.toBe(
+          '0x2ecfd3d4d9d53fa91904641b09cba7e09e66a121'
+        )
+      })
     })
   })
 

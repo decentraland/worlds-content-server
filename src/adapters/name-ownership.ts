@@ -61,7 +61,7 @@ export async function createEnsNameOwnership(
   const logger = components.logs.getLogger('ens-name-ownership')
   logger.info('Using ENS NameOwnership')
 
-  const allowEnsDomains = Boolean(await components.config.getString('ALLOW_ENS_DOMAINS'))
+  const allowEnsDomains = (await components.config.getString('ALLOW_ENS_DOMAINS')) === 'true'
   if (!allowEnsDomains) {
     return await createDummyNameOwnership()
   }
@@ -91,15 +91,22 @@ export async function createEnsNameOwnership(
     if (labels.length === 2) {
       // It's a 2-level domain, so it's a direct registration
       const labelName = getLabelHash(labels[0])
-      const ownerOfNft = await baseRegistrarImplementation.ownerOf(labelName)
-      if (ownerOfNft.toLowerCase() !== ensContracts[ethNetwork].nameWrapper.toLowerCase()) {
-        // The owner is not the NameWrapper contract, so return the owner
-        return ownerOfNft.toLowerCase()
+      try {
+        const ownerOfNft = await baseRegistrarImplementation.ownerOf(labelName)
+        if (ownerOfNft.toLowerCase() !== ensContracts[ethNetwork].nameWrapper.toLowerCase()) {
+          // The owner is not the NameWrapper contract, so return the owner
+          return ownerOfNft.toLowerCase()
+        }
+      } catch (_) {
+        return undefined
       }
     }
 
     // Check with the NameWrapper contract. This could validate domains with more than 2 levels.
     const ownerOfName = await nameWrapper.ownerOf(namehash.hash(ensName))
+    if (ownerOfName === '0x0000000000000000000000000000000000000000') {
+      return undefined
+    }
     return ownerOfName.toLowerCase()
   }
 
