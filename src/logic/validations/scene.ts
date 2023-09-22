@@ -33,7 +33,7 @@ export const validateDeprecatedConfig: Validation = async (
 
   if (deployment.entity.metadata.worldConfiguration?.skybox) {
     return createValidationResult([
-      '`skybox` in scene.json is deprecated in favor of `{ skyboxConfig: { fixedTime } }`. Please update your scene.json accordingly.'
+      '`skybox` in scene.json is deprecated in favor of `{ 'skyboxConfig': { 'fixedTime': 36000 }}`. Please update your scene.json accordingly.'
     ])
   }
 

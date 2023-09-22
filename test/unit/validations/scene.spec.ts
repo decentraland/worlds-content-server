@@ -172,7 +172,7 @@ describe('scene validations', function () {
       const result = await validateDeprecatedConfig(deployment)
       expect(result.ok()).toBeFalsy()
       expect(result.errors).toContain(
-        '`skybox` in scene.json is deprecated in favor of `{ skyboxConfig: { fixedTime } }`. Please update your scene.json accordingly.'
+      '`skybox` in scene.json is deprecated in favor of `{ 'skyboxConfig': { 'fixedTime': 36000 }}`. Please update your scene.json accordingly.'
       )
     })
   })
