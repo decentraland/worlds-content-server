@@ -5,9 +5,12 @@ This is a simple content server API needed to deploy and retrieve scenes.
 It uses the `@dcl/catalyst-storage` library to store the deployments either on the disk or S3.
 
 
+
+
+
 # Running a Worlds Content Server
 ## For development
-For development purposes, just clone this repository, build the project and 
+For development purposes, just clone this repository, build the project and
 run:
 ```bash
 git clone https://github.com/decentraland/worlds-content-server.git
@@ -18,8 +21,8 @@ yarn start
 There should be a server running on port 3000.
 
 ## For production
-For running a production server, it is recommended to use the docker image 
-published by this repository. It is important to provide proper values for 
+For running a production server, it is recommended to use the docker image
+published by this repository. It is important to provide proper values for
 LiveKit configuration using `--env` CLI options, as follows:
 ```bash
 docker pull quay.io/decentraland/worlds-content-server
