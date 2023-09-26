@@ -1,29 +1,25 @@
 import { HandlerContextWithPath } from '../../types'
-import { EthAddress } from '@dcl/schemas'
-
-type IWalletStats = {
-  wallet: EthAddress
-  worldsDeployed: string[]
-  usedSpace: number
-  maxAllowedSpace: number
-}
 
 export async function walletStatsHandler({
   params,
-  components: { config, status, worldsManager }
-}: Pick<
-  HandlerContextWithPath<'config' | 'nameDenyListChecker' | 'status' | 'worldsManager', '/wallet/:wallet/stats'>,
-  'components' | 'params' | 'url'
->) {
-  const body: IWalletStats = {
-    wallet: params.wallet,
-    worldsDeployed: [], // worlds,
-    usedSpace: 0,
-    maxAllowedSpace: 0
-  }
+  components: { walletStats }
+}: Pick<HandlerContextWithPath<'config' | 'walletStats', '/wallet/:wallet/stats'>, 'components' | 'params' | 'url'>) {
+  const statsForWallet = await walletStats.get(params.wallet)
 
   return {
     status: 200,
-    body
+    body: {
+      wallet: statsForWallet.wallet,
+      dclNames: statsForWallet.dclNames.map((world) => ({
+        name: world.name,
+        size: world.size.toString()
+      })),
+      ensNames: statsForWallet.ensNames.map((world) => ({
+        name: world.name,
+        size: world.size.toString()
+      })),
+      usedSpace: statsForWallet.usedSpace.toString(),
+      maxAllowedSpace: statsForWallet.maxAllowedSpace.toString()
+    }
   }
 }
