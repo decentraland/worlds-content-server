@@ -25,6 +25,10 @@ describe('wallet stats', function () {
       {
         rowCount: 0,
         rows: []
+      },
+      {
+        rowCount: 0,
+        rows: []
       }
     ])
   })
@@ -99,6 +103,7 @@ describe('wallet stats', function () {
         })
     })
 
+    const blockedAt = new Date()
     const database = createDatabaseMock([
       {
         rowCount: 1,
@@ -106,6 +111,10 @@ describe('wallet stats', function () {
           { name: 'name.dcl.eth', entity_id: 'entity_id', size: 100 * 1024 * 1024 },
           { name: 'name.eth', entity_id: 'entity_id', size: 15 * 1024 * 1024 }
         ]
+      },
+      {
+        rowCount: 1,
+        rows: [{ created_at: blockedAt }]
       }
     ])
 
@@ -131,7 +140,8 @@ describe('wallet stats', function () {
       ],
       maxAllowedSpace: 209715200n,
       usedSpace: 104857600n,
-      wallet: identity.realAccount.address
+      wallet: identity.realAccount.address,
+      blockedSince: blockedAt
     })
   })
 })

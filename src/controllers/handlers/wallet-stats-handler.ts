@@ -26,7 +26,8 @@ export async function walletStatsHandler({
         size: world.size.toString()
       })),
       usedSpace: statsForWallet.usedSpace.toString(),
-      maxAllowedSpace: statsForWallet.maxAllowedSpace.toString()
+      maxAllowedSpace: statsForWallet.maxAllowedSpace.toString(),
+      blockedSince: statsForWallet.blockedSince?.toISOString()
     }
   }
 }
