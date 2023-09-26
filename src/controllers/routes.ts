@@ -19,6 +19,7 @@ import {
   postPermissionsHandler,
   putPermissionsAddressHandler
 } from './handlers/permissions-handlers'
+import { walletStatsHandler } from './handlers/wallet-stats-handler'
 
 export async function setupRouter(globalContext: GlobalContext): Promise<Router<GlobalContext>> {
   const router = new Router<GlobalContext>()
@@ -59,6 +60,7 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
     deletePermissionsAddressHandler
   )
 
+  router.get('/wallet/:wallet/stats', walletStatsHandler)
   router.get('/status', statusHandler)
 
   router.get('/index', getIndexHandler)
