@@ -14,6 +14,15 @@ export async function createWalletStatsComponent(
   }
 
   async function fetchAccountHoldings(wallet: string) {
+    if (!url) {
+      return {
+        owner: wallet,
+        ownedLands: 0,
+        ownedNames: 0,
+        ownedMana: 0,
+        spaceAllowance: Number.MAX_SAFE_INTEGER
+      }
+    }
     const response = await components.fetch.fetch(`${url}/account-holdings/${wallet}`, { method: 'POST' })
     const json = await response.json()
     return json['data']
