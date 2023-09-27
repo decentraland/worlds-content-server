@@ -24,7 +24,7 @@ export function createDatabaseMock(queryResults: any[] = []): IPgComponent {
     stop(): Promise<void> {
       return Promise.resolve(undefined)
     },
-    streamQuery<T = any>(sql: SQLStatement, config?: { batchSize?: number }): AsyncGenerator<T> {
+    streamQuery<T = any>(_sql: SQLStatement, _config?: { batchSize?: number }): AsyncGenerator<T> {
       return undefined
     }
   }
