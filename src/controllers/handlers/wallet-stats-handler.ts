@@ -3,7 +3,7 @@ import { HandlerContextWithPath } from '../../types'
 export async function walletStatsHandler({
   params,
   components: { walletStats }
-}: Pick<HandlerContextWithPath<'config' | 'walletStats', '/wallet/:wallet/stats'>, 'components' | 'params' | 'url'>) {
+}: Pick<HandlerContextWithPath<'walletStats', '/wallet/:wallet/stats'>, 'components' | 'params' | 'url'>) {
   const statsForWallet = await walletStats.get(params.wallet)
 
   return {
