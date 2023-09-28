@@ -50,6 +50,7 @@ export async function initComponents(): Promise<AppComponents> {
 
   const rpcUrl = await config.requireString('RPC_URL')
   const ethereumProvider = new HTTPProvider(rpcUrl, fetch)
+  ethereumProvider.debug = true
 
   const storageFolder = (await config.getString('STORAGE_FOLDER')) || 'contents'
 

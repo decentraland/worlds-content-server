@@ -53,7 +53,7 @@ export async function createWorldsManagerComponent({
 
     const deployer = deploymentAuthChain[0].payload.toLowerCase()
 
-    const owner = await nameOwnership.findOwner(worldName)
+    const owner = await nameOwnership.findOwners([worldName])
     const fileInfos = await storage.fileInfoMultiple(scene.content?.map((c) => c.hash) || [])
     const size = scene.content?.reduce((acc, c) => acc + (fileInfos.get(c.hash)?.size || 0), 0) || 0
 
