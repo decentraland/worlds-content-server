@@ -81,7 +81,11 @@ test('world about handler /world/:world_name/about', function ({ components, stu
         },
         realmName: worldName
       },
-      content: { healthy: true, publicUrl: 'https://peer.com/content' },
+      content: {
+        healthy: true,
+        publicUrl: 'https://peer.com/content',
+        synchronizationStatus: 'Syncing'
+      },
       lambdas: { healthy: true, publicUrl: 'https://peer.com/lambdas' },
       comms: {
         healthy: true,
@@ -217,7 +221,7 @@ test('world about handler /world/:world_name/about', function ({ components, stu
         },
         worldConfiguration: {
           name: worldName,
-          adapter: 'fixed-adapter:offline:offline'
+          fixedAdapter: 'offline:offline'
         }
       }
     })

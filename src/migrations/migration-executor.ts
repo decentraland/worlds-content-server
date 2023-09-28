@@ -15,9 +15,6 @@ export function createMigrationExecutor(components: MigratorComponents): Migrati
   const regExp = /migration-[0-9]{3}\.js$/
   const scripts = fs.readdirSync(dir).filter((file) => regExp.test(file))
 
-  console.log(dir)
-  console.log(scripts)
-
   async function run(): Promise<void> {
     logger.debug('Running migrations')
     for (const script of scripts) {

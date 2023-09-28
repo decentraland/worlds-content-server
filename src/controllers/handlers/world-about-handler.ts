@@ -108,5 +108,5 @@ async function resolveFixedAdapter(
     return 'fixed-adapter:offline:offline'
   }
 
-  return `fixed-adapter: signed-login:${baseUrl}/get-comms-adapter/${roomPrefix}${worldName.toLowerCase()}`
+  return `fixed-adapter:signed-login:${baseUrl}/get-comms-adapter/${roomPrefix}${worldName.toLowerCase()}`
 }
