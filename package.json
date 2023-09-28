@@ -11,12 +11,12 @@
     "test:coverage": "jest --forceExit --detectOpenHandles --coverage --verbose"
   },
   "dependencies": {
+    "@dcl/catalyst-api-specs": "https://sdk-team-cdn.decentraland.org/@dcl/catalyst-api-specs/branch/default-realm/dcl-catalyst-api-specs-3.2.4-6341664838.commit-2e9c16f.tgz",
     "@dcl/catalyst-contracts": "^4.2.0",
     "@dcl/catalyst-storage": "^4.1.0",
     "@dcl/crypto": "^3.4.5",
     "@dcl/hashing": "^3.0.4",
     "@dcl/platform-crypto-middleware": "^1.0.2",
-    "@dcl/protocol": "^1.0.0-6200210039.commit-75f18e8",
     "@dcl/schemas": "^9.7.0",
     "@ensdomains/eth-ens-namehash": "^2.0.15",
     "@types/busboy": "^1.5.0",
