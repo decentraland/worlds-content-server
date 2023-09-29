@@ -1,9 +1,16 @@
-import { HandlerContextWithPath } from '../../types'
+import { HandlerContextWithPath, InvalidRequestError } from '../../types'
+import { EthAddress } from '@dcl/schemas'
 
 export async function walletStatsHandler({
   params,
   components: { walletStats }
 }: Pick<HandlerContextWithPath<'walletStats', '/wallet/:wallet/stats'>, 'components' | 'params' | 'url'>) {
+  const wallet = params.wallet
+
+  if (!wallet || !EthAddress.validate(wallet)) {
+    throw new InvalidRequestError('Invalid request. Missing or invalid wallet in request url param.')
+  }
+
   const statsForWallet = await walletStats.get(params.wallet)
 
   return {

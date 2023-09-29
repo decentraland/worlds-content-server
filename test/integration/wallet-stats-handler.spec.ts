@@ -2,6 +2,18 @@ import { test } from '../components'
 import { getIdentity } from '../utils'
 
 test('wallet stats handler /wallet/:wallet/stats', function ({ components, stubComponents }) {
+  it("returns an error when request doesn't include a valid wallet address", async () => {
+    const { localFetch } = components
+
+    const r = await localFetch.fetch('/wallet/0x123/stats')
+
+    expect(r.status).toBe(400)
+    expect(await r.json()).toEqual({
+      error: 'Bad request',
+      message: 'Invalid request. Missing or invalid wallet in request url param.'
+    })
+  })
+
   it('correctly returns the aggregated data', async () => {
     const { localFetch, worldCreator } = components
 
