@@ -74,7 +74,7 @@ export type MigratorComponents = Pick<
 export type Validation = (deployment: DeploymentToValidate) => ValidationResult | Promise<ValidationResult>
 
 export type INameOwnership = {
-  findOwners(worldNames: string[]): Promise<Map<string, EthAddress | undefined>>
+  findOwners(worldNames: string[]): Promise<ReadonlyMap<string, EthAddress | undefined>>
 }
 
 export type IWorldNamePermissionChecker = {

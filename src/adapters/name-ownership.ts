@@ -42,7 +42,7 @@ export async function createNameOwnership(
   const ensNameOwnership = await createEnsNameOwnership(components)
   const dclNameOwnership = await createDclNameOwnership(components)
 
-  async function findOwners(worldNames: string[]): Promise<Map<string, EthAddress | undefined>> {
+  async function findOwners(worldNames: string[]): Promise<ReadonlyMap<string, EthAddress | undefined>> {
     const [dclNameOwners, ensNameOwners] = await Promise.all([
       dclNameOwnership.findOwners(worldNames.filter((worldName) => worldName.endsWith('.dcl.eth'))),
       ensNameOwnership.findOwners(
@@ -50,7 +50,14 @@ export async function createNameOwnership(
       )
     ])
 
-    const result = new Map([...dclNameOwners, ...ensNameOwners])
+    const result = new LowerCaseKeysMap()
+    for (const [worldName, owner] of dclNameOwners.entries()) {
+      result.set(worldName, owner)
+    }
+    for (const [worldName, owner] of ensNameOwners.entries()) {
+      result.set(worldName, owner)
+    }
+
     logger.info(`Fetched owner of worlds: ${[...result.entries()].join(', ')}`)
     return result
   }
@@ -105,12 +112,12 @@ export async function createEnsNameOwnership(
       if (!r.result) {
         return undefined
       }
-      return contract.ownerOf.unpackOutput(toData(r.result))
+      return contract.ownerOf.unpackOutput(toData(r.result))?.toLowerCase()
     })
   }
 
-  async function findOwners(worldNames: string[]): Promise<Map<string, EthAddress | undefined>> {
-    const result = new Map<string, EthAddress | undefined>()
+  async function findOwners(worldNames: string[]): Promise<ReadonlyMap<string, EthAddress | undefined>> {
+    const result = new LowerCaseKeysMap()
     const normalizedNames = worldNames.map((ensName) => namehash.normalize(ensName))
 
     const { twoLevelNames, otherNames } = normalizedNames.reduce(
@@ -131,9 +138,9 @@ export async function createEnsNameOwnership(
       const fetched = await getOwnerOf(baseRegistrarImplementation, labelNames)
       for (const [i, _labelName] of labelNames.entries()) {
         const owner = fetched[i]
-        if (!owner || owner.toLowerCase() !== ensContracts[ethNetwork].nameWrapper.toLowerCase()) {
+        if (!owner || owner !== ensContracts[ethNetwork].nameWrapper.toLowerCase()) {
           // The owner is not the NameWrapper contract, so return the owner
-          result.set(twoLevelNames[i], owner?.toLowerCase())
+          result.set(twoLevelNames[i], owner)
         } else {
           // Get the owner from the NameWrapper contract
           otherNames.push(twoLevelNames[i])
@@ -149,7 +156,7 @@ export async function createEnsNameOwnership(
         if (owner === '0x0000000000000000000000000000000000000000') {
           result.set(otherNames[i], undefined)
         } else {
-          result.set(otherNames[i], owner?.toLowerCase())
+          result.set(otherNames[i], owner)
         }
       }
     }
@@ -185,8 +192,8 @@ export async function createMarketplaceSubgraphDclNameOwnership(
     `
   }
 
-  async function findOwners(worldNames: string[]): Promise<Map<string, EthAddress | undefined>> {
-    const result = new Map<string, EthAddress | undefined>()
+  async function findOwners(worldNames: string[]): Promise<ReadonlyMap<string, EthAddress | undefined>> {
+    const result = new LowerCaseKeysMap()
     /*
     DCL owners are case-sensitive, so when searching by dcl name in TheGraph we
     need to do a case-insensitive search because the worldName provided as fetch key
@@ -203,8 +210,7 @@ export async function createMarketplaceSubgraphDclNameOwnership(
           owner:
             nfts
               .filter((nft) => `${nft.name.toLowerCase()}` === dclNameWithPrefix.substring(1).toLowerCase())
-              .map((nameObj: { owner: { id: string } }) => nameObj.owner.id)[0]
-              ?.toLowerCase() || undefined
+              .map((nameObj: { owner: { id: string } }) => nameObj.owner.id)[0] || undefined
         }
       })
 
@@ -251,12 +257,12 @@ export async function createOnChainDclNameOwnership(
     })
   }
 
-  async function findOwners(worldNames: string[]): Promise<Map<string, EthAddress | undefined>> {
-    const result = new Map<string, EthAddress | undefined>()
+  async function findOwners(worldNames: string[]): Promise<ReadonlyMap<string, EthAddress | undefined>> {
+    const result = new LowerCaseKeysMap()
     const fetched = await getOwnerOf(worldNames.map((worldName) => worldName.replace('.dcl.eth', '')))
     worldNames.forEach((worldName, i) => {
       const ownerOf = fetched[i]
-      result.set(worldName, ownerOf?.toLowerCase())
+      result.set(worldName, ownerOf)
     })
 
     return result
@@ -273,8 +279,8 @@ export async function createCachingNameOwnership(nameOwnership: INameOwnership):
     ttl: 60 * 1000 // cache for 1 minute
   })
 
-  async function findOwners(worldNames: string[]): Promise<Map<string, EthAddress | undefined>> {
-    const result = new Map<string, EthAddress | undefined>()
+  async function findOwners(worldNames: string[]): Promise<ReadonlyMap<string, EthAddress | undefined>> {
+    const result = new LowerCaseKeysMap()
     const needToFetch: string[] = []
     for (const worldName of worldNames) {
       const normalized = worldName.toLowerCase()
@@ -351,3 +357,50 @@ const nameWrapperAbi = [
     type: 'function'
   }
 ]
+
+class LowerCaseKeysMap implements ReadonlyMap<string, EthAddress | undefined> {
+  private readonly map: Map<string, EthAddress | undefined>
+
+  constructor() {
+    this.map = new Map()
+  }
+
+  forEach(
+    callbackfn: (value: EthAddress | undefined, key: string, map: ReadonlyMap<string, EthAddress | undefined>) => void,
+    thisArg?: any
+  ): void {
+    this.map.forEach(callbackfn, thisArg)
+  }
+
+  [Symbol.iterator](): IterableIterator<[string, EthAddress | undefined]> {
+    return this.map[Symbol.iterator]()
+  }
+
+  set(key: string, value: EthAddress | undefined): void {
+    this.map.set(key.toLowerCase(), value?.toLowerCase())
+  }
+
+  get(key: string): EthAddress | undefined {
+    return this.map.get(key.toLowerCase())
+  }
+
+  has(key: string): boolean {
+    return this.map.has(key.toLowerCase())
+  }
+
+  get size(): number {
+    return this.map.size
+  }
+
+  entries(): IterableIterator<[string, EthAddress | undefined]> {
+    return this.map.entries()
+  }
+
+  keys(): IterableIterator<string> {
+    return this.map.keys()
+  }
+
+  values(): IterableIterator<EthAddress | undefined> {
+    return this.map.values()
+  }
+}

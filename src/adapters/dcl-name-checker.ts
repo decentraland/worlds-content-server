@@ -11,8 +11,7 @@ export const createNameChecker = (
       return false
     }
 
-    const normalized = worldName.toLowerCase()
-    const owner = (await components.nameOwnership.findOwners([normalized])).get(normalized)
+    const owner = (await components.nameOwnership.findOwners([worldName])).get(worldName)
     const hasPermission = !!owner && owner.toLowerCase() === ethAddress.toLowerCase()
 
     logger.debug(`Checking name ${worldName} for address ${ethAddress}: ${hasPermission}`)
