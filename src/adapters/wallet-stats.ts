@@ -40,8 +40,21 @@ export async function createWalletStatsComponent(
     })
   }
 
+  async function fetchBlockedStatus(wallet: string): Promise<Date | undefined> {
+    const rows = await components.database.query<{ created_at: Date }>(SQL`
+        SELECT created_at FROM blocked WHERE wallet = ${wallet.toLowerCase()}`)
+    if (rows.rowCount === 1) {
+      return rows.rows[0].created_at
+    }
+    return undefined
+  }
+
   async function get(wallet: EthAddress): Promise<WalletStats> {
-    const [holdings, storedData] = await Promise.all([fetchAccountHoldings(wallet), fetchStoredData(wallet)])
+    const [holdings, storedData, blockedSince] = await Promise.all([
+      fetchAccountHoldings(wallet),
+      fetchStoredData(wallet),
+      fetchBlockedStatus(wallet)
+    ])
 
     const { dclNames, ensNames } = storedData
       .map((world) => ({
@@ -62,7 +75,8 @@ export async function createWalletStatsComponent(
       dclNames,
       ensNames,
       usedSpace,
-      maxAllowedSpace: BigInt(holdings.spaceAllowance) * 1024n * 1024n
+      maxAllowedSpace: BigInt(holdings.spaceAllowance) * 1024n * 1024n,
+      blockedSince
     }
   }
 

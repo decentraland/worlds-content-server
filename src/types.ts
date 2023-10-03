@@ -85,6 +85,11 @@ export type INameDenyListChecker = {
   checkNameDenyList(worldName: string): Promise<boolean>
 }
 
+export type IRunnable<T> = {
+  run(): Promise<T>
+  start(): Promise<void>
+}
+
 export type WorldStatus = {
   worldName: string
   users: number
@@ -232,6 +237,7 @@ export type BaseComponents = {
   sns: SnsComponent
   status: IStatusComponent
   storage: IContentStorageComponent
+  updateOwnerJob: IRunnable<void>
   validator: Validator
   walletStats: IWalletStats
   worldsIndexer: IWorldsIndexer
@@ -306,6 +312,7 @@ export type WalletStats = {
   ensNames: { name: string; size: bigint }[]
   usedSpace: bigint
   maxAllowedSpace: bigint
+  blockedSince?: Date
 }
 
 export type IWalletStats = {
