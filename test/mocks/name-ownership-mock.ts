@@ -3,8 +3,10 @@ import { EthAddress } from '@dcl/schemas'
 
 export function createMockNameOwnership(values: Map<string, EthAddress> = new Map()): INameOwnership {
   return {
-    async findOwner(worldName: string): Promise<EthAddress | undefined> {
-      return values.get(worldName)
+    async findOwners(worldNames: string[]): Promise<Map<string, EthAddress | undefined>> {
+      const result = new Map<string, EthAddress | undefined>()
+      worldNames.forEach((worldName) => result.set(worldName, values.get(worldName)))
+      return result
     }
   }
 }

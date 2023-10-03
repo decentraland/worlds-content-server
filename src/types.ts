@@ -74,7 +74,7 @@ export type MigratorComponents = Pick<
 export type Validation = (deployment: DeploymentToValidate) => ValidationResult | Promise<ValidationResult>
 
 export type INameOwnership = {
-  findOwner(worldName: string): Promise<EthAddress | undefined>
+  findOwners(worldNames: string[]): Promise<ReadonlyMap<string, EthAddress | undefined>>
 }
 
 export type IWorldNamePermissionChecker = {
@@ -233,6 +233,7 @@ export type BaseComponents = {
   status: IStatusComponent
   storage: IContentStorageComponent
   validator: Validator
+  walletStats: IWalletStats
   worldsIndexer: IWorldsIndexer
   worldsManager: IWorldsManager
 }
@@ -297,4 +298,29 @@ export class AccessDeniedError extends Error {
 export interface ErrorResponse {
   error: string
   message: string
+}
+
+export type WalletStats = {
+  wallet: EthAddress
+  dclNames: { name: string; size: bigint }[]
+  ensNames: { name: string; size: bigint }[]
+  usedSpace: bigint
+  maxAllowedSpace: bigint
+}
+
+export type IWalletStats = {
+  get(wallet: EthAddress): Promise<WalletStats>
+}
+
+export type WorldRecord = {
+  name: string
+  owner: string
+  deployer: string
+  entity_id: string
+  deployment_auth_chain: AuthChain
+  entity: any
+  permissions: Permissions
+  size: bigint
+  created_at: Date
+  updated_at: Date
 }

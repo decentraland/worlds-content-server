@@ -33,6 +33,7 @@ import { createDatabaseComponent } from './adapters/database-component'
 import { createPermissionsManagerComponent } from './adapters/permissions-manager'
 import { createNameOwnership } from './adapters/name-ownership'
 import { createNameChecker } from './adapters/dcl-name-checker'
+import { createWalletStatsComponent } from './adapters/wallet-stats'
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
@@ -91,6 +92,8 @@ export async function initComponents(): Promise<AppComponents> {
 
   const database = await createDatabaseComponent({ config, logs, metrics })
 
+  const walletStats = await createWalletStatsComponent({ config, database, fetch, logs })
+
   const worldsManager = await createWorldsManagerComponent({
     logs,
     database,
@@ -135,6 +138,7 @@ export async function initComponents(): Promise<AppComponents> {
     statusChecks,
     storage,
     validator,
+    walletStats,
     worldsIndexer,
     worldsManager
   }
