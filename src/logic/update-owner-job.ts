@@ -106,7 +106,6 @@ export function createUpdateOwnerJob(
     logger.info('Scheduling update owner job')
     const job = new CronJob(
       '0 0 */12 * * *',
-      // '0 * * * * *',
       async function () {
         logger.info('Running job: ' + new Date().toISOString())
         await run()
