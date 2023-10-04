@@ -3,10 +3,17 @@ import { createNameChecker } from '../../src/adapters/dcl-name-checker'
 import { createLogComponent } from '@well-known-components/logger'
 import { ILoggerComponent } from '@well-known-components/interfaces'
 import { INameOwnership } from '../../src/types'
+import { EthAddress } from '@dcl/schemas'
 
 function createMockNameOwnership(owner: string | undefined = undefined): INameOwnership {
   return {
-    findOwner: () => Promise.resolve(owner)
+    findOwners: (worldNames: string[]): Promise<Map<string, EthAddress | undefined>> => {
+      const result = new Map<string, EthAddress | undefined>()
+      for (const worldName of worldNames) {
+        result.set(worldName, owner)
+      }
+      return Promise.resolve(result)
+    }
   }
 }
 

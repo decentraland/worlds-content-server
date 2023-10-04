@@ -33,6 +33,8 @@ import { createDatabaseComponent } from './adapters/database-component'
 import { createPermissionsManagerComponent } from './adapters/permissions-manager'
 import { createNameOwnership } from './adapters/name-ownership'
 import { createNameChecker } from './adapters/dcl-name-checker'
+import { createWalletStatsComponent } from './adapters/wallet-stats'
+import { createUpdateOwnerJob } from './logic/update-owner-job'
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
@@ -91,6 +93,8 @@ export async function initComponents(): Promise<AppComponents> {
 
   const database = await createDatabaseComponent({ config, logs, metrics })
 
+  const walletStats = await createWalletStatsComponent({ config, database, fetch, logs })
+
   const worldsManager = await createWorldsManagerComponent({
     logs,
     database,
@@ -113,6 +117,8 @@ export async function initComponents(): Promise<AppComponents> {
 
   const migrationExecutor = createMigrationExecutor({ logs, database: database, nameOwnership, storage, worldsManager })
 
+  const updateOwnerJob = createUpdateOwnerJob({ database, logs, nameOwnership, walletStats })
+
   return {
     commsAdapter,
     config,
@@ -134,7 +140,9 @@ export async function initComponents(): Promise<AppComponents> {
     status,
     statusChecks,
     storage,
+    updateOwnerJob,
     validator,
+    walletStats,
     worldsIndexer,
     worldsManager
   }

@@ -31,8 +31,9 @@ describe('Name Ownership', () => {
         ethereumProvider: createHttpProviderMock(),
         marketplaceSubGraph: createMockNameSubGraph()
       })
-      await expect(nameOwnership.findOwner('my-super-name.eth')).resolves.toBeUndefined()
-      await expect(nameOwnership.findOwner('my-super-name.dcl.eth')).resolves.toBeUndefined()
+      const map = await nameOwnership.findOwners(['my-super-name.eth', 'my-super-name.dcl.eth'])
+      expect(map.get('my-super-name.eth')).toBeUndefined()
+      expect(map.get('my-super-name.dcl.eth')).toBeUndefined()
     })
 
     it('creates a validator using On Chain', async () => {
@@ -43,14 +44,16 @@ describe('Name Ownership', () => {
         }),
         logs,
         ethereumProvider: createHttpProviderMock([
-          { jsonrpc: '2.0', id: 1, result: '0x0000000000000000000000005de9e77627c79ff6ec787295e4191aeeeea4acab' }
+          [
+            { jsonrpc: '2.0', id: 1, result: '0x0000000000000000000000005de9e77627c79ff6ec787295e4191aeeeea4acab' },
+            { jsonrpc: '2.0', id: 2, error: { code: -32000, message: 'execution reverted' } }
+          ]
         ]),
         marketplaceSubGraph: createMockNameSubGraph()
       })
-      await expect(nameOwnership.findOwner('my-super-name.eth')).resolves.toBeUndefined()
-      await expect(nameOwnership.findOwner('my-super-name.dcl.eth')).resolves.toBe(
-        '0x5de9e77627c79ff6ec787295e4191aeeeea4acab'
-      )
+      const map = await nameOwnership.findOwners(['my-super-name.eth', 'my-super-name.dcl.eth'])
+      expect(map.get('my-super-name.eth')).toBeUndefined()
+      expect(map.get('my-super-name.dcl.eth')).toBe('0x5de9e77627c79ff6ec787295e4191aeeeea4acab')
     })
 
     it('fails to create a validator because of wrong config', async () => {
@@ -75,7 +78,8 @@ describe('Name Ownership', () => {
         ALLOW_ENS_DOMAINS: 'false'
       })
       const nameOwnership = await createEnsNameOwnership({ config, ethereumProvider: createHttpProviderMock(), logs })
-      await expect(nameOwnership.findOwner('my-super-name.eth')).resolves.toBeUndefined()
+      const map = await nameOwnership.findOwners(['my-super-name.eth'])
+      expect(map.get('my-super-name.eth')).toBeUndefined()
     })
 
     it('when ens domains are allowed but wrong network it fails to create object', async () => {
@@ -98,11 +102,12 @@ describe('Name Ownership', () => {
         const nameOwnership = await createEnsNameOwnership({
           config,
           ethereumProvider: createHttpProviderMock([
-            { jsonrpc: '2.0', id: 1, error: { code: -32000, message: 'execution reverted' } }
+            [{ jsonrpc: '2.0', id: 1, error: { code: -32000, message: 'execution reverted' } }]
           ]),
           logs
         })
-        await expect(nameOwnership.findOwner('my-super-name.eth')).resolves.toBeUndefined()
+        const map = await nameOwnership.findOwners(['my-super-name.eth'])
+        expect(map.get('my-super-name.eth')).toBeUndefined()
       })
 
       it('when an owner is returned from the RPC call it returns it', async () => {
@@ -113,13 +118,12 @@ describe('Name Ownership', () => {
         const nameOwnership = await createEnsNameOwnership({
           config,
           ethereumProvider: createHttpProviderMock([
-            { jsonrpc: '2.0', id: 2, result: '0x0000000000000000000000004cb6118ec2949ad2a06293268072659f4267a012' }
+            [{ jsonrpc: '2.0', id: 2, result: '0x0000000000000000000000004cb6118ec2949ad2a06293268072659f4267a012' }]
           ]),
           logs
         })
-        await expect(nameOwnership.findOwner('something.eth')).resolves.toBe(
-          '0x4cb6118ec2949ad2a06293268072659f4267a012'
-        )
+        const map = await nameOwnership.findOwners(['something.eth'])
+        expect(map.get('something.eth')).toBe('0x4cb6118ec2949ad2a06293268072659f4267a012')
       })
     })
 
@@ -133,11 +137,12 @@ describe('Name Ownership', () => {
         const nameOwnership = await createEnsNameOwnership({
           config,
           ethereumProvider: createHttpProviderMock([
-            { jsonrpc: '2.0', id: 1, error: { code: -32000, message: 'execution reverted' } }
+            [{ jsonrpc: '2.0', id: 1, error: { code: -32000, message: 'execution reverted' } }]
           ]),
           logs
         })
-        await expect(nameOwnership.findOwner('my-super-name.eth')).resolves.toBeUndefined()
+        const map = await nameOwnership.findOwners(['my-super-name.eth'])
+        expect(map.get('my-super-name.eth')).toBeUndefined()
       })
 
       it('when the owner is NameWrapper we ask that contract and return the response', async () => {
@@ -148,14 +153,15 @@ describe('Name Ownership', () => {
         const nameOwnership = await createEnsNameOwnership({
           config,
           ethereumProvider: createHttpProviderMock([
-            { jsonrpc: '2.0', id: 2, result: '0x000000000000000000000000D4416b13d2b3a9aBae7AcD5D6C2BbDBE25686401' },
-            { jsonrpc: '2.0', id: 2, result: '0x000000000000000000000000d76a10326397f3d07fa0d1fa5296933ec2747f18' }
+            [
+              { jsonrpc: '2.0', id: 1, result: '0x000000000000000000000000d76a10326397f3d07fa0d1fa5296933ec2747f18' },
+              { jsonrpc: '2.0', id: 2, result: '0x000000000000000000000000D4416b13d2b3a9aBae7AcD5D6C2BbDBE25686401' }
+            ]
           ]),
           logs
         })
-        await expect(nameOwnership.findOwner('something.eth')).resolves.toBe(
-          '0xd76a10326397f3d07fa0d1fa5296933ec2747f18'
-        )
+        const map = await nameOwnership.findOwners(['something.eth'])
+        expect(map.get('something.eth')).toBe('0xd76a10326397f3d07fa0d1fa5296933ec2747f18')
       })
 
       it('attempts to resolve non registered 3-level domain and returns the response', async () => {
@@ -166,11 +172,12 @@ describe('Name Ownership', () => {
         const nameOwnership = await createEnsNameOwnership({
           config,
           ethereumProvider: createHttpProviderMock([
-            { jsonrpc: '2.0', id: 2, result: '0x0000000000000000000000000000000000000000000000000000000000000000' }
+            [{ jsonrpc: '2.0', id: 2, result: '0x0000000000000000000000000000000000000000000000000000000000000000' }]
           ]),
           logs
         })
-        await expect(nameOwnership.findOwner('something.something.eth')).resolves.toBeUndefined()
+        const map = await nameOwnership.findOwners(['level3.something.eth'])
+        expect(map.get('level3.something.eth')).toBeUndefined()
       })
 
       it('attempts to resolve a registered 3-level domain and returns the response', async () => {
@@ -181,13 +188,12 @@ describe('Name Ownership', () => {
         const nameOwnership = await createEnsNameOwnership({
           config,
           ethereumProvider: createHttpProviderMock([
-            { jsonrpc: '2.0', id: 1, result: '0x0000000000000000000000002ecfd3d4d9d53fa91904641b09cba7e09e66a121' }
+            [{ jsonrpc: '2.0', id: 1, result: '0x0000000000000000000000002ecfd3d4d9d53fa91904641b09cba7e09e66a121' }]
           ]),
           logs
         })
-        await expect(nameOwnership.findOwner('something.something.eth')).resolves.toBe(
-          '0x2ecfd3d4d9d53fa91904641b09cba7e09e66a121'
-        )
+        const map = await nameOwnership.findOwners(['level3.something.eth'])
+        expect(map.get('level3.something.eth')).toBe('0x2ecfd3d4d9d53fa91904641b09cba7e09e66a121')
       })
     })
   })
@@ -198,15 +204,19 @@ describe('Name Ownership', () => {
         logs,
         marketplaceSubGraph: createMockNameSubGraph()
       })
-      await expect(nameOwnership.findOwner('my-super-name.dcl.eth')).resolves.toBeUndefined()
+      const map = await nameOwnership.findOwners(['my-super-name.dcl.eth'])
+      expect(map.get('my-super-name.dcl.eth')).toBeUndefined()
     })
 
     it('when an owner is returned from the subgraph it returns it', async () => {
       const nameOwnership = await createMarketplaceSubgraphDclNameOwnership({
         logs,
-        marketplaceSubGraph: createMockNameSubGraph({ nfts: [{ name: 'something', owner: { id: '0x1' } }] })
+        marketplaceSubGraph: createMockNameSubGraph({
+          Psomething: [{ name: 'something', owner: { id: '0x1' } }]
+        })
       })
-      await expect(nameOwnership.findOwner('something.dcl.eth')).resolves.toBe('0x1')
+      const map = await nameOwnership.findOwners(['something.dcl.eth'])
+      expect(map.get('something.dcl.eth')).toBe('0x1')
     })
   })
 
@@ -235,18 +245,21 @@ describe('Name Ownership', () => {
         config,
         logs,
         ethereumProvider: createHttpProviderMock([
-          {
-            jsonrpc: '2.0',
-            id: 1,
-            error: {
-              code: 3,
-              data: '0x08c379a00000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000001f54686520737562646f6d61696e206973206e6f74207265676973746572656400',
-              message: 'execution reverted: The subdomain is not registered'
+          [
+            {
+              jsonrpc: '2.0',
+              id: 1,
+              error: {
+                code: 3,
+                data: '0x08c379a00000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000001f54686520737562646f6d61696e206973206e6f74207265676973746572656400',
+                message: 'execution reverted: The subdomain is not registered'
+              }
             }
-          }
+          ]
         ])
       })
-      await expect(nameOwnership.findOwner('my-super-name.dcl.eth')).resolves.toBeUndefined()
+      const map = await nameOwnership.findOwners(['my-super-name.dcl.eth'])
+      expect(map.get('my-super-name.dcl.eth')).toBeUndefined()
     })
 
     it('when an owner is returned from call it returns it', async () => {
@@ -254,12 +267,11 @@ describe('Name Ownership', () => {
         config,
         logs,
         ethereumProvider: createHttpProviderMock([
-          { jsonrpc: '2.0', id: 1, result: '0x0000000000000000000000005de9e77627c79ff6ec787295e4191aeeeea4acab' }
+          [{ jsonrpc: '2.0', id: 1, result: '0x0000000000000000000000005de9e77627c79ff6ec787295e4191aeeeea4acab' }]
         ])
       })
-      await expect(nameOwnership.findOwner('mariano.dcl.eth')).resolves.toBe(
-        '0x5de9e77627c79ff6ec787295e4191aeeeea4acab'
-      )
+      const map = await nameOwnership.findOwners(['my-super-name.dcl.eth'])
+      expect(map.get('my-super-name.dcl.eth')).toBe('0x5de9e77627c79ff6ec787295e4191aeeeea4acab')
     })
   })
 })

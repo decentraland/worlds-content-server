@@ -16,7 +16,7 @@ export default {
       const worldName = world.name
       const scene = world.entity
 
-      const owner = await components.nameOwnership.findOwner(worldName)
+      const owner = (await components.nameOwnership.findOwners([worldName])).get(worldName)
       const fileInfos = await components.storage.fileInfoMultiple(
         scene.content?.map((c: ContentMapping) => c.hash) || []
       )

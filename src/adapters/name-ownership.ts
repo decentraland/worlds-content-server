@@ -1,10 +1,18 @@
 import { AppComponents, INameOwnership } from '../types'
 import { EthAddress } from '@dcl/schemas'
-import { bytesToHex, ContractFactory, RequestManager } from 'eth-connect'
+import {
+  bytesToHex,
+  ContractFactory,
+  HTTPProvider,
+  RequestManager,
+  RPCSendableMessage,
+  toBatchPayload,
+  toData
+} from 'eth-connect'
 import { l1Contracts, L1Network, registrarAbi } from '@dcl/catalyst-contracts'
-import LRU from 'lru-cache'
 import namehash from '@ensdomains/eth-ens-namehash'
 import { keccak_256 as keccak256 } from '@noble/hashes/sha3'
+import LRU from 'lru-cache'
 
 type NamesResponse = {
   nfts: { name: string; owner: { id: string } }[]
@@ -34,24 +42,35 @@ export async function createNameOwnership(
   const ensNameOwnership = await createEnsNameOwnership(components)
   const dclNameOwnership = await createDclNameOwnership(components)
 
-  async function findOwner(worldName: string): Promise<EthAddress | undefined> {
-    const result =
-      worldName.endsWith('.eth') && !worldName.endsWith('.dcl.eth')
-        ? await ensNameOwnership.findOwner(worldName)
-        : await dclNameOwnership.findOwner(worldName)
-    logger.info(`Fetched owner of world ${worldName}: ${result}`)
+  async function findOwners(worldNames: string[]): Promise<ReadonlyMap<string, EthAddress | undefined>> {
+    const [dclNameOwners, ensNameOwners] = await Promise.all([
+      dclNameOwnership.findOwners(worldNames.filter((worldName) => worldName.endsWith('.dcl.eth'))),
+      ensNameOwnership.findOwners(
+        worldNames.filter((worldName) => worldName.endsWith('.eth') && !worldName.endsWith('.dcl.eth'))
+      )
+    ])
+
+    const result = new LowerCaseKeysMap()
+    for (const [worldName, owner] of dclNameOwners.entries()) {
+      result.set(worldName, owner)
+    }
+    for (const [worldName, owner] of ensNameOwners.entries()) {
+      result.set(worldName, owner)
+    }
+
+    logger.info(`Fetched owner of worlds: ${[...result.entries()].join(', ')}`)
     return result
   }
 
-  return createCachingNameOwnership({ findOwner })
+  return createCachingNameOwnership({ findOwners })
 }
 
 export async function createDummyNameOwnership(): Promise<INameOwnership> {
-  async function findOwner() {
-    return undefined
+  async function findOwners(worldNames: string[]): Promise<Map<string, EthAddress | undefined>> {
+    return new Map(worldNames.map((worldName) => [worldName, undefined]))
   }
   return {
-    findOwner
+    findOwners
   }
 }
 
@@ -85,33 +104,68 @@ export async function createEnsNameOwnership(
     return '0x' + bytesToHex(keccak256(input))
   }
 
-  async function findOwner(ensName: string): Promise<EthAddress | undefined> {
-    const normalized = namehash.normalize(ensName)
-    const labels = normalized.split('.')
-    if (labels.length === 2) {
-      // It's a 2-level domain, so it's a direct registration
-      const labelName = getLabelHash(labels[0])
-      try {
-        const ownerOfNft = await baseRegistrarImplementation.ownerOf(labelName)
-        if (ownerOfNft.toLowerCase() !== ensContracts[ethNetwork].nameWrapper.toLowerCase()) {
-          // The owner is not the NameWrapper contract, so return the owner
-          return ownerOfNft.toLowerCase()
-        }
-      } catch (_) {
+  async function getOwnerOf(contract: { ownerOf: any }, names: string[]): Promise<(EthAddress | undefined)[]> {
+    const batch: RPCSendableMessage[] = await Promise.all(names.map((name) => contract.ownerOf.toRPCMessage(name)))
+
+    const result = await sendBatch(components.ethereumProvider, batch)
+    return result.map((r: any) => {
+      if (!r.result) {
         return undefined
+      }
+      return contract.ownerOf.unpackOutput(toData(r.result))?.toLowerCase()
+    })
+  }
+
+  async function findOwners(worldNames: string[]): Promise<ReadonlyMap<string, EthAddress | undefined>> {
+    const result = new LowerCaseKeysMap()
+    const normalizedNames = worldNames.map((ensName) => namehash.normalize(ensName))
+
+    const { twoLevelNames, otherNames } = normalizedNames.reduce(
+      (acc, world) => {
+        if (world.split('.').length === 2) {
+          acc.twoLevelNames.push(world)
+        } else {
+          acc.otherNames.push(world)
+        }
+        return acc
+      },
+      { twoLevelNames: [] as string[], otherNames: [] as string[] }
+    )
+
+    // 2-level domains are direct registrations
+    const labelNames = twoLevelNames.map((world) => world.split('.')[0]).map((labels) => getLabelHash(labels))
+    if (labelNames.length > 0) {
+      const fetched = await getOwnerOf(baseRegistrarImplementation, labelNames)
+      for (const [i, _labelName] of labelNames.entries()) {
+        const owner = fetched[i]
+        if (!owner || owner !== ensContracts[ethNetwork].nameWrapper.toLowerCase()) {
+          // The owner is not the NameWrapper contract, so return the owner
+          result.set(twoLevelNames[i], owner)
+        } else {
+          // Get the owner from the NameWrapper contract
+          otherNames.push(twoLevelNames[i])
+        }
       }
     }
 
-    // Check with the NameWrapper contract. This could validate domains with more than 2 levels.
-    const ownerOfName = await nameWrapper.ownerOf(namehash.hash(ensName))
-    if (ownerOfName === '0x0000000000000000000000000000000000000000') {
-      return undefined
+    const namehashes = otherNames.map((world) => namehash.hash(world))
+    if (namehashes.length > 0) {
+      const fetched = await getOwnerOf(nameWrapper, namehashes)
+      for (const [i, _nameHash] of namehashes.entries()) {
+        const owner = fetched[i]
+        if (owner === '0x0000000000000000000000000000000000000000') {
+          result.set(otherNames[i], undefined)
+        } else {
+          result.set(otherNames[i], owner)
+        }
+      }
     }
-    return ownerOfName.toLowerCase()
+
+    return result
   }
 
   return {
-    findOwner
+    findOwners
   }
 }
 
@@ -121,17 +175,12 @@ export async function createMarketplaceSubgraphDclNameOwnership(
   const logger = components.logs.getLogger('marketplace-subgraph-dcl-name-ownership')
   logger.info('Using Marketplace Subgraph NameOwnership')
 
-  async function findOwner(dclName: string): Promise<EthAddress | undefined> {
-    /*
-    DCL owners are case-sensitive, so when searching by dcl name in TheGraph we
-    need to do a case-insensitive search because the worldName provided as fetch key
-    may not be in the exact same case of the registered name. There are several methods
-    suffixed _nocase, but not one for equality, so this is a bit hackish, but it works.
-     */
-    const result = await components.marketplaceSubGraph.query<NamesResponse>(
-      `query FetchOwnerForDclName($worldName: String) {
-      nfts(
-        where: {name_starts_with_nocase: $worldName, name_ends_with_nocase: $worldName, category: ens}
+  function getQueryFragment(worldName: string) {
+    // We need to add a 'P' prefix because the graph needs the fragment name to start with a letter and
+    // names can start with digits
+    return `
+      P${worldName}: nfts(
+        where: {name_starts_with_nocase: "${worldName.toLowerCase()}", name_ends_with_nocase: "${worldName.toLowerCase()}", category: ens}
         orderBy: name
         first: 1000
       ) {
@@ -140,19 +189,41 @@ export async function createMarketplaceSubgraphDclNameOwnership(
           id
         }
       }
-    }`,
+    `
+  }
 
-      { worldName: dclName.toLowerCase().replace('.dcl.eth', '') }
-    )
+  async function findOwners(worldNames: string[]): Promise<ReadonlyMap<string, EthAddress | undefined>> {
+    const result = new LowerCaseKeysMap()
+    /*
+    DCL owners are case-sensitive, so when searching by dcl name in TheGraph we
+    need to do a case-insensitive search because the worldName provided as fetch key
+    may not be in the exact same case of the registered name. There are several methods
+    suffixed _nocase, but not one for equality, so this is a bit hackish, but it works.
+     */
+    if (worldNames.length > 0) {
+      const query = `{${worldNames.map((name) => getQueryFragment(name.replace('.dcl.eth', ''))).join('\n')}}`
+      const response = await components.marketplaceSubGraph.query<NamesResponse>(query)
 
-    const owners = result.nfts
-      .filter((nft) => `${nft.name.toLowerCase()}.dcl.eth` === dclName.toLowerCase())
-      .map(({ owner }) => owner.id.toLowerCase())
-    return owners.length > 0 ? owners[0] : undefined
+      const page = Object.entries(response).map(([dclNameWithPrefix, nfts]) => {
+        return {
+          dclName: dclNameWithPrefix.substring(1),
+          owner:
+            nfts
+              .filter((nft) => `${nft.name.toLowerCase()}` === dclNameWithPrefix.substring(1).toLowerCase())
+              .map((nameObj: { owner: { id: string } }) => nameObj.owner.id)[0] || undefined
+        }
+      })
+
+      for (const record of page) {
+        result.set(`${record.dclName}.dcl.eth`, record.owner)
+      }
+    }
+
+    return result
   }
 
   return {
-    findOwner
+    findOwners
   }
 }
 
@@ -172,35 +243,80 @@ export async function createOnChainDclNameOwnership(
   const factory = new ContractFactory(requestManager, registrarAbi)
   const registrarContract = (await factory.at(registrarAddress)) as any
 
-  async function findOwner(dclName: string): Promise<EthAddress | undefined> {
-    try {
-      return (await registrarContract.getOwnerOf(dclName.replace('.dcl.eth', ''))).toLowerCase()
-    } catch (e) {
-      return undefined
-    }
+  async function getOwnerOf(names: string[]): Promise<(EthAddress | undefined)[]> {
+    const batch: RPCSendableMessage[] = await Promise.all(
+      names.map((name) => registrarContract.getOwnerOf.toRPCMessage(name))
+    )
+
+    const result = await sendBatch(components.ethereumProvider, batch)
+    return result.map((r: any) => {
+      if (!r.result) {
+        return undefined
+      }
+      return registrarContract.getOwnerOf.unpackOutput(toData(r.result))
+    })
+  }
+
+  async function findOwners(worldNames: string[]): Promise<ReadonlyMap<string, EthAddress | undefined>> {
+    const result = new LowerCaseKeysMap()
+    const fetched = await getOwnerOf(worldNames.map((worldName) => worldName.replace('.dcl.eth', '')))
+    worldNames.forEach((worldName, i) => {
+      const ownerOf = fetched[i]
+      result.set(worldName, ownerOf)
+    })
+
+    return result
   }
 
   return {
-    findOwner
+    findOwners
   }
 }
 
 export async function createCachingNameOwnership(nameOwnership: INameOwnership): Promise<INameOwnership> {
   const cache = new LRU<string, EthAddress | undefined>({
     max: 100,
-    ttl: 60 * 1000, // cache for 1 minute
-    fetchMethod: async (worldName: string): Promise<string | undefined> => {
-      return await nameOwnership.findOwner(worldName)
-    }
+    ttl: 60 * 1000 // cache for 1 minute
   })
 
-  async function findOwner(name: string): Promise<EthAddress | undefined> {
-    return await cache.fetch(name)
+  async function findOwners(worldNames: string[]): Promise<ReadonlyMap<string, EthAddress | undefined>> {
+    const result = new LowerCaseKeysMap()
+    const needToFetch: string[] = []
+    for (const worldName of worldNames) {
+      const normalized = worldName.toLowerCase()
+      if (cache.has(normalized)) {
+        result.set(normalized, cache.get(normalized))
+      } else {
+        needToFetch.push(normalized)
+      }
+    }
+    if (needToFetch.length > 0) {
+      const fetched = await nameOwnership.findOwners(needToFetch)
+      for (const [worldName, owner] of fetched.entries()) {
+        result.set(worldName, owner)
+        cache.set(worldName, owner)
+      }
+    }
+    return result
   }
 
   return {
-    findOwner
+    findOwners
   }
+}
+
+function sendBatch(provider: HTTPProvider, batch: RPCSendableMessage[]) {
+  const payload = toBatchPayload(batch)
+  return new Promise<any>((resolve, reject) => {
+    provider.sendAsync(payload as any, (err: any, result: any) => {
+      if (err) {
+        reject(err)
+        return
+      }
+
+      resolve(result)
+    })
+  })
 }
 
 // baseRegistrarImplementation has the same address in all networks:
@@ -241,3 +357,50 @@ const nameWrapperAbi = [
     type: 'function'
   }
 ]
+
+class LowerCaseKeysMap implements ReadonlyMap<string, EthAddress | undefined> {
+  private readonly map: Map<string, EthAddress | undefined>
+
+  constructor() {
+    this.map = new Map()
+  }
+
+  forEach(
+    callbackfn: (value: EthAddress | undefined, key: string, map: ReadonlyMap<string, EthAddress | undefined>) => void,
+    thisArg?: any
+  ): void {
+    this.map.forEach(callbackfn, thisArg)
+  }
+
+  [Symbol.iterator](): IterableIterator<[string, EthAddress | undefined]> {
+    return this.map[Symbol.iterator]()
+  }
+
+  set(key: string, value: EthAddress | undefined): void {
+    this.map.set(key.toLowerCase(), value?.toLowerCase())
+  }
+
+  get(key: string): EthAddress | undefined {
+    return this.map.get(key.toLowerCase())
+  }
+
+  has(key: string): boolean {
+    return this.map.has(key.toLowerCase())
+  }
+
+  get size(): number {
+    return this.map.size
+  }
+
+  entries(): IterableIterator<[string, EthAddress | undefined]> {
+    return this.map.entries()
+  }
+
+  keys(): IterableIterator<string> {
+    return this.map.keys()
+  }
+
+  values(): IterableIterator<EthAddress | undefined> {
+    return this.map.values()
+  }
+}

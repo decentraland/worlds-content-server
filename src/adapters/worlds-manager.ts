@@ -1,20 +1,9 @@
-import { AppComponents, IPermissionChecker, IWorldsManager, Permissions, WorldMetadata } from '../types'
+import { AppComponents, IPermissionChecker, IWorldsManager, Permissions, WorldMetadata, WorldRecord } from '../types'
 import { streamToBuffer } from '@dcl/catalyst-storage'
-import { AuthChain, Entity } from '@dcl/schemas'
+import { Entity } from '@dcl/schemas'
 import SQL from 'sql-template-strings'
 import { extractWorldRuntimeMetadata } from '../logic/world-runtime-metadata-utils'
 import { createPermissionChecker, defaultPermissions } from '../logic/permissions-checker'
-
-type WorldRecord = {
-  name: string
-  deployer: string
-  entity_id: string
-  deployment_auth_chain: AuthChain
-  entity: any
-  permissions: Permissions
-  created_at: Date
-  updated_at: Date
-}
 
 export async function createWorldsManagerComponent({
   logs,
@@ -64,7 +53,7 @@ export async function createWorldsManagerComponent({
 
     const deployer = deploymentAuthChain[0].payload.toLowerCase()
 
-    const owner = await nameOwnership.findOwner(worldName)
+    const owner = (await nameOwnership.findOwners([worldName])).get(worldName)
     const fileInfos = await storage.fileInfoMultiple(scene.content?.map((c) => c.hash) || [])
     const size = scene.content?.reduce((acc, c) => acc + (fileInfos.get(c.hash)?.size || 0), 0) || 0
 

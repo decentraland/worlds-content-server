@@ -13,7 +13,7 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
   const router = await setupRouter(globalContext)
   // register routes middleware
   components.server.use(router.middleware())
-  // register not implemented/method not allowed/cors responses middleware
+  // register not implemented/method not allowed/cors response middleware
   components.server.use(router.allowedMethods())
   // set the context to be passed to the handlers
   components.server.setContext(globalContext)
@@ -21,6 +21,6 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
   // start ports: db, listeners, synchronizations, etc
   await startComponents()
 
-  // first of all, run the migrations
+  // Run the migrations
   await components.migrationExecutor.run()
 }
