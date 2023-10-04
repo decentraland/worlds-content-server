@@ -131,6 +131,21 @@ export async function createWorldsManagerComponent({
     return createPermissionChecker(metadata?.permissions || defaultPermissions())
   }
 
+  async function undeploy(worldName: string): Promise<void> {
+    const sql = SQL`
+             UPDATE worlds
+             SET entity_id = null, 
+                 owner = null,
+                 deployer = null,
+                 entity = null,
+                 size = null,
+                 deployment_auth_chain = null,
+                 updated_at = ${new Date()}
+              WHERE name = ${worldName.toLowerCase()}
+    `
+    await database.query(sql)
+  }
+
   return {
     getDeployedWorldCount,
     getDeployedWorldEntities,
@@ -138,6 +153,7 @@ export async function createWorldsManagerComponent({
     getEntityForWorld,
     deployScene,
     storePermissions,
-    permissionCheckerForWorld
+    permissionCheckerForWorld,
+    undeploy
   }
 }

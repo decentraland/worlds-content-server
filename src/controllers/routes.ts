@@ -20,6 +20,7 @@ import {
   putPermissionsAddressHandler
 } from './handlers/permissions-handlers'
 import { walletStatsHandler } from './handlers/wallet-stats-handler'
+import { undeployEntity } from './handlers/undeploy-entity-handler'
 
 export async function setupRouter(globalContext: GlobalContext): Promise<Router<GlobalContext>> {
   const router = new Router<GlobalContext>()
@@ -35,6 +36,7 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
 
   // creation
   router.post('/entities', multipartParserWrapper(deployEntity))
+  router.delete('/entities/:world_name', signedFetchMiddleware, undeployEntity)
   router.get('/available-content', availableContentHandler)
 
   // consumption

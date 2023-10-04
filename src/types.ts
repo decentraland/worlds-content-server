@@ -139,6 +139,7 @@ export type IWorldsManager = {
   deployScene(worldName: string, scene: Entity): Promise<void>
   storePermissions(worldName: string, permissions: Permissions): Promise<void>
   permissionCheckerForWorld(worldName: string): Promise<IPermissionChecker>
+  undeploy(worldName: string): Promise<void>
 }
 
 export type IPermissionsManager = {
