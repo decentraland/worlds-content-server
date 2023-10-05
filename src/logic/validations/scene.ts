@@ -126,16 +126,14 @@ export function createValidateSize(components: Pick<ValidatorComponents, 'limits
 
     const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())
     const worldName = sceneJson.metadata.worldConfiguration.name
-    const maxTotalSizeInMB = await components.limitsManager.getMaxAllowedSizeInMbFor(worldName || '')
+    const maxTotalSizeInBytes = await components.limitsManager.getMaxAllowedSizeInBytesFor(worldName || '')
 
     const errors: string[] = []
     try {
       const deploymentSize = await calculateDeploymentSize(deployment.entity, deployment.files)
-      if (deploymentSize > maxTotalSizeInMB * 1024 * 1024) {
+      if (deploymentSize > maxTotalSizeInBytes) {
         errors.push(
-          `The deployment is too big. The maximum total size allowed is ${maxTotalSizeInMB} MB for scenes. You can upload up to ${
-            maxTotalSizeInMB * 1024 * 1024
-          } bytes but you tried to upload ${deploymentSize}.`
+          `The deployment is too big. The maximum total size allowed is ${maxTotalSizeInBytes} bytes for scenes. You can upload up to ${maxTotalSizeInBytes} bytes but you tried to upload ${deploymentSize}.`
         )
       }
     } catch (e: any) {

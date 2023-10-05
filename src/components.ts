@@ -101,11 +101,11 @@ export async function initComponents(): Promise<AppComponents> {
     nameOwnership
   })
 
-  const limitsManager = await createLimitsManagerComponent({ config, fetch, logs })
-
   const database = await createDatabaseComponent({ config, logs, metrics })
 
   const walletStats = await createWalletStatsComponent({ config, database, fetch, logs })
+
+  const limitsManager = await createLimitsManagerComponent({ config, fetch, logs, nameOwnership, walletStats })
 
   const worldsManager = await createWorldsManagerComponent({
     logs,
