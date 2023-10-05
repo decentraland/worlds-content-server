@@ -81,6 +81,10 @@ export async function createWorldsManagerMockComponent({
     return createPermissionChecker(metadata?.permissions || defaultPermissions())
   }
 
+  async function undeploy(worldName: string): Promise<void> {
+    await storage.delete([`name-${worldName.toLowerCase()}`])
+  }
+
   return {
     getDeployedWorldCount,
     getDeployedWorldEntities,
@@ -88,6 +92,7 @@ export async function createWorldsManagerMockComponent({
     getEntityForWorld,
     deployScene,
     storePermissions,
-    permissionCheckerForWorld
+    permissionCheckerForWorld,
+    undeploy
   }
 }
