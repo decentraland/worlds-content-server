@@ -1,4 +1,4 @@
-import { AppComponents, ILimitsManager } from '../types'
+import { AppComponents, ILimitsManager, MB_BigInt } from '../types'
 import LRU from 'lru-cache'
 
 type WhitelistEntry = {
@@ -57,12 +57,12 @@ export async function createLimitsManagerComponent({
     },
     async getMaxAllowedSizeInBytesFor(worldName: string): Promise<bigint> {
       if (worldName.endsWith('.eth') && !worldName.endsWith('.dcl.eth')) {
-        return BigInt(hardMaxSizeForEns)
+        return BigInt(hardMaxSizeForEns) * MB_BigInt
       }
 
       const whitelist = (await cache.fetch(CONFIG_KEY))!
       if (whitelist[worldName]) {
-        return BigInt(whitelist[worldName]!.max_size_in_mb || hardMaxSize)
+        return BigInt(whitelist[worldName]!.max_size_in_mb || hardMaxSize) * MB_BigInt
       }
 
       const owners = await nameOwnership.findOwners([worldName])
@@ -73,7 +73,7 @@ export async function createLimitsManagerComponent({
 
       // We get used space, max allowed space and the size of the scene that is already deployed for that name (if any)
       const stats = await walletStats.get(owner)
-      const alreadyExistingSceneSize = stats.dclNames.find((name) => name.name === worldName)?.size || 0n
+      const alreadyExistingSceneSize = stats.dclNames.find((name) => name.name === worldName.toLowerCase())?.size || 0n
 
       // We subtract from usedSpace the scene that is about to be un-deployed
       const usedSpace = stats.usedSpace - alreadyExistingSceneSize
