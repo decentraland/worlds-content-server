@@ -6,7 +6,7 @@ import { createLogComponent } from '@well-known-components/logger'
 import { createMockNameOwnership } from '../mocks/name-ownership-mock'
 import { createMockWalletStatsComponent } from '../mocks/wallet-stats-mock'
 import { EthAddress } from '@dcl/schemas'
-import { ILimitsManager, INameOwnership, IWalletStats, WalletStats } from '../../src/types'
+import { ILimitsManager, INameOwnership, IWalletStats, MB_BigInt, WalletStats } from '../../src/types'
 import { IConfigComponent, ILoggerComponent } from '@well-known-components/interfaces'
 
 describe('limits manager', function () {
@@ -48,7 +48,7 @@ describe('limits manager', function () {
             dclNames: [{ name: 'whatever.dcl.eth', size: 10n }],
             ensNames: [],
             usedSpace: 10n,
-            maxAllowedSpace: 200n
+            maxAllowedSpace: 200n * MB_BigInt
           }
         ]
       ])
@@ -64,13 +64,13 @@ describe('limits manager', function () {
 
   it('fetches whitelist and responds for whitelisted names', async () => {
     expect(await limitsManager.getAllowSdk6For('purchased.dcl.eth')).toBeTruthy()
-    expect(await limitsManager.getMaxAllowedSizeInBytesFor('purchased.dcl.eth')).toBe(160n)
+    expect(await limitsManager.getMaxAllowedSizeInBytesFor('purchased.dcl.eth')).toBe(160n * MB_BigInt)
     expect(await limitsManager.getMaxAllowedParcelsFor('purchased.dcl.eth')).toBe(44)
   })
 
   it('responds for ENS names', async () => {
     expect(await limitsManager.getAllowSdk6For('cool.eth')).toBeFalsy()
-    expect(await limitsManager.getMaxAllowedSizeInBytesFor('cool.eth')).toBe(25n)
+    expect(await limitsManager.getMaxAllowedSizeInBytesFor('cool.eth')).toBe(25n * MB_BigInt)
     expect(await limitsManager.getMaxAllowedParcelsFor('cool.eth')).toBe(4)
   })
 
@@ -84,7 +84,7 @@ describe('limits manager', function () {
 
   it('responds for DCL names that relay on wallet stats from external service', async () => {
     expect(await limitsManager.getAllowSdk6For('whatever.dcl.eth')).toBeFalsy()
-    expect(await limitsManager.getMaxAllowedSizeInBytesFor('whatever.dcl.eth')).toBe(200n)
+    expect(await limitsManager.getMaxAllowedSizeInBytesFor('whatever.dcl.eth')).toBe(200n * MB_BigInt)
     expect(await limitsManager.getMaxAllowedParcelsFor('whatever.dcl.eth')).toBe(4)
   })
 })
