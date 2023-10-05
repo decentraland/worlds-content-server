@@ -9,24 +9,15 @@ test('undeploy entity handler /entities/:world_name', function ({ components, st
     return localFetch.fetch(path, {
       method: 'DELETE',
       headers: {
-        ...getAuthHeaders(
-          'DELETE',
-          path,
-          {
-            origin: 'https://play.decentraland.org',
-            intent: 'dcl:explorer:comms-handshake',
-            signer: 'dcl:explorer',
-            isGuest: 'false'
-          },
-          (payload) =>
-            Authenticator.signPayload(
-              {
-                ephemeralIdentity: identity.ephemeralIdentity,
-                expiration: new Date(),
-                authChain: identity.authChain.authChain
-              },
-              payload
-            )
+        ...getAuthHeaders('DELETE', path, {}, (payload) =>
+          Authenticator.signPayload(
+            {
+              ephemeralIdentity: identity.ephemeralIdentity,
+              expiration: new Date(),
+              authChain: identity.authChain.authChain
+            },
+            payload
+          )
         )
       }
     })
