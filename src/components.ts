@@ -41,6 +41,10 @@ export async function initComponents(): Promise<AppComponents> {
   const config = await createDotEnvConfigComponent({ path: ['.env.default', '.env'] })
   const logs = await createLogComponent({ config })
 
+  const logger = logs.getLogger('components')
+  const commitHash = (await config.getString('COMMIT_HASH')) || 'unknown'
+  logger.info(`Initializing components. Version: ${commitHash}`)
+
   const server = await createServerComponent<GlobalContext>(
     { config, logs },
     {
