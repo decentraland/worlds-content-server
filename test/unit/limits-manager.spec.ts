@@ -6,19 +6,27 @@ import { createLogComponent } from '@well-known-components/logger'
 import { createMockNameOwnership } from '../mocks/name-ownership-mock'
 import { createMockWalletStatsComponent } from '../mocks/wallet-stats-mock'
 import { EthAddress } from '@dcl/schemas'
-import { WalletStats } from '../../src/types'
+import { ILimitsManager, INameOwnership, IWalletStats, WalletStats } from '../../src/types'
+import { IConfigComponent, ILoggerComponent } from '@well-known-components/interfaces'
 
 describe('limits manager', function () {
-  it('fetches and updates config', async () => {
-    const config = createConfigComponent({
+  let logs: ILoggerComponent
+  let config: IConfigComponent
+  let fetch: IFetchComponent
+  let nameOwnership: INameOwnership
+  let walletStats: IWalletStats
+  let limitsManager: ILimitsManager
+
+  beforeEach(async () => {
+    logs = await createLogComponent({})
+    config = createConfigComponent({
       MAX_PARCELS: '4',
       MAX_SIZE: '200',
       ENS_MAX_SIZE: '25',
       ALLOW_SDK6: 'false',
       WHITELIST_URL: 'http://localhost/whitelist.json'
     })
-
-    const fetch: IFetchComponent = {
+    fetch = {
       fetch: async (_url: Request): Promise<Response> =>
         new Response(
           JSON.stringify({
@@ -30,11 +38,8 @@ describe('limits manager', function () {
           })
         )
     }
-
-    const logs = await createLogComponent({})
-
-    const nameOwnership = createMockNameOwnership(new Map([['whatever.dcl.eth', '0x123']]))
-    const walletStats = createMockWalletStatsComponent(
+    nameOwnership = createMockNameOwnership(new Map([['whatever.dcl.eth', '0x123']]))
+    walletStats = createMockWalletStatsComponent(
       new Map<EthAddress, WalletStats>([
         [
           '0x123',
@@ -48,32 +53,36 @@ describe('limits manager', function () {
         ]
       ])
     )
-
-    const limitsManager = await createLimitsManagerComponent({
+    limitsManager = await createLimitsManagerComponent({
       config,
       fetch,
       logs,
       nameOwnership,
       walletStats
     })
+  })
 
-    // When whitelisted
+  it('fetches whitelist and responds for whitelisted names', async () => {
     expect(await limitsManager.getAllowSdk6For('purchased.dcl.eth')).toBeTruthy()
     expect(await limitsManager.getMaxAllowedSizeInBytesFor('purchased.dcl.eth')).toBe(160n)
     expect(await limitsManager.getMaxAllowedParcelsFor('purchased.dcl.eth')).toBe(44)
+  })
 
-    // When ENS
+  it('responds for ENS names', async () => {
     expect(await limitsManager.getAllowSdk6For('cool.eth')).toBeFalsy()
     expect(await limitsManager.getMaxAllowedSizeInBytesFor('cool.eth')).toBe(25n)
     expect(await limitsManager.getMaxAllowedParcelsFor('cool.eth')).toBe(4)
+  })
 
+  it('fails to respond size when owner can not be determined', async () => {
     expect(await limitsManager.getAllowSdk6For('no-owner.dcl.eth')).toBeFalsy()
     await expect(limitsManager.getMaxAllowedSizeInBytesFor('no-owner.dcl.eth')).rejects.toThrowError(
       'Could not determine owner for world no-owner.dcl.eth'
     )
     expect(await limitsManager.getMaxAllowedParcelsFor('no-owner.dcl.eth')).toBe(4)
+  })
 
-    // When default
+  it('responds for DCL names that relay on wallet stats from external service', async () => {
     expect(await limitsManager.getAllowSdk6For('whatever.dcl.eth')).toBeFalsy()
     expect(await limitsManager.getMaxAllowedSizeInBytesFor('whatever.dcl.eth')).toBe(200n)
     expect(await limitsManager.getMaxAllowedParcelsFor('whatever.dcl.eth')).toBe(4)
