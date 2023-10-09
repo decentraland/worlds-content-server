@@ -47,6 +47,7 @@ export type WorldMetadata = {
   acl?: AuthChain
   permissions: Permissions
   runtimeMetadata: WorldRuntimeMetadata
+  blockedSince?: string
 }
 
 export type AccessControlList = {
@@ -334,4 +335,5 @@ export type WorldRecord = {
   size: bigint
   created_at: Date
   updated_at: Date
+  blocked_since: Date | null
 }

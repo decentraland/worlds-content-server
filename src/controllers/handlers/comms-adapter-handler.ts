@@ -1,6 +1,7 @@
 import { AccessDeniedError, HandlerContextWithPath, InvalidRequestError, NotFoundError } from '../../types'
 import { IHttpServerComponent } from '@well-known-components/interfaces'
 import { verify, DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
+import { assertNotBlockedOrWithinInGracePeriod } from '../../logic/blocked'
 
 type CommsMetadata = {
   secret?: string
@@ -56,6 +57,8 @@ export async function commsAdapterHandler(
   if (!worldMetadata) {
     throw new NotFoundError(`World "${worldName}" does not exist.`)
   }
+
+  assertNotBlockedOrWithinInGracePeriod(worldMetadata)
 
   const identity = context.verification!.auth
   const permissionChecker = await worldsManager.permissionCheckerForWorld(worldName)

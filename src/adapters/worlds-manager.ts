@@ -24,8 +24,9 @@ export async function createWorldsManagerComponent({
     }
 
     const result = await database.query<WorldRecord>(
-      SQL`SELECT *
+      SQL`SELECT *, blocked.created_at AS blocked_since
               FROM worlds
+              LEFT JOIN blocked ON worlds.owner = blocked.wallet
               WHERE name = ${worldName.toLowerCase()}`
     )
 
@@ -41,6 +42,9 @@ export async function createWorldsManagerComponent({
     }
     if (row.permissions) {
       tempWorldMetadata.permissions = row.permissions
+    }
+    if (row.blocked_since) {
+      tempWorldMetadata.blockedSince = row.blocked_since?.toISOString()
     }
 
     return JSON.parse(JSON.stringify(tempWorldMetadata)) as WorldMetadata
