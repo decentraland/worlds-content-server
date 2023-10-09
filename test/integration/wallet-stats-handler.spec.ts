@@ -1,5 +1,6 @@
 import { test } from '../components'
 import { getIdentity } from '../utils'
+import { MB_BigInt } from '../../src/types'
 
 test('wallet stats handler /wallet/:wallet/stats', function ({ components, stubComponents }) {
   it("returns an error when request doesn't include a valid wallet address", async () => {
@@ -30,10 +31,10 @@ test('wallet stats handler /wallet/:wallet/stats', function ({ components, stubC
 
     stubComponents.walletStats.get.resolves({
       wallet: identity.realAccount.address,
-      dclNames: [{ name: worldName, size: 18n * 1024n * 1024n }],
-      ensNames: [{ name: 'ens-name.eth', size: 3n * 1024n * 1024n }],
-      usedSpace: 18n * 1024n * 1024n,
-      maxAllowedSpace: 100n * 1024n * 1024n
+      dclNames: [{ name: worldName, size: 18n * MB_BigInt }],
+      ensNames: [{ name: 'ens-name.eth', size: 3n * MB_BigInt }],
+      usedSpace: 18n * MB_BigInt,
+      maxAllowedSpace: 100n * MB_BigInt
     })
 
     const r = await localFetch.fetch(`/wallet/${identity.realAccount.address}/stats`)
@@ -41,10 +42,10 @@ test('wallet stats handler /wallet/:wallet/stats', function ({ components, stubC
     expect(r.status).toEqual(200)
     expect(await r.json()).toEqual({
       wallet: identity.realAccount.address,
-      dclNames: [{ name: worldName, size: (18n * 1024n * 1024n).toString() }],
-      ensNames: [{ name: 'ens-name.eth', size: (3n * 1024n * 1024n).toString() }],
-      usedSpace: (18n * 1024n * 1024n).toString(),
-      maxAllowedSpace: (100n * 1024n * 1024n).toString()
+      dclNames: [{ name: worldName, size: (18n * MB_BigInt).toString() }],
+      ensNames: [{ name: 'ens-name.eth', size: (3n * MB_BigInt).toString() }],
+      usedSpace: (18n * MB_BigInt).toString(),
+      maxAllowedSpace: (100n * MB_BigInt).toString()
     })
   })
 })

@@ -1,4 +1,4 @@
-import { ILimitsManager } from '../../src/types'
+import { ILimitsManager, MB } from '../../src/types'
 
 export function createMockLimitsManagerComponent(): ILimitsManager {
   const whitelist: Record<string, any> = {
@@ -16,8 +16,8 @@ export function createMockLimitsManagerComponent(): ILimitsManager {
     async getMaxAllowedParcelsFor(worldName: string): Promise<number> {
       return whitelist[worldName]?.max_parcels || 4
     },
-    async getMaxAllowedSizeInMbFor(worldName: string): Promise<number> {
-      return whitelist[worldName]?.max_size_in_mb || 10
+    async getMaxAllowedSizeInBytesFor(worldName: string): Promise<bigint> {
+      return BigInt(whitelist[worldName]?.max_size_in_mb || 10 * MB)
     }
   }
 }

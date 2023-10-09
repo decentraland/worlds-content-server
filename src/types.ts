@@ -20,6 +20,9 @@ export type GlobalContext = {
   components: BaseComponents
 }
 
+export const MB = 1024 * 1024
+export const MB_BigInt = 1024n * 1024n
+
 export type DeploymentToValidate = {
   entity: Entity
   files: Map<string, Uint8Array>
@@ -128,7 +131,7 @@ export type ICommsAdapter = {
 export type ILimitsManager = {
   getAllowSdk6For(worldName: string): Promise<boolean>
   getMaxAllowedParcelsFor(worldName: string): Promise<number>
-  getMaxAllowedSizeInMbFor(worldName: string): Promise<number>
+  getMaxAllowedSizeInBytesFor(worldName: string): Promise<bigint>
 }
 
 export type IWorldsManager = {

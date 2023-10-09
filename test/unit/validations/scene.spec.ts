@@ -307,7 +307,7 @@ describe('scene validations', function () {
       const result = await validateSize(deployment)
       expect(result.ok()).toBeFalsy()
       expect(result.errors).toContain(
-        'The deployment is too big. The maximum total size allowed is 10 MB for scenes. You can upload up to 10485760 bytes but you tried to upload 10485763.'
+        'The deployment is too big. The maximum total size allowed is 10485760 bytes for scenes. You can upload up to 10485760 bytes but you tried to upload 10485763.'
       )
     })
   })
