@@ -47,7 +47,7 @@ export type WorldMetadata = {
   acl?: AuthChain
   permissions: Permissions
   runtimeMetadata: WorldRuntimeMetadata
-  blockedSince?: string
+  blockedSince?: Date
 }
 
 export type AccessControlList = {

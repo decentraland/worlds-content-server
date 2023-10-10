@@ -44,10 +44,14 @@ export async function createWorldsManagerComponent({
       tempWorldMetadata.permissions = row.permissions
     }
     if (row.blocked_since) {
-      tempWorldMetadata.blockedSince = row.blocked_since?.toISOString()
+      tempWorldMetadata.blockedSince = row.blocked_since
     }
 
-    return JSON.parse(JSON.stringify(tempWorldMetadata)) as WorldMetadata
+    return {
+      ...JSON.parse(JSON.stringify(tempWorldMetadata)),
+      // this field is treated separately so that it does not get serialized to string
+      blockedSince: tempWorldMetadata.blockedSince ? new Date(tempWorldMetadata.blockedSince) : undefined
+    } as WorldMetadata
   }
 
   async function deployScene(worldName: string, scene: Entity): Promise<void> {
@@ -64,14 +68,14 @@ export async function createWorldsManagerComponent({
     const sql = SQL`
               INSERT INTO worlds (name, entity_id, owner, deployer, deployment_auth_chain, entity, permissions, size, created_at, updated_at)
               VALUES (${worldName.toLowerCase()}, ${scene.id},
-                      ${owner}, ${deployer}, ${deploymentAuthChainString}::json,
+                      ${owner?.toLowerCase()}, ${deployer}, ${deploymentAuthChainString}::json,
                       ${scene}::json,
                       ${JSON.stringify(defaultPermissions())}::json,
                       ${size},
                       ${new Date()}, ${new Date()})
               ON CONFLICT (name) 
                   DO UPDATE SET entity_id = ${scene.id}, 
-                                owner = ${owner},
+                                owner = ${owner?.toLowerCase()},
                                 deployer = ${deployer},
                                 entity = ${scene}::json,
                                 size = ${size},
