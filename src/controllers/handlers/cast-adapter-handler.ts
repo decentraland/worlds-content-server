@@ -2,6 +2,7 @@ import { HandlerContextWithPath, InvalidRequestError, NotFoundError } from '../.
 import { IHttpServerComponent } from '@well-known-components/interfaces'
 import { DecentralandSignatureContext, verify } from '@dcl/platform-crypto-middleware'
 import { AccessToken } from 'livekit-server-sdk'
+import { assertNotBlockedOrWithinInGracePeriod } from '../../logic/blocked'
 
 export async function castAdapterHandler(
   context: HandlerContextWithPath<
@@ -58,6 +59,8 @@ export async function castAdapterHandler(
   if (!worldMetadata) {
     throw new NotFoundError(`World "${worldName}" does not exist.`)
   }
+
+  assertNotBlockedOrWithinInGracePeriod(worldMetadata)
 
   const identity = context.verification!.auth
   const permissionChecker = await worldsManager.permissionCheckerForWorld(worldName)
