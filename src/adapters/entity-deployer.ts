@@ -64,7 +64,8 @@ export function createEntityDeployer(
 
     await worldsManager.deployScene(worldName, entity)
 
-    metrics.increment('world_deployments_counter')
+    const kind = worldName.endsWith('dcl.eth') ? 'dcl-name' : 'ens-name'
+    metrics.increment('world_deployments_counter', { kind })
 
     // send deployment notification over sns
     if (sns.arn) {
