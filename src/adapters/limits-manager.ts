@@ -1,4 +1,4 @@
-import { AppComponents, ILimitsManager } from '../types'
+import { AppComponents, ILimitsManager, MB_BigInt } from '../types'
 import LRU from 'lru-cache'
 
 type WhitelistEntry = {
@@ -11,11 +11,15 @@ type Whitelist = {
   [worldName: string]: WhitelistEntry | undefined
 }
 
+const bigIntMax = (...args: bigint[]) => args.reduce((m, e) => (e > m ? e : m))
+
 export async function createLimitsManagerComponent({
   config,
   fetch,
-  logs
-}: Pick<AppComponents, 'config' | 'fetch' | 'logs'>): Promise<ILimitsManager> {
+  logs,
+  nameOwnership,
+  walletStats
+}: Pick<AppComponents, 'config' | 'fetch' | 'logs' | 'nameOwnership' | 'walletStats'>): Promise<ILimitsManager> {
   const logger = logs.getLogger('limits-manager')
   const hardMaxParcels = await config.requireNumber('MAX_PARCELS')
   const hardMaxSize = await config.requireNumber('MAX_SIZE')
@@ -51,13 +55,31 @@ export async function createLimitsManagerComponent({
       const whitelist = (await cache.fetch(CONFIG_KEY))!
       return whitelist[worldName]?.max_parcels || hardMaxParcels
     },
-    async getMaxAllowedSizeInMbFor(worldName: string): Promise<number> {
+    async getMaxAllowedSizeInBytesFor(worldName: string): Promise<bigint> {
       if (worldName.endsWith('.eth') && !worldName.endsWith('.dcl.eth')) {
-        return hardMaxSizeForEns
+        return BigInt(hardMaxSizeForEns) * MB_BigInt
       }
 
       const whitelist = (await cache.fetch(CONFIG_KEY))!
-      return whitelist[worldName]?.max_size_in_mb || hardMaxSize
+      if (whitelist[worldName]) {
+        return BigInt(whitelist[worldName]!.max_size_in_mb || hardMaxSize) * MB_BigInt
+      }
+
+      const owners = await nameOwnership.findOwners([worldName])
+      const owner = owners.get(worldName)
+      if (!owner) {
+        throw new Error(`Could not determine owner for world ${worldName}`)
+      }
+
+      // We get used space, max allowed space and the size of the scene that is already deployed for that name (if any)
+      const stats = await walletStats.get(owner)
+      const alreadyExistingSceneSize = stats.dclNames.find((name) => name.name === worldName.toLowerCase())?.size || 0n
+
+      // We subtract from usedSpace the scene that is about to be un-deployed
+      const usedSpace = stats.usedSpace - alreadyExistingSceneSize
+
+      // We get the remaining space for the account (if any) or 0 if the space is already exceeded
+      return bigIntMax(stats.maxAllowedSpace - usedSpace, 0n)
     }
   }
 }

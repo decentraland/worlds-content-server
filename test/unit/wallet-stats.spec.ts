@@ -6,6 +6,7 @@ import { IPgComponent } from '@well-known-components/pg-component'
 import { createWalletStatsComponent } from '../../src/adapters/wallet-stats'
 import { createDatabaseMock } from '../mocks/database-mock'
 import { getIdentity, Identity } from '../utils'
+import { MB_BigInt } from '../../src/types'
 
 describe('wallet stats', function () {
   let identity: Identity
@@ -50,7 +51,7 @@ describe('wallet stats', function () {
       wallet: identity.realAccount.address,
       dclNames: [],
       ensNames: [],
-      maxAllowedSpace: BigInt(Number.MAX_SAFE_INTEGER) * 1024n * 1024n,
+      maxAllowedSpace: BigInt(Number.MAX_SAFE_INTEGER) * MB_BigInt,
       usedSpace: 0n
     })
   })

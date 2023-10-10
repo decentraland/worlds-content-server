@@ -41,7 +41,19 @@ export async function initComponents(): Promise<AppComponents> {
   const config = await createDotEnvConfigComponent({ path: ['.env.default', '.env'] })
   const logs = await createLogComponent({ config })
 
-  const server = await createServerComponent<GlobalContext>({ config, logs }, { cors: {} })
+  const logger = logs.getLogger('components')
+  const commitHash = (await config.getString('COMMIT_HASH')) || 'unknown'
+  logger.info(`Initializing components. Version: ${commitHash}`)
+
+  const server = await createServerComponent<GlobalContext>(
+    { config, logs },
+    {
+      cors: {
+        methods: ['GET', 'HEAD', 'OPTIONS', 'DELETE', 'POST', 'PUT'],
+        maxAge: 86400
+      }
+    }
+  )
   const statusChecks = await createStatusCheckComponent({ server, config })
   const fetch = await createFetchComponent()
   const metrics = await createMetricsComponent(metricDeclarations, { config })
@@ -89,11 +101,11 @@ export async function initComponents(): Promise<AppComponents> {
     nameOwnership
   })
 
-  const limitsManager = await createLimitsManagerComponent({ config, fetch, logs })
-
   const database = await createDatabaseComponent({ config, logs, metrics })
 
   const walletStats = await createWalletStatsComponent({ config, database, fetch, logs })
+
+  const limitsManager = await createLimitsManagerComponent({ config, fetch, logs, nameOwnership, walletStats })
 
   const worldsManager = await createWorldsManagerComponent({
     logs,

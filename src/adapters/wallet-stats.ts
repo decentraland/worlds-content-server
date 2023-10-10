@@ -1,4 +1,4 @@
-import { AppComponents, IWalletStats, WalletStats, WorldRecord } from '../types'
+import { AppComponents, IWalletStats, MB_BigInt, WalletStats, WorldRecord } from '../types'
 import { EthAddress } from '@dcl/schemas'
 import SQL from 'sql-template-strings'
 
@@ -75,7 +75,7 @@ export async function createWalletStatsComponent(
       dclNames,
       ensNames,
       usedSpace,
-      maxAllowedSpace: BigInt(holdings.spaceAllowance) * 1024n * 1024n,
+      maxAllowedSpace: BigInt(holdings.spaceAllowance) * MB_BigInt,
       blockedSince
     }
   }
