@@ -111,13 +111,12 @@ export async function initComponents(): Promise<AppComponents> {
     logs,
     database,
     nameDenyListChecker,
-    nameOwnership,
     storage
   })
   const worldsIndexer = await createWorldsIndexerComponent({ worldsManager })
   const permissionsManager = await createPermissionsManagerComponent({ worldsManager })
 
-  const entityDeployer = createEntityDeployer({ config, logs, metrics, storage, sns, worldsManager })
+  const entityDeployer = createEntityDeployer({ config, logs, nameOwnership, metrics, storage, sns, worldsManager })
   const validator = createValidator({
     config,
     nameDenyListChecker,

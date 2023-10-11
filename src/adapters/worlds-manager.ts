@@ -1,6 +1,6 @@
 import { AppComponents, IPermissionChecker, IWorldsManager, Permissions, WorldMetadata, WorldRecord } from '../types'
 import { streamToBuffer } from '@dcl/catalyst-storage'
-import { Entity } from '@dcl/schemas'
+import { Entity, EthAddress } from '@dcl/schemas'
 import SQL from 'sql-template-strings'
 import { extractWorldRuntimeMetadata } from '../logic/world-runtime-metadata-utils'
 import { createPermissionChecker, defaultPermissions } from '../logic/permissions-checker'
@@ -9,12 +9,8 @@ export async function createWorldsManagerComponent({
   logs,
   database,
   nameDenyListChecker,
-  nameOwnership,
   storage
-}: Pick<
-  AppComponents,
-  'logs' | 'database' | 'nameDenyListChecker' | 'nameOwnership' | 'storage'
->): Promise<IWorldsManager> {
+}: Pick<AppComponents, 'logs' | 'database' | 'nameDenyListChecker' | 'storage'>): Promise<IWorldsManager> {
   const logger = logs.getLogger('worlds-manager')
 
   async function getMetadataForWorld(worldName: string): Promise<WorldMetadata | undefined> {
@@ -24,10 +20,10 @@ export async function createWorldsManagerComponent({
     }
 
     const result = await database.query<WorldRecord>(
-      SQL`SELECT *, blocked.created_at AS blocked_since
+      SQL`SELECT worlds.*, blocked.created_at AS blocked_since
               FROM worlds
               LEFT JOIN blocked ON worlds.owner = blocked.wallet
-              WHERE name = ${worldName.toLowerCase()}`
+              WHERE worlds.name = ${worldName.toLowerCase()}`
     )
 
     if (result.rowCount === 0) {
@@ -54,14 +50,13 @@ export async function createWorldsManagerComponent({
     } as WorldMetadata
   }
 
-  async function deployScene(worldName: string, scene: Entity): Promise<void> {
+  async function deployScene(worldName: string, scene: Entity, owner: EthAddress): Promise<void> {
     const content = await storage.retrieve(`${scene.id}.auth`)
     const deploymentAuthChainString = content ? (await streamToBuffer(await content!.asStream())).toString() : '{}'
     const deploymentAuthChain = JSON.parse(deploymentAuthChainString)
 
     const deployer = deploymentAuthChain[0].payload.toLowerCase()
 
-    const owner = (await nameOwnership.findOwners([worldName])).get(worldName)
     const fileInfos = await storage.fileInfoMultiple(scene.content?.map((c) => c.hash) || [])
     const size = scene.content?.reduce((acc, c) => acc + (fileInfos.get(c.hash)?.size || 0), 0) || 0
 
