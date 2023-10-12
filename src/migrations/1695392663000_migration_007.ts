@@ -1,4 +1,4 @@
-import { MigratorComponents } from '../../types'
+import { MigratorComponents } from '../types'
 import SQL from 'sql-template-strings'
 import { ContentMapping } from '@dcl/schemas/dist/misc/content-mapping'
 

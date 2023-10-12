@@ -1,4 +1,4 @@
-import { MigratorComponents } from '../../types'
+import { MigratorComponents } from '../types'
 
 export default {
   run: async (components: Pick<MigratorComponents, 'logs' | 'database' | 'storage'>) => {

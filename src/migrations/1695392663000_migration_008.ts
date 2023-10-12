@@ -1,6 +1,6 @@
-import { MigratorComponents } from '../../types'
+import { MigratorComponents } from '../types'
 import SQL from 'sql-template-strings'
-import { defaultPermissions } from '../../logic/permissions-checker'
+import { defaultPermissions } from '../logic/permissions-checker'
 
 export default {
   run: async (components: Pick<MigratorComponents, 'logs' | 'database'>) => {

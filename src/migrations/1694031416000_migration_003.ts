@@ -1,7 +1,7 @@
-import { MigratorComponents } from '../../types'
+import { MigratorComponents } from '../types'
 import { streamToBuffer } from '@dcl/catalyst-storage/dist/content-item'
 import SQL from 'sql-template-strings'
-import { migrateConfiguration } from '../../logic/world-runtime-metadata-utils'
+import { migrateConfiguration } from '../logic/world-runtime-metadata-utils'
 
 export default {
   run: async (components: Pick<MigratorComponents, 'logs' | 'database' | 'storage'>) => {

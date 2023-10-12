@@ -1,5 +1,5 @@
-import { MigratorComponents } from '../../types'
-import { readFile, writeFile } from '../utils'
+import { MigratorComponents } from '../types'
+import { readFile, writeFile } from '../logic/utils'
 
 export default {
   run: async (components: Pick<MigratorComponents, 'logs' | 'storage'>) => {
