@@ -3,7 +3,7 @@ import { IHttpServerComponent } from '@well-known-components/interfaces'
 
 export type ContentStatus = {
   commitHash: string
-  worldsCount: number
+  worldsCount: { ens: number; dcl: number }
 }
 
 export type StatusResponse = {

@@ -57,12 +57,16 @@ export async function createWorldsManagerMockComponent({
     await storeWorldMetadata(worldName, { permissions })
   }
 
-  async function getDeployedWorldCount(): Promise<number> {
-    let count = 0
-    for await (const _ of storage.allFileIds('name-')) {
-      count++
+  async function getDeployedWorldCount(): Promise<{ ens: number; dcl: number }> {
+    const acc = { ens: 0, dcl: 0 }
+    for await (const name of storage.allFileIds('name-')) {
+      if (name.endsWith('.dcl.eth')) {
+        acc.dcl++
+      } else {
+        acc.ens++
+      }
     }
-    return count
+    return acc
   }
 
   async function getDeployedWorldEntities(): Promise<Entity[]> {
