@@ -22,6 +22,14 @@ export function createMigrationExecutor(components: MigratorComponents): Migrati
   const pendingMigrations: string[] = []
 
   async function start(): Promise<void> {
+    await components.database.query(SQL`
+        CREATE TABLE IF NOT EXISTS migrations
+        (
+            id     SERIAL PRIMARY KEY,
+            name   VARCHAR(255) NOT NULL,
+            run_on TIMESTAMP    NOT NULL
+        );
+    `)
     const result = await components.database.query<{ name: string; run_on: Date }>(
       'SELECT name, run_on from migrations'
     )
