@@ -136,7 +136,7 @@ export type ILimitsManager = {
 }
 
 export type IWorldsManager = {
-  getDeployedWorldCount(): Promise<number>
+  getDeployedWorldCount(): Promise<{ ens: number; dcl: number }>
   getDeployedWorldEntities(): Promise<Entity[]>
   getMetadataForWorld(worldName: string): Promise<WorldMetadata | undefined>
   getEntityForWorld(worldName: string): Promise<Entity | undefined>

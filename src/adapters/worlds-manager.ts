@@ -92,11 +92,19 @@ export async function createWorldsManagerComponent({
     await database.query(sql)
   }
 
-  async function getDeployedWorldCount(): Promise<number> {
-    const result = await database.query<{ count: string }>(
-      'SELECT COUNT(name) AS count FROM worlds WHERE entity_id IS NOT NULL'
+  async function getDeployedWorldCount(): Promise<{ ens: number; dcl: number }> {
+    const result = await database.query<{ name: string }>('SELECT name FROM worlds WHERE entity_id IS NOT NULL')
+    return result.rows.reduce(
+      (acc, row) => {
+        if (row.name.endsWith('.dcl.eth')) {
+          acc.dcl++
+        } else {
+          acc.ens++
+        }
+        return acc
+      },
+      { ens: 0, dcl: 0 }
     )
-    return parseInt(result.rows[0].count)
   }
 
   const mapEntity = (row: Pick<WorldRecord, 'entity_id' | 'entity'>) => ({
