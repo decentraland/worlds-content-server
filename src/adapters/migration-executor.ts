@@ -33,31 +33,22 @@ export function createMigrationExecutor(components: MigratorComponents): Migrati
 
     // Determine pending migrations
     pendingMigrations.push(...allMigrations.filter((migration) => !alreadyRunMigrations.includes(migration.id)))
-
-    // TODO Run startup checks, like:
-    // 1. Check the migration table exists and if not, create it.
-    // 2. Check all existing migrations are known in code.
-    // 3. Check all code migration and existing migrations are order correctly time.
-    console.log('alreadyRunMigrations', alreadyRunMigrations)
-    console.log(
-      'existingCodeMigrations',
-      allMigrations.map((m) => m.id)
-    )
-    console.log(
-      'pendingMigrations',
-      pendingMigrations.map((m) => m.id)
-    )
   }
 
   async function run(): Promise<void> {
+    if (pendingMigrations.length === 0) {
+      logger.debug('Migrations are up to date, nothing to run')
+      return
+    }
+
     logger.debug('Running pending migrations')
     for (const migration of pendingMigrations) {
-      logger.info(`running migration ${migration.id}`)
+      logger.info(`Running migration ${migration.id}`)
       await migration.run(components)
       await components.database.query(
         SQL`INSERT INTO migrations (name, run_on) VALUES (${migration.id}, ${new Date()})`
       )
-      logger.info(`migration ${migration.id} run successfully`)
+      logger.info(`Migration ${migration.id} run successfully`)
     }
   }
 
