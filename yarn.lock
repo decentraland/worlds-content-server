@@ -3694,7 +3694,7 @@ node-int64@^0.4.0:
   resolved "https://registry.yarnpkg.com/node-int64/-/node-int64-0.4.0.tgz#87a9065cdb355d3182d8f94ce11188b825c68a3b"
   integrity sha512-O5lz91xSOeoXP6DulyHfllpq+Eg00MWitZIbtPfoSEvqIHdl5gfcY6hYzDWnj0qD5tz52PI08u9qUvSVeUBeHw==
 
-node-pg-migrate@^6.2.1, node-pg-migrate@^6.2.2:
+node-pg-migrate@^6.2.1:
   version "6.2.2"
   resolved "https://registry.yarnpkg.com/node-pg-migrate/-/node-pg-migrate-6.2.2.tgz#68f3c074489b187f19442411a62e243bae4d19ab"
   integrity sha512-0WYLTXpWu2doeZhiwJUW/1u21OqAFU2CMQ8YZ8VBcJ0xrdqYAjtd8GGFe5A5DM4NJdIZsqJcLPDFqY0FQsmivw==

@@ -1,13 +1,15 @@
-import { MigratorComponents } from '../../types'
+import { Migration, MigratorComponents } from '../types'
 import { streamToBuffer } from '@dcl/catalyst-storage/dist/content-item'
 import SQL from 'sql-template-strings'
-import { migrateConfiguration } from '../../logic/world-runtime-metadata-utils'
+import { migrateConfiguration } from '../logic/world-runtime-metadata-utils'
 
-export default {
+const id = '0004_migrate_from_files_to_database'
+
+export const migration: Migration = {
+  id,
   run: async (components: Pick<MigratorComponents, 'logs' | 'database' | 'storage'>) => {
     const { logs, database, storage } = components
-    const logger = logs.getLogger('migration-003')
-    logger.info('running migration 003 - migration of worlds to database')
+    const logger = logs.getLogger(`migration-${id}`)
 
     async function readFile(key: string): Promise<any | undefined> {
       const content = await storage.retrieve(key)

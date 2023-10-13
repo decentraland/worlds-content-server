@@ -34,7 +34,6 @@
     "eth-connect": "^6.2.0",
     "livekit-server-sdk": "^1.2.5",
     "lru-cache": "^7.18.3",
-    "node-pg-migrate": "^6.2.2",
     "p-queue": "^6.6.2"
   },
   "devDependencies": {
