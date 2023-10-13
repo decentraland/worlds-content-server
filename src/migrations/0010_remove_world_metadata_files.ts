@@ -1,11 +1,8 @@
-import { MigratorComponents } from '../types'
+import { Migration, MigratorComponents } from '../types'
 
-export default {
+export const migration: Migration = {
+  id: '0010_remove_world_metadata_files',
   run: async (components: Pick<MigratorComponents, 'logs' | 'database' | 'storage'>) => {
-    const logger = components.logs.getLogger('migration-006')
-    logger.info('running migration 006 - remove world metadata files')
-
-    // Fix incorrectly stored ACLs
     const filesToDelete = []
     for await (const key of components.storage.allFileIds('name-')) {
       filesToDelete.push(key)

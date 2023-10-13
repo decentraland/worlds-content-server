@@ -1,10 +1,12 @@
-import { MigratorComponents } from '../types'
+import { Migration, MigratorComponents } from '../types'
 import { readFile, writeFile } from '../logic/utils'
 
-export default {
+const id = '0001_fix_file_ids'
+
+export const migration: Migration = {
+  id,
   run: async (components: Pick<MigratorComponents, 'logs' | 'storage'>) => {
-    const logger = components.logs.getLogger('migration-001')
-    logger.info('running migration 001')
+    const logger = components.logs.getLogger(`migration-${id}`)
 
     // Fix incorrectly stored ACLs
     for await (const key of components.storage.allFileIds('name-')) {

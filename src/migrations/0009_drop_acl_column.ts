@@ -1,11 +1,12 @@
-import { MigratorComponents } from '../types'
+import { Migration, MigratorComponents } from '../types'
 import SQL from 'sql-template-strings'
 
-export default {
+export const migration: Migration = {
+  id: '0009_drop_acl_column',
   run: async (components: Pick<MigratorComponents, 'database'>) => {
     await components.database.query(SQL`
         ALTER TABLE worlds
-            ALTER COLUMN permissions SET NOT NULL
+        DROP COLUMN acl;
     `)
   }
 }

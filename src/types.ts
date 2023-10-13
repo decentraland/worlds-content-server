@@ -23,6 +23,11 @@ export type GlobalContext = {
 export const MB = 1024 * 1024
 export const MB_BigInt = 1024n * 1024n
 
+export type Migration = {
+  id: string
+  run: (components: MigratorComponents) => Promise<void>
+}
+
 export type DeploymentToValidate = {
   entity: Entity
   files: Map<string, Uint8Array>

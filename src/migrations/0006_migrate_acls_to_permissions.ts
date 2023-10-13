@@ -1,10 +1,12 @@
-import { MigratorComponents } from '../types'
+import { Migration, MigratorComponents } from '../types'
 import { defaultPermissions } from '../logic/permissions-checker'
 
-export default {
+const id = '0006_migrate_acls_to_permissions'
+
+export const migration: Migration = {
+  id,
   run: async (components: Pick<MigratorComponents, 'logs' | 'database' | 'worldsManager'>) => {
-    const logger = components.logs.getLogger('migration-004')
-    logger.info('running migration 004 - acl to permissions')
+    const logger = components.logs.getLogger(`migration-${id}`)
 
     const worlds = await components.database.query('SELECT name, acl FROM worlds ORDER BY name')
     for (const world of worlds.rows) {
@@ -13,8 +15,8 @@ export default {
       if (world.acl) {
         permissions.deployment.wallets = JSON.parse(world.acl.slice(-1).pop()!.payload).allowed
         logger.info(`Migrating ACL for "${worldName}" to Permissions: ${JSON.stringify(permissions)}`)
-        await components.worldsManager.storePermissions(worldName, permissions)
       }
+      await components.worldsManager.storePermissions(worldName, permissions)
     }
   }
 }

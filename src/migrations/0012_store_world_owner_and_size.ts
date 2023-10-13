@@ -1,14 +1,10 @@
-import { MigratorComponents } from '../types'
+import { Migration, MigratorComponents } from '../types'
 import SQL from 'sql-template-strings'
 import { ContentMapping } from '@dcl/schemas/dist/misc/content-mapping'
 
-export default {
-  run: async (
-    components: Pick<MigratorComponents, 'logs' | 'database' | 'nameOwnership' | 'storage' | 'worldsManager'>
-  ) => {
-    const logger = components.logs.getLogger('migration-007')
-    logger.info('running migration 007 - store world owner and size')
-
+export const migration: Migration = {
+  id: '0012_store_world_owner_and_size',
+  run: async (components: Pick<MigratorComponents, 'database' | 'nameOwnership' | 'storage' | 'worldsManager'>) => {
     const worlds = await components.database.query(
       'SELECT name, entity FROM worlds WHERE entity IS NOT NULL ORDER BY name'
     )
