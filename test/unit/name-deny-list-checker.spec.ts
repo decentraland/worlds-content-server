@@ -50,4 +50,23 @@ describe('name deny list checker', function () {
     await expect(nameDenyListChecker.checkNameDenyList('banned-name.dcl.eth')).resolves.toBeFalsy()
     await expect(nameDenyListChecker.checkNameDenyList('good-name.dcl.eth')).resolves.toBeTruthy()
   })
+
+  it('should correctly reject ENS banned names', async () => {
+    const fetch = await createFetchComponent()
+    fetch.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          data: ['banned-name']
+        })
+    })
+    const nameDenyListChecker = await createNameDenyListChecker({
+      config,
+      logs,
+      fetch
+    })
+
+    await expect(nameDenyListChecker.checkNameDenyList('banned-name.eth')).resolves.toBeFalsy()
+    await expect(nameDenyListChecker.checkNameDenyList('good-name.eth')).resolves.toBeTruthy()
+  })
 })

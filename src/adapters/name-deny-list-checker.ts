@@ -30,7 +30,7 @@ export async function createNameDenyListChecker(
 
   const checkNameDenyList = async (worldName: string): Promise<boolean> => {
     const bannedNames = await nameDenyListCache.fetch(NAME_DENY_LIST_ENTRY)
-    const isBanned = bannedNames.includes(worldName.replace('.dcl.eth', ''))
+    const isBanned = bannedNames.includes(worldName.replace('.eth', '').replace('.dcl', ''))
     if (isBanned) {
       logger.warn(`Name ${worldName} is banned`)
     }
