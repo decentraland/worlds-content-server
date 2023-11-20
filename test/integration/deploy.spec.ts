@@ -38,7 +38,10 @@ test('deployment works', function ({ components, stubComponents }) {
     stubComponents.namePermissionChecker.checkPermission
       .withArgs(identity.authChain.authChain[0].payload, worldName)
       .resolves(true)
-    stubComponents.metrics.increment.withArgs('world_deployments_counter')
+    stubComponents.nameOwnership.findOwners
+      .withArgs([worldName])
+      .resolves(new Map([[worldName, identity.authChain.authChain[0].payload]]))
+    stubComponents.metrics.increment.withArgs('world_deployments_counter', { kind: 'dcl-name' })
   })
 
   it('creates an entity and deploys it (owner)', async () => {
@@ -101,7 +104,7 @@ test('deployment works', function ({ components, stubComponents }) {
       }
     })
 
-    Sinon.assert.calledWithMatch(stubComponents.metrics.increment, 'world_deployments_counter')
+    Sinon.assert.calledWithMatch(stubComponents.metrics.increment, 'world_deployments_counter', { kind: 'dcl-name' })
   })
 
   it('creates an entity and deploys it (authorized wallet)', async () => {

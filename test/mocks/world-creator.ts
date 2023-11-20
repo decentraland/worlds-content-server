@@ -46,7 +46,7 @@ export function createWorldCreator({
 
     const entity = { id: entityId, ...entityWithoutId }
 
-    await worldsManager.deployScene(worldName, entity)
+    await worldsManager.deployScene(worldName, entity, signer.authChain[0].payload)
     await worldsManager.storePermissions(worldName, permissions)
 
     return {

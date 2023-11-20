@@ -8,7 +8,7 @@ import { SNS } from 'aws-sdk'
 type PostDeploymentHook = (baseUrl: string, entity: Entity, authChain: AuthLink[]) => Promise<DeploymentResult>
 
 export function createEntityDeployer(
-  components: Pick<AppComponents, 'config' | 'logs' | 'metrics' | 'storage' | 'sns' | 'worldsManager'>
+  components: Pick<AppComponents, 'config' | 'logs' | 'nameOwnership' | 'metrics' | 'storage' | 'sns' | 'worldsManager'>
 ): IEntityDeployer {
   const { logs, storage, worldsManager } = components
   const logger = logs.getLogger('entity-deployer')
@@ -62,9 +62,12 @@ export function createEntityDeployer(
     const worldName = entity.metadata.worldConfiguration.name
     logger.debug(`Deployment for scene "${entity.id}" under world name "${worldName}"`)
 
-    await worldsManager.deployScene(worldName, entity)
+    const owner = (await components.nameOwnership.findOwners([worldName])).get(worldName)
 
-    metrics.increment('world_deployments_counter')
+    await worldsManager.deployScene(worldName, entity, owner!)
+
+    const kind = worldName.endsWith('dcl.eth') ? 'dcl-name' : 'ens-name'
+    metrics.increment('world_deployments_counter', { kind })
 
     // send deployment notification over sns
     if (sns.arn) {

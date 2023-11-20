@@ -1,6 +1,6 @@
 import { AppComponents, IPermissionChecker, IWorldsManager, Permissions, WorldMetadata, WorldRecord } from '../types'
 import { streamToBuffer } from '@dcl/catalyst-storage'
-import { Entity } from '@dcl/schemas'
+import { Entity, EthAddress } from '@dcl/schemas'
 import SQL from 'sql-template-strings'
 import { extractWorldRuntimeMetadata } from '../logic/world-runtime-metadata-utils'
 import { createPermissionChecker, defaultPermissions } from '../logic/permissions-checker'
@@ -9,12 +9,8 @@ export async function createWorldsManagerComponent({
   logs,
   database,
   nameDenyListChecker,
-  nameOwnership,
   storage
-}: Pick<
-  AppComponents,
-  'logs' | 'database' | 'nameDenyListChecker' | 'nameOwnership' | 'storage'
->): Promise<IWorldsManager> {
+}: Pick<AppComponents, 'logs' | 'database' | 'nameDenyListChecker' | 'storage'>): Promise<IWorldsManager> {
   const logger = logs.getLogger('worlds-manager')
 
   async function getMetadataForWorld(worldName: string): Promise<WorldMetadata | undefined> {
@@ -24,9 +20,10 @@ export async function createWorldsManagerComponent({
     }
 
     const result = await database.query<WorldRecord>(
-      SQL`SELECT *
+      SQL`SELECT worlds.*, blocked.created_at AS blocked_since
               FROM worlds
-              WHERE name = ${worldName.toLowerCase()}`
+              LEFT JOIN blocked ON worlds.owner = blocked.wallet
+              WHERE worlds.name = ${worldName.toLowerCase()}`
     )
 
     if (result.rowCount === 0) {
@@ -42,32 +39,38 @@ export async function createWorldsManagerComponent({
     if (row.permissions) {
       tempWorldMetadata.permissions = row.permissions
     }
+    if (row.blocked_since) {
+      tempWorldMetadata.blockedSince = row.blocked_since
+    }
 
-    return JSON.parse(JSON.stringify(tempWorldMetadata)) as WorldMetadata
+    return {
+      ...JSON.parse(JSON.stringify(tempWorldMetadata)),
+      // this field is treated separately so that it does not get serialized to string
+      blockedSince: tempWorldMetadata.blockedSince ? new Date(tempWorldMetadata.blockedSince) : undefined
+    } as WorldMetadata
   }
 
-  async function deployScene(worldName: string, scene: Entity): Promise<void> {
+  async function deployScene(worldName: string, scene: Entity, owner: EthAddress): Promise<void> {
     const content = await storage.retrieve(`${scene.id}.auth`)
     const deploymentAuthChainString = content ? (await streamToBuffer(await content!.asStream())).toString() : '{}'
     const deploymentAuthChain = JSON.parse(deploymentAuthChainString)
 
     const deployer = deploymentAuthChain[0].payload.toLowerCase()
 
-    const owner = (await nameOwnership.findOwners([worldName])).get(worldName)
     const fileInfos = await storage.fileInfoMultiple(scene.content?.map((c) => c.hash) || [])
     const size = scene.content?.reduce((acc, c) => acc + (fileInfos.get(c.hash)?.size || 0), 0) || 0
 
     const sql = SQL`
               INSERT INTO worlds (name, entity_id, owner, deployer, deployment_auth_chain, entity, permissions, size, created_at, updated_at)
               VALUES (${worldName.toLowerCase()}, ${scene.id},
-                      ${owner}, ${deployer}, ${deploymentAuthChainString}::json,
+                      ${owner?.toLowerCase()}, ${deployer}, ${deploymentAuthChainString}::json,
                       ${scene}::json,
                       ${JSON.stringify(defaultPermissions())}::json,
                       ${size},
                       ${new Date()}, ${new Date()})
               ON CONFLICT (name) 
                   DO UPDATE SET entity_id = ${scene.id}, 
-                                owner = ${owner},
+                                owner = ${owner?.toLowerCase()},
                                 deployer = ${deployer},
                                 entity = ${scene}::json,
                                 size = ${size},
@@ -89,11 +92,19 @@ export async function createWorldsManagerComponent({
     await database.query(sql)
   }
 
-  async function getDeployedWorldCount(): Promise<number> {
-    const result = await database.query<{ count: string }>(
-      'SELECT COUNT(name) AS count FROM worlds WHERE entity_id IS NOT NULL'
+  async function getDeployedWorldCount(): Promise<{ ens: number; dcl: number }> {
+    const result = await database.query<{ name: string }>('SELECT name FROM worlds WHERE entity_id IS NOT NULL')
+    return result.rows.reduce(
+      (acc, row) => {
+        if (row.name.endsWith('.dcl.eth')) {
+          acc.dcl++
+        } else {
+          acc.ens++
+        }
+        return acc
+      },
+      { ens: 0, dcl: 0 }
     )
-    return parseInt(result.rows[0].count)
   }
 
   const mapEntity = (row: Pick<WorldRecord, 'entity_id' | 'entity'>) => ({

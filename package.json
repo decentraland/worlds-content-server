@@ -13,12 +13,12 @@
   },
   "dependencies": {
     "@dcl/catalyst-api-specs": "^3.2.4",
-    "@dcl/catalyst-contracts": "^4.2.0",
+    "@dcl/catalyst-contracts": "^4.3.1",
     "@dcl/catalyst-storage": "^4.1.0",
     "@dcl/crypto": "^3.4.5",
     "@dcl/hashing": "^3.0.4",
     "@dcl/platform-crypto-middleware": "^1.0.2",
-    "@dcl/schemas": "^9.7.0",
+    "@dcl/schemas": "^9.9.0",
     "@ensdomains/eth-ens-namehash": "^2.0.15",
     "@types/busboy": "^1.5.0",
     "@well-known-components/env-config-provider": "^1.2.0",
@@ -35,7 +35,6 @@
     "eth-connect": "^6.2.0",
     "livekit-server-sdk": "^1.2.5",
     "lru-cache": "^7.18.3",
-    "node-pg-migrate": "^6.2.2",
     "p-queue": "^6.6.2"
   },
   "devDependencies": {

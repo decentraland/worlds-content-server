@@ -12,7 +12,7 @@ import { HTTPProvider } from 'eth-connect'
 import { ISubgraphComponent } from '@well-known-components/thegraph-component'
 import { IStatusComponent } from './adapters/status'
 import { AuthChain, AuthLink, Entity, EthAddress, IPFSv2 } from '@dcl/schemas'
-import { MigrationExecutor } from './migrations/migration-executor'
+import { MigrationExecutor } from './adapters/migration-executor'
 import { IPgComponent } from '@well-known-components/pg-component'
 import { AuthIdentity } from '@dcl/crypto'
 
@@ -22,6 +22,11 @@ export type GlobalContext = {
 
 export const MB = 1024 * 1024
 export const MB_BigInt = 1024n * 1024n
+
+export type Migration = {
+  id: string
+  run: (components: MigratorComponents) => Promise<void>
+}
 
 export type DeploymentToValidate = {
   entity: Entity
@@ -47,6 +52,7 @@ export type WorldMetadata = {
   acl?: AuthChain
   permissions: Permissions
   runtimeMetadata: WorldRuntimeMetadata
+  blockedSince?: Date
 }
 
 export type AccessControlList = {
@@ -135,11 +141,11 @@ export type ILimitsManager = {
 }
 
 export type IWorldsManager = {
-  getDeployedWorldCount(): Promise<number>
+  getDeployedWorldCount(): Promise<{ ens: number; dcl: number }>
   getDeployedWorldEntities(): Promise<Entity[]>
   getMetadataForWorld(worldName: string): Promise<WorldMetadata | undefined>
   getEntityForWorld(worldName: string): Promise<Entity | undefined>
-  deployScene(worldName: string, scene: Entity): Promise<void>
+  deployScene(worldName: string, scene: Entity, owner: EthAddress): Promise<void>
   storePermissions(worldName: string, permissions: Permissions): Promise<void>
   permissionCheckerForWorld(worldName: string): Promise<IPermissionChecker>
   undeploy(worldName: string): Promise<void>
@@ -334,4 +340,5 @@ export type WorldRecord = {
   size: bigint
   created_at: Date
   updated_at: Date
+  blocked_since: Date | null
 }

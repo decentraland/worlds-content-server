@@ -3,10 +3,12 @@ import { getIdentity } from '../utils'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { defaultPermissions } from '../../src/logic/permissions-checker'
 import { PermissionType } from '../../src/types'
+import SQL from 'sql-template-strings'
 
 test('world about handler /world/:world_name/about', function ({ components, stubComponents }) {
   beforeEach(async () => {
     const { config } = stubComponents
+
     config.requireString.withArgs('ETH_NETWORK').resolves('mainnet')
     config.requireString.withArgs('COMMS_ROOM_PREFIX').resolves('world-')
   })
@@ -272,10 +274,36 @@ test('world about handler /world/:world_name/about', function ({ components, stu
 
     const { worldName } = await worldCreator.createWorldWithScene()
 
-    nameDenyListChecker.checkNameDenyList.withArgs(worldName.replace('.dcl.eth', '')).resolves(false)
+    nameDenyListChecker.checkNameDenyList.withArgs(worldName).resolves(false)
 
     const r = await localFetch.fetch(`/world/${worldName}/about`)
     expect(r.status).toEqual(404)
     expect(await r.json()).toMatchObject({ message: `World "${worldName}" has no scene deployed.` })
+  })
+
+  it('when world exists but the wallet is blocked it responds with 403', async () => {
+    const { database, localFetch, worldCreator } = components
+    const { nameDenyListChecker } = stubComponents
+
+    const identity = await getIdentity()
+    const { worldName } = await worldCreator.createWorldWithScene({
+      owner: identity.authChain
+    })
+
+    const blockedSince = new Date()
+    blockedSince.setDate(blockedSince.getDate() - 3)
+    await database.query(SQL`
+        INSERT INTO blocked (wallet, created_at, updated_at)
+            VALUES (${identity.realAccount.address.toLowerCase()}, ${blockedSince}, ${new Date()})
+        `)
+
+    nameDenyListChecker.checkNameDenyList.withArgs(worldName).resolves(true)
+
+    const r = await localFetch.fetch(`/world/${worldName}/about`)
+    expect(r.status).toEqual(403)
+    expect(await r.json()).toMatchObject({
+      error: 'Access denied',
+      message: expect.any(String)
+    })
   })
 })

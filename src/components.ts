@@ -27,7 +27,7 @@ import { createWorldsIndexerComponent } from './adapters/worlds-indexer'
 
 import { createValidator } from './logic/validations'
 import { createEntityDeployer } from './adapters/entity-deployer'
-import { createMigrationExecutor } from './migrations/migration-executor'
+import { createMigrationExecutor } from './adapters/migration-executor'
 import { createNameDenyListChecker } from './adapters/name-deny-list-checker'
 import { createDatabaseComponent } from './adapters/database-component'
 import { createPermissionsManagerComponent } from './adapters/permissions-manager'
@@ -111,13 +111,12 @@ export async function initComponents(): Promise<AppComponents> {
     logs,
     database,
     nameDenyListChecker,
-    nameOwnership,
     storage
   })
   const worldsIndexer = await createWorldsIndexerComponent({ worldsManager })
   const permissionsManager = await createPermissionsManagerComponent({ worldsManager })
 
-  const entityDeployer = createEntityDeployer({ config, logs, metrics, storage, sns, worldsManager })
+  const entityDeployer = createEntityDeployer({ config, logs, nameOwnership, metrics, storage, sns, worldsManager })
   const validator = createValidator({
     config,
     nameDenyListChecker,

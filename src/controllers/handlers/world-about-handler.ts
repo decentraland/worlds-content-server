@@ -1,6 +1,7 @@
 import { HandlerContextWithPath, NotFoundError } from '../../types'
 import { About, AboutConfigurationsMinimap, AboutConfigurationsSkybox } from '@dcl/catalyst-api-specs/lib/client'
 import { l1Contracts, L1Network } from '@dcl/catalyst-contracts'
+import { assertNotBlockedOrWithinInGracePeriod } from '../../logic/blocked'
 
 export async function worldAboutHandler({
   params,
@@ -18,6 +19,8 @@ export async function worldAboutHandler({
   if (!worldMetadata || !worldMetadata.entityId) {
     throw new NotFoundError(`World "${params.world_name}" has no scene deployed.`)
   }
+
+  assertNotBlockedOrWithinInGracePeriod(worldMetadata)
 
   const runtimeMetadata = worldMetadata.runtimeMetadata
 

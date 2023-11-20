@@ -1,11 +1,13 @@
-import { MigratorComponents } from '../../types'
-import { extractWorldRuntimeMetadata } from '../../logic/world-runtime-metadata-utils'
-import { deepEqual, readFile, writeFile } from '../utils'
+import { Migration, MigratorComponents } from '../types'
+import { extractWorldRuntimeMetadata } from '../logic/world-runtime-metadata-utils'
+import { deepEqual, readFile, writeFile } from '../logic/utils'
 
-export default {
+const id = '0003_compute_and_store_runtime_metadata'
+
+export const migration: Migration = {
+  id,
   run: async (components: Pick<MigratorComponents, 'logs' | 'storage'>) => {
-    const logger = components.logs.getLogger('migration-002')
-    logger.info('running migration 002')
+    const logger = components.logs.getLogger(`migration-${id}`)
 
     // Fix incorrectly stored ACLs
     for await (const key of components.storage.allFileIds('name-')) {
