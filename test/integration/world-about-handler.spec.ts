@@ -296,9 +296,9 @@ test('world about handler /world/:world_name/about', function ({ components, stu
     nameDenyListChecker.checkNameDenyList.withArgs(worldName).resolves(true)
 
     const r = await localFetch.fetch(`/world/${worldName}/about`)
-    expect(r.status).toEqual(403)
+    expect(r.status).toEqual(401)
     expect(await r.json()).toMatchObject({
-      error: 'Access denied',
+      error: 'Not Authorized',
       message: expect.any(String)
     })
   })

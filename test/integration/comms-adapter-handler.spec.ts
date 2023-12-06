@@ -113,9 +113,9 @@ test('comms adapter handler /get-comms-adapter/:roomId', function ({ components,
 
     const r = await localFetch.fetch(path, actualInit)
 
-    expect(r.status).toEqual(403)
+    expect(r.status).toEqual(401)
     expect(await r.json()).toMatchObject({
-      error: 'Access denied',
+      error: 'Not Authorized',
       message: `You are not allowed to access world "${worldName}".`
     })
   })
