@@ -1,5 +1,6 @@
-import { HandlerContextWithPath, InvalidRequestError } from '../../types'
+import { HandlerContextWithPath } from '../../types'
 import { IHttpServerComponent } from '@well-known-components/interfaces'
+import { InvalidRequestError } from '@dcl/platform-server-commons'
 
 export async function activeEntitiesHandler(
   context: HandlerContextWithPath<'worldsManager', '/entities/active'>

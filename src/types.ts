@@ -290,27 +290,6 @@ export type HandlerContextWithPath<
   Path
 >
 
-export class InvalidRequestError extends Error {
-  constructor(message: string) {
-    super(message)
-    Error.captureStackTrace(this, this.constructor)
-  }
-}
-
-export class NotFoundError extends Error {
-  constructor(message: string) {
-    super(message)
-    Error.captureStackTrace(this, this.constructor)
-  }
-}
-
-export class AccessDeniedError extends Error {
-  constructor(message: string) {
-    super(message)
-    Error.captureStackTrace(this, this.constructor)
-  }
-}
-
 export interface ErrorResponse {
   error: string
   message: string

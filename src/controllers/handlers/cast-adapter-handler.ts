@@ -1,8 +1,9 @@
-import { HandlerContextWithPath, InvalidRequestError, NotFoundError } from '../../types'
+import { HandlerContextWithPath } from '../../types'
 import { IHttpServerComponent } from '@well-known-components/interfaces'
 import { DecentralandSignatureContext, verify } from '@dcl/platform-crypto-middleware'
 import { AccessToken } from 'livekit-server-sdk'
 import { assertNotBlockedOrWithinInGracePeriod } from '../../logic/blocked'
+import { InvalidRequestError, NotFoundError } from '@dcl/platform-server-commons'
 
 export async function castAdapterHandler(
   context: HandlerContextWithPath<
