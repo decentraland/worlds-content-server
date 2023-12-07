@@ -1,4 +1,4 @@
-import { HandlerContextWithPath, NotFoundError } from '../../types'
+import { HandlerContextWithPath } from '../../types'
 import {
   AboutResponse,
   AboutResponse_MinimapConfiguration,
@@ -6,6 +6,7 @@ import {
 } from '@dcl/protocol/out-js/decentraland/bff/http_endpoints.gen'
 import { l1Contracts, L1Network } from '@dcl/catalyst-contracts'
 import { assertNotBlockedOrWithinInGracePeriod } from '../../logic/blocked'
+import { NotFoundError } from '@dcl/platform-server-commons'
 
 export async function worldAboutHandler({
   params,

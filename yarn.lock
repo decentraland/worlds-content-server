@@ -552,6 +552,15 @@
     "@well-known-components/fetch-component" "^2.0.2"
     "@well-known-components/interfaces" "^1.4.2"
 
+"@dcl/platform-server-commons@^0.0.3":
+  version "0.0.3"
+  resolved "https://registry.yarnpkg.com/@dcl/platform-server-commons/-/platform-server-commons-0.0.3.tgz#5fd282435da44306e2e6a0640e2a4db66f44a298"
+  integrity sha512-+zJQSxEAVx2w+GKwEu9Em3/mu1uztSPiZT4cbO3N/eTnFmOYo0OE3NhjePeV5rs6Pej6LeGckdoOszFEYHEeMg==
+  dependencies:
+    "@well-known-components/http-server" "^2.0.0"
+    "@well-known-components/interfaces" "^1.4.2"
+    node-fetch "^2.7.0"
+
 "@dcl/protocol@^1.0.0-6200210039.commit-75f18e8":
   version "1.0.0-6200210039.commit-75f18e8"
   resolved "https://registry.yarnpkg.com/@dcl/protocol/-/protocol-1.0.0-6200210039.commit-75f18e8.tgz#5d6579e9ae74a5f92e981ff1741e58918545e4af"
@@ -3700,7 +3709,7 @@ node-fetch@^2.6.11, node-fetch@^2.6.9:
   dependencies:
     whatwg-url "^5.0.0"
 
-node-fetch@^2.6.7:
+node-fetch@^2.6.7, node-fetch@^2.7.0:
   version "2.7.0"
   resolved "https://registry.yarnpkg.com/node-fetch/-/node-fetch-2.7.0.tgz#d0f0fa6e3e2dc1d27efcd8ad99d550bda94d187d"
   integrity sha512-c4FRfUm/dbcWZ7U+1Wq0AwCyFL+3nt2bEw05wfxSz+DWpWsitgmSgYmy2dQdWyKC1694ELPqMs/YzUSNozLt8A==

@@ -315,9 +315,9 @@ test('PermissionsHandler', function ({ components, stubComponents }) {
       const r = await makeRequest(localFetch, `/world/${worldName}/permissions/streaming`, randomIdentity, {
         type: PermissionType.Unrestricted
       })
-      expect(r.status).toEqual(403)
+      expect(r.status).toEqual(401)
       expect(await r.json()).toMatchObject({
-        error: 'Access denied',
+        error: 'Not Authorized',
         message: `Your wallet does not own "${worldName}", you can not set access control lists for it.`
       })
     })
