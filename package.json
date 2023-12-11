@@ -17,7 +17,7 @@
     "@dcl/hashing": "^3.0.4",
     "@dcl/platform-crypto-middleware": "^1.0.2",
     "@dcl/platform-server-commons": "^0.0.3",
-    "@dcl/protocol": "^1.0.0-6200210039.commit-75f18e8",
+    "@dcl/protocol": "^1.0.0-7117237552.commit-82dc93b",
     "@dcl/schemas": "^9.9.0",
     "@ensdomains/eth-ens-namehash": "^2.0.15",
     "@types/busboy": "^1.5.0",
