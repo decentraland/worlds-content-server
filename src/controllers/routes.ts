@@ -10,7 +10,6 @@ import { activeEntitiesHandler } from './handlers/active-entities'
 import { getAclHandler, postAclHandler } from './handlers/acl-handlers'
 import { getIndexHandler } from './handlers/index-handler'
 import { getLiveDataHandler } from './handlers/live-data-handler'
-import { errorHandler } from './handlers/error-handler'
 import { castAdapterHandler } from './handlers/cast-adapter-handler'
 import { wellKnownComponents } from '@dcl/platform-crypto-middleware'
 import {
@@ -21,6 +20,7 @@ import {
 } from './handlers/permissions-handlers'
 import { walletStatsHandler } from './handlers/wallet-stats-handler'
 import { undeployEntity } from './handlers/undeploy-entity-handler'
+import { errorHandler } from '@dcl/platform-server-commons'
 
 export async function setupRouter(globalContext: GlobalContext): Promise<Router<GlobalContext>> {
   const router = new Router<GlobalContext>()

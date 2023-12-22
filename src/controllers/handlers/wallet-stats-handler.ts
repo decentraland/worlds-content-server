@@ -1,5 +1,6 @@
-import { HandlerContextWithPath, InvalidRequestError } from '../../types'
+import { HandlerContextWithPath } from '../../types'
 import { EthAddress } from '@dcl/schemas'
+import { InvalidRequestError } from '@dcl/platform-server-commons'
 
 export async function walletStatsHandler({
   params,

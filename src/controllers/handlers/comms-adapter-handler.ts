@@ -1,7 +1,8 @@
-import { AccessDeniedError, HandlerContextWithPath, InvalidRequestError, NotFoundError } from '../../types'
+import { HandlerContextWithPath } from '../../types'
 import { IHttpServerComponent } from '@well-known-components/interfaces'
 import { verify, DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
 import { assertNotBlockedOrWithinInGracePeriod } from '../../logic/blocked'
+import { InvalidRequestError, NotAuthorizedError, NotFoundError } from '@dcl/platform-server-commons'
 
 type CommsMetadata = {
   secret?: string
@@ -67,7 +68,7 @@ export async function commsAdapterHandler(
     (await namePermissionChecker.checkPermission(identity, worldName)) ||
     (await permissionChecker.checkPermission('access', identity, authMetadata.secret))
   if (!hasPermission) {
-    throw new AccessDeniedError(`You are not allowed to access world "${worldName}".`)
+    throw new NotAuthorizedError(`You are not allowed to access world "${worldName}".`)
   }
 
   return {

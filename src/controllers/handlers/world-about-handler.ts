@@ -1,7 +1,8 @@
-import { HandlerContextWithPath, NotFoundError } from '../../types'
+import { HandlerContextWithPath } from '../../types'
 import { About, AboutConfigurationsMinimap, AboutConfigurationsSkybox } from '@dcl/catalyst-api-specs/lib/client'
 import { l1Contracts, L1Network } from '@dcl/catalyst-contracts'
 import { assertNotBlockedOrWithinInGracePeriod } from '../../logic/blocked'
+import { NotFoundError } from '@dcl/platform-server-commons'
 
 export async function worldAboutHandler({
   params,

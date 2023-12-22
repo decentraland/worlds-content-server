@@ -2,7 +2,7 @@ import { createConfigComponent } from '@well-known-components/env-config-provide
 import { createLogComponent } from '@well-known-components/logger'
 import { IConfigComponent, ILoggerComponent } from '@well-known-components/interfaces'
 import { createNameDenyListChecker } from '../../src/adapters/name-deny-list-checker'
-import { createFetchComponent } from '../../src/adapters/fetch'
+import { createFetchComponent } from '@dcl/platform-server-commons'
 
 describe('name deny list checker', function () {
   let logs: ILoggerComponent

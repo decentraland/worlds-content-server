@@ -1,15 +1,5 @@
-import { AppComponents, ILimitsManager, MB_BigInt } from '../types'
+import { AppComponents, ILimitsManager, MB_BigInt, Whitelist } from '../types'
 import LRU from 'lru-cache'
-
-type WhitelistEntry = {
-  max_parcels?: number
-  max_size_in_mb?: number
-  allow_sdk6?: boolean
-}
-
-type Whitelist = {
-  [worldName: string]: WhitelistEntry | undefined
-}
 
 const bigIntMax = (...args: bigint[]) => args.reduce((m, e) => (e > m ? e : m))
 

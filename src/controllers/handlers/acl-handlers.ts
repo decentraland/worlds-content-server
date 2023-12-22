@@ -1,7 +1,8 @@
 import { IHttpServerComponent } from '@well-known-components/interfaces'
-import { AccessControlList, HandlerContextWithPath, InvalidRequestError, PermissionType } from '../../types'
+import { AccessControlList, HandlerContextWithPath, PermissionType } from '../../types'
 import { AuthChain, EthAddress } from '@dcl/schemas'
 import { defaultPermissions } from '../../logic/permissions-checker'
+import { InvalidRequestError } from '@dcl/platform-server-commons'
 
 export async function getAclHandler(
   ctx: HandlerContextWithPath<'worldsManager', '/acl/:world_name'>

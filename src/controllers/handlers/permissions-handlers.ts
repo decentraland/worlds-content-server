@@ -1,8 +1,6 @@
 import { IHttpServerComponent } from '@well-known-components/interfaces'
 import {
-  AccessDeniedError,
   HandlerContextWithPath,
-  InvalidRequestError,
   IWorldNamePermissionChecker,
   Permission,
   Permissions,
@@ -10,6 +8,7 @@ import {
 } from '../../types'
 import { DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
 import bcrypt from 'bcrypt'
+import { InvalidRequestError, NotAuthorizedError } from '@dcl/platform-server-commons'
 
 const saltRounds = 10
 
@@ -26,7 +25,9 @@ function removeSecrets(permissions: Permissions): Permissions {
 async function checkOwnership(namePermissionChecker: IWorldNamePermissionChecker, signer: string, worldName: string) {
   const hasPermission = await namePermissionChecker.checkPermission(signer, worldName)
   if (!hasPermission) {
-    throw new AccessDeniedError(`Your wallet does not own "${worldName}", you can not set access control lists for it.`)
+    throw new NotAuthorizedError(
+      `Your wallet does not own "${worldName}", you can not set access control lists for it.`
+    )
   }
 }
 

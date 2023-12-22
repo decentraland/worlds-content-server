@@ -1,7 +1,7 @@
 import { createDotEnvConfigComponent } from '@well-known-components/env-config-provider'
 import { createServerComponent, createStatusCheckComponent } from '@well-known-components/http-server'
 import { createLogComponent } from '@well-known-components/logger'
-import { createFetchComponent } from './adapters/fetch'
+import { createFetchComponent } from '@dcl/platform-server-commons'
 import { createMetricsComponent, instrumentHttpServerWithMetrics } from '@well-known-components/metrics'
 import { createSubgraphComponent } from '@well-known-components/thegraph-component'
 import {
@@ -34,7 +34,7 @@ import { createPermissionsManagerComponent } from './adapters/permissions-manage
 import { createNameOwnership } from './adapters/name-ownership'
 import { createNameChecker } from './adapters/dcl-name-checker'
 import { createWalletStatsComponent } from './adapters/wallet-stats'
-import { createUpdateOwnerJob } from './logic/update-owner-job'
+import { createUpdateOwnerJob } from './adapters/update-owner-job'
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
@@ -128,7 +128,14 @@ export async function initComponents(): Promise<AppComponents> {
 
   const migrationExecutor = createMigrationExecutor({ logs, database: database, nameOwnership, storage, worldsManager })
 
-  const updateOwnerJob = createUpdateOwnerJob({ database, logs, nameOwnership, walletStats })
+  const updateOwnerJob = await createUpdateOwnerJob({
+    config,
+    database,
+    fetch,
+    logs,
+    nameOwnership,
+    walletStats
+  })
 
   return {
     commsAdapter,
