@@ -24,10 +24,11 @@ import { createWorldCreator } from './mocks/world-creator'
 import { createWorldsManagerComponent } from '../src/adapters/worlds-manager'
 import { createPermissionsManagerComponent } from '../src/adapters/permissions-manager'
 import { createMockNameOwnership } from './mocks/name-ownership-mock'
+import { createMockUpdateOwnerJob } from './mocks/update-owner-job-mock'
 
 /**
  * Behaves like Jest "describe" function, used to describe a test for a
- * use case, it creates a whole new program and components to run an
+ * use case; it creates a whole new program and components to run an
  * isolated test.
  *
  * State is persistent within the steps of the test.
@@ -95,6 +96,8 @@ async function initComponents(): Promise<TestComponents> {
   })
   const status = createMockStatusComponent()
 
+  const updateOwnerJob = await createMockUpdateOwnerJob({})
+
   const worldCreator = createWorldCreator({ storage, worldsManager })
 
   return {
@@ -110,6 +113,7 @@ async function initComponents(): Promise<TestComponents> {
     permissionsManager,
     status,
     storage,
+    updateOwnerJob,
     validator,
     worldCreator,
     worldsIndexer,
