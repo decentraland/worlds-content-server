@@ -1,13 +1,16 @@
-import { AppComponents, IRunnable, WorldRecord } from '../types'
+import { AppComponents, IRunnable, Whitelist, WorldRecord } from '../types'
 import SQL from 'sql-template-strings'
 import { CronJob } from 'cron'
 
 type WorldData = Pick<WorldRecord, 'name' | 'owner' | 'size' | 'entity'>
 
-export function createUpdateOwnerJob(
-  components: Pick<AppComponents, 'database' | 'logs' | 'nameOwnership' | 'walletStats'>
-): IRunnable<void> {
-  const logger = components.logs.getLogger('update-owner-job')
+export async function createUpdateOwnerJob(
+  components: Pick<AppComponents, 'config' | 'database' | 'fetch' | 'logs' | 'nameOwnership' | 'walletStats'>
+): Promise<IRunnable<void>> {
+  const { config, fetch, logs } = components
+  const logger = logs.getLogger('update-owner-job')
+
+  const whitelistUrl = await config.requireString('WHITELIST_URL')
 
   function dumpMap(mapName: string, worldWithOwners: ReadonlyMap<string, any>) {
     for (const [key, value] of worldWithOwners) {
@@ -17,18 +20,19 @@ export function createUpdateOwnerJob(
 
   async function upsertBlockingRecord(wallet: string) {
     const sql = SQL`
-              INSERT INTO blocked (wallet, created_at, updated_at)
-              VALUES (${wallet.toLowerCase()}, ${new Date()}, ${new Date()})
-              ON CONFLICT (wallet) 
-                  DO UPDATE SET updated_at = ${new Date()}
+        INSERT INTO blocked (wallet, created_at, updated_at)
+        VALUES (${wallet.toLowerCase()}, ${new Date()}, ${new Date()})
+        ON CONFLICT (wallet)
+            DO UPDATE SET updated_at = ${new Date()}
     `
     await components.database.query(sql)
   }
 
   async function clearOldBlockingRecords(startDate: Date) {
     const sql = SQL`
-              DELETE FROM blocked
-              WHERE updated_at < ${startDate}
+        DELETE
+        FROM blocked
+        WHERE updated_at < ${startDate}
     `
     await components.database.query(sql)
   }
@@ -64,7 +68,10 @@ export function createUpdateOwnerJob(
       const newOwner = worldWithOwners.get(worldData.name)!
       if (worldData.owner.toLowerCase() !== newOwner?.toLowerCase()) {
         logger.info(`Updating owner of ${worldData.name} from ${worldData.owner} to ${newOwner}`)
-        const sql = SQL`UPDATE worlds SET owner = ${newOwner?.toLowerCase()} WHERE name = ${worldData.name.toLowerCase()}`
+        const sql = SQL`
+            UPDATE worlds
+            SET owner = ${newOwner?.toLowerCase()}
+            WHERE name = ${worldData.name.toLowerCase()}`
         await components.database.query(sql)
         worldData.owner = newOwner
       }
@@ -90,11 +97,29 @@ export function createUpdateOwnerJob(
       if (worlds.length === 0) {
         continue
       }
+
+      const whiteList = await fetch
+        .fetch(whitelistUrl)
+        .then(async (data) => (await data.json()) as unknown as Whitelist)
+
       const walletStats = await components.walletStats.get(owner)
-      const maxAllowedSpace = walletStats.maxAllowedSpace
-      if (maxAllowedSpace < walletStats.usedSpace) {
+
+      // The size of whitelisted worlds does not count towards the wallet's used space
+      let sizeOfWhitelistedWorlds = 0n
+      for (const world of worlds) {
+        if (world in whiteList) {
+          sizeOfWhitelistedWorlds += BigInt(walletStats.dclNames.find((w) => w.name === world)?.size || 0)
+        }
+      }
+
+      if (walletStats.maxAllowedSpace < walletStats.usedSpace - sizeOfWhitelistedWorlds) {
         logger.info(
-          `Creating or updating blocking record for ${owner} as maxAllowed is ${maxAllowedSpace} and used is ${walletStats.usedSpace}.`
+          `Creating or updating blocking record for ${owner} as maxAllowed is ${
+            walletStats.maxAllowedSpace
+          } and used is ${walletStats.usedSpace - sizeOfWhitelistedWorlds}. Affected worlds: ${walletStats.dclNames
+            .concat(walletStats.ensNames)
+            .map((w) => w.name)
+            .join(', ')}.`
         )
         await upsertBlockingRecord(owner)
       }
