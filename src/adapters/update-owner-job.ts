@@ -112,20 +112,14 @@ export async function createUpdateOwnerJob(
         }
       }
 
-      console.log(
-        'sizeOfWhitelistedWorlds',
-        sizeOfWhitelistedWorlds,
-        'walletStats',
-        walletStats,
-        'net used space',
-        walletStats.usedSpace - sizeOfWhitelistedWorlds
-      )
-
       if (walletStats.maxAllowedSpace < walletStats.usedSpace - sizeOfWhitelistedWorlds) {
         logger.info(
           `Creating or updating blocking record for ${owner} as maxAllowed is ${
             walletStats.maxAllowedSpace
-          } and used is ${walletStats.usedSpace - sizeOfWhitelistedWorlds}.`
+          } and used is ${walletStats.usedSpace - sizeOfWhitelistedWorlds}. Affected worlds: ${walletStats.dclNames
+            .concat(walletStats.ensNames)
+            .map((w) => w.name)
+            .join(', ')}.`
         )
         await upsertBlockingRecord(owner)
       }
