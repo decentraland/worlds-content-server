@@ -25,14 +25,14 @@ test('wallet stats handler /wallet/:wallet/stats', function ({ components, stubC
     })
 
     await worldCreator.createWorldWithScene({
-      worldName: 'ens-name.eth',
+      worldName: 'ensname.eth',
       owner: identity.authChain
     })
 
     stubComponents.walletStats.get.resolves({
       wallet: identity.realAccount.address,
       dclNames: [{ name: worldName, size: 18n * MB_BigInt }],
-      ensNames: [{ name: 'ens-name.eth', size: 3n * MB_BigInt }],
+      ensNames: [{ name: 'ensname.eth', size: 3n * MB_BigInt }],
       usedSpace: 18n * MB_BigInt,
       maxAllowedSpace: 100n * MB_BigInt
     })
@@ -43,7 +43,7 @@ test('wallet stats handler /wallet/:wallet/stats', function ({ components, stubC
     expect(await r.json()).toEqual({
       wallet: identity.realAccount.address,
       dclNames: [{ name: worldName, size: (18n * MB_BigInt).toString() }],
-      ensNames: [{ name: 'ens-name.eth', size: (3n * MB_BigInt).toString() }],
+      ensNames: [{ name: 'ensname.eth', size: (3n * MB_BigInt).toString() }],
       usedSpace: (18n * MB_BigInt).toString(),
       maxAllowedSpace: (100n * MB_BigInt).toString()
     })

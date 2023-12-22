@@ -295,6 +295,16 @@ export interface ErrorResponse {
   message: string
 }
 
+type WhitelistEntry = {
+  max_parcels?: number
+  max_size_in_mb?: number
+  allow_sdk6?: boolean
+}
+
+export type Whitelist = {
+  [worldName: string]: WhitelistEntry | undefined
+}
+
 export type WalletStats = {
   wallet: EthAddress
   dclNames: { name: string; size: bigint }[]

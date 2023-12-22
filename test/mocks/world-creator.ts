@@ -17,7 +17,7 @@ export function createWorldCreator({
     permissions?: Permissions
     owner?: AuthIdentity
   }): Promise<{ worldName: string; entityId: IPFSv2; entity: Entity; owner: AuthIdentity }> {
-    const worldName: string = data?.worldName || `w-${makeid(10)}.dcl.eth`
+    const worldName: string = data?.worldName || `${randomWorldName()}`
     const metadata = data?.metadata || {
       main: 'abc.txt',
       scene: {
@@ -58,7 +58,7 @@ export function createWorldCreator({
   }
 
   function randomWorldName(): string {
-    return `w-${makeid(10)}.dcl.eth`
+    return `w${makeid(10)}.dcl.eth`
   }
 
   return {
