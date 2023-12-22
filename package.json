@@ -41,7 +41,7 @@
     "@dcl/eslint-config": "^1.1.13",
     "@types/bcrypt": "^5.0.0",
     "@types/node": "^18.16.19",
-    "@well-known-components/test-helpers": "^1.5.4",
+    "@well-known-components/test-helpers": "^1.5.5",
     "dcl-catalyst-client": "^21.5.5",
     "typescript": "^4.9.5"
   },
