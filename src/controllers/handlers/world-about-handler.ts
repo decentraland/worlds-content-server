@@ -1,9 +1,5 @@
 import { HandlerContextWithPath } from '../../types'
-import {
-  AboutResponse,
-  AboutResponse_MinimapConfiguration,
-  AboutResponse_SkyboxConfiguration
-} from '@dcl/protocol/out-js/decentraland/bff/http_endpoints.gen'
+import { About, AboutConfigurationsMinimap, AboutConfigurationsSkybox } from '@dcl/catalyst-api-specs/lib/client'
 import { l1Contracts, L1Network } from '@dcl/catalyst-contracts'
 import { assertNotBlockedOrWithinInGracePeriod } from '../../logic/blocked'
 import { NotFoundError } from '@dcl/platform-server-commons'
@@ -40,7 +36,7 @@ export async function worldAboutHandler({
   }
 
   const roomPrefix = await config.requireString('COMMS_ROOM_PREFIX')
-  const fixedAdapter = await resolveFixedAdapter(params.world_name, runtimeMetadata.fixedAdapter, baseUrl, roomPrefix)
+  const adapter = await resolveFixedAdapter(params.world_name, runtimeMetadata.fixedAdapter, baseUrl, roomPrefix)
 
   const globalScenesURN = await config.getString('GLOBAL_SCENES_URN')
 
@@ -54,7 +50,7 @@ export async function worldAboutHandler({
     return defaultImage
   }
 
-  const minimap: AboutResponse_MinimapConfiguration = {
+  const minimap: AboutConfigurationsMinimap = {
     enabled: runtimeMetadata.minimapVisible
   }
   if (minimap.enabled || runtimeMetadata.minimapDataImage) {
@@ -67,13 +63,13 @@ export async function worldAboutHandler({
     )
   }
 
-  const skybox: AboutResponse_SkyboxConfiguration = {
+  const skybox: AboutConfigurationsSkybox = {
     fixedHour: runtimeMetadata.skyboxFixedTime,
     textures: runtimeMetadata.skyboxTextures?.map((texture: string) => urlForFile(texture)) || []
   }
 
   const healthy = contentStatus.healthy && lambdasStatus.healthy
-  const body: AboutResponse = {
+  const body: About = {
     healthy,
     acceptingUsers: healthy,
     configurations: {
@@ -85,6 +81,7 @@ export async function worldAboutHandler({
       realmName: runtimeMetadata.name
     },
     content: {
+      synchronizationStatus: 'Syncing',
       healthy: contentStatus.healthy,
       publicUrl: contentStatus.publicUrl
     },
@@ -95,7 +92,7 @@ export async function worldAboutHandler({
     comms: {
       healthy: true,
       protocol: 'v3',
-      fixedAdapter: fixedAdapter
+      adapter
     }
   }
 
@@ -112,8 +109,8 @@ async function resolveFixedAdapter(
   roomPrefix: string
 ) {
   if (fixedAdapter === 'offline:offline') {
-    return 'offline:offline'
+    return 'fixed-adapter:offline:offline'
   }
 
-  return `signed-login:${baseUrl}/get-comms-adapter/${roomPrefix}${worldName.toLowerCase()}`
+  return `fixed-adapter:signed-login:${baseUrl}/get-comms-adapter/${roomPrefix}${worldName.toLowerCase()}`
 }

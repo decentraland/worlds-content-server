@@ -83,12 +83,16 @@ test('world about handler /world/:world_name/about', function ({ components, stu
         },
         realmName: worldName
       },
-      content: { healthy: true, publicUrl: 'https://peer.com/content' },
+      content: {
+        healthy: true,
+        publicUrl: 'https://peer.com/content',
+        synchronizationStatus: 'Syncing'
+      },
       lambdas: { healthy: true, publicUrl: 'https://peer.com/lambdas' },
       comms: {
         healthy: true,
         protocol: 'v3',
-        fixedAdapter: `signed-login:http://0.0.0.0:3000/get-comms-adapter/world-${worldName}`
+        adapter: `fixed-adapter:signed-login:http://0.0.0.0:3000/get-comms-adapter/world-${worldName}`
       }
     })
   })
@@ -230,7 +234,7 @@ test('world about handler /world/:world_name/about', function ({ components, stu
       comms: {
         healthy: true,
         protocol: 'v3',
-        fixedAdapter: 'offline:offline'
+        adapter: 'fixed-adapter:offline:offline'
       }
     })
   })
