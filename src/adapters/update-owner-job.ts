@@ -1,4 +1,4 @@
-import { AppComponents, IRunnable, MB_BigInt, Whitelist, WorldRecord } from '../types'
+import { AppComponents, IRunnable, Whitelist, WorldRecord } from '../types'
 import SQL from 'sql-template-strings'
 import { CronJob } from 'cron'
 
@@ -11,7 +11,6 @@ export async function createUpdateOwnerJob(
   const logger = logs.getLogger('update-owner-job')
 
   const whitelistUrl = await config.requireString('WHITELIST_URL')
-  const hardMaxSize = await config.requireNumber('MAX_SIZE')
 
   function dumpMap(mapName: string, worldWithOwners: ReadonlyMap<string, any>) {
     for (const [key, value] of worldWithOwners) {
@@ -104,32 +103,29 @@ export async function createUpdateOwnerJob(
         .then(async (data) => (await data.json()) as unknown as Whitelist)
 
       const walletStats = await components.walletStats.get(owner)
-      console.log(`Wallet stats for ${owner}:`, walletStats)
 
+      // The size of whitelisted worlds does not count towards the wallet's used space
       let sizeOfWhitelistedWorlds = 0n
       for (const world of worlds) {
         if (world in whiteList) {
-          const found = walletStats.dclNames.find((w) => w.name === world)
-          if (found) {
-            const allowance = BigInt(whiteList[world]!.max_size_in_mb || hardMaxSize) * MB_BigInt
-            if (found.size > allowance) {
-              logger.info(
-                `Creating or updating blocking record for ${owner} as world ${world} is whitelisted for ${allowance} bytes but used ${walletStats.usedSpace}.`
-              )
-              await upsertBlockingRecord(owner)
-            }
-            sizeOfWhitelistedWorlds += BigInt(found.size)
-          }
+          sizeOfWhitelistedWorlds += BigInt(walletStats.dclNames.find((w) => w.name === world)?.size || 0)
         }
       }
-      console.log(`Size of whitelisted worlds for ${owner}:`, sizeOfWhitelistedWorlds)
 
-      const maxAllowedSpace = walletStats.maxAllowedSpace
-      if (maxAllowedSpace < walletStats.usedSpace - sizeOfWhitelistedWorlds) {
+      console.log(
+        'sizeOfWhitelistedWorlds',
+        sizeOfWhitelistedWorlds,
+        'walletStats',
+        walletStats,
+        'net used space',
+        walletStats.usedSpace - sizeOfWhitelistedWorlds
+      )
+
+      if (walletStats.maxAllowedSpace < walletStats.usedSpace - sizeOfWhitelistedWorlds) {
         logger.info(
-          `Creating or updating blocking record for ${owner} as maxAllowed is ${maxAllowedSpace} and used is ${
-            walletStats.usedSpace - sizeOfWhitelistedWorlds
-          }.`
+          `Creating or updating blocking record for ${owner} as maxAllowed is ${
+            walletStats.maxAllowedSpace
+          } and used is ${walletStats.usedSpace - sizeOfWhitelistedWorlds}.`
         )
         await upsertBlockingRecord(owner)
       }
