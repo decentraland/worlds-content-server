@@ -13,6 +13,16 @@ export async function createWorldsManagerComponent({
 }: Pick<AppComponents, 'logs' | 'database' | 'nameDenyListChecker' | 'storage'>): Promise<IWorldsManager> {
   const logger = logs.getLogger('worlds-manager')
 
+  async function getRawWorldRecords(): Promise<WorldRecord[]> {
+    const result = await database.query<WorldRecord>(
+      SQL`SELECT worlds.*, blocked.created_at AS blocked_since
+              FROM worlds
+              LEFT JOIN blocked ON worlds.owner = blocked.wallet`
+    )
+
+    return result.rows.filter(async (row) => await nameDenyListChecker.checkNameDenyList(row.name))
+  }
+
   async function getMetadataForWorld(worldName: string): Promise<WorldMetadata | undefined> {
     if (!(await nameDenyListChecker.checkNameDenyList(worldName))) {
       logger.warn(`Attempt to access world ${worldName} which is banned.`)
@@ -158,6 +168,7 @@ export async function createWorldsManagerComponent({
   }
 
   return {
+    getRawWorldRecords,
     getDeployedWorldCount,
     getDeployedWorldEntities,
     getMetadataForWorld,

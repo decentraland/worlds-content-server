@@ -559,19 +559,27 @@
     "@well-known-components/fetch-component" "^2.0.2"
     "@well-known-components/interfaces" "^1.4.2"
 
-"@dcl/platform-server-commons@^0.0.3":
-  version "0.0.3"
-  resolved "https://registry.yarnpkg.com/@dcl/platform-server-commons/-/platform-server-commons-0.0.3.tgz#5fd282435da44306e2e6a0640e2a4db66f44a298"
-  integrity sha512-+zJQSxEAVx2w+GKwEu9Em3/mu1uztSPiZT4cbO3N/eTnFmOYo0OE3NhjePeV5rs6Pej6LeGckdoOszFEYHEeMg==
+"@dcl/platform-server-commons@https://sdk-team-cdn.decentraland.org/@dcl/platform-server-commons/branch/auth-middleware/dcl-platform-server-commons-0.0.4-7585976041.commit-d91f51c.tgz":
+  version "0.0.4-7585976041.commit-d91f51c"
+  resolved "https://sdk-team-cdn.decentraland.org/@dcl/platform-server-commons/branch/auth-middleware/dcl-platform-server-commons-0.0.4-7585976041.commit-d91f51c.tgz#e057d9c30d511e7e8ff8d5d589ac6dfc4c26fb89"
   dependencies:
     "@well-known-components/http-server" "^2.0.0"
     "@well-known-components/interfaces" "^1.4.2"
     node-fetch "^2.7.0"
 
-"@dcl/schemas@^9.0.0", "@dcl/schemas@^9.11.1", "@dcl/schemas@^9.2.0":
-  version "9.11.1"
-  resolved "https://registry.yarnpkg.com/@dcl/schemas/-/schemas-9.11.1.tgz#847bff70aa56f183f00856b40ce343c1ff80f54e"
-  integrity sha512-U+opZZSAlmtMCsdYAI14PVbkG/Wqt0WmFbdLgzZjN7w+pLHvXCk2raMTX6N1ePV3aOWx9bw7pZ5ARNXBi/Kfkw==
+"@dcl/schemas@^9.0.0", "@dcl/schemas@^9.2.0":
+  version "9.10.0"
+  resolved "https://registry.yarnpkg.com/@dcl/schemas/-/schemas-9.10.0.tgz#3821787b326a6ecd89005fbeadc70ed1c389a87b"
+  integrity sha512-rpKa+2dAlz56+g/QSKbVaIDQFm1gF9YkZ4UWGwHkAYpcHW6ss1Fk2fBiAW3ONDIvUh6V8Arl6Iitcn3GzOmFzg==
+  dependencies:
+    ajv "^8.11.0"
+    ajv-errors "^3.0.0"
+    ajv-keywords "^5.1.0"
+
+"@dcl/schemas@^9.11.1":
+  version "9.12.0"
+  resolved "https://registry.yarnpkg.com/@dcl/schemas/-/schemas-9.12.0.tgz#8652105b939dd36d7c55c0a0a4c1521ce7d5dec0"
+  integrity sha512-CQjajLNZZCHdL8+c0wujbQ1DEmg4WBfwtQTAHgWEQenujQv4FLaEwFeZ5HOlBU6g7K0OU0qfotl8ArbtiTpfgw==
   dependencies:
     ajv "^8.11.0"
     ajv-errors "^3.0.0"
