@@ -18,7 +18,7 @@
     "@dcl/crypto": "^3.4.5",
     "@dcl/hashing": "^3.0.4",
     "@dcl/platform-crypto-middleware": "^1.0.2",
-    "@dcl/platform-server-commons": "https://sdk-team-cdn.decentraland.org/@dcl/platform-server-commons/branch/auth-middleware/dcl-platform-server-commons-0.0.4-7585976041.commit-d91f51c.tgz",
+    "@dcl/platform-server-commons": "^0.0.4",
     "@dcl/schemas": "^9.11.1",
     "@ensdomains/eth-ens-namehash": "^2.0.15",
     "@types/busboy": "^1.5.0",
