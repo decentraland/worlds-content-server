@@ -14,22 +14,7 @@ export async function reprocessABHandler(
     throw new Error('SNS ARN is not defined.')
   }
 
-  const awsConfig: any = {
-    region: await config.requireString('AWS_REGION'),
-    endpoint: await config.getString('AWS_ENDPOINT'),
-    s3ForcePathStyle: true
-  }
-
-  const accessKeyId = await config.getString('AWS_ACCESS_KEY_ID')
-  const secretAccessKey = await config.getString('AWS_SECRET_ACCESS_KEY')
-  if (accessKeyId && secretAccessKey) {
-    awsConfig.credentials = {
-      accessKeyId: (await config.getString('AWS_ACCESS_KEY_ID')) || '',
-      secretAccessKey: (await config.getString('AWS_SECRET_ACCESS_KEY')) || ''
-    }
-  }
-
-  const snsClient = new SNS(awsConfig)
+  const snsClient = new SNS()
 
   const allWorlds = await worldsManager.getRawWorldRecords()
   const mapped = allWorlds.map((world) => ({
