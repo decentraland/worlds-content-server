@@ -3,11 +3,15 @@ import { AuthLink, Entity, EntityType } from '@dcl/schemas'
 import { bufferToStream } from '@dcl/catalyst-storage/dist/content-item'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
+import { snsPublish } from '../logic/sns'
 
 type PostDeploymentHook = (baseUrl: string, entity: Entity, authChain: AuthLink[]) => Promise<DeploymentResult>
 
 export function createEntityDeployer(
-  components: Pick<AppComponents, 'config' | 'logs' | 'nameOwnership' | 'metrics' | 'storage' | 'sns' | 'worldsManager'>
+  components: Pick<
+    AppComponents,
+    'config' | 'logs' | 'nameOwnership' | 'metrics' | 'storage' | 'snsClient' | 'worldsManager'
+  >
 ): IEntityDeployer {
   const { logs, storage, worldsManager } = components
   const logger = logs.getLogger('entity-deployer')
@@ -55,7 +59,7 @@ export function createEntityDeployer(
   }
 
   async function postSceneDeployment(baseUrl: string, entity: Entity, authChain: AuthLink[]) {
-    const { config, metrics, sns } = components
+    const { config, metrics, snsClient } = components
 
     // determine the name to use for deploying the world
     const worldName = entity.metadata.worldConfiguration.name
@@ -78,15 +82,10 @@ export function createEntityDeployer(
         },
         contentServerUrls: [baseUrl]
       }
-      const receipt = await sns
-        .publish({
-          TopicArn: snsArn,
-          Message: JSON.stringify(deploymentToSqs)
-        })
-        .promise()
+      const result = await snsPublish(snsClient, snsArn, deploymentToSqs)
       logger.info('notification sent', {
-        MessageId: receipt.MessageId as any,
-        SequenceNumber: receipt.SequenceNumber as any
+        MessageId: `${result.MessageId}`,
+        SequenceNumber: `${result.SequenceNumber}`
       })
     }
 

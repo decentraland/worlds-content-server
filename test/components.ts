@@ -4,7 +4,7 @@
 import { createLocalFetchCompoment, createRunner } from '@well-known-components/test-helpers'
 
 import { main } from '../src/service'
-import { SnsComponent, TestComponents } from '../src/types'
+import { TestComponents } from '../src/types'
 import { initComponents as originalInitComponents } from '../src/components'
 import { createMockNameSubGraph } from './mocks/name-subgraph-mock'
 import { createMockNamePermissionChecker } from './mocks/dcl-name-checker-mock'
@@ -27,6 +27,7 @@ import { createMockNameOwnership } from './mocks/name-ownership-mock'
 import { createMockUpdateOwnerJob } from './mocks/update-owner-job-mock'
 import { createSnsClientMock } from './mocks/sns-clientmock'
 import { createDotEnvConfigComponent } from '@well-known-components/env-config-provider'
+import { SnsClient } from '../src/adapters/sns-client'
 
 /**
  * Behaves like Jest "describe" function, used to describe a test for a
@@ -90,9 +91,17 @@ async function initComponents(): Promise<TestComponents> {
 
   const permissionsManager = await createPermissionsManagerComponent({ worldsManager })
 
-  const sns: SnsComponent = createSnsClientMock()
+  const snsClient: SnsClient = createSnsClientMock()
 
-  const entityDeployer = createEntityDeployer({ config, logs, nameOwnership, metrics, storage, sns, worldsManager })
+  const entityDeployer = createEntityDeployer({
+    config,
+    logs,
+    nameOwnership,
+    metrics,
+    storage,
+    snsClient,
+    worldsManager
+  })
 
   const validator = createValidator({
     config,
@@ -119,6 +128,7 @@ async function initComponents(): Promise<TestComponents> {
     metrics,
     namePermissionChecker,
     permissionsManager,
+    snsClient,
     status,
     storage,
     updateOwnerJob,

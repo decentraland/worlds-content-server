@@ -15,7 +15,7 @@ import { AuthChain, AuthLink, Entity, EthAddress, IPFSv2 } from '@dcl/schemas'
 import { MigrationExecutor } from './adapters/migration-executor'
 import { IPgComponent } from '@well-known-components/pg-component'
 import { AuthIdentity } from '@dcl/crypto'
-import { SNS } from 'aws-sdk'
+import { SnsClient } from './adapters/sns-client'
 
 export type GlobalContext = {
   components: BaseComponents
@@ -228,8 +228,16 @@ export type IEntityDeployer = {
   ): Promise<DeploymentResult>
 }
 
+export type AwsConfig = {
+  region: string
+  credentials?: { accessKeyId: string; secretAccessKey: string }
+  endpoint?: string
+  forcePathStyle?: boolean
+}
+
 // components used in every environment
 export type BaseComponents = {
+  awsConfig: AwsConfig
   commsAdapter: ICommsAdapter
   config: IConfigComponent
   database: IPgComponent
@@ -246,7 +254,7 @@ export type BaseComponents = {
   namePermissionChecker: IWorldNamePermissionChecker
   permissionsManager: IPermissionsManager
   server: IHttpServerComponent<GlobalContext>
-  sns: SnsComponent
+  snsClient: SnsClient
   status: IStatusComponent
   storage: IContentStorageComponent
   updateOwnerJob: IRunnable<void>
@@ -255,8 +263,6 @@ export type BaseComponents = {
   worldsIndexer: IWorldsIndexer
   worldsManager: IWorldsManager
 }
-
-export type SnsComponent = Pick<SNS, 'publish' | 'publishBatch'>
 
 export type IWorldCreator = {
   createWorldWithScene(data?: {

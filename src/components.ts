@@ -4,14 +4,7 @@ import { createLogComponent } from '@well-known-components/logger'
 import { createFetchComponent } from '@dcl/platform-server-commons'
 import { createMetricsComponent, instrumentHttpServerWithMetrics } from '@well-known-components/metrics'
 import { createSubgraphComponent } from '@well-known-components/thegraph-component'
-import {
-  AppComponents,
-  GlobalContext,
-  ICommsAdapter,
-  INameDenyListChecker,
-  IWorldNamePermissionChecker,
-  SnsComponent
-} from './types'
+import { AppComponents, GlobalContext, ICommsAdapter, INameDenyListChecker, IWorldNamePermissionChecker } from './types'
 import { metricDeclarations } from './metrics'
 import { HTTPProvider } from 'eth-connect'
 import {
@@ -35,7 +28,8 @@ import { createNameOwnership } from './adapters/name-ownership'
 import { createNameChecker } from './adapters/dcl-name-checker'
 import { createWalletStatsComponent } from './adapters/wallet-stats'
 import { createUpdateOwnerJob } from './adapters/update-owner-job'
-import { SNS } from 'aws-sdk'
+import { createSNSClient } from './adapters/sns-client'
+import { createAwsConfig } from './adapters/aws-config'
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
@@ -78,8 +72,8 @@ export async function initComponents(): Promise<AppComponents> {
   const marketplaceSubGraph = await createSubgraphComponent({ config, logs, metrics, fetch }, subGraphUrl)
 
   const status = await createStatusComponent({ logs, fetch, config })
-
-  const sns: SnsComponent = new SNS()
+  const awsConfig = await createAwsConfig({ config })
+  const snsClient = await createSNSClient({ awsConfig })
 
   const nameDenyListChecker: INameDenyListChecker = await createNameDenyListChecker({
     config,
@@ -114,7 +108,15 @@ export async function initComponents(): Promise<AppComponents> {
   const worldsIndexer = await createWorldsIndexerComponent({ worldsManager })
   const permissionsManager = await createPermissionsManagerComponent({ worldsManager })
 
-  const entityDeployer = createEntityDeployer({ config, logs, nameOwnership, metrics, storage, sns, worldsManager })
+  const entityDeployer = createEntityDeployer({
+    config,
+    logs,
+    nameOwnership,
+    metrics,
+    storage,
+    snsClient,
+    worldsManager
+  })
   const validator = createValidator({
     config,
     nameDenyListChecker,
@@ -136,6 +138,7 @@ export async function initComponents(): Promise<AppComponents> {
   })
 
   return {
+    awsConfig,
     commsAdapter,
     config,
     database,
@@ -152,7 +155,7 @@ export async function initComponents(): Promise<AppComponents> {
     namePermissionChecker,
     permissionsManager,
     server,
-    sns,
+    snsClient,
     status,
     statusChecks,
     storage,
