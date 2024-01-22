@@ -3,7 +3,7 @@ import { IHttpServerComponent } from '@well-known-components/interfaces'
 import { SNS } from 'aws-sdk'
 
 export async function reprocessABHandler(
-  context: HandlerContextWithPath<'config' | 'logs' | 'sns' | 'worldsManager', '/index'>
+  context: HandlerContextWithPath<'config' | 'logs' | 'sns' | 'worldsManager', '/reprocess-ab'>
 ): Promise<IHttpServerComponent.IResponse> {
   const { config, logs, sns, worldsManager } = context.components
   const logger = logs.getLogger('reprocess-ab-handler')
@@ -34,11 +34,10 @@ export async function reprocessABHandler(
       }))
     })
     .promise()
-    .catch(console.error)
 
   logger.info('notification sent', {
-    successful: receipt?.Successful?.length || 0,
-    failed: receipt?.Failed?.length || 0
+    successful: receipt.Successful?.length || 0,
+    failed: receipt.Failed?.length || 0
   })
 
   return {

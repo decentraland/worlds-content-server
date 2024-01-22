@@ -1,4 +1,11 @@
-import { AppComponents, IPermissionChecker, IWorldsManager, Permissions, WorldMetadata } from '../../src/types'
+import {
+  AppComponents,
+  IPermissionChecker,
+  IWorldsManager,
+  Permissions,
+  WorldMetadata,
+  WorldRecord
+} from '../../src/types'
 import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage'
 import { Entity } from '@dcl/schemas'
 import { stringToUtf8Bytes } from 'eth-connect'
@@ -8,6 +15,30 @@ import { createPermissionChecker, defaultPermissions } from '../../src/logic/per
 export async function createWorldsManagerMockComponent({
   storage
 }: Pick<AppComponents, 'storage'>): Promise<IWorldsManager> {
+  async function getRawWorldRecords(): Promise<WorldRecord[]> {
+    const worlds: WorldRecord[] = []
+    for await (const key of storage.allFileIds('name-')) {
+      const entity = await getEntityForWorld(key.substring(5))
+      if (entity) {
+        console.log('entity', entity)
+        // worlds.push({
+        //   name: 'mariano.dcl.eth',
+        //   deployer: '0x69d30b1875d39e13a01af73ccfed6d84839e84f2',
+        //   entity_id: 'bafkreib5oouiweulul2gimeqf55ibn5o4qpgyha2knucqqwempkmq4hys4',
+        //   deployment_auth_chain: [Array],
+        //   entity: [Object],
+        //   created_at: new Date('2024-01-18T20:28:50.889Z'),
+        //   updated_at: '2024-01-18T20:50:31.890Z',
+        //   permissions: [Object],
+        //   size: '18148727',
+        //   owner: '0x69d30b1875d39e13a01af73ccfed6d84839e84f2',
+        //   blocked_since: null
+        // })
+      }
+    }
+    return worlds
+  }
+
   async function getEntityForWorld(worldName: string): Promise<Entity | undefined> {
     const metadata = await getMetadataForWorld(worldName)
     if (!metadata || !metadata.entityId) {
@@ -90,6 +121,7 @@ export async function createWorldsManagerMockComponent({
   }
 
   return {
+    getRawWorldRecords,
     getDeployedWorldCount,
     getDeployedWorldEntities,
     getMetadataForWorld,
