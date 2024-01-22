@@ -28,7 +28,7 @@ import { createNameOwnership } from './adapters/name-ownership'
 import { createNameChecker } from './adapters/dcl-name-checker'
 import { createWalletStatsComponent } from './adapters/wallet-stats'
 import { createUpdateOwnerJob } from './adapters/update-owner-job'
-import { createSNSClient } from './adapters/sns-client'
+import { createSnsClient } from './adapters/sns-client'
 import { createAwsConfig } from './adapters/aws-config'
 
 // Initialize all the components of the app
@@ -73,7 +73,7 @@ export async function initComponents(): Promise<AppComponents> {
 
   const status = await createStatusComponent({ logs, fetch, config })
   const awsConfig = await createAwsConfig({ config })
-  const snsClient = await createSNSClient({ awsConfig })
+  const snsClient = await createSnsClient({ awsConfig })
 
   const nameDenyListChecker: INameDenyListChecker = await createNameDenyListChecker({
     config,

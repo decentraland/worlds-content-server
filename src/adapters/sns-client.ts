@@ -12,7 +12,7 @@ export type SnsClient = {
   publishBatch(payload: PublishBatchCommand): Promise<PublishBatchCommandOutput>
 }
 
-export async function createSNSClient({ awsConfig }: Pick<AppComponents, 'awsConfig'>): Promise<SnsClient> {
+export async function createSnsClient({ awsConfig }: Pick<AppComponents, 'awsConfig'>): Promise<SnsClient> {
   const sns = new AwsSnsClient(awsConfig)
 
   function publish(payload: PublishCommand): Promise<PublishCommandOutput> {
