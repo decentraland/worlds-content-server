@@ -1,20 +1,18 @@
 import { HandlerContextWithPath } from '../../types'
 import { IHttpServerComponent } from '@well-known-components/interfaces'
-import { SNS } from 'aws-sdk'
 
 export async function reprocessABHandler(
   context: HandlerContextWithPath<'config' | 'logs' | 'sns' | 'worldsManager', '/reprocess-ab'>
 ): Promise<IHttpServerComponent.IResponse> {
   const { config, logs, sns, worldsManager } = context.components
   const logger = logs.getLogger('reprocess-ab-handler')
+  const snsArn = await config.getString('SNS_ARN')
 
   const baseUrl = (await config.getString('HTTP_BASE_URL')) || `${context.url.protocol}//${context.url.host}`
 
-  if (!sns.arn) {
+  if (!snsArn) {
     throw new Error('SNS ARN is not defined.')
   }
-
-  const snsClient = new SNS()
 
   const allWorlds = await worldsManager.getRawWorldRecords()
   const mapped = allWorlds.map((world) => ({
@@ -25,9 +23,9 @@ export async function reprocessABHandler(
     contentServerUrls: [baseUrl]
   }))
 
-  const receipt = await snsClient
+  const receipt = await sns
     .publishBatch({
-      TopicArn: sns.arn,
+      TopicArn: snsArn,
       PublishBatchRequestEntries: mapped.map((world) => ({
         Id: world.entity.entityId,
         Message: JSON.stringify(world)

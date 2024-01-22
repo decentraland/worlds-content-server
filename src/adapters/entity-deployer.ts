@@ -3,7 +3,6 @@ import { AuthLink, Entity, EntityType } from '@dcl/schemas'
 import { bufferToStream } from '@dcl/catalyst-storage/dist/content-item'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
-import { SNS } from 'aws-sdk'
 
 type PostDeploymentHook = (baseUrl: string, entity: Entity, authChain: AuthLink[]) => Promise<DeploymentResult>
 
@@ -56,7 +55,7 @@ export function createEntityDeployer(
   }
 
   async function postSceneDeployment(baseUrl: string, entity: Entity, authChain: AuthLink[]) {
-    const { metrics, sns } = components
+    const { config, metrics, sns } = components
 
     // determine the name to use for deploying the world
     const worldName = entity.metadata.worldConfiguration.name
@@ -70,7 +69,8 @@ export function createEntityDeployer(
     metrics.increment('world_deployments_counter', { kind })
 
     // send deployment notification over sns
-    if (sns.arn) {
+    const snsArn = await config.getString('SNS_ARN')
+    if (snsArn) {
       const deploymentToSqs: DeploymentToSqs = {
         entity: {
           entityId: entity.id,
@@ -78,10 +78,9 @@ export function createEntityDeployer(
         },
         contentServerUrls: [baseUrl]
       }
-      const snsClient = new SNS()
-      const receipt = await snsClient
+      const receipt = await sns
         .publish({
-          TopicArn: sns.arn,
+          TopicArn: snsArn,
           Message: JSON.stringify(deploymentToSqs)
         })
         .promise()

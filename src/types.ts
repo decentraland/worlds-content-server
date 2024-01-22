@@ -15,6 +15,7 @@ import { AuthChain, AuthLink, Entity, EthAddress, IPFSv2 } from '@dcl/schemas'
 import { MigrationExecutor } from './adapters/migration-executor'
 import { IPgComponent } from '@well-known-components/pg-component'
 import { AuthIdentity } from '@dcl/crypto'
+import { SNS } from 'aws-sdk'
 
 export type GlobalContext = {
   components: BaseComponents
@@ -255,7 +256,7 @@ export type BaseComponents = {
   worldsManager: IWorldsManager
 }
 
-export type SnsComponent = { arn?: string }
+export type SnsComponent = Pick<SNS, 'publish' | 'publishBatch'>
 
 export type IWorldCreator = {
   createWorldWithScene(data?: {

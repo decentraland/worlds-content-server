@@ -25,6 +25,8 @@ import { createWorldsManagerComponent } from '../src/adapters/worlds-manager'
 import { createPermissionsManagerComponent } from '../src/adapters/permissions-manager'
 import { createMockNameOwnership } from './mocks/name-ownership-mock'
 import { createMockUpdateOwnerJob } from './mocks/update-owner-job-mock'
+import { createSnsClientMock } from './mocks/sns-clientmock'
+import { createDotEnvConfigComponent } from '@well-known-components/env-config-provider'
 
 /**
  * Behaves like Jest "describe" function, used to describe a test for a
@@ -41,7 +43,14 @@ export const test = createRunner<TestComponents>({
 async function initComponents(): Promise<TestComponents> {
   const components = await originalInitComponents()
 
-  const { config, logs, database } = components
+  const { logs, database } = components
+  const config = await createDotEnvConfigComponent(
+    { path: ['.env.default', '.env'] },
+    {
+      AUTH_SECRET: 'some-secret',
+      SNS_ARN: 'some-arn'
+    }
+  )
 
   const metrics = createTestMetricsComponent(metricDeclarations)
 
@@ -81,9 +90,8 @@ async function initComponents(): Promise<TestComponents> {
 
   const permissionsManager = await createPermissionsManagerComponent({ worldsManager })
 
-  const sns: SnsComponent = {
-    arn: undefined
-  }
+  const sns: SnsComponent = createSnsClientMock()
+
   const entityDeployer = createEntityDeployer({ config, logs, nameOwnership, metrics, storage, sns, worldsManager })
 
   const validator = createValidator({

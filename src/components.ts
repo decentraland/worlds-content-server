@@ -35,6 +35,7 @@ import { createNameOwnership } from './adapters/name-ownership'
 import { createNameChecker } from './adapters/dcl-name-checker'
 import { createWalletStatsComponent } from './adapters/wallet-stats'
 import { createUpdateOwnerJob } from './adapters/update-owner-job'
+import { SNS } from 'aws-sdk'
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
@@ -75,13 +76,10 @@ export async function initComponents(): Promise<AppComponents> {
 
   const subGraphUrl = await config.requireString('MARKETPLACE_SUBGRAPH_URL')
   const marketplaceSubGraph = await createSubgraphComponent({ config, logs, metrics, fetch }, subGraphUrl)
-  const snsArn = await config.getString('SNS_ARN')
 
   const status = await createStatusComponent({ logs, fetch, config })
 
-  const sns: SnsComponent = {
-    arn: snsArn
-  }
+  const sns: SnsComponent = new SNS()
 
   const nameDenyListChecker: INameDenyListChecker = await createNameDenyListChecker({
     config,
