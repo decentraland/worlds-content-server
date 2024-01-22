@@ -74,7 +74,8 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
 
   // administrative endpoints
   const secret = await globalContext.components.config.requireString('AUTH_SECRET')
-
-  router.post('/reprocess-ab', bearerTokenMiddleware(secret), reprocessABHandler)
+  if (secret) {
+    router.post('/reprocess-ab', bearerTokenMiddleware(secret), reprocessABHandler)
+  }
   return router
 }
