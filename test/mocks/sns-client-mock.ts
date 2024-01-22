@@ -10,10 +10,9 @@ export function createSnsClientMock(): SnsClient {
 
   const publishBatch = jest.fn()
   publishBatch.mockImplementation(() => ({
-    promise: jest.fn().mockResolvedValue({
-      Successful: ['mocked-message-id'],
-      Failed: []
-    })
+    Successful: [{ Id: 'mocked-id', MessageId: 'mocked-message-id', SequenceNumber: '1' }],
+    Failed: [],
+    $metadata: {}
   }))
 
   return {

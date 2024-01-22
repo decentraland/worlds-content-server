@@ -25,7 +25,7 @@ import { createWorldsManagerComponent } from '../src/adapters/worlds-manager'
 import { createPermissionsManagerComponent } from '../src/adapters/permissions-manager'
 import { createMockNameOwnership } from './mocks/name-ownership-mock'
 import { createMockUpdateOwnerJob } from './mocks/update-owner-job-mock'
-import { createSnsClientMock } from './mocks/sns-clientmock'
+import { createSnsClientMock } from './mocks/sns-client-mock'
 import { createDotEnvConfigComponent } from '@well-known-components/env-config-provider'
 import { SnsClient } from '../src/adapters/sns-client'
 
@@ -48,7 +48,6 @@ async function initComponents(): Promise<TestComponents> {
   const config = await createDotEnvConfigComponent(
     { path: ['.env.default', '.env'] },
     {
-      AUTH_SECRET: 'some-secret',
       SNS_ARN: 'some-arn'
     }
   )

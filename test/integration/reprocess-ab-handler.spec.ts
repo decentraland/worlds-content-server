@@ -1,5 +1,6 @@
 import { test } from '../components'
-import { stringToUtf8Bytes } from 'eth-connect'
+import { Authenticator } from '@dcl/crypto'
+import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
 
 test('reprocess asset-bundles handler /reprocess-ab', function ({ components, stubComponents }) {
   beforeEach(async () => {
@@ -7,27 +8,54 @@ test('reprocess asset-bundles handler /reprocess-ab', function ({ components, st
     config.getString.withArgs('SNS_ARN').resolves('some-arn')
   })
 
-  it('when world exists it responds', async () => {
+  it('can reprocess all worlds', async () => {
     const { localFetch, worldCreator } = components
+    const { snsClient } = stubComponents
 
-    const files = new Map<string, Uint8Array>()
-    files.set('abc.png', Buffer.from(stringToUtf8Bytes('Hello world')))
+    const { entityId, owner } = await worldCreator.createWorldWithScene({})
+    const authChain = Authenticator.signPayload(owner, entityId)
 
-    const { entityId, worldName, entity } = await worldCreator.createWorldWithScene({})
+    snsClient.publishBatch.resolves({
+      Successful: [{ Id: 'mocked-id', MessageId: 'mocked-message-id', SequenceNumber: '1' }],
+      Failed: [],
+      $metadata: {}
+    })
 
-    const r = await localFetch
-      .fetch(`/reprocess-ab`, {
-        method: 'POST',
-        headers: {
-          Authorization: 'Bearer setup_some_secret_here'
+    const r = await localFetch.fetch(`/reprocess-ab`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer setup_some_secret_here'
+      }
+    })
+
+    const baseUrl = `http://0.0.0.0:3000`
+    expect(r.status).toEqual(200)
+    expect(await r.json()).toMatchObject({
+      baseUrl: baseUrl,
+      batch: expect.arrayContaining<DeploymentToSqs>([
+        {
+          entity: {
+            entityId,
+            authChain
+          },
+          contentServerUrls: [baseUrl]
         }
-      })
-      .catch(console.error)
+      ]),
+      successful: 1,
+      failed: 0
+    })
+  })
 
-    // console.log(r.status, r.statusText)
-    // expect(r.status).toEqual(200)
-    // expect(await r.json()).toEqual({
-    //   name: worldName
-    // })
+  it('can not be called if no SNS_ARN configured', async () => {
+    const { localFetch } = components
+
+    const r = await localFetch.fetch(`/reprocess-ab`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer setup_some_secret_here'
+      }
+    })
+    expect(r.status).toEqual(500)
+    expect(await r.json()).toMatchObject({ error: 'Internal Server Error' })
   })
 })
