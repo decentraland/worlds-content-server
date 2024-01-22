@@ -559,10 +559,10 @@
     "@well-known-components/fetch-component" "^2.0.2"
     "@well-known-components/interfaces" "^1.4.2"
 
-"@dcl/platform-server-commons@^0.0.3":
-  version "0.0.3"
-  resolved "https://registry.yarnpkg.com/@dcl/platform-server-commons/-/platform-server-commons-0.0.3.tgz#5fd282435da44306e2e6a0640e2a4db66f44a298"
-  integrity sha512-+zJQSxEAVx2w+GKwEu9Em3/mu1uztSPiZT4cbO3N/eTnFmOYo0OE3NhjePeV5rs6Pej6LeGckdoOszFEYHEeMg==
+"@dcl/platform-server-commons@^0.0.4":
+  version "0.0.4"
+  resolved "https://registry.yarnpkg.com/@dcl/platform-server-commons/-/platform-server-commons-0.0.4.tgz#c4aa7d2d18ff116edb06a23da7a13007aa5d5dd0"
+  integrity sha512-yaWumacDI6kt6LdGxkygzk+GHE9FuP1s3QTMdpq4BRWMP1u0BuFA/yUk4OgcR3pvwW3v07ZSQ/BeYvUx9P1hqw==
   dependencies:
     "@well-known-components/http-server" "^2.0.0"
     "@well-known-components/interfaces" "^1.4.2"
@@ -3668,14 +3668,7 @@ node-addon-api@^5.0.0:
   resolved "https://registry.yarnpkg.com/node-addon-api/-/node-addon-api-5.1.0.tgz#49da1ca055e109a23d537e9de43c09cca21eb762"
   integrity sha512-eh0GgfEkpnoWDq+VY8OyvYhFEzBk6jIYbRKdIlyTiAXIVJ8PyBaKb0rp7oDtoddbdoHWhq8wwr+XZ81F1rpNdA==
 
-node-fetch@^2.6.11, node-fetch@^2.6.9:
-  version "2.6.12"
-  resolved "https://registry.yarnpkg.com/node-fetch/-/node-fetch-2.6.12.tgz#02eb8e22074018e3d5a83016649d04df0e348fba"
-  integrity sha512-C/fGU2E8ToujUivIO0H+tpQ6HWo4eEmchoPIoXtxCrVghxdKq+QOHqEZW7tuP3KlV3bC8FRMO5nMCC7Zm1VP6g==
-  dependencies:
-    whatwg-url "^5.0.0"
-
-node-fetch@^2.6.7, node-fetch@^2.7.0:
+node-fetch@^2.6.11, node-fetch@^2.6.7, node-fetch@^2.6.9, node-fetch@^2.7.0:
   version "2.7.0"
   resolved "https://registry.yarnpkg.com/node-fetch/-/node-fetch-2.7.0.tgz#d0f0fa6e3e2dc1d27efcd8ad99d550bda94d187d"
   integrity sha512-c4FRfUm/dbcWZ7U+1Wq0AwCyFL+3nt2bEw05wfxSz+DWpWsitgmSgYmy2dQdWyKC1694ELPqMs/YzUSNozLt8A==
