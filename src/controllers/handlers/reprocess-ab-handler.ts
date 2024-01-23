@@ -23,8 +23,9 @@ export async function reprocessABHandler(
     .catch((_) => undefined)
 
   const allWorlds = await worldsManager.getRawWorldRecords()
-  const filteredWorlds = allWorlds.filter((world) => !body || body.includes(world.name))
-
+  const filteredWorlds = allWorlds
+    .filter((world) => !body || body.includes(world.name))
+    .filter((world) => world.entity_id !== null)
   if (filteredWorlds.length === 0) {
     throw new InvalidRequestError('No worlds found for reprocessing')
   }
