@@ -4,7 +4,7 @@
 import { createLocalFetchCompoment, createRunner } from '@well-known-components/test-helpers'
 
 import { main } from '../src/service'
-import { TestComponents } from '../src/types'
+import { SnsClient, TestComponents } from '../src/types'
 import { initComponents as originalInitComponents } from '../src/components'
 import { createMockNameSubGraph } from './mocks/name-subgraph-mock'
 import { createMockNamePermissionChecker } from './mocks/dcl-name-checker-mock'
@@ -27,7 +27,6 @@ import { createMockNameOwnership } from './mocks/name-ownership-mock'
 import { createMockUpdateOwnerJob } from './mocks/update-owner-job-mock'
 import { createSnsClientMock } from './mocks/sns-client-mock'
 import { createDotEnvConfigComponent } from '@well-known-components/env-config-provider'
-import { SnsClient } from '../src/adapters/sns-client'
 
 /**
  * Behaves like Jest "describe" function, used to describe a test for a

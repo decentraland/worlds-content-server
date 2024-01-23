@@ -15,7 +15,12 @@ import { AuthChain, AuthLink, Entity, EthAddress, IPFSv2 } from '@dcl/schemas'
 import { MigrationExecutor } from './adapters/migration-executor'
 import { IPgComponent } from '@well-known-components/pg-component'
 import { AuthIdentity } from '@dcl/crypto'
-import { SnsClient } from './adapters/sns-client'
+import {
+  PublishBatchCommand,
+  PublishBatchCommandOutput,
+  PublishCommand,
+  PublishCommandOutput
+} from '@aws-sdk/client-sns'
 
 export type GlobalContext = {
   components: BaseComponents
@@ -233,6 +238,11 @@ export type AwsConfig = {
   credentials?: { accessKeyId: string; secretAccessKey: string }
   endpoint?: string
   forcePathStyle?: boolean
+}
+
+export type SnsClient = {
+  publish(payload: PublishCommand): Promise<PublishCommandOutput>
+  publishBatch(payload: PublishBatchCommand): Promise<PublishBatchCommandOutput>
 }
 
 // components used in every environment

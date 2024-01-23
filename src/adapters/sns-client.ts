@@ -2,15 +2,10 @@ import {
   PublishBatchCommand,
   PublishBatchCommandOutput,
   PublishCommand,
-  PublishCommandOutput
+  PublishCommandOutput,
+  SNSClient as AwsSnsClient
 } from '@aws-sdk/client-sns'
-import { SNSClient as AwsSnsClient } from '@aws-sdk/client-sns'
-import { AppComponents } from '../types'
-
-export type SnsClient = {
-  publish(payload: PublishCommand): Promise<PublishCommandOutput>
-  publishBatch(payload: PublishBatchCommand): Promise<PublishBatchCommandOutput>
-}
+import { AppComponents, SnsClient } from '../types'
 
 export async function createSnsClient({ awsConfig }: Pick<AppComponents, 'awsConfig'>): Promise<SnsClient> {
   const sns = new AwsSnsClient(awsConfig)

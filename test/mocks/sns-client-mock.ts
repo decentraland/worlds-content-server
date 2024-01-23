@@ -1,4 +1,4 @@
-import { SnsClient } from '../../src/adapters/sns-client'
+import { SnsClient } from '../../src/types'
 
 export function createSnsClientMock(): SnsClient {
   const publish = jest.fn()

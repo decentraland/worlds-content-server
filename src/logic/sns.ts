@@ -1,4 +1,3 @@
-import { SnsClient } from '../adapters/sns-client'
 import {
   PublishBatchCommand,
   PublishBatchCommandOutput,
@@ -6,6 +5,7 @@ import {
   PublishCommandOutput
 } from '@aws-sdk/client-sns'
 import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
+import { SnsClient } from '../types'
 
 export async function snsPublish(
   client: SnsClient,
