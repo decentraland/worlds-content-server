@@ -16,8 +16,11 @@ export async function reprocessABHandler(
     throw new Error('SNS ARN is not defined.')
   }
 
+  const body = await context.request.json().catch((_) => undefined)
+
   const allWorlds = await worldsManager.getRawWorldRecords()
-  const mapped: DeploymentToSqs[] = allWorlds.map((world) => ({
+  const filteredWorlds = allWorlds.filter((world) => !body || body.includes(world.name))
+  const mapped: DeploymentToSqs[] = filteredWorlds.map((world) => ({
     entity: {
       entityId: world.entity_id,
       authChain: world.deployment_auth_chain
