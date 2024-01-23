@@ -82,10 +82,10 @@ export function createEntityDeployer(
         },
         contentServerUrls: [baseUrl]
       }
-      const result = await snsPublish(snsClient, snsArn, deploymentToSqs)
+      const receipt = await snsPublish(snsClient, snsArn, deploymentToSqs)
       logger.info('notification sent', {
-        MessageId: `${result.MessageId}`,
-        SequenceNumber: `${result.SequenceNumber}`
+        MessageId: `${receipt.MessageId}`,
+        SequenceNumber: `${receipt.SequenceNumber}`
       })
     }
 
