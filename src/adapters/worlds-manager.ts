@@ -20,7 +20,14 @@ export async function createWorldsManagerComponent({
               LEFT JOIN blocked ON worlds.owner = blocked.wallet`
     )
 
-    return result.rows.filter(async (row) => await nameDenyListChecker.checkNameDenyList(row.name))
+    const filtered: WorldRecord[] = []
+    for (const row of result.rows) {
+      if (await nameDenyListChecker.checkNameDenyList(row.name)) {
+        filtered.push(row)
+      }
+    }
+
+    return filtered
   }
 
   async function getMetadataForWorld(worldName: string): Promise<WorldMetadata | undefined> {
@@ -127,7 +134,14 @@ export async function createWorldsManagerComponent({
       'SELECT name, entity_id, entity FROM worlds WHERE entity_id IS NOT NULL ORDER BY name'
     )
 
-    return result.rows.filter(async (row) => await nameDenyListChecker.checkNameDenyList(row.name)).map(mapEntity)
+    const filtered: Pick<WorldRecord, 'name' | 'entity_id' | 'entity'>[] = []
+    for (const row of result.rows) {
+      if (await nameDenyListChecker.checkNameDenyList(row.name)) {
+        filtered.push(row)
+      }
+    }
+
+    return filtered.map(mapEntity)
   }
 
   async function getEntityForWorld(worldName: string): Promise<Entity | undefined> {
