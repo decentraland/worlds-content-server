@@ -2,6 +2,7 @@ import { HandlerContextWithPath } from '../../types'
 import { IHttpServerComponent } from '@well-known-components/interfaces'
 import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
 import { snsPublishBatch } from '../../logic/sns'
+import { InvalidRequestError } from '@dcl/platform-server-commons'
 
 export async function reprocessABHandler(
   context: HandlerContextWithPath<'config' | 'logs' | 'snsClient' | 'worldsManager', '/reprocess-ab'>
@@ -16,10 +17,18 @@ export async function reprocessABHandler(
     throw new Error('SNS ARN is not defined.')
   }
 
-  const body = await context.request.json().catch((_) => undefined)
+  const body = await context.request
+    .json()
+    .then((name) => name.map((s: string) => s.toLowerCase()))
+    .catch((_) => undefined)
 
   const allWorlds = await worldsManager.getRawWorldRecords()
   const filteredWorlds = allWorlds.filter((world) => !body || body.includes(world.name))
+
+  if (filteredWorlds.length === 0) {
+    throw new InvalidRequestError('No worlds found for reprocessing')
+  }
+
   const mapped: DeploymentToSqs[] = filteredWorlds.map((world) => ({
     entity: {
       entityId: world.entity_id,

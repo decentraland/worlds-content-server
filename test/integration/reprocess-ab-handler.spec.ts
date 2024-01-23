@@ -1,7 +1,6 @@
 import { test } from '../components'
 import { Authenticator } from '@dcl/crypto'
 import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
-import { PublishBatchCommand } from '@aws-sdk/client-sns'
 
 test('reprocess asset-bundles handler /reprocess-ab', function ({ components, stubComponents }) {
   beforeEach(async () => {
@@ -46,6 +45,26 @@ test('reprocess asset-bundles handler /reprocess-ab', function ({ components, st
       successful: 1,
       failed: 0
     })
+  })
+
+  it('returns bad request when no worlds to reprocess', async () => {
+    const { localFetch } = components
+    const { snsClient } = stubComponents
+
+    const r = await localFetch.fetch(`/reprocess-ab`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer setup_some_secret_here'
+      },
+      body: JSON.stringify(['nonexistent.dcl.eth'])
+    })
+
+    expect(r.status).toEqual(400)
+    expect(await r.json()).toEqual({
+      error: 'Bad request',
+      message: 'No worlds found for reprocessing'
+    })
+    expect(snsClient.publishBatch).not.toHaveBeenCalled()
   })
 
   it('can reprocess all worlds', async () => {
