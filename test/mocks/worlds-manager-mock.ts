@@ -20,20 +20,21 @@ export async function createWorldsManagerMockComponent({
     for await (const key of storage.allFileIds('name-')) {
       const entity = await getEntityForWorld(key.substring(5))
       if (entity) {
-        console.log('entity', entity)
-        // worlds.push({
-        //   name: 'mariano.dcl.eth',
-        //   deployer: '0x69d30b1875d39e13a01af73ccfed6d84839e84f2',
-        //   entity_id: 'bafkreib5oouiweulul2gimeqf55ibn5o4qpgyha2knucqqwempkmq4hys4',
-        //   deployment_auth_chain: [Array],
-        //   entity: [Object],
-        //   created_at: new Date('2024-01-18T20:28:50.889Z'),
-        //   updated_at: '2024-01-18T20:50:31.890Z',
-        //   permissions: [Object],
-        //   size: '18148727',
-        //   owner: '0x69d30b1875d39e13a01af73ccfed6d84839e84f2',
-        //   blocked_since: null
-        // })
+        const content = await storage.retrieve(`${entity.id}.auth`)
+        const authChain = JSON.parse((await streamToBuffer(await content?.asStream())).toString())
+        worlds.push({
+          name: entity.metadata.worldConfiguration.name,
+          deployer: authChain[0].payload,
+          entity_id: entity.id,
+          deployment_auth_chain: authChain,
+          entity: entity.metadata,
+          created_at: new Date(1706019701900),
+          updated_at: new Date(1706019701900),
+          permissions: { ...defaultPermissions() },
+          size: 0n,
+          owner: authChain[0].payload,
+          blocked_since: null
+        })
       }
     }
     return worlds
