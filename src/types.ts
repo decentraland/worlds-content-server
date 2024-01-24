@@ -15,6 +15,12 @@ import { AuthChain, AuthLink, Entity, EthAddress, IPFSv2 } from '@dcl/schemas'
 import { MigrationExecutor } from './adapters/migration-executor'
 import { IPgComponent } from '@well-known-components/pg-component'
 import { AuthIdentity } from '@dcl/crypto'
+import {
+  PublishBatchCommand,
+  PublishBatchCommandOutput,
+  PublishCommand,
+  PublishCommandOutput
+} from '@aws-sdk/client-sns'
 
 export type GlobalContext = {
   components: BaseComponents
@@ -141,6 +147,7 @@ export type ILimitsManager = {
 }
 
 export type IWorldsManager = {
+  getRawWorldRecords(): Promise<WorldRecord[]>
   getDeployedWorldCount(): Promise<{ ens: number; dcl: number }>
   getDeployedWorldEntities(): Promise<Entity[]>
   getMetadataForWorld(worldName: string): Promise<WorldMetadata | undefined>
@@ -226,8 +233,21 @@ export type IEntityDeployer = {
   ): Promise<DeploymentResult>
 }
 
+export type AwsConfig = {
+  region: string
+  credentials?: { accessKeyId: string; secretAccessKey: string }
+  endpoint?: string
+  forcePathStyle?: boolean
+}
+
+export type SnsClient = {
+  publish(payload: PublishCommand): Promise<PublishCommandOutput>
+  publishBatch(payload: PublishBatchCommand): Promise<PublishBatchCommandOutput>
+}
+
 // components used in every environment
 export type BaseComponents = {
+  awsConfig: AwsConfig
   commsAdapter: ICommsAdapter
   config: IConfigComponent
   database: IPgComponent
@@ -244,7 +264,7 @@ export type BaseComponents = {
   namePermissionChecker: IWorldNamePermissionChecker
   permissionsManager: IPermissionsManager
   server: IHttpServerComponent<GlobalContext>
-  sns: SnsComponent
+  snsClient: SnsClient
   status: IStatusComponent
   storage: IContentStorageComponent
   updateOwnerJob: IRunnable<void>
@@ -253,8 +273,6 @@ export type BaseComponents = {
   worldsIndexer: IWorldsIndexer
   worldsManager: IWorldsManager
 }
-
-export type SnsComponent = { arn?: string }
 
 export type IWorldCreator = {
   createWorldWithScene(data?: {

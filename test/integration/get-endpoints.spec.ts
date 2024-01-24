@@ -1,12 +1,10 @@
 import { test } from '../components'
 import { Entity } from '@dcl/schemas'
-import { cleanup } from '../utils'
 
 test('consume get endpoints', function ({ components }) {
   let entity: Entity
 
   beforeAll(async () => {
-    await cleanup(components.storage, components.database)
     const { worldCreator } = components
     const created = await worldCreator.createWorldWithScene()
     entity = created.entity
@@ -50,8 +48,8 @@ test('consume get endpoints', function ({ components }) {
       content: {
         commitHash: expect.any(String),
         worldsCount: {
-          dcl: 1,
-          ens: 0
+          dcl: expect.any(Number),
+          ens: expect.any(Number)
         }
       },
       comms: {

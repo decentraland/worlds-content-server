@@ -1,4 +1,11 @@
-import { AppComponents, IPermissionChecker, IWorldsManager, Permissions, WorldMetadata } from '../../src/types'
+import {
+  AppComponents,
+  IPermissionChecker,
+  IWorldsManager,
+  Permissions,
+  WorldMetadata,
+  WorldRecord
+} from '../../src/types'
 import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage'
 import { Entity } from '@dcl/schemas'
 import { stringToUtf8Bytes } from 'eth-connect'
@@ -8,6 +15,31 @@ import { createPermissionChecker, defaultPermissions } from '../../src/logic/per
 export async function createWorldsManagerMockComponent({
   storage
 }: Pick<AppComponents, 'storage'>): Promise<IWorldsManager> {
+  async function getRawWorldRecords(): Promise<WorldRecord[]> {
+    const worlds: WorldRecord[] = []
+    for await (const key of storage.allFileIds('name-')) {
+      const entity = await getEntityForWorld(key.substring(5))
+      if (entity) {
+        const content = await storage.retrieve(`${entity.id}.auth`)
+        const authChain = JSON.parse((await streamToBuffer(await content?.asStream())).toString())
+        worlds.push({
+          name: entity.metadata.worldConfiguration.name,
+          deployer: authChain[0].payload,
+          entity_id: entity.id,
+          deployment_auth_chain: authChain,
+          entity: entity.metadata,
+          created_at: new Date(1706019701900),
+          updated_at: new Date(1706019701900),
+          permissions: { ...defaultPermissions() },
+          size: 0n,
+          owner: authChain[0].payload,
+          blocked_since: null
+        })
+      }
+    }
+    return worlds
+  }
+
   async function getEntityForWorld(worldName: string): Promise<Entity | undefined> {
     const metadata = await getMetadataForWorld(worldName)
     if (!metadata || !metadata.entityId) {
@@ -90,6 +122,7 @@ export async function createWorldsManagerMockComponent({
   }
 
   return {
+    getRawWorldRecords,
     getDeployedWorldCount,
     getDeployedWorldEntities,
     getMetadataForWorld,

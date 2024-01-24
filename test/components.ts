@@ -4,7 +4,7 @@
 import { createLocalFetchCompoment, createRunner } from '@well-known-components/test-helpers'
 
 import { main } from '../src/service'
-import { SnsComponent, TestComponents } from '../src/types'
+import { SnsClient, TestComponents } from '../src/types'
 import { initComponents as originalInitComponents } from '../src/components'
 import { createMockNameSubGraph } from './mocks/name-subgraph-mock'
 import { createMockNamePermissionChecker } from './mocks/dcl-name-checker-mock'
@@ -25,6 +25,8 @@ import { createWorldsManagerComponent } from '../src/adapters/worlds-manager'
 import { createPermissionsManagerComponent } from '../src/adapters/permissions-manager'
 import { createMockNameOwnership } from './mocks/name-ownership-mock'
 import { createMockUpdateOwnerJob } from './mocks/update-owner-job-mock'
+import { createSnsClientMock } from './mocks/sns-client-mock'
+import { createDotEnvConfigComponent } from '@well-known-components/env-config-provider'
 
 /**
  * Behaves like Jest "describe" function, used to describe a test for a
@@ -41,7 +43,13 @@ export const test = createRunner<TestComponents>({
 async function initComponents(): Promise<TestComponents> {
   const components = await originalInitComponents()
 
-  const { config, logs, database } = components
+  const { logs, database } = components
+  const config = await createDotEnvConfigComponent(
+    { path: ['.env.default', '.env'] },
+    {
+      SNS_ARN: 'some-arn'
+    }
+  )
 
   const metrics = createTestMetricsComponent(metricDeclarations)
 
@@ -81,10 +89,17 @@ async function initComponents(): Promise<TestComponents> {
 
   const permissionsManager = await createPermissionsManagerComponent({ worldsManager })
 
-  const sns: SnsComponent = {
-    arn: undefined
-  }
-  const entityDeployer = createEntityDeployer({ config, logs, nameOwnership, metrics, storage, sns, worldsManager })
+  const snsClient: SnsClient = createSnsClientMock()
+
+  const entityDeployer = createEntityDeployer({
+    config,
+    logs,
+    nameOwnership,
+    metrics,
+    storage,
+    snsClient,
+    worldsManager
+  })
 
   const validator = createValidator({
     config,
@@ -111,6 +126,7 @@ async function initComponents(): Promise<TestComponents> {
     metrics,
     namePermissionChecker,
     permissionsManager,
+    snsClient,
     status,
     storage,
     updateOwnerJob,

@@ -20,7 +20,8 @@ import {
 } from './handlers/permissions-handlers'
 import { walletStatsHandler } from './handlers/wallet-stats-handler'
 import { undeployEntity } from './handlers/undeploy-entity-handler'
-import { errorHandler } from '@dcl/platform-server-commons'
+import { bearerTokenMiddleware, errorHandler } from '@dcl/platform-server-commons'
+import { reprocessABHandler } from './handlers/reprocess-ab-handler'
 
 export async function setupRouter(globalContext: GlobalContext): Promise<Router<GlobalContext>> {
   const router = new Router<GlobalContext>()
@@ -70,5 +71,11 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
 
   router.post('/get-comms-adapter/:roomId', commsAdapterHandler)
   router.post('/cast-adapter/:roomId', castAdapterHandler)
+
+  // administrative endpoints
+  const secret = await globalContext.components.config.requireString('AUTH_SECRET')
+  if (secret) {
+    router.post('/reprocess-ab', bearerTokenMiddleware(secret), reprocessABHandler)
+  }
   return router
 }

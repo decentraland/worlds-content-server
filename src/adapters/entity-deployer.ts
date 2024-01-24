@@ -3,12 +3,15 @@ import { AuthLink, Entity, EntityType } from '@dcl/schemas'
 import { bufferToStream } from '@dcl/catalyst-storage/dist/content-item'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
-import { SNS } from 'aws-sdk'
+import { snsPublish } from '../logic/sns'
 
 type PostDeploymentHook = (baseUrl: string, entity: Entity, authChain: AuthLink[]) => Promise<DeploymentResult>
 
 export function createEntityDeployer(
-  components: Pick<AppComponents, 'config' | 'logs' | 'nameOwnership' | 'metrics' | 'storage' | 'sns' | 'worldsManager'>
+  components: Pick<
+    AppComponents,
+    'config' | 'logs' | 'nameOwnership' | 'metrics' | 'storage' | 'snsClient' | 'worldsManager'
+  >
 ): IEntityDeployer {
   const { logs, storage, worldsManager } = components
   const logger = logs.getLogger('entity-deployer')
@@ -56,7 +59,7 @@ export function createEntityDeployer(
   }
 
   async function postSceneDeployment(baseUrl: string, entity: Entity, authChain: AuthLink[]) {
-    const { metrics, sns } = components
+    const { config, metrics, snsClient } = components
 
     // determine the name to use for deploying the world
     const worldName = entity.metadata.worldConfiguration.name
@@ -70,7 +73,8 @@ export function createEntityDeployer(
     metrics.increment('world_deployments_counter', { kind })
 
     // send deployment notification over sns
-    if (sns.arn) {
+    const snsArn = await config.getString('SNS_ARN')
+    if (snsArn) {
       const deploymentToSqs: DeploymentToSqs = {
         entity: {
           entityId: entity.id,
@@ -78,16 +82,10 @@ export function createEntityDeployer(
         },
         contentServerUrls: [baseUrl]
       }
-      const snsClient = new SNS()
-      const receipt = await snsClient
-        .publish({
-          TopicArn: sns.arn,
-          Message: JSON.stringify(deploymentToSqs)
-        })
-        .promise()
+      const receipt = await snsPublish(snsClient, snsArn, deploymentToSqs)
       logger.info('notification sent', {
-        MessageId: receipt.MessageId as any,
-        SequenceNumber: receipt.SequenceNumber as any
+        MessageId: `${receipt.MessageId}`,
+        SequenceNumber: `${receipt.SequenceNumber}`
       })
     }
 

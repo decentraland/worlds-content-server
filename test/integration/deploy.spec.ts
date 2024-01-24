@@ -46,6 +46,7 @@ test('deployment works', function ({ components, stubComponents }) {
 
   it('creates an entity and deploys it (owner)', async () => {
     const { storage, worldsManager } = components
+    const { snsClient } = stubComponents
 
     entityFiles.set('abc.txt', stringToUtf8Bytes(makeid(100)))
     const fileHash = await hashV1(entityFiles.get('abc.txt')!)
@@ -76,6 +77,12 @@ test('deployment works', function ({ components, stubComponents }) {
     })
 
     const authChain = Authenticator.signPayload(identity.authChain, entityId)
+
+    snsClient.publish.resolves({
+      MessageId: 'mocked-message-id',
+      SequenceNumber: 'mocked-sequence-number',
+      $metadata: {}
+    })
 
     const response = (await contentClient.deploy({ files, entityId, authChain })) as Response
     expect(await response.json()).toMatchObject({
@@ -109,6 +116,7 @@ test('deployment works', function ({ components, stubComponents }) {
 
   it('creates an entity and deploys it (authorized wallet)', async () => {
     const { storage, worldsManager } = components
+    const { snsClient } = stubComponents
 
     const delegatedIdentity = await getIdentity()
 
@@ -143,6 +151,12 @@ test('deployment works', function ({ components, stubComponents }) {
 
     const authChain = Authenticator.signPayload(delegatedIdentity.authChain, entityId)
 
+    snsClient.publish.resolves({
+      MessageId: 'mocked-message-id',
+      SequenceNumber: 'mocked-sequence-number',
+      $metadata: {}
+    })
+
     await contentClient.deploy({ files, entityId, authChain })
 
     Sinon.assert.calledWith(
@@ -169,6 +183,8 @@ test('deployment works', function ({ components, stubComponents }) {
   })
 
   it('creates an entity and deploys it using uppercase letters in the name', async () => {
+    const { snsClient } = stubComponents
+
     // Build the entity
     const worldName = worldCreator.randomWorldName().toUpperCase()
     stubComponents.namePermissionChecker.checkPermission
@@ -192,6 +208,12 @@ test('deployment works', function ({ components, stubComponents }) {
     })
 
     const authChain = Authenticator.signPayload(identity.authChain, entityId)
+
+    snsClient.publish.resolves({
+      MessageId: 'mocked-message-id',
+      SequenceNumber: 'mocked-sequence-number',
+      $metadata: {}
+    })
 
     const response = (await contentClient.deploy({ files, entityId, authChain })) as Response
     expect(await response.json()).toMatchObject({
