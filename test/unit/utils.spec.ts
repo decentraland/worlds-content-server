@@ -65,11 +65,6 @@ describe('utils', function () {
       expect(deepEqual(undefined, undefined)).toBe(true)
       expect(deepEqual(null, undefined)).toBe(false)
     })
-
-    // tests for deepEqual
-    // it('returns an empty array for an empty request', async () => {
-    //
-    // })
   })
 
   describe('chunks', function () {
