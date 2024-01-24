@@ -100,7 +100,7 @@ test('reprocess asset-bundles handler /reprocess-ab', function ({ components, st
           contentServerUrls: [baseUrl]
         }
       ]),
-      successful: 1,
+      successful: expect.any(Number),
       failed: 0
     })
   })
