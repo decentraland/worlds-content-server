@@ -1,6 +1,5 @@
-import { IContentStorageComponent } from '@dcl/catalyst-storage'
+import { bufferToStream, IContentStorageComponent, streamToBuffer } from '@dcl/catalyst-storage'
 import { WorldMetadata } from '../types'
-import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage'
 import { stringToUtf8Bytes } from 'eth-connect'
 
 export function deepEqual(a: any, b: any) {
@@ -37,4 +36,22 @@ export async function readFile(storage: IContentStorageComponent, key: string): 
 
 export async function writeFile(storage: IContentStorageComponent, key: string, content: object) {
   await storage.storeStream(key, bufferToStream(stringToUtf8Bytes(JSON.stringify(content))))
+}
+
+export function chunks<T>(items: T[], chunkSize: number): T[][] {
+  if (items.length === 0) {
+    return []
+  }
+
+  return items.reduce(
+    (acc: T[][], curr: T) => {
+      if (acc[acc.length - 1].length === chunkSize) {
+        acc.push([curr])
+      } else {
+        acc[acc.length - 1].push(curr)
+      }
+      return acc
+    },
+    [[]]
+  )
 }
