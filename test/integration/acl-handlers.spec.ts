@@ -337,7 +337,7 @@ test('acl handlers', function ({ components, stubComponents }) {
       })
     })
 
-    it.only('fails when the auth chain is invalid', async () => {
+    it('fails when the auth chain is invalid', async () => {
       const delegatedIdentity = await getIdentity()
 
       const timestamp = new Date().toISOString()
