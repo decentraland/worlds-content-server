@@ -336,5 +336,47 @@ test('acl handlers', function ({ components, stubComponents }) {
         message: `Timestamp is not recent. Please sign a new ACL change request.`
       })
     })
+
+    it.only('fails when the auth chain is invalid', async () => {
+      const delegatedIdentity = await getIdentity()
+
+      const timestamp = new Date().toISOString()
+      const payload = {
+        resource: worldName,
+        allowed: [delegatedIdentity.realAccount.address],
+        timestamp
+      }
+
+      const invalidAuthChain = [
+        { type: 'SIGNER', payload: ownerIdentity.realAccount.address },
+        { type: 'SIGNER', payload: JSON.stringify(payload) } // Auth Chain node is invalid
+      ]
+
+      const r = await localFetch.fetch(`/acl/${worldName}`, {
+        body: JSON.stringify(invalidAuthChain),
+        method: 'POST'
+      })
+
+      expect(r.status).toEqual(400)
+      expect(await r.json()).toEqual({
+        error: 'Bad request',
+        message: `Invalid payload received. Need to be a valid AuthChain.`
+      })
+
+      const stored = await worldsManager.getMetadataForWorld(worldName)
+      expect(stored).toMatchObject({
+        permissions: {
+          ...defaultPermissions(),
+          deployment: {
+            type: PermissionType.AllowList,
+            wallets: []
+          },
+          streaming: {
+            type: PermissionType.AllowList,
+            wallets: []
+          }
+        }
+      })
+    })
   })
 })
