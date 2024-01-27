@@ -3,6 +3,7 @@ import { AccessControlList, HandlerContextWithPath, PermissionType } from '../..
 import { AuthChain, EthAddress } from '@dcl/schemas'
 import { defaultPermissions } from '../../logic/permissions-checker'
 import { InvalidRequestError } from '@dcl/platform-server-commons'
+import { Authenticator } from '@dcl/crypto'
 
 export async function getAclHandler(
   ctx: HandlerContextWithPath<'worldsManager', '/acl/:world_name'>
@@ -33,6 +34,9 @@ export async function postAclHandler(
 
   const authChain = (await ctx.request.json()) as AuthChain
   if (!AuthChain.validate(authChain)) {
+    throw new InvalidRequestError('Invalid payload received. Need to be a valid AuthChain.')
+  }
+  if (!Authenticator.isValidAuthChain(authChain)) {
     throw new InvalidRequestError('Invalid payload received. Need to be a valid AuthChain.')
   }
 
