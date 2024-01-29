@@ -37,7 +37,7 @@
     "eth-connect": "^6.2.4",
     "livekit-server-sdk": "^1.2.7",
     "lru-cache": "^10.2.0",
-    "p-queue": "^8.0.1"
+    "p-queue": "^6.6.2"
   },
   "devDependencies": {
     "@dcl/eslint-config": "^2.0.0",
