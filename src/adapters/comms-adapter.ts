@@ -1,7 +1,7 @@
 import { AppComponents, CommsStatus, ICommsAdapter, WorldStatus } from '../types'
 import { AccessToken, TrackSource } from 'livekit-server-sdk'
 import { EthAddress } from '@dcl/schemas'
-import LRU from 'lru-cache'
+import { LRUCache } from 'lru-cache'
 
 function chunk<T>(theArray: T[], size: number): T[][] {
   return theArray.reduce((acc: T[][], _, i) => {
@@ -184,7 +184,7 @@ function cachingAdapter({ logs }: Pick<AppComponents, 'logs'>, wrappedAdapter: I
   const logger = logs.getLogger('caching-comms-adapter')
 
   const CACHE_KEY = 'comms_status'
-  const cache = new LRU<string, CommsStatus>({
+  const cache = new LRUCache<string, CommsStatus>({
     max: 1,
     ttl: 60 * 1000, // cache for 1 minute
     fetchMethod: async (_, staleValue): Promise<CommsStatus | undefined> => {

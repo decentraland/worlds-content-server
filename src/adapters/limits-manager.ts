@@ -1,5 +1,5 @@
 import { AppComponents, ILimitsManager, MB_BigInt, Whitelist } from '../types'
-import LRU from 'lru-cache'
+import { LRUCache } from 'lru-cache'
 
 const bigIntMax = (...args: bigint[]) => args.reduce((m, e) => (e > m ? e : m))
 
@@ -18,7 +18,7 @@ export async function createLimitsManagerComponent({
   const whitelistUrl = await config.requireString('WHITELIST_URL')
 
   const CONFIG_KEY = 'config'
-  const cache = new LRU<any, Whitelist>({
+  const cache = new LRUCache<any, Whitelist>({
     max: 1,
     ttl: 10 * 60 * 1000, // cache for 10 minutes
     fetchMethod: async (_, staleValue): Promise<Whitelist> => {

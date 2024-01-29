@@ -1,5 +1,5 @@
 import { AppComponents, INameDenyListChecker } from '../types'
-import LRU from 'lru-cache'
+import { LRUCache } from 'lru-cache'
 
 export async function createNameDenyListChecker(
   components: Pick<AppComponents, 'config' | 'logs' | 'fetch'>
@@ -13,7 +13,7 @@ export async function createNameDenyListChecker(
   }
 
   const NAME_DENY_LIST_ENTRY = 'NAME_DENY_LIST_ENTRY'
-  const nameDenyListCache = new LRU<string, string[]>({
+  const nameDenyListCache = new LRUCache<string, string[]>({
     max: 1,
     ttl: 60 * 60 * 1000, // cache for 1 hour
     fetchMethod: async (_: string): Promise<string[]> => {
@@ -30,7 +30,7 @@ export async function createNameDenyListChecker(
 
   const checkNameDenyList = async (worldName: string): Promise<boolean> => {
     const bannedNames = await nameDenyListCache.fetch(NAME_DENY_LIST_ENTRY)
-    const isBanned = bannedNames.includes(worldName.replace('.eth', '').replace('.dcl', ''))
+    const isBanned = bannedNames?.includes(worldName.replace('.eth', '').replace('.dcl', ''))
     if (isBanned) {
       logger.warn(`Name ${worldName} is banned`)
     }
