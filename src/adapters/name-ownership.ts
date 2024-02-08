@@ -12,7 +12,7 @@ import {
 import { l1Contracts, L1Network, registrarAbi } from '@dcl/catalyst-contracts'
 import namehash from '@ensdomains/eth-ens-namehash'
 import { keccak_256 as keccak256 } from '@noble/hashes/sha3'
-import LRU from 'lru-cache'
+import { LRUCache } from 'lru-cache'
 
 type NamesResponse = {
   nfts: { name: string; owner: { id: string } }[]
@@ -274,7 +274,7 @@ export async function createOnChainDclNameOwnership(
 }
 
 export async function createCachingNameOwnership(nameOwnership: INameOwnership): Promise<INameOwnership> {
-  const cache = new LRU<string, EthAddress | undefined>({
+  const cache = new LRUCache<string, EthAddress>({
     max: 100,
     ttl: 60 * 1000 // cache for 1 minute
   })
