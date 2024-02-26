@@ -16,6 +16,7 @@ export async function createAwsConfig({ config }: Pick<AppComponents, 'config'>)
   if (awsEndpoint) {
     awsConfig.endpoint = awsEndpoint
     awsConfig.forcePathStyle = true
+    awsConfig.s3ForcePathStyle = true
   }
 
   return awsConfig

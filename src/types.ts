@@ -237,7 +237,8 @@ export type AwsConfig = {
   region: string
   credentials?: { accessKeyId: string; secretAccessKey: string }
   endpoint?: string
-  forcePathStyle?: boolean
+  forcePathStyle?: boolean // for SDK v3
+  s3ForcePathStyle?: boolean // for SDK v2
 }
 
 export type SnsClient = {
