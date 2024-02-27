@@ -68,8 +68,7 @@ export async function initComponents(): Promise<AppComponents> {
 
   const storage = bucket
     ? await createS3BasedFileSystemContentStorage({ logs }, new S3(awsConfig), {
-        Bucket: bucket,
-        getKey: (hash: string) => hash
+        Bucket: bucket
       })
     : await createFolderBasedFileSystemContentStorage({ fs, logs }, storageFolder)
 

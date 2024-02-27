@@ -4,5 +4,4 @@ node_modules/
 coverage
 contents
 .env
-.env.admin
 yarn-error.log
