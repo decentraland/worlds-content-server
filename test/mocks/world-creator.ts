@@ -5,6 +5,8 @@ import { TextDecoder } from 'util'
 import { getIdentity, makeid, storeJson } from '../utils'
 import { Authenticator, AuthIdentity } from '@dcl/crypto'
 import { defaultPermissions } from '../../src/logic/permissions-checker'
+import { hashV1 } from '@dcl/hashing'
+import { bufferToStream } from '@dcl/catalyst-storage'
 
 export function createWorldCreator({
   storage,
@@ -43,6 +45,10 @@ export function createWorldCreator({
 
     const authChain = Authenticator.signPayload(signer, entityId)
     await storeJson(storage, entityId + '.auth', authChain)
+
+    for (const [filename, file] of files) {
+      await storage.storeStream(filename, bufferToStream(file))
+    }
 
     const entity = { id: entityId, ...entityWithoutId }
 
