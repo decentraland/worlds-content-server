@@ -26,7 +26,7 @@ export async function garbageCollect(components: Pick<AppComponents, 'database' 
     for await (const key of storage.allFileIds(prefix)) {
       allStoredKeys.add(key)
     }
-    console.info(`Done in ${formatSecs(Date.now() - start)} secs. Storage contains ${allStoredKeys.size} keys.`)
+    console.info(`Done in ${formatSecs(Date.now() - start)}. Storage contains ${allStoredKeys.size} keys.`)
     return allStoredKeys
   }
 
