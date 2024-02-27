@@ -13,12 +13,12 @@ export async function garbageCollectionHandler(
   const { database, logs, storage } = context.components
   const logger = logs.getLogger('garbage-collection')
 
-  async function getBucketUnusedKeys(usedKeys: Set<string>) {
+  async function getBucketUnusedKeys(activeKeys: Set<string>) {
     const start = Date.now()
     logger.info('Getting keys from storage that are not currently active...')
     const unusedKeys = new Set<string>()
     for await (const key of storage.allFileIds()) {
-      if (!usedKeys.has(key)) {
+      if (!activeKeys.has(key)) {
         unusedKeys.add(key)
       }
     }
@@ -28,11 +28,11 @@ export async function garbageCollectionHandler(
     return unusedKeys
   }
 
-  async function getAllUsedKeys() {
+  async function getAllActiveKeys() {
     const start = Date.now()
-    logger.info('Getting all used keys from the database...')
+    logger.info('Getting all keys active in the database...')
 
-    const allUsedKeys = new Set<string>()
+    const activeKeys = new Set<string>()
     const result = await database.query<WorldRecord>(
       SQL`SELECT *
           FROM worlds
@@ -40,23 +40,23 @@ export async function garbageCollectionHandler(
     )
     result.rows.forEach((row) => {
       // Add entity file and deployment auth-chain
-      allUsedKeys.add(row.entity_id)
-      allUsedKeys.add(`${row.entity_id}.auth`)
+      activeKeys.add(row.entity_id)
+      activeKeys.add(`${row.entity_id}.auth`)
 
       // Add all referenced content files
       for (const file of row.entity.content) {
-        allUsedKeys.add(file.hash)
+        activeKeys.add(file.hash)
       }
     })
 
-    logger.info(`Done in ${formatSecs(Date.now() - start)}. Database contains ${allUsedKeys.size} keys.`)
+    logger.info(`Done in ${formatSecs(Date.now() - start)}. Database contains ${activeKeys.size} active keys.`)
 
-    return allUsedKeys
+    return activeKeys
   }
 
   logger.info('Starting garbage collection...')
 
-  const allUsedKeys = await getAllUsedKeys()
+  const allUsedKeys = await getAllActiveKeys()
   const keysToBeRemoved = await getBucketUnusedKeys(allUsedKeys)
 
   logger.log(`Storage contains ${keysToBeRemoved.size} unused keys that should be removed.`)
