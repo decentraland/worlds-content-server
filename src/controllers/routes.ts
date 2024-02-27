@@ -22,6 +22,7 @@ import { walletStatsHandler } from './handlers/wallet-stats-handler'
 import { undeployEntity } from './handlers/undeploy-entity-handler'
 import { bearerTokenMiddleware, errorHandler } from '@dcl/platform-server-commons'
 import { reprocessABHandler } from './handlers/reprocess-ab-handler'
+import { garbageCollectionHandler } from './handlers/garbage-collection'
 
 export async function setupRouter(globalContext: GlobalContext): Promise<Router<GlobalContext>> {
   const router = new Router<GlobalContext>()
@@ -76,6 +77,7 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   const secret = await globalContext.components.config.requireString('AUTH_SECRET')
   if (secret) {
     router.post('/reprocess-ab', bearerTokenMiddleware(secret), reprocessABHandler)
+    router.post('/gc', bearerTokenMiddleware(secret), garbageCollectionHandler)
   }
   return router
 }

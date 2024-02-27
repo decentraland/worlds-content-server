@@ -8,9 +8,9 @@ import { AppComponents, GlobalContext, ICommsAdapter, INameDenyListChecker, IWor
 import { metricDeclarations } from './metrics'
 import { HTTPProvider } from 'eth-connect'
 import {
-  createAwsS3BasedFileSystemContentStorage,
   createFolderBasedFileSystemContentStorage,
-  createFsComponent
+  createFsComponent,
+  createS3BasedFileSystemContentStorage
 } from '@dcl/catalyst-storage'
 import { createStatusComponent } from './adapters/status'
 import { createLimitsManagerComponent } from './adapters/limits-manager'
@@ -30,10 +30,12 @@ import { createWalletStatsComponent } from './adapters/wallet-stats'
 import { createUpdateOwnerJob } from './adapters/update-owner-job'
 import { createSnsClient } from './adapters/sns-client'
 import { createAwsConfig } from './adapters/aws-config'
+import { S3 } from 'aws-sdk'
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
   const config = await createDotEnvConfigComponent({ path: ['.env.default', '.env'] })
+  const awsConfig = await createAwsConfig({ config })
   const logs = await createLogComponent({ config })
 
   const logger = logs.getLogger('components')
@@ -65,14 +67,15 @@ export async function initComponents(): Promise<AppComponents> {
   const fs = createFsComponent()
 
   const storage = bucket
-    ? await createAwsS3BasedFileSystemContentStorage({ config, logs }, bucket)
+    ? await createS3BasedFileSystemContentStorage({ logs }, new S3(awsConfig), {
+        Bucket: bucket
+      })
     : await createFolderBasedFileSystemContentStorage({ fs, logs }, storageFolder)
 
   const subGraphUrl = await config.requireString('MARKETPLACE_SUBGRAPH_URL')
   const marketplaceSubGraph = await createSubgraphComponent({ config, logs, metrics, fetch }, subGraphUrl)
 
   const status = await createStatusComponent({ logs, fetch, config })
-  const awsConfig = await createAwsConfig({ config })
   const snsClient = await createSnsClient({ awsConfig })
 
   const nameDenyListChecker: INameDenyListChecker = await createNameDenyListChecker({
