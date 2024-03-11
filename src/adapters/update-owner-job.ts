@@ -5,7 +5,10 @@ import { CronJob } from 'cron'
 type WorldData = Pick<WorldRecord, 'name' | 'owner' | 'size' | 'entity'>
 
 export async function createUpdateOwnerJob(
-  components: Pick<AppComponents, 'config' | 'database' | 'fetch' | 'logs' | 'nameOwnership' | 'walletStats'>
+  components: Pick<
+    AppComponents,
+    'config' | 'database' | 'fetch' | 'logs' | 'nameOwnership' | 'notificationService' | 'walletStats'
+  >
 ): Promise<IRunnable<void>> {
   const { config, fetch, logs } = components
   const logger = logs.getLogger('update-owner-job')
@@ -24,8 +27,8 @@ export async function createUpdateOwnerJob(
         VALUES (${wallet.toLowerCase()}, ${new Date()}, ${new Date()})
         ON CONFLICT (wallet)
             DO UPDATE SET updated_at = ${new Date()}
+        RETURNING wallet
     `
-    await components.database.query(sql)
   }
 
   async function clearOldBlockingRecords(startDate: Date) {
@@ -33,8 +36,26 @@ export async function createUpdateOwnerJob(
         DELETE
         FROM blocked
         WHERE updated_at < ${startDate}
+        RETURNING wallet
     `
-    await components.database.query(sql)
+    const result = await components.database.query(sql)
+    if (result.rowCount > 0) {
+      const wallets = result.rows.map((row) => row.wallet)
+      logger.info(`Sending block removal notifications for wallets: ${wallets.join(', ')}`)
+      await components.notificationService.sendNotifications(
+        wallets.map((wallet) => ({
+          type: 'worlds_access_restored',
+          eventKey: 'string', // TODO
+          address: wallet,
+          metadata: {
+            title: 'Worlds available',
+            description: 'Access to your Worlds has been restored.',
+            url: 'https://decentraland.zone/builder/worlds?tab=dcl' // TODO
+          },
+          timestamp: Date.now()
+        }))
+      )
+    }
   }
 
   async function run() {
