@@ -31,6 +31,7 @@ import { createUpdateOwnerJob } from './adapters/update-owner-job'
 import { createSnsClient } from './adapters/sns-client'
 import { createAwsConfig } from './adapters/aws-config'
 import { S3 } from 'aws-sdk'
+import { createNotificationsClientComponent } from './adapters/notifications-service'
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
@@ -131,6 +132,8 @@ export async function initComponents(): Promise<AppComponents> {
 
   const migrationExecutor = createMigrationExecutor({ logs, database: database, nameOwnership, storage, worldsManager })
 
+  const notificationService = await createNotificationsClientComponent({ config, fetch, logs })
+
   const updateOwnerJob = await createUpdateOwnerJob({
     config,
     database,
@@ -156,6 +159,7 @@ export async function initComponents(): Promise<AppComponents> {
     nameDenyListChecker,
     nameOwnership,
     namePermissionChecker,
+    notificationService,
     permissionsManager,
     server,
     snsClient,

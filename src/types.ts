@@ -165,6 +165,18 @@ export type IPermissionsManager = {
   deleteAddressFromAllowList(worldName: string, permission: Permission, address: string): Promise<void>
 }
 
+export type INotificationService = {
+  sendNotifications(notifications: Notification[]): Promise<void>
+}
+
+export type Notification = {
+  eventKey: string
+  type: string
+  address?: string
+  metadata: object
+  timestamp: number
+}
+
 export enum PermissionType {
   Unrestricted = 'unrestricted',
   SharedSecret = 'shared-secret',
@@ -263,6 +275,7 @@ export type BaseComponents = {
   nameDenyListChecker: INameDenyListChecker
   nameOwnership: INameOwnership
   namePermissionChecker: IWorldNamePermissionChecker
+  notificationService: INotificationService
   permissionsManager: IPermissionsManager
   server: IHttpServerComponent<GlobalContext>
   snsClient: SnsClient
