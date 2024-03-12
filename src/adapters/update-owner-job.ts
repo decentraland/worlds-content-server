@@ -14,6 +14,7 @@ export async function createUpdateOwnerJob(
   const logger = logs.getLogger('update-owner-job')
 
   const whitelistUrl = await config.requireString('WHITELIST_URL')
+  const builderUrl = await config.requireString('BUILDER_URL')
 
   function dumpMap(mapName: string, worldWithOwners: ReadonlyMap<string, any>) {
     for (const [key, value] of worldWithOwners) {
@@ -33,10 +34,10 @@ export async function createUpdateOwnerJob(
     if (result.rowCount > 0) {
       const { warning, blocked } = result.rows.reduce(
         (r, o) => {
-          if (o.updated_at - o.created_at >= TWO_DAYS_IN_MS) {
-            warning.push(o)
+          if (o.updated_at.getTime() - o.created_at.getTime() < TWO_DAYS_IN_MS) {
+            r.warning.push(o)
           } else {
-            blocked.push(o)
+            r.blocked.push(o)
           }
           return r
         },
@@ -52,13 +53,13 @@ export async function createUpdateOwnerJob(
         ...warning.map(
           (record): Notification => ({
             type: 'worlds_missing_resources',
-            eventKey: 'string', // TODO
+            eventKey: `detected-${record.created_at.toISOString().slice(0, 10)}`,
             address: record.wallet,
             metadata: {
               title: 'Missing Resources',
               description: 'World access at risk in 24hs. Rectify now to prevent disruption.',
-              url: 'https://decentraland.zone/builder/worlds?tab=dcl', // TODO
-              when: record.created_at + TWO_DAYS_IN_MS
+              url: `${builderUrl}/worlds?tab=dcl`,
+              when: record.created_at.getTime() + TWO_DAYS_IN_MS
             },
             timestamp: Date.now()
           })
@@ -72,13 +73,13 @@ export async function createUpdateOwnerJob(
         ...blocked.map(
           (record): Notification => ({
             type: 'worlds_access_restricted',
-            eventKey: 'string', // TODO
+            eventKey: `detected-${record.created_at.toISOString().slice(0, 10)}`,
             address: record.wallet,
             metadata: {
               title: 'Worlds restricted',
               description: 'Access to your Worlds has been restricted due to insufficient resources.',
-              url: 'https://decentraland.zone/builder/worlds?tab=dcl', // TODO
-              when: record.created_at + TWO_DAYS_IN_MS
+              url: `${builderUrl}/worlds?tab=dcl`,
+              when: record.created_at.getTime() + TWO_DAYS_IN_MS
             },
             timestamp: Date.now()
           })
@@ -93,21 +94,20 @@ export async function createUpdateOwnerJob(
         DELETE
         FROM blocked
         WHERE updated_at < ${startDate}
-        RETURNING wallet
+        RETURNING wallet, created_at
     `
     const result = await components.database.query(sql)
     if (result.rowCount > 0) {
-      const wallets = result.rows.map((row) => row.wallet)
-      logger.info(`Sending block removal notifications for wallets: ${wallets.join(', ')}`)
+      logger.info(`Sending block removal notifications for wallets: ${result.rows.map((row) => row.wallet).join(', ')}`)
       await components.notificationService.sendNotifications(
-        wallets.map((wallet) => ({
+        result.rows.map((record) => ({
           type: 'worlds_access_restored',
-          eventKey: 'string', // TODO
-          address: wallet,
+          eventKey: `detected-${record.created_at.toISOString().slice(0, 10)}`,
+          address: record.wallet,
           metadata: {
             title: 'Worlds available',
             description: 'Access to your Worlds has been restored.',
-            url: 'https://decentraland.zone/builder/worlds?tab=dcl' // TODO
+            url: `${builderUrl}/worlds?tab=dcl`
           },
           timestamp: Date.now()
         }))
@@ -171,14 +171,12 @@ export async function createUpdateOwnerJob(
     }
     dumpMap('worldsByOwner', worldsByOwner)
 
+    const whiteList = await fetch.fetch(whitelistUrl).then(async (data) => (await data.json()) as unknown as Whitelist)
+
     for (const [owner, worlds] of worldsByOwner) {
       if (worlds.length === 0) {
         continue
       }
-
-      const whiteList = await fetch
-        .fetch(whitelistUrl)
-        .then(async (data) => (await data.json()) as unknown as Whitelist)
 
       const walletStats = await components.walletStats.get(owner)
 

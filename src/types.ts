@@ -364,6 +364,6 @@ export type WorldRecord = {
   blocked_since: Date | null
 }
 
-export type BlockedRecord = { wallet: string; created_at: number; updated_at: number }
+export type BlockedRecord = { wallet: string; created_at: Date; updated_at: Date }
 
 export const TWO_DAYS_IN_MS = 2 * 24 * 60 * 60 * 1000
