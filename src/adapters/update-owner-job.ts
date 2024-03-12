@@ -1,4 +1,4 @@
-import { AppComponents, IRunnable, Whitelist, WorldRecord } from '../types'
+import { AppComponents, BlockedRecord, IRunnable, Notification, TWO_DAYS_IN_MS, Whitelist, WorldRecord } from '../types'
 import SQL from 'sql-template-strings'
 import { CronJob } from 'cron'
 
@@ -27,8 +27,65 @@ export async function createUpdateOwnerJob(
         VALUES (${wallet.toLowerCase()}, ${new Date()}, ${new Date()})
         ON CONFLICT (wallet)
             DO UPDATE SET updated_at = ${new Date()}
-        RETURNING wallet
+        RETURNING wallet, created_at, updated_at
     `
+    const result = await components.database.query<BlockedRecord>(sql)
+    if (result.rowCount > 0) {
+      const { warning, blocked } = result.rows.reduce(
+        (r, o) => {
+          if (o.updated_at - o.created_at >= TWO_DAYS_IN_MS) {
+            warning.push(o)
+          } else {
+            blocked.push(o)
+          }
+          return r
+        },
+        { warning: [] as BlockedRecord[], blocked: [] as BlockedRecord[] }
+      )
+
+      const notifications: Notification[] = []
+
+      logger.info(
+        `Sending notifications for wallets that are about to be blocked: ${warning.map((r) => r.wallet).join(', ')}`
+      )
+      notifications.push(
+        ...warning.map(
+          (record): Notification => ({
+            type: 'worlds_missing_resources',
+            eventKey: 'string', // TODO
+            address: record.wallet,
+            metadata: {
+              title: 'Missing Resources',
+              description: 'World access at risk in 24hs. Rectify now to prevent disruption.',
+              url: 'https://decentraland.zone/builder/worlds?tab=dcl', // TODO
+              when: record.created_at + TWO_DAYS_IN_MS
+            },
+            timestamp: Date.now()
+          })
+        )
+      )
+
+      logger.info(
+        `Sending notifications for wallets that have already been blocked: ${blocked.map((r) => r.wallet).join(', ')}`
+      )
+      notifications.push(
+        ...blocked.map(
+          (record): Notification => ({
+            type: 'worlds_access_restricted',
+            eventKey: 'string', // TODO
+            address: record.wallet,
+            metadata: {
+              title: 'Worlds restricted',
+              description: 'Access to your Worlds has been restricted due to insufficient resources.',
+              url: 'https://decentraland.zone/builder/worlds?tab=dcl', // TODO
+              when: record.created_at + TWO_DAYS_IN_MS
+            },
+            timestamp: Date.now()
+          })
+        )
+      )
+      await components.notificationService.sendNotifications(notifications)
+    }
   }
 
   async function clearOldBlockingRecords(startDate: Date) {

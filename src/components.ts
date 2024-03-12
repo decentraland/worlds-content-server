@@ -140,6 +140,7 @@ export async function initComponents(): Promise<AppComponents> {
     fetch,
     logs,
     nameOwnership,
+    notificationService,
     walletStats
   })
 
