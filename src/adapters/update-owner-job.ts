@@ -57,7 +57,7 @@ export async function createUpdateOwnerJob(
             address: record.wallet,
             metadata: {
               title: 'Missing Resources',
-              description: 'World access at risk in 24hs. Rectify now to prevent disruption.',
+              description: 'World access at risk in 48hs. Rectify now to prevent disruption.',
               url: `${builderUrl}/worlds?tab=dcl`,
               when: record.created_at.getTime() + TWO_DAYS_IN_MS
             },
