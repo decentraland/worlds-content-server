@@ -165,6 +165,18 @@ export type IPermissionsManager = {
   deleteAddressFromAllowList(worldName: string, permission: Permission, address: string): Promise<void>
 }
 
+export type INotificationService = {
+  sendNotifications(notifications: Notification[]): Promise<void>
+}
+
+export type Notification = {
+  eventKey: string
+  type: string
+  address?: string
+  metadata: object
+  timestamp: number
+}
+
 export enum PermissionType {
   Unrestricted = 'unrestricted',
   SharedSecret = 'shared-secret',
@@ -263,6 +275,7 @@ export type BaseComponents = {
   nameDenyListChecker: INameDenyListChecker
   nameOwnership: INameOwnership
   namePermissionChecker: IWorldNamePermissionChecker
+  notificationService: INotificationService
   permissionsManager: IPermissionsManager
   server: IHttpServerComponent<GlobalContext>
   snsClient: SnsClient
@@ -350,3 +363,7 @@ export type WorldRecord = {
   updated_at: Date
   blocked_since: Date | null
 }
+
+export type BlockedRecord = { wallet: string; created_at: Date; updated_at: Date }
+
+export const TWO_DAYS_IN_MS = 2 * 24 * 60 * 60 * 1000

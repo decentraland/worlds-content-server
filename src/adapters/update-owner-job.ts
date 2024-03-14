@@ -1,16 +1,20 @@
-import { AppComponents, IRunnable, Whitelist, WorldRecord } from '../types'
+import { AppComponents, BlockedRecord, IRunnable, Notification, TWO_DAYS_IN_MS, Whitelist, WorldRecord } from '../types'
 import SQL from 'sql-template-strings'
 import { CronJob } from 'cron'
 
 type WorldData = Pick<WorldRecord, 'name' | 'owner' | 'size' | 'entity'>
 
 export async function createUpdateOwnerJob(
-  components: Pick<AppComponents, 'config' | 'database' | 'fetch' | 'logs' | 'nameOwnership' | 'walletStats'>
+  components: Pick<
+    AppComponents,
+    'config' | 'database' | 'fetch' | 'logs' | 'nameOwnership' | 'notificationService' | 'walletStats'
+  >
 ): Promise<IRunnable<void>> {
   const { config, fetch, logs } = components
   const logger = logs.getLogger('update-owner-job')
 
   const whitelistUrl = await config.requireString('WHITELIST_URL')
+  const builderUrl = await config.requireString('BUILDER_URL')
 
   function dumpMap(mapName: string, worldWithOwners: ReadonlyMap<string, any>) {
     for (const [key, value] of worldWithOwners) {
@@ -24,8 +28,65 @@ export async function createUpdateOwnerJob(
         VALUES (${wallet.toLowerCase()}, ${new Date()}, ${new Date()})
         ON CONFLICT (wallet)
             DO UPDATE SET updated_at = ${new Date()}
+        RETURNING wallet, created_at, updated_at
     `
-    await components.database.query(sql)
+    const result = await components.database.query<BlockedRecord>(sql)
+    if (result.rowCount > 0) {
+      const { warning, blocked } = result.rows.reduce(
+        (r, o) => {
+          if (o.updated_at.getTime() - o.created_at.getTime() < TWO_DAYS_IN_MS) {
+            r.warning.push(o)
+          } else {
+            r.blocked.push(o)
+          }
+          return r
+        },
+        { warning: [] as BlockedRecord[], blocked: [] as BlockedRecord[] }
+      )
+
+      const notifications: Notification[] = []
+
+      logger.info(
+        `Sending notifications for wallets that are about to be blocked: ${warning.map((r) => r.wallet).join(', ')}`
+      )
+      notifications.push(
+        ...warning.map(
+          (record): Notification => ({
+            type: 'worlds_missing_resources',
+            eventKey: `detected-${record.created_at.toISOString().slice(0, 10)}`,
+            address: record.wallet,
+            metadata: {
+              title: 'Missing Resources',
+              description: 'World access at risk in 48hs. Rectify now to prevent disruption.',
+              url: `${builderUrl}/worlds?tab=dcl`,
+              when: record.created_at.getTime() + TWO_DAYS_IN_MS
+            },
+            timestamp: record.created_at.getTime()
+          })
+        )
+      )
+
+      logger.info(
+        `Sending notifications for wallets that have already been blocked: ${blocked.map((r) => r.wallet).join(', ')}`
+      )
+      notifications.push(
+        ...blocked.map(
+          (record): Notification => ({
+            type: 'worlds_access_restricted',
+            eventKey: `detected-${record.created_at.toISOString().slice(0, 10)}`,
+            address: record.wallet,
+            metadata: {
+              title: 'Worlds restricted',
+              description: 'Access to your Worlds has been restricted due to insufficient resources.',
+              url: `${builderUrl}/worlds?tab=dcl`,
+              when: record.created_at.getTime() + TWO_DAYS_IN_MS
+            },
+            timestamp: record.created_at.getTime() + TWO_DAYS_IN_MS
+          })
+        )
+      )
+      await components.notificationService.sendNotifications(notifications)
+    }
   }
 
   async function clearOldBlockingRecords(startDate: Date) {
@@ -33,8 +94,25 @@ export async function createUpdateOwnerJob(
         DELETE
         FROM blocked
         WHERE updated_at < ${startDate}
+        RETURNING wallet, created_at
     `
-    await components.database.query(sql)
+    const result = await components.database.query(sql)
+    if (result.rowCount > 0) {
+      logger.info(`Sending block removal notifications for wallets: ${result.rows.map((row) => row.wallet).join(', ')}`)
+      await components.notificationService.sendNotifications(
+        result.rows.map((record) => ({
+          type: 'worlds_access_restored',
+          eventKey: `detected-${record.created_at.toISOString().slice(0, 10)}`,
+          address: record.wallet,
+          metadata: {
+            title: 'Worlds available',
+            description: 'Access to your Worlds has been restored.',
+            url: `${builderUrl}/worlds?tab=dcl`
+          },
+          timestamp: Date.now()
+        }))
+      )
+    }
   }
 
   async function run() {
@@ -93,14 +171,12 @@ export async function createUpdateOwnerJob(
     }
     dumpMap('worldsByOwner', worldsByOwner)
 
+    const whiteList = await fetch.fetch(whitelistUrl).then(async (data) => (await data.json()) as unknown as Whitelist)
+
     for (const [owner, worlds] of worldsByOwner) {
       if (worlds.length === 0) {
         continue
       }
-
-      const whiteList = await fetch
-        .fetch(whitelistUrl)
-        .then(async (data) => (await data.json()) as unknown as Whitelist)
 
       const walletStats = await components.walletStats.get(owner)
 
