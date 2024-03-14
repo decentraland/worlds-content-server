@@ -206,7 +206,7 @@ export async function createUpdateOwnerJob(
   async function start(): Promise<void> {
     logger.info('Scheduling update owner job')
     const job = new CronJob(
-      '0 */10 * * * *', // TODO Only for testing... Undo this change
+      '0 0 */12 * * *',
       async function () {
         logger.info('Running job: ' + new Date().toISOString())
         await run()
