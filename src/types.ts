@@ -1,4 +1,3 @@
-import type { IFetchComponent } from '@well-known-components/http-server'
 import type {
   IBaseComponent,
   IConfigComponent,
@@ -21,6 +20,7 @@ import {
   PublishCommand,
   PublishCommandOutput
 } from '@aws-sdk/client-sns'
+import { IFetchComponent } from '@well-known-components/interfaces'
 
 export type GlobalContext = {
   components: BaseComponents

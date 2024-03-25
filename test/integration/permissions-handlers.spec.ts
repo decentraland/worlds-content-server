@@ -2,7 +2,7 @@ import { test } from '../components'
 import { getAuthHeaders, getIdentity, Identity } from '../utils'
 import { Authenticator } from '@dcl/crypto'
 import { defaultPermissions } from '../../src/logic/permissions-checker'
-import { IFetchComponent } from '@well-known-components/http-server'
+import { IFetchComponent } from '@well-known-components/interfaces'
 import { IWorldCreator, IWorldsManager, Permissions, PermissionType } from '../../src/types'
 import bcrypt from 'bcrypt'
 
