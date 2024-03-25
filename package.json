@@ -20,7 +20,7 @@
     "@dcl/hashing": "^3.0.4",
     "@dcl/platform-crypto-middleware": "^1.0.2",
     "@dcl/platform-server-commons": "^0.0.4",
-    "@dcl/schemas": "^10.3.0",
+    "@dcl/schemas": "^11.1.0",
     "@ensdomains/eth-ens-namehash": "^2.0.15",
     "@types/busboy": "^1.5.3",
     "@well-known-components/env-config-provider": "^1.2.0",
