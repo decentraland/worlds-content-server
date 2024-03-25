@@ -1,8 +1,12 @@
 import { createDotEnvConfigComponent } from '@well-known-components/env-config-provider'
-import { createServerComponent, createStatusCheckComponent } from '@well-known-components/http-server'
+import {
+  createServerComponent,
+  createStatusCheckComponent,
+  instrumentHttpServerWithPromClientRegistry
+} from '@well-known-components/http-server'
 import { createLogComponent } from '@well-known-components/logger'
 import { createFetchComponent } from '@dcl/platform-server-commons'
-import { createMetricsComponent, instrumentHttpServerWithMetrics } from '@well-known-components/metrics'
+import { createMetricsComponent } from '@well-known-components/metrics'
 import { createSubgraphComponent } from '@well-known-components/thegraph-component'
 import { AppComponents, GlobalContext, ICommsAdapter, INameDenyListChecker, IWorldNamePermissionChecker } from './types'
 import { metricDeclarations } from './metrics'
@@ -55,7 +59,7 @@ export async function initComponents(): Promise<AppComponents> {
   const statusChecks = await createStatusCheckComponent({ server, config })
   const fetch = await createFetchComponent()
   const metrics = await createMetricsComponent(metricDeclarations, { config })
-  await instrumentHttpServerWithMetrics({ metrics, server, config })
+  await instrumentHttpServerWithPromClientRegistry({ metrics, server, config, registry: metrics.registry! })
 
   const commsAdapter: ICommsAdapter = await createCommsAdapterComponent({ config, fetch, logs })
 

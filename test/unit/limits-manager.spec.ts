@@ -1,13 +1,12 @@
 import { Request, Response } from 'node-fetch'
 import { createLimitsManagerComponent } from '../../src/adapters/limits-manager'
 import { createConfigComponent } from '@well-known-components/env-config-provider'
-import { IFetchComponent } from '@well-known-components/http-server'
 import { createLogComponent } from '@well-known-components/logger'
 import { createMockNameOwnership } from '../mocks/name-ownership-mock'
 import { createMockWalletStatsComponent } from '../mocks/wallet-stats-mock'
 import { EthAddress } from '@dcl/schemas'
 import { ILimitsManager, INameOwnership, IWalletStats, MB_BigInt, WalletStats } from '../../src/types'
-import { IConfigComponent, ILoggerComponent } from '@well-known-components/interfaces'
+import { IConfigComponent, IFetchComponent, ILoggerComponent } from '@well-known-components/interfaces'
 
 describe('limits manager', function () {
   let logs: ILoggerComponent

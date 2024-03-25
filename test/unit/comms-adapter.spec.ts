@@ -2,7 +2,7 @@ import { createConfigComponent } from '@well-known-components/env-config-provide
 import { IConfigComponent } from '@well-known-components/interfaces'
 import { createCommsAdapterComponent } from '../../src/adapters/comms-adapter'
 import { createLogComponent } from '@well-known-components/logger'
-import { IFetchComponent } from '@well-known-components/http-server'
+import { IFetchComponent } from '@well-known-components/interfaces'
 import { Request, Response } from 'node-fetch'
 
 describe('comms-adapter', function () {

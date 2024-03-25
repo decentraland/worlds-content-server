@@ -1,9 +1,9 @@
 import { test } from '../components'
 import { getIdentity, Identity } from '../utils'
 import { Authenticator } from '@dcl/crypto'
-import { IFetchComponent } from '@well-known-components/http-server'
 import { IWorldCreator, IWorldsManager, PermissionType } from '../../src/types'
 import { defaultPermissions } from '../../src/logic/permissions-checker'
+import { IFetchComponent } from '@well-known-components/interfaces'
 
 test('acl handlers', function ({ components, stubComponents }) {
   let localFetch: IFetchComponent
