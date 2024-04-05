@@ -1,4 +1,4 @@
-import { AppComponents, IWalletStats, MB_BigInt, WalletStats, WorldRecord } from '../types'
+import { AppComponents, IWalletStats, MB_BigInt, SceneRecord, WalletStats, WorldRecord } from '../types'
 import { EthAddress } from '@dcl/schemas'
 import SQL from 'sql-template-strings'
 
@@ -28,13 +28,19 @@ export async function createWalletStatsComponent(
     return json['data']
   }
 
+  type Record = Pick<WorldRecord, 'name'> & Pick<SceneRecord, 'size'>
+
   async function fetchStoredData(wallet: string) {
-    const rows = await components.database.query<Pick<WorldRecord, 'name' | 'entity_id' | 'size'>>(SQL`
-        SELECT name, entity_id, size FROM worlds WHERE owner = ${wallet.toLowerCase()}`)
+    const rows = await components.database.query<Record>(SQL`
+        SELECT name, SUM(size) as size
+        FROM worlds
+                 INNER JOIN scenes ON worlds.name = scenes.world_name
+        WHERE owner = ${wallet.toLowerCase()}
+        GROUP BY name
+    `)
     return rows.rows.map((row) => {
       return {
         name: row.name,
-        entityId: row.entity_id,
         size: BigInt(row.size)
       }
     })

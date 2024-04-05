@@ -17,7 +17,7 @@ export async function worldAboutHandler({
   }
 
   const worldMetadata = await worldsManager.getMetadataForWorld(params.world_name)
-  if (!worldMetadata || !worldMetadata.entityId) {
+  if (!worldMetadata || worldMetadata.runtimeMetadata.entityIds.length === 0) {
     throw new NotFoundError(`World "${params.world_name}" has no scene deployed.`)
   }
 
@@ -27,7 +27,9 @@ export async function worldAboutHandler({
 
   const baseUrl = (await config.getString('HTTP_BASE_URL')) || `${url.protocol}//${url.host}`
 
-  const urn = `urn:decentraland:entity:${worldMetadata.entityId}?=&baseUrl=${baseUrl}/contents/`
+  const urns = worldMetadata.runtimeMetadata.entityIds.map(
+    (entityId: string) => `urn:decentraland:entity:${entityId}?=&baseUrl=${baseUrl}/contents/`
+  )
 
   const ethNetwork = await config.requireString('ETH_NETWORK')
   const contracts = l1Contracts[ethNetwork as L1Network]
@@ -75,7 +77,7 @@ export async function worldAboutHandler({
     configurations: {
       networkId: contracts.chainId,
       globalScenesUrn: globalScenesURN ? globalScenesURN.split(' ') : [],
-      scenesUrn: [urn],
+      scenesUrn: urns,
       minimap,
       skybox,
       realmName: runtimeMetadata.name

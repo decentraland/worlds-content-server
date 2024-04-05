@@ -3,6 +3,7 @@ import {
   IPermissionChecker,
   IWorldsManager,
   Permissions,
+  SceneRecord,
   WorldMetadata,
   WorldRecord,
   ContributorDomain
@@ -21,16 +22,12 @@ export async function createWorldsManagerComponent({
 }: Pick<AppComponents, 'logs' | 'database' | 'nameDenyListChecker' | 'storage'>): Promise<IWorldsManager> {
   const logger = logs.getLogger('worlds-manager')
 
-  async function getRawWorldRecords(): Promise<WorldRecord[]> {
-    const result = await database.query<WorldRecord>(
-      SQL`SELECT worlds.*, blocked.created_at AS blocked_since
-              FROM worlds
-              LEFT JOIN blocked ON worlds.owner = blocked.wallet`
-    )
+  async function getRawSceneRecords(): Promise<SceneRecord[]> {
+    const result = await database.query<SceneRecord>(SQL`SELECT * FROM scenes`)
 
-    const filtered: WorldRecord[] = []
+    const filtered: SceneRecord[] = []
     for (const row of result.rows) {
-      if (await nameDenyListChecker.checkNameDenyList(row.name)) {
+      if (await nameDenyListChecker.checkNameDenyList(row.world_name)) {
         filtered.push(row)
       }
     }
@@ -44,12 +41,15 @@ export async function createWorldsManagerComponent({
       return undefined
     }
 
-    const result = await database.query<WorldRecord>(
-      SQL`SELECT worlds.*, blocked.created_at AS blocked_since
-              FROM worlds
-              LEFT JOIN blocked ON worlds.owner = blocked.wallet
-              WHERE worlds.name = ${worldName.toLowerCase()}`
-    )
+    type Record = WorldRecord & Pick<SceneRecord, 'entity_id' | 'entity'>
+    const result = await database.query<Record>(SQL`
+        SELECT worlds.*, scenes.entity_id, scenes.entity, blocked.created_at AS blocked_since
+        FROM worlds
+                 JOIN scenes ON worlds.name = scenes.world_name
+                 LEFT JOIN blocked ON worlds.owner = blocked.wallet
+        WHERE worlds.name = ${worldName.toLowerCase()}
+        ORDER BY scenes.created_at
+    `)
 
     if (result.rowCount === 0) {
       return undefined
@@ -58,8 +58,9 @@ export async function createWorldsManagerComponent({
     const row = result.rows[0]
     const tempWorldMetadata: Partial<WorldMetadata> = {}
     if (row.entity) {
-      tempWorldMetadata.entityId = row.entity_id
+      // FIXME this is assuming the first (oldest) scene is the one to determine the runtime metadata
       tempWorldMetadata.runtimeMetadata = extractWorldRuntimeMetadata(worldName, { ...row.entity, id: row.entity_id })
+      tempWorldMetadata.runtimeMetadata.entityIds = result.rows.map((r) => r.entity_id)
     }
     if (row.permissions) {
       tempWorldMetadata.permissions = row.permissions
@@ -85,24 +86,38 @@ export async function createWorldsManagerComponent({
     const fileInfos = await storage.fileInfoMultiple(scene.content?.map((c) => c.hash) || [])
     const size = scene.content?.reduce((acc, c) => acc + (fileInfos.get(c.hash)?.size || 0), 0) || 0
 
-    const sql = SQL`
-              INSERT INTO worlds (name, entity_id, owner, deployer, deployment_auth_chain, entity, permissions, size, created_at, updated_at)
-              VALUES (${worldName.toLowerCase()}, ${scene.id},
-                      ${owner?.toLowerCase()}, ${deployer}, ${deploymentAuthChainString}::json,
-                      ${scene}::json,
-                      ${JSON.stringify(defaultPermissions())}::json,
-                      ${size},
-                      ${new Date()}, ${new Date()})
-              ON CONFLICT (name) 
-                  DO UPDATE SET entity_id = ${scene.id}, 
-                                owner = ${owner?.toLowerCase()},
-                                deployer = ${deployer},
-                                entity = ${scene}::json,
-                                size = ${size},
-                                deployment_auth_chain = ${deploymentAuthChainString}::json,
-                                updated_at = ${new Date()}
+    const sqlWorld = SQL`
+        INSERT INTO worlds (name, owner, permissions, created_at, updated_at)
+        VALUES (${worldName.toLowerCase()},
+                ${owner?.toLowerCase()},
+                ${JSON.stringify(defaultPermissions())}::json,
+                ${new Date()},
+                ${new Date()})
+        ON CONFLICT (name)
+            DO UPDATE SET owner      = ${owner?.toLowerCase()},
+                          updated_at = ${new Date()}
     `
-    await database.query(sql)
+    await database.query(sqlWorld)
+
+    const sqlScene = SQL`
+        INSERT INTO scenes (world_name, entity_id, deployer, deployment_auth_chain, entity, size, created_at, updated_at)
+        VALUES (${worldName.toLowerCase()},
+                ${scene.id},
+                ${deployer},
+                ${deploymentAuthChainString}::json,
+                ${scene}::json,
+                ${size},
+                ${new Date()},
+                ${new Date()})
+        ON CONFLICT (world_name, entity_id)
+            DO UPDATE SET entity_id             = ${scene.id},
+                          deployer              = ${deployer},
+                          deployment_auth_chain = ${deploymentAuthChainString}::json,
+                          entity                = ${scene}::json,
+                          size                  = ${size},
+                          updated_at            = ${new Date()}
+    `
+    await database.query(sqlScene)
   }
 
   async function storePermissions(worldName: string, permissions: Permissions): Promise<void> {
@@ -118,10 +133,10 @@ export async function createWorldsManagerComponent({
   }
 
   async function getDeployedWorldCount(): Promise<{ ens: number; dcl: number }> {
-    const result = await database.query<{ name: string }>('SELECT name FROM worlds WHERE entity_id IS NOT NULL')
+    const result = await database.query<Pick<SceneRecord, 'world_name'>>('SELECT DISTINCT world_name FROM scenes')
     return result.rows.reduce(
       (acc, row) => {
-        if (row.name.endsWith('.dcl.eth')) {
+        if (row.world_name.endsWith('.dcl.eth')) {
           acc.dcl++
         } else {
           acc.ens++
@@ -132,19 +147,19 @@ export async function createWorldsManagerComponent({
     )
   }
 
-  const mapEntity = (row: Pick<WorldRecord, 'entity_id' | 'entity'>) => ({
+  const mapEntity = (row: Pick<SceneRecord, 'entity_id' | 'entity'>) => ({
     ...row.entity,
     id: row.entity_id
   })
 
   async function getDeployedWorldEntities(): Promise<Entity[]> {
-    const result = await database.query<Pick<WorldRecord, 'name' | 'entity_id' | 'entity'>>(
-      'SELECT name, entity_id, entity FROM worlds WHERE entity_id IS NOT NULL ORDER BY name'
+    const result = await database.query<Pick<SceneRecord, 'world_name' | 'entity_id' | 'entity'>>(
+      'SELECT world_name, entity_id, entity FROM scenes ORDER BY world_name'
     )
 
-    const filtered: Pick<WorldRecord, 'name' | 'entity_id' | 'entity'>[] = []
+    const filtered: Pick<SceneRecord, 'world_name' | 'entity_id' | 'entity'>[] = []
     for (const row of result.rows) {
-      if (await nameDenyListChecker.checkNameDenyList(row.name)) {
+      if (await nameDenyListChecker.checkNameDenyList(row.world_name)) {
         filtered.push(row)
       }
     }
@@ -158,8 +173,8 @@ export async function createWorldsManagerComponent({
       return undefined
     }
 
-    const result = await database.query<Pick<WorldRecord, 'entity_id' | 'entity'>>(
-      SQL`SELECT entity_id, entity FROM worlds WHERE name = ${worldName.toLowerCase()} AND entity_id IS NOT NULL ORDER BY name`
+    const result = await database.query<Pick<SceneRecord, 'entity_id' | 'entity'>>(
+      SQL`SELECT entity_id, entity FROM scenes WHERE world_name = ${worldName.toLowerCase()} ORDER BY name`
     )
 
     if (result.rowCount === 0) {
@@ -175,18 +190,7 @@ export async function createWorldsManagerComponent({
   }
 
   async function undeploy(worldName: string): Promise<void> {
-    const sql = SQL`
-             UPDATE worlds
-             SET entity_id = null, 
-                 owner = null,
-                 deployer = null,
-                 entity = null,
-                 size = null,
-                 deployment_auth_chain = null,
-                 updated_at = ${new Date()}
-              WHERE name = ${worldName.toLowerCase()}
-    `
-    await database.query(sql)
+    await database.query(SQL`DELETE FROM scenes WHERE world_name = ${worldName.toLowerCase()}`)
   }
 
   async function getContributableDomains(address: string): Promise<{ domains: ContributorDomain[]; count: number }> {
@@ -210,7 +214,7 @@ export async function createWorldsManagerComponent({
   }
 
   return {
-    getRawWorldRecords,
+    getRawSceneRecords,
     getDeployedWorldCount,
     getDeployedWorldEntities,
     getMetadataForWorld,
