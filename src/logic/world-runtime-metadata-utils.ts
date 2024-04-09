@@ -3,6 +3,8 @@ import { Entity, WorldConfiguration } from '@dcl/schemas'
 import { ContentMapping } from '@dcl/schemas/dist/misc/content-mapping'
 
 export function migrateConfiguration(worldName: string, worldConfiguration: WorldConfiguration): WorldConfiguration {
+  const migrated = {} as WorldConfiguration
+
   // Old deployments may not even have a worldConfiguration
   if (!worldConfiguration) {
     return {
@@ -11,25 +13,37 @@ export function migrateConfiguration(worldName: string, worldConfiguration: Worl
   }
 
   const cloned = JSON.parse(JSON.stringify(worldConfiguration)) as any
+
   // Deprecated dclName
-  if (cloned.dclName) {
-    cloned.name = cloned.dclName
-    delete cloned.dclName
-  }
+  migrated.name = cloned.dclName || worldConfiguration.name
 
   // Deprecated minimapVisible
-  if (cloned.minimapVisible) {
-    cloned.miniMapConfig = { visible: cloned.minimapVisible }
-    delete cloned.minimapVisible
+  if (!!cloned.minimapVisible) {
+    migrated.miniMapConfig = { visible: !!cloned.minimapVisible }
   }
 
-  // Deprecated minimapVisible
-  if (cloned.skybox) {
-    cloned.skyboxConfig = { fixedTime: cloned.skybox }
-    delete cloned.skybox
+  // Deprecated skybox
+  if (!isNaN(cloned.skybox)) {
+    migrated.skyboxConfig = { fixedTime: cloned.skybox }
   }
 
-  return cloned as WorldConfiguration
+  if (cloned.miniMapConfig) {
+    migrated.miniMapConfig = cloned.miniMapConfig
+  }
+
+  if (cloned.skyboxConfig) {
+    migrated.skyboxConfig = cloned.skyboxConfig
+  }
+
+  if (cloned.placesConfig) {
+    migrated.placesConfig = cloned.placesConfig
+  }
+
+  if (cloned.fixedAdapter && cloned.fixedAdapter === 'offline:offline') {
+    migrated.fixedAdapter = cloned.fixedAdapter
+  }
+
+  return migrated as WorldConfiguration
 }
 
 export function extractWorldRuntimeMetadata(worldName: string, entity: Entity): WorldRuntimeMetadata {

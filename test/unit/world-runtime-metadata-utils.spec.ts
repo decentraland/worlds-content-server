@@ -35,6 +35,20 @@ describe('world-runtime-metadata-utils', function () {
       })
     })
 
+    it('should migrate skybox to skyboxConfig even for fixed time 0', function () {
+      const worldConfiguration = {
+        name: 'whatever.dcl.eth',
+        skybox: 0
+      }
+
+      const migrated = migrateConfiguration('worldName', worldConfiguration)
+
+      expect(migrated).toEqual({
+        name: 'whatever.dcl.eth',
+        skyboxConfig: { fixedTime: 0 }
+      })
+    })
+
     it('should migrate skybox to skyboxConfig', function () {
       const worldConfiguration = {
         name: 'whatever.dcl.eth',
