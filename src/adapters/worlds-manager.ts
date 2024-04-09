@@ -1,12 +1,12 @@
 import {
   AppComponents,
+  ContributorDomain,
   IPermissionChecker,
   IWorldsManager,
   Permissions,
   SceneRecord,
   WorldMetadata,
-  WorldRecord,
-  ContributorDomain
+  WorldRecord
 } from '../types'
 import { streamToBuffer } from '@dcl/catalyst-storage'
 import { Entity, EthAddress } from '@dcl/schemas'
@@ -87,7 +87,19 @@ export async function createWorldsManagerComponent({
     const fileInfos = await storage.fileInfoMultiple(scene.content?.map((c) => c.hash) || [])
     const size = scene.content?.reduce((acc, c) => acc + (fileInfos.get(c.hash)?.size || 0), 0) || 0
 
-    const sqlWorld = SQL`
+    const existingScenes = await getDeployedScenesForWorld(worldName)
+    const collidingScenes = await findCollisions(scene, existingScenes)
+
+    try {
+      await database.query(SQL`BEGIN`)
+      await database.query(
+        SQL`DELETE
+            FROM scenes
+            WHERE world_name = ${worldName.toLowerCase()}
+              AND entity_id = ANY (${collidingScenes.map((s) => s.entity_id)})`
+      )
+
+      const sqlWorld = SQL`
         INSERT INTO worlds (name, owner, permissions, created_at, updated_at)
         VALUES (${worldName.toLowerCase()},
                 ${owner?.toLowerCase()},
@@ -98,9 +110,9 @@ export async function createWorldsManagerComponent({
             DO UPDATE SET owner      = ${owner?.toLowerCase()},
                           updated_at = ${new Date()}
     `
-    await database.query(sqlWorld)
+      await database.query(sqlWorld)
 
-    const sqlScene = SQL`
+      const sqlScene = SQL`
         INSERT INTO scenes (world_name, entity_id, deployer, deployment_auth_chain, entity, size, created_at, updated_at)
         VALUES (${worldName.toLowerCase()},
                 ${scene.id},
@@ -118,7 +130,13 @@ export async function createWorldsManagerComponent({
                           size                  = ${size},
                           updated_at            = ${new Date()}
     `
-    await database.query(sqlScene)
+      await database.query(sqlScene)
+      await database.query(SQL`COMMIT`)
+    } catch (error: any) {
+      logger.warn(`Error deploying scene: ${error.message}`)
+      await database.query(SQL`ROLLBACK`)
+      throw error
+    }
   }
 
   async function storePermissions(worldName: string, permissions: Permissions): Promise<void> {
@@ -175,7 +193,7 @@ export async function createWorldsManagerComponent({
     }
 
     const result = await database.query<Pick<SceneRecord, 'entity_id' | 'entity'>>(
-      SQL`SELECT entity_id, entity FROM scenes WHERE world_name = ${worldName.toLowerCase()} ORDER BY name`
+      SQL`SELECT entity_id, entity FROM scenes WHERE world_name = ${worldName.toLowerCase()} ORDER BY world_name`
     )
 
     if (result.rowCount === 0) {
@@ -214,8 +232,26 @@ export async function createWorldsManagerComponent({
     }
   }
 
+  async function getDeployedScenesForWorld(worldName: string): Promise<SceneRecord[]> {
+    const result = await database.query<SceneRecord>(
+      SQL`SELECT * FROM scenes WHERE world_name = ${worldName.toLowerCase()} ORDER BY created_at DESC`
+    )
+
+    return result.rows
+  }
+
+  async function findCollisions(entity: Entity, previousScenes: SceneRecord[]): Promise<SceneRecord[]> {
+    const newParcels = new Set(entity.pointers)
+    return previousScenes.filter(
+      (row) =>
+        newParcels.has(row.entity.metadata.scene.base) ||
+        row.entity.metadata.scene.parcels.some((parcel: string) => newParcels.has(parcel))
+    )
+  }
+
   return {
     getRawSceneRecords,
+    getContributableDomains,
     getDeployedWorldCount,
     getDeployedWorldEntities,
     getMetadataForWorld,
@@ -223,7 +259,6 @@ export async function createWorldsManagerComponent({
     deployScene,
     storePermissions,
     permissionCheckerForWorld,
-    undeploy,
-    getContributableDomains
+    undeploy
   }
 }

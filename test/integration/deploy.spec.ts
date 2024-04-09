@@ -100,7 +100,6 @@ test('deployment works', function ({ components, stubComponents }) {
 
     const stored = await worldsManager.getMetadataForWorld(worldName)
     expect(stored).toMatchObject({
-      entityId,
       runtimeMetadata: {
         name: worldName,
         entityIds: [entityId],
@@ -170,7 +169,6 @@ test('deployment works', function ({ components, stubComponents }) {
 
     const stored = await worldsManager.getMetadataForWorld(worldName)
     expect(stored).toMatchObject({
-      entityId,
       runtimeMetadata: {
         entityIds: [entityId],
         minimapVisible: false,
@@ -228,7 +226,6 @@ test('deployment works', function ({ components, stubComponents }) {
 
     const stored = await worldsManager.getMetadataForWorld(worldName)
     expect(stored).toMatchObject({
-      entityId,
       runtimeMetadata: {
         name: worldName,
         entityIds: [entityId],

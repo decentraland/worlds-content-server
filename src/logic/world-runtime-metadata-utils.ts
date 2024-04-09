@@ -52,7 +52,6 @@ export function extractWorldRuntimeMetadata(worldName: string, entities: Entity[
     name: worldName,
     entityIds: entities.map(({ id }) => id)
   } as WorldRuntimeMetadata
-  // migrateConfiguration(worldName, entity.metadata?.worldConfiguration)
 
   function resolveFilename(entity: Entity, filename: string | undefined): string | undefined {
     if (filename) {
