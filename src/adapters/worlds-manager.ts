@@ -58,9 +58,10 @@ export async function createWorldsManagerComponent({
     const row = result.rows[0]
     const tempWorldMetadata: Partial<WorldMetadata> = {}
     if (row.entity) {
-      // FIXME this is assuming the first (oldest) scene is the one to determine the runtime metadata
-      tempWorldMetadata.runtimeMetadata = extractWorldRuntimeMetadata(worldName, { ...row.entity, id: row.entity_id })
-      tempWorldMetadata.runtimeMetadata.entityIds = result.rows.map((r) => r.entity_id)
+      tempWorldMetadata.runtimeMetadata = extractWorldRuntimeMetadata(
+        worldName,
+        result.rows.map((row) => ({ ...row.entity, id: row.entity_id }))
+      )
     }
     if (row.permissions) {
       tempWorldMetadata.permissions = row.permissions

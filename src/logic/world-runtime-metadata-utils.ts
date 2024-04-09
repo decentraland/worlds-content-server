@@ -1,6 +1,7 @@
 import { WorldRuntimeMetadata } from '../types'
 import { Entity, WorldConfiguration } from '@dcl/schemas'
 import { ContentMapping } from '@dcl/schemas/dist/misc/content-mapping'
+import { entityByTimestampDescending } from './utils'
 
 export function migrateConfiguration(worldName: string, worldConfiguration: WorldConfiguration): WorldConfiguration {
   const migrated = {} as WorldConfiguration
@@ -46,10 +47,14 @@ export function migrateConfiguration(worldName: string, worldConfiguration: Worl
   return migrated as WorldConfiguration
 }
 
-export function extractWorldRuntimeMetadata(worldName: string, entity: Entity): WorldRuntimeMetadata {
-  const migratedWorldConfiguration = migrateConfiguration(worldName, entity.metadata?.worldConfiguration)
+export function extractWorldRuntimeMetadata(worldName: string, entities: Entity[]): WorldRuntimeMetadata {
+  const mergedWorldConfiguration = {
+    name: worldName,
+    entityIds: entities.map(({ id }) => id)
+  } as WorldRuntimeMetadata
+  // migrateConfiguration(worldName, entity.metadata?.worldConfiguration)
 
-  function resolveFilename(filename: string | undefined): string | undefined {
+  function resolveFilename(entity: Entity, filename: string | undefined): string | undefined {
     if (filename) {
       const file = entity.content.find((content: ContentMapping) => content.file === filename)
       if (file) {
@@ -59,17 +64,29 @@ export function extractWorldRuntimeMetadata(worldName: string, entity: Entity): 
     return undefined
   }
 
-  return {
-    name: migratedWorldConfiguration.name || worldName,
-    entityIds: [entity.id],
-    fixedAdapter: migratedWorldConfiguration.fixedAdapter,
-    minimapDataImage: resolveFilename(migratedWorldConfiguration.miniMapConfig?.dataImage),
-    minimapEstateImage: resolveFilename(migratedWorldConfiguration.miniMapConfig?.estateImage),
-    minimapVisible: migratedWorldConfiguration.miniMapConfig?.visible ?? false,
-    skyboxFixedTime: migratedWorldConfiguration.skyboxConfig?.fixedTime,
-    skyboxTextures: migratedWorldConfiguration.skyboxConfig?.textures
-      ? migratedWorldConfiguration.skyboxConfig?.textures?.map((texture) => resolveFilename(texture)!)
-      : undefined,
-    thumbnailFile: resolveFilename(entity.metadata?.display?.navmapThumbnail)
+  // Assuming the most recently deployed (newest) scene is the one to determine the "final" runtime metadata;
+  // We set the values from each scene in the reverse order they were deployed, so the last one will be the final one
+  const sortedEntities = entities.slice().sort(entityByTimestampDescending)
+  for (const sortedEntity of sortedEntities) {
+    const migrated = migrateConfiguration(worldName, sortedEntity.metadata?.worldConfiguration)
+    mergedWorldConfiguration.fixedAdapter ||= migrated.fixedAdapter
+    mergedWorldConfiguration.minimapDataImage ||= resolveFilename(sortedEntity, migrated.miniMapConfig?.dataImage)
+    mergedWorldConfiguration.minimapEstateImage ||= resolveFilename(sortedEntity, migrated.miniMapConfig?.estateImage)
+    if (mergedWorldConfiguration.minimapVisible === undefined && migrated.miniMapConfig?.visible !== undefined) {
+      mergedWorldConfiguration.minimapVisible = migrated.miniMapConfig.visible
+    }
+    if (mergedWorldConfiguration.skyboxFixedTime === undefined && migrated.skyboxConfig?.fixedTime !== undefined) {
+      mergedWorldConfiguration.skyboxFixedTime ||= migrated.skyboxConfig.fixedTime
+    }
+    mergedWorldConfiguration.skyboxTextures ||= migrated.skyboxConfig?.textures
+      ? migrated.skyboxConfig?.textures?.map((texture) => resolveFilename(sortedEntity, texture)!)
+      : undefined
+    mergedWorldConfiguration.thumbnailFile ||= resolveFilename(
+      sortedEntity,
+      sortedEntity.metadata?.display?.navmapThumbnail
+    )
   }
+  mergedWorldConfiguration.minimapVisible = Boolean(mergedWorldConfiguration.minimapVisible)
+
+  return mergedWorldConfiguration
 }
