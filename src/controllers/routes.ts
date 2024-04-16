@@ -7,7 +7,6 @@ import { worldAboutHandler } from './handlers/world-about-handler'
 import { statusHandler } from './handlers/status-handler'
 import { commsAdapterHandler } from './handlers/comms-adapter-handler'
 import { activeEntitiesHandler } from './handlers/active-entities'
-import { getAclHandler, postAclHandler } from './handlers/acl-handlers'
 import { getIndexHandler } from './handlers/index-handler'
 import { getLiveDataHandler } from './handlers/live-data-handler'
 import { castAdapterHandler } from './handlers/cast-adapter-handler'
@@ -49,8 +48,6 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   router.head('/contents/:hashId', headContentFile)
   router.get('/contents/:hashId', getContentFile)
 
-  router.get('/acl/:world_name', getAclHandler)
-  router.post('/acl/:world_name', postAclHandler)
   router.get('/world/:world_name/permissions', getPermissionsHandler)
   router.post('/world/:world_name/permissions/:permission_name', signedFetchMiddleware, postPermissionsHandler)
   router.put(
