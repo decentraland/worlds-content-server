@@ -148,7 +148,9 @@ export async function createWorldsManagerComponent({
                   DO UPDATE SET permissions = ${JSON.stringify(permissions)}::json,
                                 updated_at = ${new Date()}
     `
-    await database.query(sql)
+    const result = await database.query(sql)
+    console.log(`done storing permissions for ${worldName}`, result.rows)
+    console.log('all', (await database.query(SQL`SELECT * FROM worlds`)).rows)
   }
 
   async function getDeployedWorldCount(): Promise<{ ens: number; dcl: number }> {
