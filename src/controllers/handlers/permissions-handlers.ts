@@ -9,6 +9,7 @@ import {
 import { DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
 import bcrypt from 'bcrypt'
 import { InvalidRequestError, NotAuthorizedError } from '@dcl/platform-server-commons'
+import { EthAddress } from '@dcl/schemas'
 
 const saltRounds = 10
 
@@ -150,6 +151,11 @@ export async function putPermissionsAddressHandler(
 
   const worldName = ctx.params.world_name
   const permissionName = ctx.params.permission_name as Permission
+  const address = ctx.params.address
+
+  if (!EthAddress.validate(address)) {
+    throw new InvalidRequestError(`Invalid address: ${address}.`)
+  }
 
   await checkOwnership(namePermissionChecker, ctx.verification!.auth, worldName)
 
@@ -165,14 +171,14 @@ export async function putPermissionsAddressHandler(
     )
   }
 
-  const address = ctx.params.address.toLowerCase()
-  if (permissionConfig.wallets.includes(address)) {
+  const lowerCaseAddress = address.toLowerCase()
+  if (permissionConfig.wallets.includes(lowerCaseAddress)) {
     throw new InvalidRequestError(
       `World ${worldName} already has address ${address} in the allow list for permission '${permissionName}'.`
     )
   }
 
-  await permissionsManager.addAddressToAllowList(worldName, permissionName, address)
+  await permissionsManager.addAddressToAllowList(worldName, permissionName, lowerCaseAddress)
 
   return {
     status: 204
@@ -190,6 +196,11 @@ export async function deletePermissionsAddressHandler(
 
   const worldName = ctx.params.world_name
   const permissionName = ctx.params.permission_name as Permission
+  const address = ctx.params.address
+
+  if (!EthAddress.validate(address)) {
+    throw new InvalidRequestError(`Invalid address: ${address}.`)
+  }
 
   await checkOwnership(namePermissionChecker, ctx.verification!.auth, worldName)
 
@@ -205,14 +216,14 @@ export async function deletePermissionsAddressHandler(
     )
   }
 
-  const address = ctx.params.address.toLowerCase()
-  if (!permissionConfig.wallets.includes(address)) {
+  const lowerCaseAddress = address.toLowerCase()
+  if (!permissionConfig.wallets.includes(lowerCaseAddress)) {
     throw new InvalidRequestError(
       `World ${worldName} does not have address ${address} in the allow list for permission '${permissionName}'.`
     )
   }
 
-  await permissionsManager.deleteAddressFromAllowList(worldName, permissionName, address)
+  await permissionsManager.deleteAddressFromAllowList(worldName, permissionName, lowerCaseAddress)
 
   return {
     status: 204
