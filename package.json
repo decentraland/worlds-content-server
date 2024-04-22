@@ -44,7 +44,7 @@
     "@types/bcrypt": "^5.0.2",
     "@types/node": "^20.11.10",
     "@well-known-components/test-helpers": "^1.5.6",
-    "dcl-catalyst-client": "^21.5.5",
+    "dcl-catalyst-client": "^21.7.0",
     "typescript": "^5.3.3"
   },
   "prettier": {
