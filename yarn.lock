@@ -749,7 +749,7 @@
   dependencies:
     yaml "^2.3.4"
 
-"@dcl/catalyst-contracts@^4.0.2", "@dcl/catalyst-contracts@^4.4.0":
+"@dcl/catalyst-contracts@^4.4.0":
   version "4.4.0"
   resolved "https://registry.yarnpkg.com/@dcl/catalyst-contracts/-/catalyst-contracts-4.4.0.tgz#a36a599f5e0c4b15e653650f74fcaa3da1f525ec"
   integrity sha512-jA4LU/f0VQI4epwctUZFIxnvnXBSsWGdoDibuV1kIW1nnooqRmCKdN2bbQKYWhWKtwjQfUHvbUKLzA+dD2a1gw==
@@ -823,7 +823,7 @@
     ajv-keywords "^5.1.0"
     mitt "^3.0.1"
 
-"@dcl/schemas@^9.0.0", "@dcl/schemas@^9.2.0":
+"@dcl/schemas@^9.2.0":
   version "9.12.0"
   resolved "https://registry.yarnpkg.com/@dcl/schemas/-/schemas-9.12.0.tgz#8652105b939dd36d7c55c0a0a4c1521ce7d5dec0"
   integrity sha512-CQjajLNZZCHdL8+c0wujbQ1DEmg4WBfwtQTAHgWEQenujQv4FLaEwFeZ5HOlBU6g7K0OU0qfotl8ArbtiTpfgw==
@@ -2558,15 +2558,15 @@ cross-spawn@^7.0.2, cross-spawn@^7.0.3:
     shebang-command "^2.0.0"
     which "^2.0.1"
 
-dcl-catalyst-client@^21.5.5:
-  version "21.5.5"
-  resolved "https://registry.yarnpkg.com/dcl-catalyst-client/-/dcl-catalyst-client-21.5.5.tgz#ee76ee00dd93b0c070e3bc2e59475f400a1d5787"
-  integrity sha512-VXIypnUl4czyo+vTH0L082YgTqA5fKu/1Y5yusZ7bhuUs/uxgNsGSc35blqjUY67GaG4R7XaSOwn6jA3dzxPfg==
+dcl-catalyst-client@^21.7.0:
+  version "21.7.0"
+  resolved "https://registry.yarnpkg.com/dcl-catalyst-client/-/dcl-catalyst-client-21.7.0.tgz#dbf33dff0bcf382c8383f359dbfaf7f85011af25"
+  integrity sha512-10NyeYrKSh7yM5y7suLfoDeVAM9xknlvlxDBof1lJiuPYPzj5Aee8kaEDfXzVWTpfI7ssvSXhBlGVRvyd0RcJA==
   dependencies:
-    "@dcl/catalyst-contracts" "^4.0.2"
+    "@dcl/catalyst-contracts" "^4.4.0"
     "@dcl/crypto" "^3.4.0"
     "@dcl/hashing" "^3.0.0"
-    "@dcl/schemas" "^9.0.0"
+    "@dcl/schemas" "^11.5.0"
     "@well-known-components/fetch-component" "^2.0.0"
     cookie "^0.5.0"
     cross-fetch "^3.1.5"
