@@ -379,6 +379,22 @@ test('PermissionsHandler', function ({ components, stubComponents }) {
       })
     })
 
+    it('fails to add an invalid address to the allow list', async () => {
+      const r = await makeRequest(
+        localFetch,
+        `/world/${worldName}/permissions/deployment/anything`,
+        identity,
+        {},
+        'PUT'
+      )
+
+      expect(r.status).toEqual(400)
+      expect(await r.json()).toMatchObject({
+        error: 'Bad request',
+        message: `Invalid address: anything.`
+      })
+    })
+
     it('fails to add an address to the allow list that already exists there', async () => {
       const r = await makeRequest(
         localFetch,
@@ -391,7 +407,7 @@ test('PermissionsHandler', function ({ components, stubComponents }) {
       expect(r.status).toEqual(400)
       expect(await r.json()).toMatchObject({
         error: 'Bad request',
-        message: `World ${worldName} already has address ${alreadyAllowedWallet.realAccount.address.toLowerCase()} in the allow list for permission 'deployment'.`
+        message: `World ${worldName} already has address ${alreadyAllowedWallet.realAccount.address} in the allow list for permission 'deployment'.`
       })
     })
 
@@ -460,6 +476,22 @@ test('PermissionsHandler', function ({ components, stubComponents }) {
       })
     })
 
+    it('fails to remove an invalid address to the allow list', async () => {
+      const r = await makeRequest(
+        localFetch,
+        `/world/${worldName}/permissions/deployment/anything`,
+        identity,
+        {},
+        'DELETE'
+      )
+
+      expect(r.status).toEqual(400)
+      expect(await r.json()).toMatchObject({
+        error: 'Bad request',
+        message: `Invalid address: anything.`
+      })
+    })
+
     it('fails to remove an address from the allow list that does not exists there', async () => {
       const addressToRemove = await getIdentity()
 
@@ -474,7 +506,7 @@ test('PermissionsHandler', function ({ components, stubComponents }) {
       expect(r.status).toEqual(400)
       expect(await r.json()).toMatchObject({
         error: 'Bad request',
-        message: `World ${worldName} does not have address ${addressToRemove.realAccount.address.toLowerCase()} in the allow list for permission 'deployment'.`
+        message: `World ${worldName} does not have address ${addressToRemove.realAccount.address} in the allow list for permission 'deployment'.`
       })
     })
 
