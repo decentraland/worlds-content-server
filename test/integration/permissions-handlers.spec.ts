@@ -411,24 +411,30 @@ test('PermissionsHandler', function ({ components, stubComponents }) {
       })
     })
 
-    it('fails to add an address when there is no permission type set', async () => {
-      await worldsManager.storePermissions(worldName, {
-        ...defaultPermissions(),
-        deployment: undefined
-      })
+    it('can add an address when the world does not exist yet', async () => {
+      const worldName = worldCreator.randomWorldName()
+      const newAddressToAllow = await getIdentity()
+      stubComponents.namePermissionChecker.checkPermission
+        .withArgs(identity.authChain.authChain[0].payload.toLowerCase(), worldName)
+        .resolves(true)
 
       const r = await makeRequest(
         localFetch,
-        `/world/${worldName}/permissions/deployment/${alreadyAllowedWallet.realAccount.address}`,
+        `/world/${worldName}/permissions/deployment/${newAddressToAllow.realAccount.address}`,
         identity,
         {},
         'PUT'
       )
 
-      expect(r.status).toEqual(400)
-      expect(await r.json()).toMatchObject({
-        error: 'Bad request',
-        message: `World ${worldName} does not have any permission type set for 'deployment'.`
+      expect(r.status).toEqual(204)
+      const metadata = await worldsManager.getMetadataForWorld(worldName)
+      expect(metadata).toMatchObject({
+        permissions: {
+          deployment: {
+            type: PermissionType.AllowList,
+            wallets: [newAddressToAllow.realAccount.address.toLowerCase()]
+          }
+        }
       })
     })
 
