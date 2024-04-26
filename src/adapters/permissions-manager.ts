@@ -31,8 +31,11 @@ export async function createPermissionsManagerComponent({
 
   async function deleteAddressFromAllowList(worldName: string, permission: Permission, address: string): Promise<void> {
     const metadata = await worldsManager.getMetadataForWorld(worldName)
-    const permissions = metadata?.permissions || defaultPermissions()
-    const permissionSetting = permissions[permission]
+    if (!metadata) {
+      throw new Error(`World ${worldName} does not exist`)
+    }
+
+    const permissionSetting = metadata.permissions[permission]
     if (permissionSetting.type !== PermissionType.AllowList) {
       throw new Error(`Permission ${permission} is not an allow list`)
     }
@@ -40,7 +43,7 @@ export async function createPermissionsManagerComponent({
     if (permissionSetting.wallets.includes(address)) {
       permissionSetting.wallets = permissionSetting.wallets.filter((w) => w !== address)
     }
-    await worldsManager.storePermissions(worldName, permissions)
+    await worldsManager.storePermissions(worldName, metadata.permissions)
   }
 
   return {

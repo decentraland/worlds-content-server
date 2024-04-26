@@ -203,8 +203,11 @@ export async function deletePermissionsAddressHandler(
   await checkOwnership(namePermissionChecker, ctx.verification!.auth, worldName)
 
   const metadata = await worldsManager.getMetadataForWorld(worldName)
-  const permissions = metadata?.permissions || defaultPermissions()
-  const permissionConfig = permissions[permissionName]
+  if (!metadata || !metadata.permissions || !metadata.permissions[permissionName]) {
+    throw new InvalidRequestError(`World ${worldName} does not have any permission type set for '${permissionName}'.`)
+  }
+
+  const permissionConfig = metadata.permissions[permissionName]
   if (permissionConfig?.type !== PermissionType.AllowList) {
     throw new InvalidRequestError(
       `World ${worldName} is configured as ${permissionConfig.type} (not '${PermissionType.AllowList}') for permission '${permissionName}'.`

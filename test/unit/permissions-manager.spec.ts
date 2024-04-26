@@ -4,12 +4,14 @@ import { defaultPermissions } from '../../src/logic/permissions-checker'
 import { createWorldsManagerMockComponent } from '../mocks/worlds-manager-mock'
 import { createPermissionsManagerComponent } from '../../src/adapters/permissions-manager'
 import { createWorldCreator } from '../mocks/world-creator'
+import { getIdentity, Identity } from '../utils'
 
 describe('PermissionsManager', function () {
   let storage: IContentStorageComponent
   let worldsManager: IWorldsManager
   let worldCreator: IWorldCreator
   let permissionsManager: IPermissionsManager
+  let identity: Identity
 
   let worldName: string
 
@@ -18,6 +20,7 @@ describe('PermissionsManager', function () {
     worldsManager = await createWorldsManagerMockComponent({ storage })
     worldCreator = createWorldCreator({ storage, worldsManager })
     permissionsManager = await createPermissionsManagerComponent({ worldsManager })
+    identity = await getIdentity()
 
     const created = await worldCreator.createWorldWithScene()
     worldName = created.worldName
@@ -39,11 +42,19 @@ describe('PermissionsManager', function () {
       })
     })
 
-    it('fails to add an address when world does not exist', async () => {
+    it('can add an address even when the world does not exist', async () => {
       const worldName = worldCreator.randomWorldName()
-      await expect(permissionsManager.addAddressToAllowList(worldName, 'access', '0x1234')).rejects.toThrow(
-        `World ${worldName} does not exist`
-      )
+      await permissionsManager.addAddressToAllowList(worldName, 'streaming', identity.realAccount.address)
+
+      const stored = await worldsManager.getMetadataForWorld(worldName)
+      expect(stored).toMatchObject({
+        permissions: {
+          ...defaultPermissions(),
+          streaming: {
+            wallets: [identity.realAccount.address]
+          }
+        }
+      })
     })
 
     it('fails to add an address when type is not allow-list', async () => {
