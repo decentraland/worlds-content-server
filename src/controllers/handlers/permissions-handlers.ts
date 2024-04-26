@@ -10,6 +10,7 @@ import { DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
 import bcrypt from 'bcrypt'
 import { InvalidRequestError, NotAuthorizedError } from '@dcl/platform-server-commons'
 import { EthAddress } from '@dcl/schemas'
+import { defaultPermissions } from '../../logic/permissions-checker'
 
 const saltRounds = 10
 
@@ -142,13 +143,12 @@ export async function postPermissionsHandler(
 
 export async function putPermissionsAddressHandler(
   ctx: HandlerContextWithPath<
-    'logs' | 'namePermissionChecker' | 'permissionsManager' | 'worldsManager',
+    'namePermissionChecker' | 'permissionsManager' | 'worldsManager',
     '/world/:world_name/permissions/:permission_name/:address'
   > &
     DecentralandSignatureContext<any>
 ): Promise<IHttpServerComponent.IResponse> {
-  const { logs, namePermissionChecker, permissionsManager, worldsManager } = ctx.components
-  const logger = logs.getLogger('put-permissions-address-handler')
+  const { namePermissionChecker, permissionsManager, worldsManager } = ctx.components
 
   const worldName = ctx.params.world_name
   const permissionName = ctx.params.permission_name as Permission
@@ -161,15 +161,9 @@ export async function putPermissionsAddressHandler(
   await checkOwnership(namePermissionChecker, ctx.verification!.auth, worldName)
 
   const metadata = await worldsManager.getMetadataForWorld(worldName)
-  if (!metadata || !metadata.permissions || !metadata.permissions[permissionName]) {
-    logger.error(
-      `World ${worldName} does not have any permission type set for '${permissionName}': ${JSON.stringify(metadata)}`
-    )
-    throw new InvalidRequestError(`World ${worldName} does not have any permission type set for '${permissionName}'.`)
-  }
-
-  const permissionConfig = metadata.permissions[permissionName]
-  if (permissionConfig?.type !== PermissionType.AllowList) {
+  const permissions = metadata?.permissions || defaultPermissions()
+  const permissionConfig = permissions[permissionName]
+  if (permissionConfig.type !== PermissionType.AllowList) {
     throw new InvalidRequestError(
       `World ${worldName} is configured as ${permissionConfig.type} (not '${PermissionType.AllowList}') for permission '${permissionName}'.`
     )
@@ -191,13 +185,12 @@ export async function putPermissionsAddressHandler(
 
 export async function deletePermissionsAddressHandler(
   ctx: HandlerContextWithPath<
-    'logs' | 'namePermissionChecker' | 'permissionsManager' | 'worldsManager',
+    'namePermissionChecker' | 'permissionsManager' | 'worldsManager',
     '/world/:world_name/permissions/:permission_name/:address'
   > &
     DecentralandSignatureContext<any>
 ): Promise<IHttpServerComponent.IResponse> {
-  const { logs, namePermissionChecker, permissionsManager, worldsManager } = ctx.components
-  const logger = logs.getLogger('put-permissions-address-handler')
+  const { namePermissionChecker, permissionsManager, worldsManager } = ctx.components
 
   const worldName = ctx.params.world_name
   const permissionName = ctx.params.permission_name as Permission
@@ -210,14 +203,8 @@ export async function deletePermissionsAddressHandler(
   await checkOwnership(namePermissionChecker, ctx.verification!.auth, worldName)
 
   const metadata = await worldsManager.getMetadataForWorld(worldName)
-  if (!metadata || !metadata.permissions || !metadata.permissions[permissionName]) {
-    logger.error(
-      `World ${worldName} does not have any permission type set for '${permissionName}': ${JSON.stringify(metadata)}`
-    )
-    throw new InvalidRequestError(`World ${worldName} does not have any permission type set for '${permissionName}'.`)
-  }
-
-  const permissionConfig = metadata.permissions[permissionName]
+  const permissions = metadata?.permissions || defaultPermissions()
+  const permissionConfig = permissions[permissionName]
   if (permissionConfig?.type !== PermissionType.AllowList) {
     throw new InvalidRequestError(
       `World ${worldName} is configured as ${permissionConfig.type} (not '${PermissionType.AllowList}') for permission '${permissionName}'.`
