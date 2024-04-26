@@ -142,12 +142,13 @@ export async function postPermissionsHandler(
 
 export async function putPermissionsAddressHandler(
   ctx: HandlerContextWithPath<
-    'namePermissionChecker' | 'permissionsManager' | 'worldsManager',
+    'logs' | 'namePermissionChecker' | 'permissionsManager' | 'worldsManager',
     '/world/:world_name/permissions/:permission_name/:address'
   > &
     DecentralandSignatureContext<any>
 ): Promise<IHttpServerComponent.IResponse> {
-  const { namePermissionChecker, permissionsManager, worldsManager } = ctx.components
+  const { logs, namePermissionChecker, permissionsManager, worldsManager } = ctx.components
+  const logger = logs.getLogger('put-permissions-address-handler')
 
   const worldName = ctx.params.world_name
   const permissionName = ctx.params.permission_name as Permission
@@ -161,6 +162,9 @@ export async function putPermissionsAddressHandler(
 
   const metadata = await worldsManager.getMetadataForWorld(worldName)
   if (!metadata || !metadata.permissions || !metadata.permissions[permissionName]) {
+    logger.error(
+      `World ${worldName} does not have any permission type set for '${permissionName}': ${JSON.stringify(metadata)}`
+    )
     throw new InvalidRequestError(`World ${worldName} does not have any permission type set for '${permissionName}'.`)
   }
 
@@ -187,12 +191,13 @@ export async function putPermissionsAddressHandler(
 
 export async function deletePermissionsAddressHandler(
   ctx: HandlerContextWithPath<
-    'namePermissionChecker' | 'permissionsManager' | 'worldsManager',
+    'logs' | 'namePermissionChecker' | 'permissionsManager' | 'worldsManager',
     '/world/:world_name/permissions/:permission_name/:address'
   > &
     DecentralandSignatureContext<any>
 ): Promise<IHttpServerComponent.IResponse> {
-  const { namePermissionChecker, permissionsManager, worldsManager } = ctx.components
+  const { logs, namePermissionChecker, permissionsManager, worldsManager } = ctx.components
+  const logger = logs.getLogger('put-permissions-address-handler')
 
   const worldName = ctx.params.world_name
   const permissionName = ctx.params.permission_name as Permission
@@ -206,6 +211,9 @@ export async function deletePermissionsAddressHandler(
 
   const metadata = await worldsManager.getMetadataForWorld(worldName)
   if (!metadata || !metadata.permissions || !metadata.permissions[permissionName]) {
+    logger.error(
+      `World ${worldName} does not have any permission type set for '${permissionName}': ${JSON.stringify(metadata)}`
+    )
     throw new InvalidRequestError(`World ${worldName} does not have any permission type set for '${permissionName}'.`)
   }
 
