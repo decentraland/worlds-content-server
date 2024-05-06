@@ -13,6 +13,7 @@ import { migration as migration_0011 } from './0011_add_size_and_owner_columns'
 import { migration as migration_0012 } from './0012_store_world_owner_and_size'
 import { migration as migration_0013 } from './0013_create_blocked_table'
 import { migration as migration_0014 } from './0014_permissions_set_addresses_lowercase'
+import { migration as migration_0015 } from './0015_multiple_scenes_per_world'
 
 export const allMigrations: Migration[] = [
   migration_0001,
@@ -28,5 +29,6 @@ export const allMigrations: Migration[] = [
   migration_0011,
   migration_0012,
   migration_0013,
-  migration_0014
+  migration_0014,
+  migration_0015
 ]
