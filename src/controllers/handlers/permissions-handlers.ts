@@ -179,18 +179,20 @@ export async function putPermissionsAddressHandler(
 
   await permissionsManager.addAddressToAllowList(worldName, permissionName, lowerCaseAddress)
 
-  await notificationService.sendNotifications([{
-    type: NotificationType.WORLDS_PERMISSION_GRANTED,
-    eventKey: randomUUID(),
-    address: lowerCaseAddress,
-    metadata: {
-      title: 'Worlds permission granted',
-      description: `You have been granted ${permissionName} permission for world ${worldName}`,
-      world: worldName,
-      permission: permissionName
-    },
-    timestamp: Date.now()
-  }])
+  await notificationService.sendNotifications([
+    {
+      type: NotificationType.WORLDS_PERMISSION_GRANTED,
+      eventKey: randomUUID(),
+      address: lowerCaseAddress,
+      metadata: {
+        title: 'Worlds permission granted',
+        description: `You have been granted ${permissionName} permission for world ${worldName}`,
+        world: worldName,
+        permissions: [permissionName]
+      },
+      timestamp: Date.now()
+    }
+  ])
 
   return {
     status: 204
@@ -237,18 +239,20 @@ export async function deletePermissionsAddressHandler(
 
   await permissionsManager.deleteAddressFromAllowList(worldName, permissionName, lowerCaseAddress)
 
-  await notificationService.sendNotifications([{
-    type: NotificationType.WORLDS_PERMISSION_REVOKED,
-    eventKey: randomUUID(),
-    address: lowerCaseAddress,
-    metadata: {
-      title: 'World permission revoked',
-      description: `Your ${permissionName} permission for world ${worldName} has been revoked`,
-      world: worldName,
-      permissions: [permissionName]
-    },
-    timestamp: Date.now()
-  }])
+  await notificationService.sendNotifications([
+    {
+      type: NotificationType.WORLDS_PERMISSION_REVOKED,
+      eventKey: randomUUID(),
+      address: lowerCaseAddress,
+      metadata: {
+        title: 'World permission revoked',
+        description: `Your ${permissionName} permission for world ${worldName} has been revoked`,
+        world: worldName,
+        permissions: [permissionName]
+      },
+      timestamp: Date.now()
+    }
+  ])
 
   return {
     status: 204
