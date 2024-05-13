@@ -1,5 +1,6 @@
 import {
   AppComponents,
+  ContributorDomain,
   IPermissionChecker,
   IWorldsManager,
   Permissions,
@@ -121,7 +122,35 @@ export async function createWorldsManagerMockComponent({
     await storage.delete([`name-${worldName.toLowerCase()}`])
   }
 
+  async function getContributableDomains(address: string): Promise<{ domains: ContributorDomain[]; count: number }> {
+    const domains: ContributorDomain[] = []
+    for await (const name of storage.allFileIds('name-')) {
+      const metadata = await getMetadataForWorld(name)
+      const entity = await getEntityForWorld(name)
+      if (entity) {
+        const content = await storage.retrieve(`${entity.id}.auth`)
+        const authChain = JSON.parse((await streamToBuffer(await content?.asStream())).toString())
+        const hasDeploymentPermission = metadata.permissions.deployment.wallets.includes(address)
+        const hasStreamingPermission =
+          'wallets' in metadata.permissions.streaming && metadata.permissions.streaming.wallets.includes(address)
+        if (hasStreamingPermission || hasStreamingPermission) {
+          domains.push({
+            name,
+            user_permissions: [
+              ...(hasDeploymentPermission ? ['deployment'] : []),
+              ...(hasStreamingPermission ? ['streaming'] : [])
+            ],
+            size: '0',
+            owner: authChain[0].payload
+          })
+        }
+      }
+    }
+    return { domains, count: domains.length }
+  }
+
   return {
+    getContributableDomains,
     getRawWorldRecords,
     getDeployedWorldCount,
     getDeployedWorldEntities,

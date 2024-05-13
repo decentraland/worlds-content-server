@@ -156,6 +156,7 @@ export type IWorldsManager = {
   storePermissions(worldName: string, permissions: Permissions): Promise<void>
   permissionCheckerForWorld(worldName: string): Promise<IPermissionChecker>
   undeploy(worldName: string): Promise<void>
+  getContributableDomains(address: string): Promise<{ domains: ContributorDomain[]; count: number }>
 }
 
 export type IPermissionsManager = {
@@ -367,3 +368,10 @@ export type WorldRecord = {
 export type BlockedRecord = { wallet: string; created_at: Date; updated_at: Date }
 
 export const TWO_DAYS_IN_MS = 2 * 24 * 60 * 60 * 1000
+
+export type ContributorDomain = {
+  name: string
+  user_permissions: string[]
+  owner: string
+  size: string
+}
