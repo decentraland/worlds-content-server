@@ -195,7 +195,6 @@ export async function createWorldsManagerComponent({
       FROM (
         SELECT *
         FROM worlds w, json_each_text(w.permissions) AS perm(permission, permissionValue)
-        WHERE permission = ANY(ARRAY['deployment', 'streaming'])
       ) AS wp
       WHERE EXISTS (
         SELECT 1 FROM json_array_elements_text(wp.permissionValue::json -> 'wallets') as wallet WHERE LOWER(wallet) = LOWER(${address})

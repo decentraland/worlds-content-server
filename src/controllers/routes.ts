@@ -49,7 +49,7 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   router.head('/contents/:hashId', headContentFile)
   router.get('/contents/:hashId', getContentFile)
 
-  router.get('/world/contribute', signedFetchMiddleware, getContributableDomainsHandler)
+  router.get('/wallet/contribute', signedFetchMiddleware, getContributableDomainsHandler)
 
   router.get('/world/:world_name/permissions', getPermissionsHandler)
   router.post('/world/:world_name/permissions/:permission_name', signedFetchMiddleware, postPermissionsHandler)

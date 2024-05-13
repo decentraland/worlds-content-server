@@ -49,10 +49,10 @@ test('ContributorHandler', function ({ components }) {
     owner = created.owner.authChain[0].payload.toLowerCase()
   })
 
-  describe('/world/contribute', () => {
+  describe('/wallet/contribute', () => {
     describe("when user doesn't have contributor permission to any world", () => {
       it('returns an empty list', async () => {
-        const r = await makeRequest('/world/contribute', identity)
+        const r = await makeRequest('/wallet/contribute', identity)
 
         expect(r.status).toBe(200)
         expect(await r.json()).toMatchObject({ domains: [], count: 0 })
@@ -69,7 +69,7 @@ test('ContributorHandler', function ({ components }) {
           }
         }
         await worldsManager.storePermissions(worldName, permissions)
-        const r = await makeRequest('/world/contribute', identity)
+        const r = await makeRequest('/wallet/contribute', identity)
 
         expect(r.status).toBe(200)
         expect(await r.json()).toMatchObject({
@@ -77,6 +77,33 @@ test('ContributorHandler', function ({ components }) {
             {
               name: worldName,
               user_permissions: ['streaming'],
+              owner,
+              size: '0'
+            }
+          ],
+          count: 1
+        })
+      })
+    })
+
+    describe('when user has access permission to world', () => {
+      it('returns list of domains', async () => {
+        const permissions: Permissions = {
+          ...defaultPermissions(),
+          access: {
+            type: PermissionType.AllowList,
+            wallets: [identity.realAccount.address]
+          }
+        }
+        await worldsManager.storePermissions(worldName, permissions)
+        const r = await makeRequest('/wallet/contribute', identity)
+
+        expect(r.status).toBe(200)
+        expect(await r.json()).toMatchObject({
+          domains: [
+            {
+              name: worldName,
+              user_permissions: ['access'],
               owner,
               size: '0'
             }
@@ -97,7 +124,7 @@ test('ContributorHandler', function ({ components }) {
         }
 
         await worldsManager.storePermissions(worldName, permissions)
-        const r = await makeRequest('/world/contribute', identity)
+        const r = await makeRequest('/wallet/contribute', identity)
 
         expect(r.status).toBe(200)
         const result = await r.json()
@@ -111,6 +138,27 @@ test('ContributorHandler', function ({ components }) {
             }
           ],
           count: 1
+        })
+      })
+    })
+
+    describe('when world streaming permission is unrestricted', () => {
+      it('return empty list', async () => {
+        const permissions: Permissions = {
+          ...defaultPermissions(),
+          streaming: {
+            type: PermissionType.Unrestricted
+          }
+        }
+
+        await worldsManager.storePermissions(worldName, permissions)
+        const r = await makeRequest('/wallet/contribute', identity)
+
+        expect(r.status).toBe(200)
+        const result = await r.json()
+        expect(result).toMatchObject({
+          domains: [],
+          count: 0
         })
       })
     })
