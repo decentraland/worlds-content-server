@@ -1,4 +1,5 @@
 import { IHttpServerComponent } from '@well-known-components/interfaces'
+import { randomUUID } from 'crypto'
 import {
   HandlerContextWithPath,
   IWorldNamePermissionChecker,
@@ -9,7 +10,7 @@ import {
 import { DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
 import bcrypt from 'bcrypt'
 import { InvalidRequestError, NotAuthorizedError } from '@dcl/platform-server-commons'
-import { EthAddress } from '@dcl/schemas'
+import { EthAddress, NotificationType } from '@dcl/schemas'
 import { defaultPermissions } from '../../logic/permissions-checker'
 
 const saltRounds = 10
@@ -143,12 +144,12 @@ export async function postPermissionsHandler(
 
 export async function putPermissionsAddressHandler(
   ctx: HandlerContextWithPath<
-    'namePermissionChecker' | 'permissionsManager' | 'worldsManager',
+    'namePermissionChecker' | 'permissionsManager' | 'worldsManager' | 'notificationService',
     '/world/:world_name/permissions/:permission_name/:address'
   > &
     DecentralandSignatureContext<any>
 ): Promise<IHttpServerComponent.IResponse> {
-  const { namePermissionChecker, permissionsManager, worldsManager } = ctx.components
+  const { namePermissionChecker, permissionsManager, worldsManager, notificationService } = ctx.components
 
   const worldName = ctx.params.world_name
   const permissionName = ctx.params.permission_name as Permission
@@ -178,6 +179,21 @@ export async function putPermissionsAddressHandler(
 
   await permissionsManager.addAddressToAllowList(worldName, permissionName, lowerCaseAddress)
 
+  await notificationService.sendNotifications([
+    {
+      type: NotificationType.WORLDS_PERMISSION_GRANTED,
+      eventKey: randomUUID(),
+      address: lowerCaseAddress,
+      metadata: {
+        title: 'Worlds permission granted',
+        description: `You have been granted ${permissionName} permission for world ${worldName}`,
+        world: worldName,
+        permissions: [permissionName]
+      },
+      timestamp: Date.now()
+    }
+  ])
+
   return {
     status: 204
   }
@@ -185,12 +201,12 @@ export async function putPermissionsAddressHandler(
 
 export async function deletePermissionsAddressHandler(
   ctx: HandlerContextWithPath<
-    'namePermissionChecker' | 'permissionsManager' | 'worldsManager',
+    'namePermissionChecker' | 'permissionsManager' | 'worldsManager' | 'notificationService',
     '/world/:world_name/permissions/:permission_name/:address'
   > &
     DecentralandSignatureContext<any>
 ): Promise<IHttpServerComponent.IResponse> {
-  const { namePermissionChecker, permissionsManager, worldsManager } = ctx.components
+  const { namePermissionChecker, permissionsManager, worldsManager, notificationService } = ctx.components
 
   const worldName = ctx.params.world_name
   const permissionName = ctx.params.permission_name as Permission
@@ -222,6 +238,21 @@ export async function deletePermissionsAddressHandler(
   }
 
   await permissionsManager.deleteAddressFromAllowList(worldName, permissionName, lowerCaseAddress)
+
+  await notificationService.sendNotifications([
+    {
+      type: NotificationType.WORLDS_PERMISSION_REVOKED,
+      eventKey: randomUUID(),
+      address: lowerCaseAddress,
+      metadata: {
+        title: 'World permission revoked',
+        description: `Your ${permissionName} permission for world ${worldName} has been revoked`,
+        world: worldName,
+        permissions: [permissionName]
+      },
+      timestamp: Date.now()
+    }
+  ])
 
   return {
     status: 204
