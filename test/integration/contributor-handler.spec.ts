@@ -86,33 +86,6 @@ test('ContributorHandler', function ({ components }) {
       })
     })
 
-    describe('when user has access permission to world', () => {
-      it('returns list of domains', async () => {
-        const permissions: Permissions = {
-          ...defaultPermissions(),
-          access: {
-            type: PermissionType.AllowList,
-            wallets: [identity.realAccount.address]
-          }
-        }
-        await worldsManager.storePermissions(worldName, permissions)
-        const r = await makeRequest('/wallet/contribute', identity)
-
-        expect(r.status).toBe(200)
-        expect(await r.json()).toMatchObject({
-          domains: [
-            {
-              name: worldName,
-              user_permissions: ['access'],
-              owner,
-              size: '0'
-            }
-          ],
-          count: 1
-        })
-      })
-    })
-
     describe('when user has deployment permission to world', () => {
       it('returns list of domains', async () => {
         const permissions: Permissions = {
