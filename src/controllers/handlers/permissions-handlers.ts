@@ -144,12 +144,13 @@ export async function postPermissionsHandler(
 
 export async function putPermissionsAddressHandler(
   ctx: HandlerContextWithPath<
-    'namePermissionChecker' | 'permissionsManager' | 'worldsManager' | 'notificationService',
+    'config' | 'namePermissionChecker' | 'permissionsManager' | 'worldsManager' | 'notificationService',
     '/world/:world_name/permissions/:permission_name/:address'
   > &
     DecentralandSignatureContext<any>
 ): Promise<IHttpServerComponent.IResponse> {
-  const { namePermissionChecker, permissionsManager, worldsManager, notificationService } = ctx.components
+  const { config, namePermissionChecker, permissionsManager, worldsManager, notificationService } = ctx.components
+  const builderUrl = await config.requireString('BUILDER_URL')
 
   const worldName = ctx.params.world_name
   const permissionName = ctx.params.permission_name as Permission
@@ -188,7 +189,8 @@ export async function putPermissionsAddressHandler(
         title: 'Worlds permission granted',
         description: `You have been granted ${permissionName} permission for world ${worldName}`,
         world: worldName,
-        permissions: [permissionName]
+        permissions: [permissionName],
+        url: `${builderUrl}/worlds?tab=dcl`
       },
       timestamp: Date.now()
     }
@@ -201,12 +203,13 @@ export async function putPermissionsAddressHandler(
 
 export async function deletePermissionsAddressHandler(
   ctx: HandlerContextWithPath<
-    'namePermissionChecker' | 'permissionsManager' | 'worldsManager' | 'notificationService',
+    'config' | 'namePermissionChecker' | 'permissionsManager' | 'worldsManager' | 'notificationService',
     '/world/:world_name/permissions/:permission_name/:address'
   > &
     DecentralandSignatureContext<any>
 ): Promise<IHttpServerComponent.IResponse> {
-  const { namePermissionChecker, permissionsManager, worldsManager, notificationService } = ctx.components
+  const { config, namePermissionChecker, permissionsManager, worldsManager, notificationService } = ctx.components
+  const builderUrl = await config.requireString('BUILDER_URL')
 
   const worldName = ctx.params.world_name
   const permissionName = ctx.params.permission_name as Permission
@@ -248,7 +251,8 @@ export async function deletePermissionsAddressHandler(
         title: 'World permission revoked',
         description: `Your ${permissionName} permission for world ${worldName} has been revoked`,
         world: worldName,
-        permissions: [permissionName]
+        permissions: [permissionName],
+        url: `${builderUrl}/worlds?tab=dcl`
       },
       timestamp: Date.now()
     }
