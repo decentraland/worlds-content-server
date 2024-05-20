@@ -336,7 +336,7 @@ test('PermissionsHandler', function ({ components, stubComponents }) {
     })
   })
 
-  describe(`PUT and DELETE /world/${worldName}/permissions/[:permission]/[:address]`, function () {
+  describe(`PUT and DELETE /world/:worldName/permissions/[:permission]/[:address]`, function () {
     let alreadyAllowedWallet: Identity
 
     beforeEach(async () => {
