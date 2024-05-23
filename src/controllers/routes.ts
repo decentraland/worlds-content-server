@@ -22,6 +22,7 @@ import { undeployEntity } from './handlers/undeploy-entity-handler'
 import { bearerTokenMiddleware, errorHandler } from '@dcl/platform-server-commons'
 import { reprocessABHandler } from './handlers/reprocess-ab-handler'
 import { garbageCollectionHandler } from './handlers/garbage-collection'
+import { getContributableDomainsHandler } from './handlers/contributor-handler'
 
 export async function setupRouter(globalContext: GlobalContext): Promise<Router<GlobalContext>> {
   const router = new Router<GlobalContext>()
@@ -47,6 +48,8 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   router.post('/entities/active', activeEntitiesHandler)
   router.head('/contents/:hashId', headContentFile)
   router.get('/contents/:hashId', getContentFile)
+
+  router.get('/wallet/contribute', signedFetchMiddleware, getContributableDomainsHandler)
 
   router.get('/world/:world_name/permissions', getPermissionsHandler)
   router.post('/world/:world_name/permissions/:permission_name', signedFetchMiddleware, postPermissionsHandler)

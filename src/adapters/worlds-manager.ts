@@ -1,4 +1,12 @@
-import { AppComponents, IPermissionChecker, IWorldsManager, Permissions, WorldMetadata, WorldRecord } from '../types'
+import {
+  AppComponents,
+  IPermissionChecker,
+  IWorldsManager,
+  Permissions,
+  WorldMetadata,
+  WorldRecord,
+  ContributorDomain
+} from '../types'
 import { streamToBuffer } from '@dcl/catalyst-storage'
 import { Entity, EthAddress } from '@dcl/schemas'
 import SQL from 'sql-template-strings'
@@ -181,6 +189,26 @@ export async function createWorldsManagerComponent({
     await database.query(sql)
   }
 
+  async function getContributableDomains(address: string): Promise<{ domains: ContributorDomain[]; count: number }> {
+    const result = await database.query<ContributorDomain>(SQL`
+      SELECT DISTINCT name, array_agg(permission) as user_permissions, size, owner
+      FROM (
+        SELECT *
+        FROM worlds w, json_each_text(w.permissions) AS perm(permission, permissionValue)
+        WHERE permission = ANY(ARRAY['deployment', 'streaming'])
+      ) AS wp
+      WHERE EXISTS (
+        SELECT 1 FROM json_array_elements_text(wp.permissionValue::json -> 'wallets') as wallet WHERE LOWER(wallet) = LOWER(${address})
+      )
+      GROUP BY name, size, owner
+    `)
+
+    return {
+      domains: result.rows,
+      count: result.rowCount
+    }
+  }
+
   return {
     getRawWorldRecords,
     getDeployedWorldCount,
@@ -190,6 +218,7 @@ export async function createWorldsManagerComponent({
     deployScene,
     storePermissions,
     permissionCheckerForWorld,
-    undeploy
+    undeploy,
+    getContributableDomains
   }
 }
