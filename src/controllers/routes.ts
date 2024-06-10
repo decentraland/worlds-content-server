@@ -23,6 +23,7 @@ import { bearerTokenMiddleware, errorHandler } from '@dcl/platform-server-common
 import { reprocessABHandler } from './handlers/reprocess-ab-handler'
 import { garbageCollectionHandler } from './handlers/garbage-collection'
 import { getContributableDomainsHandler } from './handlers/contributor-handler'
+import { deployFile, finishDeployEntity, startDeployEntity } from './handlers/deploy-v2-handlers'
 
 export async function setupRouter(globalContext: GlobalContext): Promise<Router<GlobalContext>> {
   const router = new Router<GlobalContext>()
@@ -44,6 +45,11 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   router.post('/entities', multipartParserWrapper(deployEntity))
   router.delete('/entities/:world_name', signedFetchMiddleware, undeployEntity)
   router.get('/available-content', availableContentHandler)
+
+  // deploy v2
+  router.post('/v2/entities/:entityId', startDeployEntity)
+  router.post('/v2/entities/:entityId/files/:fileHash', deployFile)
+  router.put('/v2/entities/:entityId', finishDeployEntity)
 
   // consumption
   router.head('/ipfs/:hashId', headContentFile)

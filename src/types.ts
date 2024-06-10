@@ -21,6 +21,7 @@ import {
   PublishCommandOutput
 } from '@aws-sdk/client-sns'
 import { IFetchComponent } from '@well-known-components/interfaces'
+import { IDeploymentV2Manager } from './adapters/deployment-v2-manager'
 
 export type GlobalContext = {
   components: BaseComponents
@@ -265,6 +266,7 @@ export type BaseComponents = {
   commsAdapter: ICommsAdapter
   config: IConfigComponent
   database: IPgComponent
+  deploymentV2Manager: IDeploymentV2Manager
   entityDeployer: IEntityDeployer
   ethereumProvider: HTTPProvider
   fetch: IFetchComponent
