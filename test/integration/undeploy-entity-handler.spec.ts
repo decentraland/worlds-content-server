@@ -3,13 +3,13 @@ import { getAuthHeaders, getIdentity, Identity } from '../utils'
 import { Authenticator } from '@dcl/crypto'
 
 test('undeploy entity handler /entities/:world_name', function ({ components, stubComponents }) {
-  function makeRequest(path: string, identity: Identity) {
+  function makeRequest(path: string, identity: Identity, metadata: Record<string, any> = {}) {
     const { localFetch } = components
 
     return localFetch.fetch(path, {
       method: 'DELETE',
       headers: {
-        ...getAuthHeaders('DELETE', path, {}, (payload) =>
+        ...getAuthHeaders('DELETE', path, metadata, (payload) =>
           Authenticator.signPayload(
             {
               ephemeralIdentity: identity.ephemeralIdentity,
@@ -34,6 +34,23 @@ test('undeploy entity handler /entities/:world_name', function ({ components, st
 
     expect(r.status).toEqual(400)
     expect(await r.json()).toMatchObject({ message: 'Invalid request. You have no permission to undeploy the scene.' })
+  })
+
+  it('cannot undeploy if signer is sdk', async () => {
+    const { worldCreator } = components
+
+    const identity = await getIdentity()
+
+    const { worldName } = await worldCreator.createWorldWithScene({
+      owner: identity.authChain
+    })
+
+    const r = await makeRequest(`/entities/${worldName}`, identity, {
+      signer: 'decentraland-kernel-scene'
+    })
+
+    expect(r.status).toEqual(400)
+    expect(await r.json()).toMatchObject({ message: 'This endpoint requires a signed fetch request. See ADR-44.' })
   })
 
   it('successfully un-deploys a world', async () => {

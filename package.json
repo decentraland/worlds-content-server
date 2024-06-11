@@ -18,7 +18,7 @@
     "@dcl/catalyst-storage": "^4.2.0",
     "@dcl/crypto": "^3.4.5",
     "@dcl/hashing": "^3.0.4",
-    "@dcl/platform-crypto-middleware": "^1.0.2",
+    "@dcl/platform-crypto-middleware": "^1.1.0",
     "@dcl/platform-server-commons": "^0.0.4",
     "@dcl/schemas": "^11.9.1",
     "@ensdomains/eth-ens-namehash": "^2.0.15",

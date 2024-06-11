@@ -1,14 +1,14 @@
 import { IHttpServerComponent } from '@well-known-components/interfaces'
 import { HandlerContextWithPath } from '../../types'
-import { DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
 import { InvalidRequestError } from '@dcl/platform-server-commons'
+import { DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
 
 export async function undeployEntity({
   params,
   components: { logs, namePermissionChecker, worldsManager },
   verification
 }: HandlerContextWithPath<'logs' | 'namePermissionChecker' | 'worldsManager', '/entities/:world_name'> &
-  DecentralandSignatureContext<any>): Promise<IHttpServerComponent.IResponse> {
+  DecentralandSignatureContext<{ signer: string }>): Promise<IHttpServerComponent.IResponse> {
   const logger = logs.getLogger('worlds-manager')
 
   const identity = verification!.auth
