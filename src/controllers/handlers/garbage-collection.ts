@@ -1,4 +1,4 @@
-import { HandlerContextWithPath, WorldRecord } from '../../types'
+import { HandlerContextWithPath, SceneRecord } from '../../types'
 import SQL from 'sql-template-strings'
 import { IHttpServerComponent } from '@well-known-components/interfaces'
 
@@ -17,11 +17,7 @@ export async function garbageCollectionHandler(
     logger.info('Getting all keys active in the database...')
 
     const activeKeys = new Set<string>()
-    const result = await database.query<WorldRecord>(
-      SQL`SELECT *
-          FROM worlds
-          WHERE worlds.entity IS NOT NULL`
-    )
+    const result = await database.query<SceneRecord>(SQL`SELECT * FROM scenes`)
     result.rows.forEach((row) => {
       // Add entity file and deployment auth-chain
       activeKeys.add(row.entity_id)

@@ -12,7 +12,7 @@ export const migration: Migration = {
     // Fix incorrectly stored ACLs
     for await (const key of components.storage.allFileIds('name-')) {
       if (key.startsWith('name-')) {
-        const existing = await readFile(components.storage, key)
+        const existing = (await readFile(components.storage, key)) as any
         if (existing) {
           const scene = (await readFile(components.storage, existing.entityId)) as any
           const worldName = key.replace('name-', '')
