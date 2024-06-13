@@ -4,22 +4,31 @@ import { hashV1 } from '@dcl/hashing'
 import { InvalidRequestError } from '@dcl/platform-server-commons'
 
 export type IDeploymentV2Manager = {
-  initDeployment(entityId: string, authChain: AuthChain, files: Record<string, number>): Promise<void>
+  initDeployment(
+    entityId: string,
+    authChain: AuthChain,
+    files: Record<string, number>
+  ): Promise<OngoingDeploymentMetadata>
   addFileToDeployment(entityId: string, fileHash: string, file: Buffer): Promise<void>
   completeDeployment(entityId: string): Promise<DeploymentResult>
 }
 
 export type StartDeploymentBody = { authChain: AuthChain; files: Record<string, number> }
+export type OngoingDeploymentMetadata = StartDeploymentBody & { availableFiles: string[]; missingFiles: string[] }
 
 export function createDeploymentV2Manager(
   components: Pick<AppComponents, 'config' | 'entityDeployer' | 'logs' | 'storage' | 'validator'>
 ): IDeploymentV2Manager {
   const { config, entityDeployer, logs, storage, validator } = components
   const logger = logs.getLogger('deployment-v2-manager')
-  const ongoingDeploymentsRecord: Record<string, StartDeploymentBody> = {}
+  const ongoingDeploymentsRecord: Record<string, OngoingDeploymentMetadata> = {}
   const tempFiles: Record<string, Buffer> = {}
 
-  async function initDeployment(entityId: string, authChain: AuthChain, files: Record<string, number>): Promise<void> {
+  async function initDeployment(
+    entityId: string,
+    authChain: AuthChain,
+    files: Record<string, number>
+  ): Promise<OngoingDeploymentMetadata> {
     logger.info(`Init deployment for entity ${entityId}`)
 
     // TODO Get entity from request
@@ -29,7 +38,15 @@ export function createDeploymentV2Manager(
     // Check what files are already in storage and temporary storage and return the result
     const results = Array.from((await storage.existMultiple(Object.keys(files))).entries())
 
-    ongoingDeploymentsRecord[entityId] = { authChain, files }
+    const ongoingDeploymentMetadata = {
+      authChain,
+      files,
+      availableFiles: results.filter(([_, available]) => !!available).map(([cid, _]) => cid),
+      missingFiles: results.filter(([_, available]) => !available).map(([cid, _]) => cid)
+    }
+    ongoingDeploymentsRecord[entityId] = ongoingDeploymentMetadata
+
+    return ongoingDeploymentMetadata
   }
 
   async function addFileToDeployment(entityId: string, fileHash: string, file: Buffer): Promise<void> {
@@ -39,11 +56,12 @@ export function createDeploymentV2Manager(
       throw new InvalidRequestError(`Deployment for entity ${entityId} not found`)
     }
     const computedFileHash = await hashV1(file)
-    if (computedFileHash !== entityId && fileHash !== computedFileHash) {
-      const expectedSize = ongoingDeploymentsRecordElement.files[fileHash]
-      if (!expectedSize) {
+    if (computedFileHash === entityId || fileHash === computedFileHash) {
+      if (!ongoingDeploymentsRecordElement.missingFiles.includes(fileHash)) {
         throw new InvalidRequestError(`File with hash ${fileHash} not expected in deployment for entity ${entityId}`)
       }
+
+      const expectedSize = ongoingDeploymentsRecordElement.files[fileHash]
       if (expectedSize !== file.length) {
         throw new InvalidRequestError(
           `File with hash ${fileHash} has unexpected size in deployment for entity ${entityId}`
