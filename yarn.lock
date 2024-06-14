@@ -2558,10 +2558,9 @@ cross-spawn@^7.0.2, cross-spawn@^7.0.3:
     shebang-command "^2.0.0"
     which "^2.0.1"
 
-dcl-catalyst-client@^21.7.0:
-  version "21.7.0"
-  resolved "https://registry.yarnpkg.com/dcl-catalyst-client/-/dcl-catalyst-client-21.7.0.tgz#dbf33dff0bcf382c8383f359dbfaf7f85011af25"
-  integrity sha512-10NyeYrKSh7yM5y7suLfoDeVAM9xknlvlxDBof1lJiuPYPzj5Aee8kaEDfXzVWTpfI7ssvSXhBlGVRvyd0RcJA==
+"dcl-catalyst-client@https://sdk-team-cdn.decentraland.org/@dcl/catalyst-client/branch/deploy-v2/dcl-catalyst-client-21.7.1-9517693754.commit-34d6bdc.tgz":
+  version "21.7.1-9517693754.commit-34d6bdc"
+  resolved "https://sdk-team-cdn.decentraland.org/@dcl/catalyst-client/branch/deploy-v2/dcl-catalyst-client-21.7.1-9517693754.commit-34d6bdc.tgz#86be52bf40ba11b714217caee2c4ddfab288a1ed"
   dependencies:
     "@dcl/catalyst-contracts" "^4.4.0"
     "@dcl/crypto" "^3.4.0"
@@ -2572,9 +2571,9 @@ dcl-catalyst-client@^21.7.0:
     cross-fetch "^3.1.5"
     form-data "^4.0.0"
 
-"dcl-catalyst-client@https://sdk-team-cdn.decentraland.org/@dcl/catalyst-client/branch/deploy-v2/dcl-catalyst-client-21.7.1-9517693754.commit-34d6bdc.tgz":
-  version "21.7.1-9517693754.commit-34d6bdc"
-  resolved "https://sdk-team-cdn.decentraland.org/@dcl/catalyst-client/branch/deploy-v2/dcl-catalyst-client-21.7.1-9517693754.commit-34d6bdc.tgz#86be52bf40ba11b714217caee2c4ddfab288a1ed"
+"dcl-catalyst-client@https://sdk-team-cdn.decentraland.org/@dcl/catalyst-client/branch/deploy-v2/dcl-catalyst-client-21.7.1-9521698381.commit-b45e84a.tgz":
+  version "21.7.1-9521698381.commit-b45e84a"
+  resolved "https://sdk-team-cdn.decentraland.org/@dcl/catalyst-client/branch/deploy-v2/dcl-catalyst-client-21.7.1-9521698381.commit-b45e84a.tgz#1f1f5c935b17d508154ef387e8eb0ab6d51a05c6"
   dependencies:
     "@dcl/catalyst-contracts" "^4.4.0"
     "@dcl/crypto" "^3.4.0"
