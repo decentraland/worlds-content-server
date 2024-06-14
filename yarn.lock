@@ -2572,6 +2572,19 @@ dcl-catalyst-client@^21.7.0:
     cross-fetch "^3.1.5"
     form-data "^4.0.0"
 
+"dcl-catalyst-client@https://sdk-team-cdn.decentraland.org/@dcl/catalyst-client/branch/deploy-v2/dcl-catalyst-client-21.7.1-9517693754.commit-34d6bdc.tgz":
+  version "21.7.1-9517693754.commit-34d6bdc"
+  resolved "https://sdk-team-cdn.decentraland.org/@dcl/catalyst-client/branch/deploy-v2/dcl-catalyst-client-21.7.1-9517693754.commit-34d6bdc.tgz#86be52bf40ba11b714217caee2c4ddfab288a1ed"
+  dependencies:
+    "@dcl/catalyst-contracts" "^4.4.0"
+    "@dcl/crypto" "^3.4.0"
+    "@dcl/hashing" "^3.0.0"
+    "@dcl/schemas" "^11.5.0"
+    "@well-known-components/fetch-component" "^2.0.0"
+    cookie "^0.5.0"
+    cross-fetch "^3.1.5"
+    form-data "^4.0.0"
+
 debug@4, debug@^4.1.0, debug@^4.1.1, debug@^4.3.1, debug@^4.3.2, debug@^4.3.4:
   version "4.3.4"
   resolved "https://registry.yarnpkg.com/debug/-/debug-4.3.4.tgz#1319f6579357f2338d3337d2cdd4914bb5dcc865"
