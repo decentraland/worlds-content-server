@@ -1,9 +1,8 @@
 import { IHttpServerComponent } from '@well-known-components/interfaces'
 import { HandlerContextWithPath } from '../../types'
-import { AuthChain } from '@dcl/schemas'
 import { InvalidRequestError } from '@dcl/platform-server-commons'
-import { Authenticator } from '@dcl/crypto'
-import { StartDeploymentBody } from '../../adapters/deployment-v2-manager'
+import { FormDataContext } from '../../logic/multipart'
+import { extractFromContext } from '../../logic/extract-deployment-info'
 
 export function requireString(val: string | null | undefined): string {
   if (typeof val !== 'string') throw new Error('A string was expected')
@@ -11,26 +10,41 @@ export function requireString(val: string | null | undefined): string {
 }
 
 export async function startDeployEntity(
-  ctx: HandlerContextWithPath<'config' | 'deploymentV2Manager' | 'storage' | 'validator', '/v2/entities/:entityId'>
+  ctx: FormDataContext &
+    HandlerContextWithPath<'config' | 'deploymentV2Manager' | 'storage' | 'preDeploymentValidator', '/v2/entities'>
 ): Promise<IHttpServerComponent.IResponse> {
-  const entityId = await ctx.params.entityId
-  const body: StartDeploymentBody = await ctx.request.json()
-  const authChain: AuthChain = body.authChain
-  console.log('entityId', entityId, 'authChain', authChain, 'files', body.files)
+  const { authChain, entity, entityRaw, uploadedFiles } = extractFromContext(ctx)
 
-  if (!AuthChain.validate(authChain)) {
-    throw new InvalidRequestError('Invalid authChain received')
-  }
-  if (!(await Authenticator.validateSignature(entityId, authChain, null, 10))) {
-    throw new InvalidRequestError('Invalid signature')
+  const contentHashesInStorage = await ctx.components.storage.existMultiple(
+    Array.from(new Set(entity.content!.map(($) => $.hash)))
+  )
+
+  const fileSizesManifest = JSON.parse(ctx.formData.fields.fileSizesManifest.value.toString())
+
+  // run all validations about the deployment
+  const validationResult = await ctx.components.preDeploymentValidator.validate({
+    entity,
+    files: uploadedFiles,
+    authChain,
+    contentHashesInStorage,
+    fileSizesManifest
+  })
+  if (!validationResult.ok()) {
+    throw new InvalidRequestError(`Deployment failed: ${validationResult.errors.join(', ')}`)
   }
 
-  await ctx.components.deploymentV2Manager.initDeployment(entityId, authChain, body.files)
+  const ongoingDeploymentData = await ctx.components.deploymentV2Manager.initDeployment(
+    entity.id,
+    entityRaw,
+    authChain,
+    fileSizesManifest
+  )
 
   return {
     status: 200,
     body: {
-      creationTimestamp: Date.now()
+      availableFiles: ongoingDeploymentData.availableFiles,
+      missingFiles: ongoingDeploymentData.missingFiles
     }
   }
 }
@@ -56,7 +70,9 @@ export async function finishDeployEntity(
     '/v2/entities/:entityId'
   >
 ): Promise<IHttpServerComponent.IResponse> {
-  const message = await ctx.components.deploymentV2Manager.completeDeployment(ctx.params.entityId)
+  const baseUrl = (await ctx.components.config.getString('HTTP_BASE_URL')) || `https://${ctx.url.host}`
+
+  const message = await ctx.components.deploymentV2Manager.completeDeployment(baseUrl, ctx.params.entityId)
   return {
     status: 204,
     body: {

@@ -40,6 +40,7 @@ export type DeploymentToValidate = {
   files: Map<string, Uint8Array>
   authChain: AuthChain
   contentHashesInStorage: Map<string, boolean>
+  fileSizesManifest?: Record<string, number>
 }
 
 export type WorldRuntimeMetadata = {
@@ -280,6 +281,7 @@ export type BaseComponents = {
   namePermissionChecker: IWorldNamePermissionChecker
   notificationService: INotificationService
   permissionsManager: IPermissionsManager
+  preDeploymentValidator: Validator
   server: IHttpServerComponent<GlobalContext>
   snsClient: SnsClient
   status: IStatusComponent
@@ -324,11 +326,6 @@ export type HandlerContextWithPath<
   }>,
   Path
 >
-
-export interface ErrorResponse {
-  error: string
-  message: string
-}
 
 type WhitelistEntry = {
   max_parcels?: number

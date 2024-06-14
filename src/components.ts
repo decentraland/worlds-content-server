@@ -22,7 +22,7 @@ import { createWorldsManagerComponent } from './adapters/worlds-manager'
 import { createCommsAdapterComponent } from './adapters/comms-adapter'
 import { createWorldsIndexerComponent } from './adapters/worlds-indexer'
 
-import { createValidator } from './logic/validations'
+import { createPreDeploymentValidator, createValidator } from './logic/validations'
 import { createEntityDeployer } from './adapters/entity-deployer'
 import { createMigrationExecutor } from './adapters/migration-executor'
 import { createNameDenyListChecker } from './adapters/name-deny-list-checker'
@@ -135,7 +135,16 @@ export async function initComponents(): Promise<AppComponents> {
     worldsManager
   })
 
-  const deploymentV2Manager = createDeploymentV2Manager({ config, entityDeployer, logs, storage, validator })
+  const preDeploymentValidator = createPreDeploymentValidator({
+    config,
+    nameDenyListChecker,
+    namePermissionChecker,
+    limitsManager,
+    storage,
+    worldsManager
+  })
+
+  const deploymentV2Manager = createDeploymentV2Manager({ entityDeployer, logs, storage, validator })
 
   const migrationExecutor = createMigrationExecutor({ logs, database: database, nameOwnership, storage, worldsManager })
 
@@ -170,6 +179,7 @@ export async function initComponents(): Promise<AppComponents> {
     namePermissionChecker,
     notificationService,
     permissionsManager,
+    preDeploymentValidator,
     server,
     snsClient,
     status,
