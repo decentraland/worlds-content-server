@@ -8,7 +8,7 @@ export async function undeployEntity({
   components: { logs, namePermissionChecker, worldsManager },
   verification
 }: HandlerContextWithPath<'logs' | 'namePermissionChecker' | 'worldsManager', '/entities/:world_name'> &
-  DecentralandSignatureContext<{ signer: string }>): Promise<IHttpServerComponent.IResponse> {
+  DecentralandSignatureContext<any>): Promise<IHttpServerComponent.IResponse> {
   const logger = logs.getLogger('worlds-manager')
 
   const identity = verification!.auth
