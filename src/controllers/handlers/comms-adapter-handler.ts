@@ -1,6 +1,6 @@
 import { HandlerContextWithPath } from '../../types'
 import { IHttpServerComponent } from '@well-known-components/interfaces'
-import { verify, DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
+import { DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
 import { assertNotBlockedOrWithinInGracePeriod } from '../../logic/blocked'
 import { InvalidRequestError, NotAuthorizedError, NotFoundError } from '@dcl/platform-server-commons'
 
@@ -10,32 +10,14 @@ type CommsMetadata = {
 
 export async function commsAdapterHandler(
   context: HandlerContextWithPath<
-    'commsAdapter' | 'fetch' | 'config' | 'nameDenyListChecker' | 'namePermissionChecker' | 'worldsManager',
+    'commsAdapter' | 'config' | 'nameDenyListChecker' | 'namePermissionChecker' | 'worldsManager',
     '/get-comms-adapter/:roomId'
   > &
     DecentralandSignatureContext<CommsMetadata>
 ): Promise<IHttpServerComponent.IResponse> {
   const {
-    components: { commsAdapter, config, fetch, nameDenyListChecker, namePermissionChecker, worldsManager }
+    components: { commsAdapter, config, nameDenyListChecker, namePermissionChecker, worldsManager }
   } = context
-
-  const baseUrl = (await config.getString('HTTP_BASE_URL')) || `${context.url.protocol}//${context.url.host}`
-
-  const path = new URL(baseUrl + context.url.pathname)
-
-  try {
-    context.verification = await verify(context.request.method, path.pathname, context.request.headers.raw(), {
-      fetcher: fetch
-    })
-  } catch (e) {
-    return {
-      status: 401,
-      body: {
-        ok: false,
-        message: 'Access denied, invalid signed-fetch request'
-      }
-    }
-  }
 
   const authMetadata = context.verification!.authMetadata
   if (!validateMetadata(authMetadata)) {

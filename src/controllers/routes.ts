@@ -31,7 +31,11 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   const signedFetchMiddleware = wellKnownComponents({
     fetcher: globalContext.components.fetch,
     optional: false,
-    onError: (err) => ({ error: err.message, message: 'This endpoint requires a signed fetch request. See ADR-44.' })
+    metadataValidator: (metadata: Record<string, any>): boolean => metadata.signer !== 'decentraland-kernel-scene',
+    onError: (err: any) => ({
+      error: err.message,
+      message: 'This endpoint requires a signed fetch request. See ADR-44.'
+    })
   })
 
   router.get('/world/:world_name/about', worldAboutHandler)
@@ -70,8 +74,8 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   router.get('/index', getIndexHandler)
   router.get('/live-data', getLiveDataHandler)
 
-  router.post('/get-comms-adapter/:roomId', commsAdapterHandler)
-  router.post('/cast-adapter/:roomId', castAdapterHandler)
+  router.post('/get-comms-adapter/:roomId', signedFetchMiddleware, commsAdapterHandler)
+  router.post('/cast-adapter/:roomId', signedFetchMiddleware, castAdapterHandler)
 
   // administrative endpoints
   const secret = await globalContext.components.config.requireString('AUTH_SECRET')

@@ -1,19 +1,19 @@
 import { HandlerContextWithPath } from '../../types'
 import { IHttpServerComponent } from '@well-known-components/interfaces'
-import { DecentralandSignatureContext, verify } from '@dcl/platform-crypto-middleware'
+import { DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
 import { AccessToken } from 'livekit-server-sdk'
 import { assertNotBlockedOrWithinInGracePeriod } from '../../logic/blocked'
 import { InvalidRequestError, NotFoundError } from '@dcl/platform-server-commons'
 
 export async function castAdapterHandler(
   context: HandlerContextWithPath<
-    'config' | 'fetch' | 'nameDenyListChecker' | 'namePermissionChecker' | 'storage' | 'worldsManager',
+    'config' | 'nameDenyListChecker' | 'namePermissionChecker' | 'storage' | 'worldsManager',
     '/meet-adapter/:roomId'
   > &
     DecentralandSignatureContext<any>
 ): Promise<IHttpServerComponent.IResponse> {
   const {
-    components: { config, fetch, nameDenyListChecker, namePermissionChecker, worldsManager }
+    components: { config, nameDenyListChecker, namePermissionChecker, worldsManager }
   } = context
 
   const [host, apiKey, apiSecret] = await Promise.all([
@@ -21,25 +21,6 @@ export async function castAdapterHandler(
     config.requireString('LIVEKIT_API_KEY'),
     config.requireString('LIVEKIT_API_SECRET')
   ])
-
-  const baseUrl = (
-    (await config.getString('HTTP_BASE_URL')) || `${context.url.protocol}//${context.url.host}`
-  ).toString()
-  const path = new URL(baseUrl + context.url.pathname)
-
-  try {
-    context.verification = await verify(context.request.method, path.pathname, context.request.headers.raw(), {
-      fetcher: fetch
-    })
-  } catch (e) {
-    return {
-      status: 401,
-      body: {
-        ok: false,
-        message: 'Access denied, invalid signed-fetch request'
-      }
-    }
-  }
 
   if (!validateMetadata(context.verification!.authMetadata)) {
     throw new InvalidRequestError('Access denied, invalid metadata')

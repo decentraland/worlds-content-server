@@ -176,10 +176,10 @@ test('comms adapter handler /get-comms-adapter/:roomId', function ({ components,
       method: 'POST'
     })
 
-    expect(r.status).toEqual(401)
+    expect(r.status).toEqual(400)
     expect(await r.json()).toEqual({
-      message: 'Access denied, invalid signed-fetch request',
-      ok: false
+      error: 'Invalid Auth Chain',
+      message: 'This endpoint requires a signed fetch request. See ADR-44.'
     })
   })
 })
