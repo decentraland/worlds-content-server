@@ -1978,7 +1978,7 @@
     on-finished "^2.4.1"
     path-to-regexp "^6.2.1"
 
-"@well-known-components/interfaces@^1.1.0", "@well-known-components/interfaces@^1.1.1", "@well-known-components/interfaces@^1.4.1", "@well-known-components/interfaces@^1.4.2", "@well-known-components/interfaces@^1.4.3":
+"@well-known-components/interfaces@^1.1.1", "@well-known-components/interfaces@^1.4.1", "@well-known-components/interfaces@^1.4.2", "@well-known-components/interfaces@^1.4.3":
   version "1.4.3"
   resolved "https://registry.yarnpkg.com/@well-known-components/interfaces/-/interfaces-1.4.3.tgz#026047966db480bd561a315fdc8116b88bf8d27a"
   integrity sha512-roVtoOHG6uaH+nL4C0ISnAwkkopc2FLsS7fqX+roI22EdX9PAknPoImhPU8/3u6jgRAVpglX5Zj4nWZkSaXPkQ==
@@ -1999,13 +1999,13 @@
   dependencies:
     prom-client "^15.1.0"
 
-"@well-known-components/pg-component@^0.2.2":
-  version "0.2.2"
-  resolved "https://registry.yarnpkg.com/@well-known-components/pg-component/-/pg-component-0.2.2.tgz#ac378f68c9fd718644476fea694a34b3f0500cf9"
-  integrity sha512-LxjjL9pR/iuppteZvO3kL8X9LuJpIA+KWYq9hZAQcKfeikt2kjwSXGp58Xv8tWAxQtHbddDQSl19e0ArZWeqTw==
+"@well-known-components/pg-component@^0.2.3":
+  version "0.2.3"
+  resolved "https://registry.yarnpkg.com/@well-known-components/pg-component/-/pg-component-0.2.3.tgz#5a08fd057168e2e0fdef18336ac9a52b10e56b9a"
+  integrity sha512-j2EabIt0yqfBXX8I6eS2f2Q8CwKgxrHYbG/Qmlr2xfKXytkSctpcPrjjkK9q+CxiStTIxfp0sa3kqEOcg62+bQ==
   dependencies:
     "@types/pg" "^8.6.5"
-    "@well-known-components/interfaces" "^1.1.0"
+    "@well-known-components/interfaces" "^1.4.3"
     node-pg-migrate "^6.2.1"
     pg "^8.7.3"
     pg-query-stream "^4.2.3"
