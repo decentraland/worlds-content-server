@@ -1,6 +1,6 @@
 import { Router } from '@well-known-components/http-server'
 import { multipartParserWrapper } from '../logic/multipart'
-import { GlobalContext } from '../types'
+import { GlobalContext, HandlerContextWithPath } from '../types'
 import { availableContentHandler, getContentFile, headContentFile } from './handlers/content-file-handler'
 import { deployEntity } from './handlers/deploy-entity-handler'
 import { worldAboutHandler } from './handlers/world-about-handler'
@@ -23,10 +23,29 @@ import { bearerTokenMiddleware, errorHandler } from '@dcl/platform-server-common
 import { reprocessABHandler } from './handlers/reprocess-ab-handler'
 import { garbageCollectionHandler } from './handlers/garbage-collection'
 import { getContributableDomainsHandler } from './handlers/contributor-handler'
+import { deployFile, finishDeployEntity, startDeployEntity } from './handlers/deploy-v2-handlers'
+import { IHttpServerComponent } from '@well-known-components/interfaces'
+import util from 'util'
 
 export async function setupRouter(globalContext: GlobalContext): Promise<Router<GlobalContext>> {
   const router = new Router<GlobalContext>()
   router.use(errorHandler)
+
+  const logRequestMiddleware = async function logger(
+    ctx: HandlerContextWithPath<any>,
+    next: () => Promise<IHttpServerComponent.IResponse>
+  ) {
+    const headers: Record<string, string> = {}
+
+    for (const [header, value] of ctx.request.headers) {
+      headers[header] = value
+    }
+
+    console.log('Test server got request:\n', ctx.request.method, ctx.url.toString(), JSON.stringify(headers, null, 2))
+    const response = await next()
+    console.log('Test server will send response:\n' + util.inspect(response, false, 30))
+    return response
+  }
 
   const signedFetchMiddleware = wellKnownComponents({
     fetcher: globalContext.components.fetch,
@@ -41,9 +60,14 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   router.get('/world/:world_name/about', worldAboutHandler)
 
   // creation
-  router.post('/entities', multipartParserWrapper(deployEntity))
+  router.post('/entities', logRequestMiddleware, multipartParserWrapper(deployEntity))
   router.delete('/entities/:world_name', signedFetchMiddleware, undeployEntity)
   router.get('/available-content', availableContentHandler)
+
+  // deploy v2
+  router.post('/v2/entities', multipartParserWrapper(startDeployEntity))
+  router.post('/v2/entities/:entityId/files/:fileHash', deployFile)
+  router.put('/v2/entities/:entityId', finishDeployEntity)
 
   // consumption
   router.head('/ipfs/:hashId', headContentFile)
