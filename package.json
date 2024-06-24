@@ -40,7 +40,7 @@
     "p-queue": "^6.6.2"
   },
   "devDependencies": {
-    "@dcl/eslint-config": "^2.1.0",
+    "@dcl/eslint-config": "^2.1.1",
     "@types/bcrypt": "^5.0.2",
     "@types/node": "^20.11.10",
     "@well-known-components/test-helpers": "^1.5.6",
