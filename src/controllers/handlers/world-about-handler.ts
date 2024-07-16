@@ -1,5 +1,10 @@
 import { HandlerContextWithPath } from '../../types'
-import { About, AboutConfigurationsMinimap, AboutConfigurationsSkybox } from '@dcl/catalyst-api-specs/lib/client'
+import {
+  About,
+  AboutConfigurationsMap,
+  AboutConfigurationsMinimap,
+  AboutConfigurationsSkybox
+} from '@dcl/catalyst-api-specs/lib/client'
 import { l1Contracts, L1Network } from '@dcl/catalyst-contracts'
 import { assertNotBlockedOrWithinInGracePeriod } from '../../logic/blocked'
 import { NotFoundError } from '@dcl/platform-server-commons'
@@ -50,6 +55,7 @@ export async function worldAboutHandler({
     return defaultImage
   }
 
+  // TODO: deprecated, to be removed
   const minimap: AboutConfigurationsMinimap = {
     enabled: runtimeMetadata.minimapVisible
   }
@@ -61,6 +67,13 @@ export async function worldAboutHandler({
       runtimeMetadata.minimapEstateImage,
       'https://api.decentraland.org/v1/estatemap.png'
     )
+  }
+
+  // https://adr.decentraland.org/adr/ADR-250
+  const map: AboutConfigurationsMap = {
+    minimapEnabled: false,
+    // TODO: a minimap area might be defined
+    sizes: []
   }
 
   const skybox: AboutConfigurationsSkybox = {
@@ -78,7 +91,8 @@ export async function worldAboutHandler({
       scenesUrn: [urn],
       minimap,
       skybox,
-      realmName: runtimeMetadata.name
+      realmName: runtimeMetadata.name,
+      map
     },
     content: {
       synchronizationStatus: 'Syncing',
