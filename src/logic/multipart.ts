@@ -4,7 +4,7 @@ import { IHttpServerComponent } from '@well-known-components/interfaces'
 import busboy, { FieldInfo, FileInfo } from 'busboy'
 import { Readable } from 'stream'
 
-export type FormDataContext = IHttpServerComponent.DefaultContext & {
+export type FormDataContext = {
   formData: {
     fields: Record<
       string,

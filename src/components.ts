@@ -22,7 +22,7 @@ import { createWorldsManagerComponent } from './adapters/worlds-manager'
 import { createCommsAdapterComponent } from './adapters/comms-adapter'
 import { createWorldsIndexerComponent } from './adapters/worlds-indexer'
 
-import { createValidator } from './logic/validations'
+import { createPreDeploymentValidator, createValidator } from './logic/validations'
 import { createEntityDeployer } from './adapters/entity-deployer'
 import { createMigrationExecutor } from './adapters/migration-executor'
 import { createNameDenyListChecker } from './adapters/name-deny-list-checker'
@@ -36,6 +36,7 @@ import { createSnsClient } from './adapters/sns-client'
 import { createAwsConfig } from './adapters/aws-config'
 import { S3 } from 'aws-sdk'
 import { createNotificationsClientComponent } from './adapters/notifications-service'
+import { createDeploymentV2Manager } from './adapters/deployment-v2-manager'
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
@@ -134,6 +135,17 @@ export async function initComponents(): Promise<AppComponents> {
     worldsManager
   })
 
+  const preDeploymentValidator = createPreDeploymentValidator({
+    config,
+    nameDenyListChecker,
+    namePermissionChecker,
+    limitsManager,
+    storage,
+    worldsManager
+  })
+
+  const deploymentV2Manager = createDeploymentV2Manager({ entityDeployer, logs, storage, validator })
+
   const migrationExecutor = createMigrationExecutor({ logs, database: database, nameOwnership, storage, worldsManager })
 
   const notificationService = await createNotificationsClientComponent({ config, fetch, logs })
@@ -153,6 +165,7 @@ export async function initComponents(): Promise<AppComponents> {
     commsAdapter,
     config,
     database,
+    deploymentV2Manager,
     entityDeployer,
     ethereumProvider,
     fetch,
@@ -166,6 +179,7 @@ export async function initComponents(): Promise<AppComponents> {
     namePermissionChecker,
     notificationService,
     permissionsManager,
+    preDeploymentValidator,
     server,
     snsClient,
     status,

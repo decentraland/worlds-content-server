@@ -21,6 +21,7 @@ import {
   PublishCommandOutput
 } from '@aws-sdk/client-sns'
 import { IFetchComponent } from '@well-known-components/interfaces'
+import { IDeploymentV2Manager } from './adapters/deployment-v2-manager'
 
 export type GlobalContext = {
   components: BaseComponents
@@ -39,6 +40,7 @@ export type DeploymentToValidate = {
   files: Map<string, Uint8Array>
   authChain: AuthChain
   contentHashesInStorage: Map<string, boolean>
+  fileSizesManifest?: Record<string, number>
 }
 
 export type WorldRuntimeMetadata = {
@@ -265,6 +267,7 @@ export type BaseComponents = {
   commsAdapter: ICommsAdapter
   config: IConfigComponent
   database: IPgComponent
+  deploymentV2Manager: IDeploymentV2Manager
   entityDeployer: IEntityDeployer
   ethereumProvider: HTTPProvider
   fetch: IFetchComponent
@@ -278,6 +281,7 @@ export type BaseComponents = {
   namePermissionChecker: IWorldNamePermissionChecker
   notificationService: INotificationService
   permissionsManager: IPermissionsManager
+  preDeploymentValidator: Validator
   server: IHttpServerComponent<GlobalContext>
   snsClient: SnsClient
   status: IStatusComponent
@@ -322,11 +326,6 @@ export type HandlerContextWithPath<
   }>,
   Path
 >
-
-export interface ErrorResponse {
-  error: string
-  message: string
-}
 
 type WhitelistEntry = {
   max_parcels?: number
