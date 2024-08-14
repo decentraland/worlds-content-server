@@ -69,7 +69,7 @@ describe('limits manager', function () {
 
   it('responds for ENS names', async () => {
     expect(await limitsManager.getAllowSdk6For('cool.eth')).toBeFalsy()
-    expect(await limitsManager.getMaxAllowedSizeInBytesFor('cool.eth')).toBe(25n * MB_BigInt)
+    expect(await limitsManager.getMaxAllowedSizeInBytesFor('cool.eth')).toBe(36n * MB_BigInt)
     expect(await limitsManager.getMaxAllowedParcelsFor('cool.eth')).toBe(4)
   })
 
