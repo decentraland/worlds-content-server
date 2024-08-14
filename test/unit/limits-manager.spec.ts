@@ -21,7 +21,7 @@ describe('limits manager', function () {
     config = createConfigComponent({
       MAX_PARCELS: '4',
       MAX_SIZE: '200',
-      ENS_MAX_SIZE: '25',
+      ENS_MAX_SIZE: '36',
       ALLOW_SDK6: 'false',
       WHITELIST_URL: 'http://localhost/whitelist.json'
     })
@@ -69,7 +69,7 @@ describe('limits manager', function () {
 
   it('responds for ENS names', async () => {
     expect(await limitsManager.getAllowSdk6For('cool.eth')).toBeFalsy()
-    expect(await limitsManager.getMaxAllowedSizeInBytesFor('cool.eth')).toBe(25n * MB_BigInt)
+    expect(await limitsManager.getMaxAllowedSizeInBytesFor('cool.eth')).toBe(36n * MB_BigInt)
     expect(await limitsManager.getMaxAllowedParcelsFor('cool.eth')).toBe(4)
   })
 
