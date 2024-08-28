@@ -144,6 +144,54 @@ export function createValidateSize(components: Pick<ValidatorComponents, 'limits
   }
 }
 
+export function createPreDeploymentValidateSize(components: Pick<ValidatorComponents, 'limitsManager' | 'storage'>) {
+  return async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
+    const calculateDeploymentSize = async (
+      entity: Entity,
+      files: Map<string, Uint8Array>,
+      fileSizesManifest: Record<string, number>
+    ): Promise<number> => {
+      let totalSize = 0
+      for (const hash of new Set(entity.content?.map((item) => item.hash) ?? [])) {
+        const uploadedFile = files.get(hash)
+        if (uploadedFile) {
+          totalSize += uploadedFile.byteLength
+        } else {
+          const contentSize = fileSizesManifest[hash] || 0
+          totalSize += contentSize
+        }
+      }
+      return totalSize
+    }
+
+    if (!deployment.fileSizesManifest) {
+      return createValidationResult(['Missing fileSizesManifest'])
+    }
+
+    const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())
+    const worldName = sceneJson.metadata.worldConfiguration.name
+    const maxTotalSizeInBytes = await components.limitsManager.getMaxAllowedSizeInBytesFor(worldName || '')
+
+    const errors: string[] = []
+    try {
+      const deploymentSize = await calculateDeploymentSize(
+        deployment.entity,
+        deployment.files,
+        deployment.fileSizesManifest
+      )
+      if (deploymentSize > maxTotalSizeInBytes) {
+        errors.push(
+          `The deployment is too big. The maximum total size allowed is ${maxTotalSizeInBytes} bytes for scenes. You can upload up to ${maxTotalSizeInBytes} bytes but you tried to upload ${deploymentSize}.`
+        )
+      }
+    } catch (e: any) {
+      errors.push(e.message)
+    }
+
+    return createValidationResult(errors)
+  }
+}
+
 export function createValidateSdkVersion(components: Pick<ValidatorComponents, 'limitsManager' | 'storage'>) {
   return async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
     const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())

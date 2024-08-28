@@ -1,9 +1,8 @@
-import { Entity } from '@dcl/schemas'
 import { IHttpServerComponent } from '@well-known-components/interfaces'
+import { InvalidRequestError } from '@dcl/platform-server-commons'
 import { FormDataContext } from '../../logic/multipart'
 import { HandlerContextWithPath } from '../../types'
-import { extractAuthChain } from '../../logic/extract-auth-chain'
-import { InvalidRequestError } from '@dcl/platform-server-commons'
+import { extractFromContext } from '../../logic/extract-deployment-info'
 
 export function requireString(val: string | null | undefined): string {
   if (typeof val !== 'string') throw new Error('A string was expected')
@@ -13,22 +12,7 @@ export function requireString(val: string | null | undefined): string {
 export async function deployEntity(
   ctx: FormDataContext & HandlerContextWithPath<'config' | 'entityDeployer' | 'storage' | 'validator', '/entities'>
 ): Promise<IHttpServerComponent.IResponse> {
-  const entityId = requireString(ctx.formData.fields.entityId.value)
-  const authChain = extractAuthChain(ctx)
-
-  const entityRaw = ctx.formData.files[entityId].value.toString()
-  const entityMetadataJson = JSON.parse(entityRaw)
-
-  const entity: Entity = {
-    id: entityId, // this is not part of the published entity
-    timestamp: Date.now(), // this is not part of the published entity
-    ...entityMetadataJson
-  }
-
-  const uploadedFiles: Map<string, Uint8Array> = new Map()
-  for (const filesKey in ctx.formData.files) {
-    uploadedFiles.set(filesKey, ctx.formData.files[filesKey].value)
-  }
+  const { authChain, entity, entityRaw, uploadedFiles } = extractFromContext(ctx)
 
   const contentHashesInStorage = await ctx.components.storage.existMultiple(
     Array.from(new Set(entity.content!.map(($) => $.hash)))
@@ -52,7 +36,7 @@ export async function deployEntity(
     entity,
     contentHashesInStorage,
     uploadedFiles,
-    entityRaw,
+    entityRaw.toString(),
     authChain
   )
 
