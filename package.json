@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-sns": "^3.501.0",
-    "@dcl/catalyst-api-specs": "^3.2.6",
+    "@dcl/catalyst-api-specs": "^3.3.0",
     "@dcl/catalyst-contracts": "^4.4.1",
     "@dcl/catalyst-storage": "^4.2.0",
     "@dcl/crypto": "^3.4.5",
