@@ -78,6 +78,10 @@ test('world about handler /world/:world_name/about', function ({ components, stu
           enabled: false,
           dataImage: `http://0.0.0.0:3000/contents/${entity.content[0].hash}`
         },
+        map: {
+          minimapEnabled: false,
+          sizes: []
+        },
         skybox: {
           textures: [`http://0.0.0.0:3000/contents/${entity.content[0].hash}`]
         },
