@@ -36,6 +36,8 @@ export function createDeploymentV2Manager(
     // Check what files are already in storage and temporary storage and return the result
     const results = Array.from((await storage.existMultiple(Object.keys(files))).entries())
 
+    // TODO we could check the local temp folder to avoid the client uploading the same file multiple times
+
     const ongoingDeploymentMetadata = {
       authChain,
       files,
@@ -43,8 +45,10 @@ export function createDeploymentV2Manager(
       missingFiles: results.filter(([_, available]) => !available).map(([cid, _]) => cid)
     }
 
+    // TODO we could store this in local file system of the ECS
     ongoingDeploymentsRecord[entityId] = ongoingDeploymentMetadata
 
+    // TODO same
     tempFiles[entityId] = entityRaw
 
     return ongoingDeploymentMetadata
@@ -55,6 +59,9 @@ export function createDeploymentV2Manager(
     if (!ongoingDeploymentsRecordElement) {
       throw new InvalidRequestError(`Deployment for entity ${entityId} not found`)
     }
+
+    // TODO we could check if the ongoing deployment is too old, and reject the file
+
     const computedFileHash = await hashV1(file)
     if (computedFileHash === entityId || fileHash === computedFileHash) {
       if (!ongoingDeploymentsRecordElement.missingFiles.includes(fileHash)) {
@@ -69,71 +76,78 @@ export function createDeploymentV2Manager(
       }
     }
 
+    // TODO store in temp files folder
     tempFiles[fileHash] = file
     logger.info(`Received file ${fileHash} for entity ${entityId}`)
   }
 
   async function completeDeployment(baseUrl: string, entityId: string): Promise<DeploymentResult> {
-    const ongoingDeploymentsRecordElement = ongoingDeploymentsRecord[entityId]
-    if (!ongoingDeploymentsRecordElement) {
-      throw new Error(`Deployment for entity ${entityId} not found`)
-    }
-
-    logger.info(`Completing deployment for entity ${entityId}`)
-
-    const authChain = ongoingDeploymentsRecordElement.authChain
-    const entityRaw = tempFiles[entityId].toString()
-    if (!entityRaw) {
-      throw new Error(`Entity file not found in deployment for entity ${entityId}.`)
-    }
-
-    const entityMetadataJson = JSON.parse(entityRaw.toString())
-
-    const entity: Entity = {
-      id: entityId, // this is not part of the published entity
-      timestamp: Date.now(), // this is not part of the published entity
-      ...entityMetadataJson
-    }
-
-    const uploadedFiles: Map<string, Uint8Array> = new Map()
-    for (const fileHash of Object.keys(ongoingDeploymentsRecordElement.files)) {
-      if (tempFiles[fileHash]) {
-        uploadedFiles.set(fileHash, tempFiles[fileHash])
+    try {
+      const ongoingDeploymentsRecordElement = ongoingDeploymentsRecord[entityId]
+      if (!ongoingDeploymentsRecordElement) {
+        throw new Error(`Deployment for entity ${entityId} not found`)
       }
+
+      // TODO we could check if the ongoing deployment is too old, and reject the file (deployment TTL)
+
+      logger.info(`Completing deployment for entity ${entityId}`)
+
+      const authChain = ongoingDeploymentsRecordElement.authChain
+      const entityRaw = tempFiles[entityId].toString()
+      if (!entityRaw) {
+        throw new Error(`Entity file not found in deployment for entity ${entityId}.`)
+      }
+
+      const entityMetadataJson = JSON.parse(entityRaw.toString())
+
+      const entity: Entity = {
+        id: entityId, // this is not part of the published entity
+        timestamp: Date.now(), // this is not part of the published entity
+        ...entityMetadataJson
+      }
+
+      const uploadedFiles: Map<string, Uint8Array> = new Map()
+      for (const fileHash of Object.keys(ongoingDeploymentsRecordElement.files)) {
+        if (tempFiles[fileHash]) {
+          uploadedFiles.set(fileHash, tempFiles[fileHash])
+        }
+      }
+
+      const contentHashesInStorage = await storage.existMultiple(
+        Array.from(new Set(entity.content!.map(($) => $.hash)))
+      )
+
+      // run all validations about the deployment
+      const validationResult = await validator.validate({
+        entity,
+        files: uploadedFiles,
+        authChain,
+        contentHashesInStorage
+      })
+      if (!validationResult.ok()) {
+        throw new InvalidRequestError(`Deployment failed: ${validationResult.errors.join(', ')}`)
+      }
+
+      // Store the entity
+      return await entityDeployer.deployEntity(
+        baseUrl,
+        entity,
+        contentHashesInStorage,
+        uploadedFiles,
+        entityRaw,
+        authChain
+      )
+    } finally {
+      // Clean up temporary files
+      const ongoingDeploymentsRecordElement = ongoingDeploymentsRecord[entityId]
+
+      for (const fileHash in ongoingDeploymentsRecordElement.files) {
+        delete tempFiles[fileHash]
+      }
+
+      // Clean up ongoing deployments
+      delete ongoingDeploymentsRecord[entityId]
     }
-
-    const contentHashesInStorage = await storage.existMultiple(Array.from(new Set(entity.content!.map(($) => $.hash))))
-
-    // run all validations about the deployment
-    const validationResult = await validator.validate({
-      entity,
-      files: uploadedFiles,
-      authChain,
-      contentHashesInStorage
-    })
-    if (!validationResult.ok()) {
-      throw new InvalidRequestError(`Deployment failed: ${validationResult.errors.join(', ')}`)
-    }
-
-    // Store the entity
-    const deploymentResult = await entityDeployer.deployEntity(
-      baseUrl,
-      entity,
-      contentHashesInStorage,
-      uploadedFiles,
-      entityRaw,
-      authChain
-    )
-
-    // Clean up temporary files
-    for (const fileHash in ongoingDeploymentsRecordElement.files) {
-      delete tempFiles[fileHash]
-    }
-
-    // Clean up ongoing deployments
-    delete ongoingDeploymentsRecord[entityId]
-
-    return deploymentResult
   }
 
   return {

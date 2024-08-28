@@ -2558,9 +2558,9 @@ cross-spawn@^7.0.2, cross-spawn@^7.0.3:
     shebang-command "^2.0.0"
     which "^2.0.1"
 
-"dcl-catalyst-client@https://sdk-team-cdn.decentraland.org/@dcl/catalyst-client/branch/deploy-v2/dcl-catalyst-client-21.7.1-9517693754.commit-34d6bdc.tgz":
-  version "21.7.1-9517693754.commit-34d6bdc"
-  resolved "https://sdk-team-cdn.decentraland.org/@dcl/catalyst-client/branch/deploy-v2/dcl-catalyst-client-21.7.1-9517693754.commit-34d6bdc.tgz#86be52bf40ba11b714217caee2c4ddfab288a1ed"
+"dcl-catalyst-client@https://sdk-team-cdn.decentraland.org/@dcl/catalyst-client/branch/deploy-v2/dcl-catalyst-client-21.7.1-10599703790.commit-1aa8621.tgz":
+  version "21.7.1-10599703790.commit-1aa8621"
+  resolved "https://sdk-team-cdn.decentraland.org/@dcl/catalyst-client/branch/deploy-v2/dcl-catalyst-client-21.7.1-10599703790.commit-1aa8621.tgz#3715021ce107e198aa6d718042a53e105206338c"
   dependencies:
     "@dcl/catalyst-contracts" "^4.4.0"
     "@dcl/crypto" "^3.4.0"

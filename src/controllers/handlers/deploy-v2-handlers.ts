@@ -52,8 +52,8 @@ export async function startDeployEntity(
 export async function deployFile(
   ctx: HandlerContextWithPath<'deploymentV2Manager', '/v2/entities/:entityId/files/:fileHash'>
 ): Promise<IHttpServerComponent.IResponse> {
-  const entityId = await ctx.params.entityId
-  const fileHash = await ctx.params.fileHash
+  const entityId = ctx.params.entityId
+  const fileHash = ctx.params.fileHash
   const buffer = await ctx.request.buffer()
 
   await ctx.components.deploymentV2Manager.addFileToDeployment(entityId, fileHash, buffer)
