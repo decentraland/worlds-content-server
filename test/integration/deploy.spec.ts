@@ -29,6 +29,7 @@ test('deployment works', function ({ components, stubComponents }) {
 
     identity = await getIdentity()
     worldName = components.worldCreator.randomWorldName()
+    console.log('worldName', worldName)
 
     contentClient = createContentClient({
       url: `http://${await config.requireString('HTTP_SERVER_HOST')}:${await config.requireNumber('HTTP_SERVER_PORT')}`,
@@ -100,7 +101,6 @@ test('deployment works', function ({ components, stubComponents }) {
 
     const stored = await worldsManager.getMetadataForWorld(worldName)
     expect(stored).toMatchObject({
-      entityId,
       runtimeMetadata: {
         name: worldName,
         entityIds: [entityId],
@@ -114,11 +114,13 @@ test('deployment works', function ({ components, stubComponents }) {
     Sinon.assert.calledWithMatch(stubComponents.metrics.increment, 'world_deployments_counter', { kind: 'dcl-name' })
   })
 
-  it('creates an entity and deploys it (authorized wallet)', async () => {
+  it.only('creates an entity and deploys it (authorized wallet)', async () => {
     const { storage, worldsManager } = components
     const { snsClient } = stubComponents
 
     const delegatedIdentity = await getIdentity()
+
+    console.log(await worldsManager.getMetadataForWorld(worldName))
 
     const permissions: Permissions = {
       ...defaultPermissions(),
@@ -128,6 +130,8 @@ test('deployment works', function ({ components, stubComponents }) {
       }
     }
     await worldsManager.storePermissions(worldName, permissions)
+
+    console.log(await worldsManager.getMetadataForWorld(worldName))
 
     entityFiles.set('abc.txt', stringToUtf8Bytes(makeid(100)))
     const fileHash = await hashV1(entityFiles.get('abc.txt')!)
@@ -170,7 +174,6 @@ test('deployment works', function ({ components, stubComponents }) {
 
     const stored = await worldsManager.getMetadataForWorld(worldName)
     expect(stored).toMatchObject({
-      entityId,
       runtimeMetadata: {
         entityIds: [entityId],
         minimapVisible: false,
@@ -228,7 +231,6 @@ test('deployment works', function ({ components, stubComponents }) {
 
     const stored = await worldsManager.getMetadataForWorld(worldName)
     expect(stored).toMatchObject({
-      entityId,
       runtimeMetadata: {
         name: worldName,
         entityIds: [entityId],

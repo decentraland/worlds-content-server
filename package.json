@@ -1,5 +1,5 @@
 {
-  "name": "template-server",
+  "name": "worlds-content-server",
   "license": "Apache-2.0",
   "scripts": {
     "build": "tsc -p tsconfig.json",
