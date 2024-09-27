@@ -2,10 +2,16 @@ import { IHttpServerComponent } from '@well-known-components/interfaces'
 import { IPFSv2 } from '@dcl/schemas'
 import { HandlerContextWithPath } from '../../types'
 import { ContentItem } from '@dcl/catalyst-storage'
+import { fromStream } from 'file-type'
+import { Readable } from 'stream'
 
-function contentItemHeaders(content: ContentItem, hashId: string) {
+async function contentItemHeaders(content: ContentItem, hashId: string) {
+  const stream: Readable = await content.asRawStream()
+  const mime = await fromStream(stream)
+  const mimeType = mime?.mime || 'application/octet-stream'
+
   const ret: Record<string, string> = {
-    'Content-Type': 'application/octet-stream',
+    'Content-Type': mimeType,
     ETag: JSON.stringify(hashId), // by spec, the ETag must be a double-quoted string
     'Access-Control-Expose-Headers': 'ETag',
     'Cache-Control': 'public,max-age=31536000,s-maxage=31536000,immutable'
@@ -28,7 +34,7 @@ export async function getContentFile(
 
   if (!file) return { status: 404 }
 
-  return { status: 200, headers: contentItemHeaders(file, ctx.params.hashId), body: await file.asRawStream() }
+  return { status: 200, headers: await contentItemHeaders(file, ctx.params.hashId), body: await file.asRawStream() }
 }
 
 export async function headContentFile(
@@ -40,7 +46,7 @@ export async function headContentFile(
 
   if (!file) return { status: 404 }
 
-  return { status: 200, headers: contentItemHeaders(file, ctx.params.hashId) }
+  return { status: 200, headers: await contentItemHeaders(file, ctx.params.hashId) }
 }
 
 export async function availableContentHandler(
