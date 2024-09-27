@@ -9,7 +9,7 @@ async function contentItemHeaders(content: ContentItem, hashId: string) {
   const stream: Readable = await content.asRawStream()
   const mime = await fromStream(stream)
   const mimeType = mime?.mime || 'application/octet-stream'
-
+  console.log('file: ' + hashId + 'mimeType: ' + mimeType)
   const ret: Record<string, string> = {
     'Content-Type': mimeType,
     ETag: JSON.stringify(hashId), // by spec, the ETag must be a double-quoted string
