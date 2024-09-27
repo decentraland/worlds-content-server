@@ -30,7 +30,7 @@ export async function getContentFile(
 ): Promise<IHttpServerComponent.IResponse> {
   if (!IPFSv2.validate(ctx.params.hashId)) return { status: 400 }
   const { storage, logs } = ctx.components
-  const logger = logs.getLogger('components')
+  const logger = logs.getLogger('http-server')
   const file = await storage.retrieve(ctx.params.hashId)
   if (!file) {
     return {
