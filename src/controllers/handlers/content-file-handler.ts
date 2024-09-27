@@ -26,15 +26,25 @@ async function contentItemHeaders(content: ContentItem, hashId: string) {
 }
 
 export async function getContentFile(
-  ctx: HandlerContextWithPath<'storage', '/contents/:hashId'>
+  ctx: HandlerContextWithPath<'storage' | 'logs', '/contents/:hashId'>
 ): Promise<IHttpServerComponent.IResponse> {
   if (!IPFSv2.validate(ctx.params.hashId)) return { status: 400 }
+  const { storage, logs } = ctx.components
+  const logger = logs.getLogger('components')
+  const file = await storage.retrieve(ctx.params.hashId)
+  if (!file) {
+    return {
+      status: 404,
+      body: `File with hash ${ctx.params.hashId} not found`
+    }
+  }
 
-  const file = await ctx.components.storage.retrieve(ctx.params.hashId)
+  const headers = await contentItemHeaders(file, ctx.params.hashId)
+  logger.info('file: ' + ctx.params.hashId + ' Content-Type: ' + headers['Content-Type'])
 
   if (!file) return { status: 404 }
 
-  return { status: 200, headers: await contentItemHeaders(file, ctx.params.hashId), body: await file.asRawStream() }
+  return { status: 200, headers: headers, body: await file.asRawStream() }
 }
 
 export async function headContentFile(
