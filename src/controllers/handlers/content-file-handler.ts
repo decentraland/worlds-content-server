@@ -2,12 +2,30 @@ import { IHttpServerComponent } from '@well-known-components/interfaces'
 import { IPFSv2 } from '@dcl/schemas'
 import { HandlerContextWithPath } from '../../types'
 import { ContentItem } from '@dcl/catalyst-storage'
-import { fromStream } from 'file-type'
+import { fromBuffer } from 'file-type'
 import { Readable } from 'stream'
+
+async function bufferStream(stream: Readable, maxBytes: number): Promise<Buffer> {
+  const chunks: any[] = []
+  let bytesRead = 0
+
+  for await (const chunk of stream) {
+    chunks.push(chunk)
+    bytesRead += chunk.length
+    if (bytesRead >= maxBytes) {
+      break
+    }
+  }
+  return Buffer.concat(chunks)
+}
 
 async function contentItemHeaders(content: ContentItem, hashId: string) {
   const stream: Readable = await content.asRawStream()
-  const mime = await fromStream(stream)
+  // Buffer the first part of the stream to detect MIME type
+  const maxBytes = 4100
+  const buffer = await bufferStream(stream, maxBytes)
+  const mime = await fromBuffer(buffer)
+  // const mime = await fromStream(stream)
   const mimeType = mime?.mime || 'application/octet-stream'
 
   const ret: Record<string, string> = {
