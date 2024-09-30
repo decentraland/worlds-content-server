@@ -22,7 +22,7 @@ async function bufferStream(stream: Readable, maxBytes: number): Promise<Buffer>
 async function contentItemHeaders(content: ContentItem, hashId: string) {
   const stream: Readable = await content.asRawStream()
   // Buffer the first part of the stream to detect MIME type
-  const maxBytes = 4100
+  const maxBytes = 16 * 1024
   const buffer = await bufferStream(stream, maxBytes)
   const mime = await fromBuffer(buffer)
   // const mime = await fromStream(stream)
