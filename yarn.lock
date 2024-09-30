@@ -764,6 +764,16 @@
     aws-sdk-client-mock "^3.0.0"
     destroy "^1.2.0"
 
+"@dcl/catalyst-storage@https://sdk-team-cdn.decentraland.org/@dcl/catalyst-storage/branch/mimetype/dcl-catalyst-storage-4.2.1-11113255088.commit-4f484fb.tgz":
+  version "4.2.1-11113255088.commit-4f484fb"
+  resolved "https://sdk-team-cdn.decentraland.org/@dcl/catalyst-storage/branch/mimetype/dcl-catalyst-storage-4.2.1-11113255088.commit-4f484fb.tgz#e59b1c735a20797675d4397a312af34daa0dd005"
+  dependencies:
+    "@well-known-components/interfaces" "^1.1.1"
+    aws-sdk "^2.1426.0"
+    aws-sdk-client-mock "^3.0.0"
+    destroy "^1.2.0"
+    file-type "15"
+
 "@dcl/crypto@^3.4.0", "@dcl/crypto@^3.4.3", "@dcl/crypto@^3.4.5":
   version "3.4.5"
   resolved "https://registry.yarnpkg.com/@dcl/crypto/-/crypto-3.4.5.tgz#95ca2beab46fa3494b4d38f009bf0d49c87ba235"
