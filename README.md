@@ -1,5 +1,8 @@
 # Worlds Content Server
 
+[![Coverage Status](https://coveralls.io/repos/github/decentraland/worlds-content-server/badge.svg)](https://coveralls.io/github/decentraland/worlds-content-server)
+
+
 This is a simple content server API needed to deploy and retrieve scenes.
 
 It uses the `@dcl/catalyst-storage` library to store the deployments either on the disk or S3.
