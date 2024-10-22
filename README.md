@@ -1,6 +1,6 @@
 # Worlds Content Server
 
-[![Coverage Status](https://coveralls.io/repos/github/decentraland/worlds-content-server/badge.svg?branch=chore/configure-test-script-for-coveralls)](https://coveralls.io/github/decentraland/worlds-content-server?branch=chore/configure-test-script-for-coveralls)
+[![Coverage Status](https://coveralls.io/repos/github/decentraland/worlds-content-server/badge.svg)](https://coveralls.io/github/decentraland/worlds-content-server)
 
 
 This is a simple content server API needed to deploy and retrieve scenes.
