@@ -4,8 +4,8 @@ import {
   IPermissionChecker,
   IWorldsManager,
   Permissions,
-  WorldMetadata,
-  WorldRecord
+  SceneRecord,
+  WorldMetadata
 } from '../../src/types'
 import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage'
 import { Entity } from '@dcl/schemas'
@@ -16,38 +16,48 @@ import { createPermissionChecker, defaultPermissions } from '../../src/logic/per
 export async function createWorldsManagerMockComponent({
   storage
 }: Pick<AppComponents, 'storage'>): Promise<IWorldsManager> {
-  async function getRawWorldRecords(): Promise<WorldRecord[]> {
-    const worlds: WorldRecord[] = []
+  async function getRawSceneRecords(): Promise<SceneRecord[]> {
+    const scenes: SceneRecord[] = []
     for await (const key of storage.allFileIds('name-')) {
-      const entity = await getEntityForWorld(key.substring(5))
-      if (entity) {
-        const content = await storage.retrieve(`${entity.id}.auth`)
-        const authChain = JSON.parse((await streamToBuffer(await content?.asStream())).toString())
-        worlds.push({
-          name: entity.metadata.worldConfiguration.name,
-          deployer: authChain[0].payload,
-          entity_id: entity.id,
+      const metadata = await getMetadataForWorld(key)
+      if (!metadata || metadata.runtimeMetadata.entityIds.length === 0) {
+        continue
+      }
+      for (const entityId of metadata.runtimeMetadata.entityIds) {
+        const content = await storage.retrieve(entityId)
+        if (!content) {
+          continue
+        }
+
+        const json = JSON.parse((await streamToBuffer(await content.asStream())).toString())
+        const authChainText = await storage.retrieve(`${entityId}.auth`)
+        const authChain = JSON.parse((await streamToBuffer(await authChainText?.asStream())).toString())
+
+        scenes.push({
+          world_name: key,
+          entity_id: entityId,
+          entity: json,
           deployment_auth_chain: authChain,
-          entity: entity.metadata,
-          created_at: new Date(1706019701900),
-          updated_at: new Date(1706019701900),
-          permissions: { ...defaultPermissions() },
-          size: 0n,
-          owner: authChain[0].payload,
-          blocked_since: null
+          deployer: authChain[0].payload,
+          size: 0n
         })
       }
     }
-    return worlds
+    return scenes
   }
 
   async function getEntityForWorld(worldName: string): Promise<Entity | undefined> {
     const metadata = await getMetadataForWorld(worldName)
-    if (!metadata || !metadata.entityId) {
+    if (
+      !metadata ||
+      !metadata.runtimeMetadata ||
+      !metadata.runtimeMetadata.entityIds ||
+      metadata.runtimeMetadata.entityIds.length === 0
+    ) {
       return undefined
     }
 
-    const content = await storage.retrieve(metadata.entityId)
+    const content = await storage.retrieve(metadata.runtimeMetadata.entityIds[0])
     if (!content) {
       return undefined
     }
@@ -56,7 +66,7 @@ export async function createWorldsManagerMockComponent({
 
     return {
       ...json,
-      id: metadata.entityId
+      id: metadata.runtimeMetadata.entityIds[0]
     }
   }
 
@@ -81,8 +91,7 @@ export async function createWorldsManagerMockComponent({
 
   async function deployScene(worldName: string, scene: Entity): Promise<void> {
     await storeWorldMetadata(worldName, {
-      entityId: scene.id,
-      runtimeMetadata: extractWorldRuntimeMetadata(worldName, scene)
+      runtimeMetadata: extractWorldRuntimeMetadata(worldName, [scene])
     })
   }
 
@@ -151,7 +160,7 @@ export async function createWorldsManagerMockComponent({
 
   return {
     getContributableDomains,
-    getRawWorldRecords,
+    getRawSceneRecords,
     getDeployedWorldCount,
     getDeployedWorldEntities,
     getMetadataForWorld,

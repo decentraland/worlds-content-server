@@ -54,8 +54,6 @@ export type WorldRuntimeMetadata = {
 }
 
 export type WorldMetadata = {
-  entityId: string
-  acl?: AuthChain
   permissions: Permissions
   runtimeMetadata: WorldRuntimeMetadata
   blockedSince?: Date
@@ -147,7 +145,7 @@ export type ILimitsManager = {
 }
 
 export type IWorldsManager = {
-  getRawWorldRecords(): Promise<WorldRecord[]>
+  getRawSceneRecords(): Promise<SceneRecord[]>
   getDeployedWorldCount(): Promise<{ ens: number; dcl: number }>
   getDeployedWorldEntities(): Promise<Entity[]>
   getMetadataForWorld(worldName: string): Promise<WorldMetadata | undefined>
@@ -351,15 +349,20 @@ export type IWalletStats = {
   get(wallet: EthAddress): Promise<WalletStats>
 }
 
-export type WorldRecord = {
-  name: string
-  owner: string
+export type SceneRecord = {
+  world_name: string
   deployer: string
   entity_id: string
   deployment_auth_chain: AuthChain
   entity: any
-  permissions: Permissions
   size: bigint
+}
+
+export type WorldRecord = {
+  name: string
+  owner: string
+  permissions: Permissions
+  scenes: SceneRecord[]
   created_at: Date
   updated_at: Date
   blocked_since: Date | null
