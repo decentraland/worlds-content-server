@@ -3,6 +3,7 @@ import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
 import { SnsClient } from '../types'
 import { chunks } from './utils'
 import { PublishBatchResponse } from '@aws-sdk/client-sns/dist-types/models/models_0'
+import { Events } from '@dcl/schemas'
 
 export async function snsPublish(
   client: SnsClient,
@@ -11,7 +12,17 @@ export async function snsPublish(
 ): Promise<PublishCommandOutput> {
   const sendCommand = new PublishCommand({
     TopicArn: snsArn,
-    Message: JSON.stringify(deploymentToSqs)
+    Message: JSON.stringify(deploymentToSqs),
+    MessageAttributes: {
+      type: {
+        DataType: 'String',
+        StringValue: Events.Type.WORLD
+      },
+      subType: {
+        DataType: 'String',
+        StringValue: Events.SubType.Worlds.DEPLOYMENT
+      }
+    }
   })
 
   return await client.publish(sendCommand)
@@ -33,7 +44,17 @@ export async function snsPublishBatch(
       TopicArn: snsArn,
       PublishBatchRequestEntries: batch.map((world) => ({
         Id: world.entity.entityId,
-        Message: JSON.stringify(world)
+        Message: JSON.stringify(world),
+        MessageAttributes: {
+          type: {
+            DataType: 'String',
+            StringValue: Events.Type.WORLD
+          },
+          subType: {
+            DataType: 'String',
+            StringValue: Events.SubType.Worlds.DEPLOYMENT
+          }
+        }
       }))
     })
 
