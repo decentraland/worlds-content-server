@@ -21,6 +21,10 @@ export async function snsPublish(
       subType: {
         DataType: 'String',
         StringValue: Events.SubType.Worlds.DEPLOYMENT
+      },
+      priority: {
+        DataType: 'String',
+        StringValue: '1'
       }
     }
   })
