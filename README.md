@@ -35,7 +35,7 @@ For a deployment to be accepted by this server, the wallet deploying must own a 
 
 The scene must specify the name of the world in `scene.json`, and that DCL name must be owned by the wallet signing the deployment.
 
-For more details on deploying scenes please check out [the documentation](https://docs.decentraland.org/creator/worlds/contributor/worlds/about/).
+For more details on deploying scenes please check out [the documentation](https://docs.decentraland.org/creator/worlds/about/#publish-a-world).
 
 
 ## Deploying using the CLI tool
