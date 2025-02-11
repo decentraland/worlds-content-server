@@ -22,15 +22,13 @@ export async function reprocessABHandler(
     .then((name) => name.map((s: string) => s.toLowerCase()))
     .catch((_) => undefined)
 
-  const allWorlds = await worldsManager.getRawWorldRecords()
-  const filteredWorlds = allWorlds
-    .filter((world) => !body || body.includes(world.name))
-    .filter((world) => world.entity_id !== null)
-  if (filteredWorlds.length === 0) {
+  const allScenes = await worldsManager.getRawSceneRecords()
+  const filteredScenes = allScenes.filter((world) => !body || body.includes(world.world_name))
+  if (filteredScenes.length === 0) {
     throw new InvalidRequestError('No worlds found for reprocessing')
   }
 
-  const mapped: DeploymentToSqs[] = filteredWorlds.map((world) => ({
+  const mapped: DeploymentToSqs[] = filteredScenes.map((world) => ({
     entity: {
       entityId: world.entity_id,
       authChain: world.deployment_auth_chain

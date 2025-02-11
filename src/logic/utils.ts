@@ -1,6 +1,7 @@
 import { bufferToStream, IContentStorageComponent, streamToBuffer } from '@dcl/catalyst-storage'
 import { WorldMetadata } from '../types'
 import { stringToUtf8Bytes } from 'eth-connect'
+import { Entity } from '@dcl/schemas'
 
 export function deepEqual(a: any, b: any) {
   if (typeof a === 'object' && a !== null && typeof b === 'object' && b !== null) {
@@ -54,4 +55,8 @@ export function chunks<T>(items: T[], chunkSize: number): T[][] {
     },
     [[]]
   )
+}
+
+export function entityByTimestampDescending(a: Entity, b: Entity) {
+  return b.timestamp - a.timestamp
 }

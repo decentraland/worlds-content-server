@@ -20,7 +20,11 @@ describe('All data from worlds', function () {
       'name-world-name.dcl.eth',
       bufferToStream(
         Buffer.from(
-          stringToUtf8Bytes(JSON.stringify({ entityId: 'bafkreielwj3ki46munydwn4ayazdvmjln76khmz2xyaf5v6dkmo6yoebbi' }))
+          stringToUtf8Bytes(
+            JSON.stringify({
+              runtimeMetadata: { entityIds: ['bafkreielwj3ki46munydwn4ayazdvmjln76khmz2xyaf5v6dkmo6yoebbi'] }
+            })
+          )
         )
       )
     )
@@ -28,7 +32,11 @@ describe('All data from worlds', function () {
       'name-another-world-name.dcl.eth',
       bufferToStream(
         Buffer.from(
-          stringToUtf8Bytes(JSON.stringify({ entityId: 'bafkreic6ix3pdwf7g24reg4ktlyjpmtbqbc2nq4zocupkmul37am4vlt6y' }))
+          stringToUtf8Bytes(
+            JSON.stringify({
+              runtimeMetadata: { entityIds: ['bafkreic6ix3pdwf7g24reg4ktlyjpmtbqbc2nq4zocupkmul37am4vlt6y'] }
+            })
+          )
         )
       )
     )

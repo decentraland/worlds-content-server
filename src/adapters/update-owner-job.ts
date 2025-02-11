@@ -1,8 +1,17 @@
-import { AppComponents, BlockedRecord, IRunnable, Notification, TWO_DAYS_IN_MS, Whitelist, WorldRecord } from '../types'
+import {
+  AppComponents,
+  BlockedRecord,
+  IRunnable,
+  Notification,
+  SceneRecord,
+  TWO_DAYS_IN_MS,
+  Whitelist,
+  WorldRecord
+} from '../types'
 import SQL from 'sql-template-strings'
 import { CronJob } from 'cron'
 
-type WorldData = Pick<WorldRecord, 'name' | 'owner' | 'size' | 'entity'>
+type WorldData = Pick<WorldRecord, 'name' | 'owner'> & Pick<SceneRecord, 'size'>
 
 export async function createUpdateOwnerJob(
   components: Pick<
@@ -118,15 +127,18 @@ export async function createUpdateOwnerJob(
   async function run() {
     const startDate = new Date()
 
-    const records = await components.database.query<WorldData>(
-      'SELECT name, owner, size, entity FROM worlds WHERE entity_id IS NOT NULL'
-    )
+    const records = await components.database.query<WorldData>(SQL`
+        SELECT owner, name, SUM(size)
+        FROM worlds
+                 INNER JOIN scenes ON worlds.name = scenes.world_name
+        GROUP BY name
+    `)
+
     const onlyDclNameRecords = records.rows
       .filter((row) => !!row.name && row.name.endsWith('.dcl.eth'))
       .map((row) => {
         return {
           name: row.name,
-          entity: row.entity,
           owner: row.owner,
           size: BigInt(row.size)
         }
