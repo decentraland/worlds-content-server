@@ -10,15 +10,15 @@ type CommsMetadata = {
 
 export async function commsAdapterHandler(
   context: HandlerContextWithPath<
-    'commsAdapter' | 'config' | 'nameDenyListChecker' | 'namePermissionChecker' | 'worldsManager',
+    'commsAdapter' | 'config' | 'nameDenyListChecker' | 'namePermissionChecker' | 'worldsManager' | 'logs',
     '/get-comms-adapter/:roomId'
   > &
     DecentralandSignatureContext<CommsMetadata>
 ): Promise<IHttpServerComponent.IResponse> {
   const {
-    components: { commsAdapter, config, nameDenyListChecker, namePermissionChecker, worldsManager }
+    components: { commsAdapter, config, nameDenyListChecker, namePermissionChecker, worldsManager, logs }
   } = context
-
+  const logger = logs.getLogger('comms-adapter-handler')
   const authMetadata = context.verification!.authMetadata
   async function fetchDenyList(): Promise<Set<string>> {
     try {
@@ -66,7 +66,7 @@ export async function commsAdapterHandler(
   const denyList = await fetchDenyList()
   if (denyList.has(identity)) {
     logger.warn(`Rejected connection from deny-listed wallet: ${identity}`)
-    throw new UnauthorizedError('Access denied, deny-listed wallet')
+    throw new NotAuthorizedError('Access denied, deny-listed wallet')
   }
   const permissionChecker = await worldsManager.permissionCheckerForWorld(worldName)
   const hasPermission =
