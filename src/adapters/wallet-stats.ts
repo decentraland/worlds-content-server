@@ -1,6 +1,7 @@
 import { AppComponents, IWalletStats, MB_BigInt, WalletStats, WorldRecord } from '../types'
 import { EthAddress } from '@dcl/schemas'
 import SQL from 'sql-template-strings'
+import { withRetry } from '../logic/utils'
 
 export async function createWalletStatsComponent(
   components: Pick<AppComponents, 'config' | 'database' | 'logs' | 'fetch'>
@@ -23,9 +24,19 @@ export async function createWalletStatsComponent(
         spaceAllowance: Number.MAX_SAFE_INTEGER
       }
     }
-    const response = await components.fetch.fetch(`${url}/account-holdings/${wallet}`, { method: 'POST' })
-    const json = await response.json()
-    return json['data']
+
+    return await withRetry(
+      async () => {
+        const result = await components.fetch.fetch(`${url}/account-holdings/${wallet}`, { method: 'POST' })
+        const json = await result.json()
+        return json['data']
+      },
+      {
+        maxRetries: 3,
+        baseDelay: 300,
+        logger
+      }
+    )
   }
 
   async function fetchStoredData(wallet: string) {
