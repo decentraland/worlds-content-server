@@ -36,6 +36,7 @@ import { createSnsClient } from './adapters/sns-client'
 import { createAwsConfig } from './adapters/aws-config'
 import { S3 } from 'aws-sdk'
 import { createNotificationsClientComponent } from './adapters/notifications-service'
+import { createNatsComponent } from '@well-known-components/nats-component'
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
@@ -60,6 +61,8 @@ export async function initComponents(): Promise<AppComponents> {
   const fetch = await createFetchComponent()
   const metrics = await createMetricsComponent(metricDeclarations, { config })
   await instrumentHttpServerWithPromClientRegistry({ metrics, server, config, registry: metrics.registry! })
+
+  const nats = await createNatsComponent({ config, logs })
 
   const commsAdapter: ICommsAdapter = await createCommsAdapterComponent({ config, fetch, logs })
 
@@ -161,6 +164,7 @@ export async function initComponents(): Promise<AppComponents> {
     marketplaceSubGraph,
     metrics,
     migrationExecutor,
+    nats,
     nameDenyListChecker,
     nameOwnership,
     namePermissionChecker,

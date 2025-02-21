@@ -98,11 +98,13 @@ function createLiveKitAdapter(
       })
       token.addGrant({ roomList: true })
 
+      const bearerToken = await token.toJwt()
+
       const worldRoomNames: string[] = await fetch
         .fetch(`https://${host}/twirp/livekit.RoomService/ListRooms`, {
           method: 'POST',
           headers: {
-            Authorization: `Bearer ${token.toJwt()}`,
+            Authorization: `Bearer ${bearerToken}`,
             'Content-Type': 'application/json'
           },
           body: '{}'
@@ -121,7 +123,7 @@ function createLiveKitAdapter(
               .fetch(`https://${host}/twirp/livekit.RoomService/ListRooms`, {
                 method: 'POST',
                 headers: {
-                  Authorization: `Bearer ${token.toJwt()}`,
+                  Authorization: `Bearer ${bearerToken}`,
                   'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({ names: chunkedRoomNames })
@@ -176,7 +178,7 @@ function createLiveKitAdapter(
         canUpdateOwnMetadata: true,
         canPublishSources: [TrackSource.MICROPHONE]
       })
-      return `livekit:wss://${host}?access_token=${token.toJwt()}`
+      return `livekit:wss://${host}?access_token=${await token.toJwt()}`
     }
   }
 }

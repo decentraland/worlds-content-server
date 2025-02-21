@@ -23,6 +23,7 @@ import { bearerTokenMiddleware, errorHandler } from '@dcl/platform-server-common
 import { reprocessABHandler } from './handlers/reprocess-ab-handler'
 import { garbageCollectionHandler } from './handlers/garbage-collection'
 import { getContributableDomainsHandler } from './handlers/contributor-handler'
+import { livekitWebhookHandler } from './handlers/livekit-webhook-handler'
 
 export async function setupRouter(globalContext: GlobalContext): Promise<Router<GlobalContext>> {
   const router = new Router<GlobalContext>()
@@ -73,6 +74,8 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
 
   router.get('/index', getIndexHandler)
   router.get('/live-data', getLiveDataHandler)
+
+  router.post('/livekit-webhook', livekitWebhookHandler)
 
   router.post('/get-comms-adapter/:roomId', signedFetchMiddleware, commsAdapterHandler)
   router.post('/cast-adapter/:roomId', signedFetchMiddleware, castAdapterHandler)
