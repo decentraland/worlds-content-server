@@ -3,6 +3,20 @@ import { HandlerContextWithPath } from '../../types'
 import { WebhookReceiver } from 'livekit-server-sdk'
 import { IHttpServerComponent } from '@well-known-components/interfaces'
 
+enum WebhookEvent {
+  ParticipantJoined = 'participant_joined',
+  ParticipantLeft = 'participant_left'
+}
+
+const TOPIC_SUFFIX_BY_EVENT = {
+  [WebhookEvent.ParticipantJoined]: 'join',
+  [WebhookEvent.ParticipantLeft]: 'leave'
+}
+
+function isValidEvent(event: string): event is keyof typeof WebhookEvent {
+  return ['participant_joined', 'participant_left'].includes(event)
+}
+
 export async function livekitWebhookHandler(
   ctx: HandlerContextWithPath<'nats' | 'config' | 'logs', '/livekit-webhook'> & DecentralandSignatureContext<any>
 ): Promise<IHttpServerComponent.IResponse> {
@@ -23,21 +37,19 @@ export async function livekitWebhookHandler(
     const authorization = request.headers.get('Authorization') || ''
 
     if (!authorization) {
-      logger.error('Authorization header not found')
       return {
         status: 400,
         body: 'Authorization header not found'
       }
     }
 
-    logger.debug('Received livekit event with:', { body, authorization })
+    logger.debug('Request received from livekit:', { body })
 
     const { event, room, participant } = await receiver.receive(body, authorization)
 
-    logger.debug('Livekit event:', { event: JSON.stringify({ event, room, participant }) })
+    logger.debug('Received livekit event:', { event: JSON.stringify({ event, room, participant }) })
 
     if (!participant?.identity) {
-      logger.error('Participant identity not found')
       return {
         status: 400,
         body: 'Participant identity not found'
@@ -45,15 +57,14 @@ export async function livekitWebhookHandler(
     }
 
     if (!room?.name) {
-      logger.error('Room name not found')
       return {
         status: 400,
         body: 'Room name not found'
       }
     }
 
-    if (!['participant_joined', 'participant_left'].includes(event)) {
-      logger.info('Skipping event', { event })
+    if (!isValidEvent(event) || !room.name.endsWith('.dcl.eth')) {
+      logger.info('Skipping event', { event, roomName: room.name })
       return {
         status: 200,
         body: 'Skipping event'
@@ -61,17 +72,8 @@ export async function livekitWebhookHandler(
     }
 
     const { identity } = participant
-    const { name: worldName } = room
 
-    if (event === 'participant_joined') {
-      logger.info('Participant joined room', { identity, worldName })
-      nats.publish(`peer.${identity}.world.join`)
-    }
-
-    if (event === 'participant_left') {
-      logger.info('Participant left room', { identity, worldName })
-      nats.publish(`peer.${identity}.world.leave`)
-    }
+    nats.publish(`peer.${identity}.world.${TOPIC_SUFFIX_BY_EVENT[event]}`)
 
     return {
       status: 200,
