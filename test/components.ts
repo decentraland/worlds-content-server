@@ -27,6 +27,7 @@ import { createMockNameOwnership } from './mocks/name-ownership-mock'
 import { createMockUpdateOwnerJob } from './mocks/update-owner-job-mock'
 import { createSnsClientMock } from './mocks/sns-client-mock'
 import { createDotEnvConfigComponent } from '@well-known-components/env-config-provider'
+import { createMockNatsComponent } from './mocks/nats-mock'
 
 /**
  * Behaves like Jest "describe" function, used to describe a test for a
@@ -124,6 +125,7 @@ async function initComponents(): Promise<TestComponents> {
     localFetch: await createLocalFetchCompoment(config),
     marketplaceSubGraph: createMockNameSubGraph(),
     metrics,
+    nats: createMockNatsComponent(),
     namePermissionChecker,
     permissionsManager,
     snsClient,
