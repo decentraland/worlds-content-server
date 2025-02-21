@@ -65,12 +65,12 @@ export async function livekitWebhookHandler(
 
     if (event === 'participant_joined') {
       logger.info('Participant joined room', { identity, worldName })
-      nats.publish(`peer.${identity}.joined_world`)
+      nats.publish(`peer.${identity}.world.join`)
     }
 
     if (event === 'participant_left') {
       logger.info('Participant left room', { identity, worldName })
-      nats.publish(`peer.${identity}.left_world`)
+      nats.publish(`peer.${identity}.world.leave`)
     }
 
     return {
