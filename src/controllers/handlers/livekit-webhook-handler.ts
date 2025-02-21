@@ -43,11 +43,12 @@ export async function livekitWebhookHandler(
       }
     }
 
-    logger.debug('Request received from livekit:', { body })
-
     const { event, room, participant } = await receiver.receive(body, authorization)
 
-    logger.debug('Received livekit event:', { event: JSON.stringify({ event, room, participant }) })
+    logger.debug(`Received livekit event ${event}:`, {
+      room: JSON.stringify(room),
+      participant: JSON.stringify(participant)
+    })
 
     if (!participant?.identity) {
       return {
@@ -73,6 +74,7 @@ export async function livekitWebhookHandler(
 
     const { identity } = participant
 
+    logger.debug(`Publishing event ${event} for participant ${identity} in room ${room.name}`)
     nats.publish(`peer.${identity}.world.${TOPIC_SUFFIX_BY_EVENT[event]}`)
 
     return {
