@@ -31,18 +31,17 @@ export async function livekitWebhookHandler(
   const apiSecret = await config.requireString('LIVEKIT_API_SECRET')
 
   try {
-    const receiver = new WebhookReceiver(apiKey, apiSecret)
-
     const body = await request.text()
     const authorization = request.headers.get('Authorization') || ''
 
     if (!authorization) {
       return {
         status: 400,
-        body: 'Authorization header not found'
+        body: { message: 'Authorization header not found' }
       }
     }
 
+    const receiver = new WebhookReceiver(apiKey, apiSecret)
     const { event, room, participant } = await receiver.receive(body, authorization)
 
     logger.debug(`Received livekit event ${event}:`, {
@@ -53,14 +52,14 @@ export async function livekitWebhookHandler(
     if (!participant?.identity) {
       return {
         status: 400,
-        body: 'Participant identity not found'
+        body: { message: 'Participant identity not found' }
       }
     }
 
     if (!room?.name) {
       return {
         status: 400,
-        body: 'Room name not found'
+        body: { message: 'Room name not found' }
       }
     }
 
@@ -68,7 +67,7 @@ export async function livekitWebhookHandler(
       logger.info('Skipping event', { event, roomName: room.name })
       return {
         status: 200,
-        body: 'Skipping event'
+        body: { message: 'Skipping event' }
       }
     }
 
@@ -82,10 +81,12 @@ export async function livekitWebhookHandler(
       body
     }
   } catch (error: any) {
-    logger.error('Error receiving livekit webhook', { error: error.message })
     return {
       status: 500,
-      body: 'Error receiving livekit webhook'
+      body: {
+        message: 'Error receiving livekit webhook',
+        error: error.message
+      }
     }
   }
 }
