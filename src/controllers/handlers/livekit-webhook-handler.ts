@@ -14,7 +14,7 @@ const TOPIC_SUFFIX_BY_EVENT = {
 }
 
 function isValidEvent(event: string): event is keyof typeof WebhookEvent {
-  return ['participant_joined', 'participant_left'].includes(event)
+  return Object.values(WebhookEvent).includes(event as WebhookEvent)
 }
 
 export async function livekitWebhookHandler(
@@ -43,11 +43,6 @@ export async function livekitWebhookHandler(
 
     const receiver = new WebhookReceiver(apiKey, apiSecret)
     const { event, room, participant } = await receiver.receive(body, authorization)
-
-    logger.debug(`Received livekit event ${event}:`, {
-      room: JSON.stringify(room),
-      participant: JSON.stringify(participant)
-    })
 
     if (!participant?.identity) {
       return {

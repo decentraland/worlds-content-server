@@ -85,6 +85,21 @@ test('livekit webhook handler /livekit-webhook', function ({ components, stubCom
     })
   })
 
+  it('skips event when event is not valid', async () => {
+    const event = {
+      event: 'invalid-event',
+      room: { name: 'test-room.dcl.eth' },
+      participant: { identity: 'test-user' }
+    }
+
+    const r = await makeWebhookRequest(event)
+
+    expect(r.status).toBe(200)
+    expect(await r.json()).toEqual({
+      message: 'Skipping event'
+    })
+  })
+
   it('publishes join event to nats when participant joins', async () => {
     const { nats } = components
     const event = {
