@@ -7,6 +7,7 @@
     "lint:check": "eslint '**/*.{js,ts}'",
     "lint:fix": "eslint '**/*.{js,ts}' --fix",
     "start": "node --trace-warnings --abort-on-uncaught-exception --unhandled-rejections=strict dist/index.js",
+    "dev": "nodemon --watch 'src/**' --ext 'ts,json' --ignore 'src/**/*.spec.ts' --ignore 'src/migrations' --exec 'yarn build && yarn start'",
     "test": "jest --forceExit --detectOpenHandles --coverage --verbose",
     "start:db": "docker-compose up -d && docker exec world_content_server_db bash -c \"until pg_isready; do sleep 1; done\" && sleep 5"
   },
@@ -27,6 +28,7 @@
     "@well-known-components/interfaces": "^1.4.3",
     "@well-known-components/logger": "^3.1.3",
     "@well-known-components/metrics": "^2.1.0",
+    "@well-known-components/nats-component": "^2.0.0",
     "@well-known-components/pg-component": "^1.1.0",
     "@well-known-components/thegraph-component": "^1.6.0",
     "aws-sdk": "^2.1545.0",
@@ -34,7 +36,7 @@
     "busboy": "^1.6.0",
     "cron": "^3.1.6",
     "eth-connect": "^6.2.4",
-    "livekit-server-sdk": "^1.2.7",
+    "livekit-server-sdk": "^2.10.1",
     "lru-cache": "^10.2.0",
     "p-queue": "^6.6.2"
   },
@@ -44,6 +46,8 @@
     "@types/node": "^20.11.10",
     "@well-known-components/test-helpers": "^1.5.8",
     "dcl-catalyst-client": "^21.8.0",
+    "nodemon": "^3.1.9",
+    "ts-node": "^10.9.2",
     "typescript": "^5.3.3"
   },
   "prettier": {

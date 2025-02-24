@@ -66,7 +66,7 @@ export async function castAdapterHandler(
     status: 200,
     body: {
       url: `wss://${host}`,
-      token: token.toJwt()
+      token: await token.toJwt()
     }
   }
 }

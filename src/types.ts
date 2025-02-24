@@ -21,6 +21,7 @@ import {
   PublishCommandOutput
 } from '@aws-sdk/client-sns'
 import { IFetchComponent } from '@well-known-components/interfaces'
+import { INatsComponent } from '@well-known-components/nats-component/dist/types'
 
 export type GlobalContext = {
   components: BaseComponents
@@ -273,6 +274,7 @@ export type BaseComponents = {
   marketplaceSubGraph: ISubgraphComponent
   metrics: IMetricsComponent<keyof typeof metricDeclarations>
   migrationExecutor: MigrationExecutor
+  nats: INatsComponent
   nameDenyListChecker: INameDenyListChecker
   nameOwnership: INameOwnership
   namePermissionChecker: IWorldNamePermissionChecker

@@ -13,5 +13,10 @@ services:
       - POSTGRES_DB=world_content_server
     ports:
       - '5450:5432'
+  nats:
+    image: nats:latest
+    container_name: worlds_content_server_nats
+    ports:
+      - '4222:4222'
 volumes:
   postgres_volume:
