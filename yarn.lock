@@ -817,13 +817,13 @@
     "@well-known-components/fetch-component" "^2.0.2"
     "@well-known-components/interfaces" "^1.4.2"
 
-"@dcl/platform-server-commons@^0.0.4":
-  version "0.0.4"
-  resolved "https://registry.yarnpkg.com/@dcl/platform-server-commons/-/platform-server-commons-0.0.4.tgz#c4aa7d2d18ff116edb06a23da7a13007aa5d5dd0"
-  integrity sha512-yaWumacDI6kt6LdGxkygzk+GHE9FuP1s3QTMdpq4BRWMP1u0BuFA/yUk4OgcR3pvwW3v07ZSQ/BeYvUx9P1hqw==
+"@dcl/platform-server-commons@^0.0.5":
+  version "0.0.5"
+  resolved "https://registry.yarnpkg.com/@dcl/platform-server-commons/-/platform-server-commons-0.0.5.tgz#2eaaef2125a699b08be93fe3402c2f4771ad3fe5"
+  integrity sha512-ATMZ57rEx6rAZzN5SSkgAHyqKPfuLN0tpnljERGTUegbUNjFxjrxaVzIz+r2UeW8lTIYaUl1sxhTt7udBDp+Qw==
   dependencies:
-    "@well-known-components/http-server" "^2.0.0"
-    "@well-known-components/interfaces" "^1.4.2"
+    "@well-known-components/http-server" "^2.1.0"
+    "@well-known-components/interfaces" "^1.4.3"
     node-fetch "^2.7.0"
 
 "@dcl/schemas@^11.5.0":
@@ -1988,20 +1988,6 @@
   dependencies:
     "@well-known-components/interfaces" "^1.4.1"
     cross-fetch "^3.1.5"
-
-"@well-known-components/http-server@^2.0.0":
-  version "2.0.0"
-  resolved "https://registry.yarnpkg.com/@well-known-components/http-server/-/http-server-2.0.0.tgz#85ec93080ae64f962782699db3eeecd597f59405"
-  integrity sha512-baDP0+MpgqTnKLFFXS41WBbg9QIGCXTEA7BHf6JqW1evrTW10MKEx+rgEvQQlhCA5oXxUdKOD+xNnR3GqzGw9w==
-  dependencies:
-    "@types/http-errors" "^2.0.1"
-    destroy "^1.2.0"
-    fp-future "^1.0.1"
-    http-errors "^2.0.0"
-    mitt "^3.0.0"
-    node-fetch "^2.6.9"
-    on-finished "^2.4.1"
-    path-to-regexp "^6.2.1"
 
 "@well-known-components/http-server@^2.1.0":
   version "2.1.0"
