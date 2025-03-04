@@ -22,6 +22,7 @@ import {
 } from '@aws-sdk/client-sns'
 import { IFetchComponent } from '@well-known-components/interfaces'
 import { INatsComponent } from '@well-known-components/nats-component/dist/types'
+import { WebhookEvent } from 'livekit-server-sdk'
 
 export type GlobalContext = {
   components: BaseComponents
@@ -260,6 +261,16 @@ export type SnsClient = {
   publishBatch(payload: PublishBatchCommand): Promise<PublishBatchCommandOutput>
 }
 
+export type LivekitClient = {
+  receiveWebhookEvent(body: string, authorization: string): Promise<WebhookEvent>
+}
+
+export type IPeersRegistry = {
+  onPeerConnected(id: string, world: string): void
+  onPeerDisconnected(id: string): void
+  getPeerWorld(id: string): string | undefined
+}
+
 // components used in every environment
 export type BaseComponents = {
   awsConfig: AwsConfig
@@ -270,6 +281,7 @@ export type BaseComponents = {
   ethereumProvider: HTTPProvider
   fetch: IFetchComponent
   limitsManager: ILimitsManager
+  livekitClient: LivekitClient
   logs: ILoggerComponent
   marketplaceSubGraph: ISubgraphComponent
   metrics: IMetricsComponent<keyof typeof metricDeclarations>
@@ -280,6 +292,7 @@ export type BaseComponents = {
   namePermissionChecker: IWorldNamePermissionChecker
   notificationService: INotificationService
   permissionsManager: IPermissionsManager
+  peersRegistry: IPeersRegistry
   server: IHttpServerComponent<GlobalContext>
   snsClient: SnsClient
   status: IStatusComponent

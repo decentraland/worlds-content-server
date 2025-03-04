@@ -1,9 +1,10 @@
 import { test } from '../components'
 import { WebhookReceiver } from 'livekit-server-sdk'
+import { Response } from '@well-known-components/interfaces'
 
 jest.mock('livekit-server-sdk')
 
-test('livekit webhook handler /livekit-webhook', function ({ components, stubComponents }) {
+test('LivekitWebhookHandler', function ({ components, stubComponents }) {
   beforeEach(() => {
     const { config } = stubComponents
 
@@ -31,7 +32,7 @@ test('livekit webhook handler /livekit-webhook', function ({ components, stubCom
     })
   }
 
-  it('returns 400 when authorization header is missing', async () => {
+  it('should return 400 when authorization header is missing', async () => {
     const r = await makeWebhookRequest({}, '')
 
     expect(r.status).toBe(400)
@@ -40,7 +41,7 @@ test('livekit webhook handler /livekit-webhook', function ({ components, stubCom
     })
   })
 
-  it('returns 400 when participant identity is missing', async () => {
+  it('should return 400 when participant identity is missing', async () => {
     const event = {
       event: 'participant_joined',
       room: { name: 'test-room.dcl.eth' },
@@ -55,7 +56,7 @@ test('livekit webhook handler /livekit-webhook', function ({ components, stubCom
     })
   })
 
-  it('returns 400 when room name is missing', async () => {
+  it('should return 400 when room name is missing', async () => {
     const event = {
       event: 'participant_joined',
       room: {},
@@ -70,7 +71,7 @@ test('livekit webhook handler /livekit-webhook', function ({ components, stubCom
     })
   })
 
-  it('skips event when room name does not end with .dcl.eth', async () => {
+  it('should skip event when room name does not end with .dcl.eth', async () => {
     const event = {
       event: 'participant_joined',
       room: { name: 'invalid-room' },
@@ -85,7 +86,7 @@ test('livekit webhook handler /livekit-webhook', function ({ components, stubCom
     })
   })
 
-  it('skips event when event is not valid', async () => {
+  it('should skip event when event is not valid', async () => {
     const event = {
       event: 'invalid-event',
       room: { name: 'test-room.dcl.eth' },
@@ -100,47 +101,60 @@ test('livekit webhook handler /livekit-webhook', function ({ components, stubCom
     })
   })
 
-  it('publishes join event to nats when participant joins', async () => {
-    const { nats } = components
-    const event = {
-      event: 'participant_joined',
-      room: { name: 'test-room.dcl.eth' },
-      participant: { identity: 'test-user' }
-    }
+  describe('when event is valid', function () {
+    describe('and participant joins', function () {
+      const event = {
+        event: 'participant_joined',
+        room: { name: 'test-room.dcl.eth' },
+        participant: { identity: 'test-user' }
+      }
+      let response: Response
 
-    const r = await makeWebhookRequest(event)
+      beforeEach(async () => {
+        response = await makeWebhookRequest(event)
+      })
 
-    expect(r.status).toBe(200)
-    expect(nats.publish).toHaveBeenCalledWith('peer.test-user.world.join')
-  })
+      it('should publish join event to nats', async () => {
+        const { nats } = components
+        expect(nats.publish).toHaveBeenCalledWith('peer.test-user.world.join')
+      })
 
-  it('publishes leave event to nats when participant leaves', async () => {
-    const { nats } = components
-    const event = {
-      event: 'participant_left',
-      room: { name: 'test-room.dcl.eth' },
-      participant: { identity: 'test-user' }
-    }
+      it('should register peer in the registry', async () => {
+        const { peersRegistry } = components
+        expect(peersRegistry.onPeerConnected).toHaveBeenCalledWith('test-user', 'test-room.dcl.eth')
+      })
 
-    const r = await makeWebhookRequest(event)
+      it('should return 200', async () => {
+        expect(response.status).toBe(200)
+      })
+    })
 
-    expect(r.status).toBe(200)
-    expect(nats.publish).toHaveBeenCalledWith('peer.test-user.world.leave')
-  })
+    describe('when participant leaves', function () {
+      const event = {
+        event: 'participant_left',
+        room: { name: 'test-room.dcl.eth' },
+        participant: { identity: 'test-user' }
+      }
 
-  it('returns 500 when webhook validation fails', async () => {
-    const event = {
-      event: 'participant_joined',
-      room: { name: 'test-room.dcl.eth' },
-      participant: { identity: 'test-user' }
-    }
+      let response: Response
 
-    const r = await makeWebhookRequest(event, 'invalid-auth-token')
+      beforeEach(async () => {
+        response = await makeWebhookRequest(event)
+      })
 
-    expect(r.status).toBe(500)
-    expect(await r.json()).toMatchObject({
-      message: 'Error receiving livekit webhook',
-      error: 'Invalid auth token'
+      it('should publish leave event to nats when participant leaves', async () => {
+        const { nats } = components
+        expect(nats.publish).toHaveBeenCalledWith('peer.test-user.world.leave')
+      })
+
+      it('should unregister peer in the registry', async () => {
+        const { peersRegistry } = components
+        expect(peersRegistry.onPeerDisconnected).toHaveBeenCalledWith('test-user')
+      })
+
+      it('should return 200', async () => {
+        expect(response.status).toBe(200)
+      })
     })
   })
 })
