@@ -24,6 +24,7 @@ import { reprocessABHandler } from './handlers/reprocess-ab-handler'
 import { garbageCollectionHandler } from './handlers/garbage-collection'
 import { getContributableDomainsHandler } from './handlers/contributor-handler'
 import { livekitWebhookHandler } from './handlers/livekit-webhook-handler'
+import { walletConnectedWorldHandler } from './handlers/wallet-connected-world-handler'
 
 export async function setupRouter(globalContext: GlobalContext): Promise<Router<GlobalContext>> {
   const router = new Router<GlobalContext>()
@@ -70,6 +71,7 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   )
 
   router.get('/wallet/:wallet/stats', walletStatsHandler)
+  router.get('/wallet/:wallet/connected-world', walletConnectedWorldHandler)
   router.get('/status', statusHandler)
 
   router.get('/index', getIndexHandler)

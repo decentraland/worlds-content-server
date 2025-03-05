@@ -37,6 +37,8 @@ import { createAwsConfig } from './adapters/aws-config'
 import { S3 } from 'aws-sdk'
 import { createNotificationsClientComponent } from './adapters/notifications-service'
 import { createNatsComponent } from '@well-known-components/nats-component'
+import { createLivekitClient } from './adapters/livekit-client'
+import { createPeersRegistry } from './adapters/peers-registry'
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
@@ -151,6 +153,9 @@ export async function initComponents(): Promise<AppComponents> {
     walletStats
   })
 
+  const peersRegistry = await createPeersRegistry()
+  const livekitClient = await createLivekitClient({ config })
+
   return {
     awsConfig,
     commsAdapter,
@@ -160,6 +165,7 @@ export async function initComponents(): Promise<AppComponents> {
     ethereumProvider,
     fetch,
     limitsManager,
+    livekitClient,
     logs,
     marketplaceSubGraph,
     metrics,
@@ -170,6 +176,7 @@ export async function initComponents(): Promise<AppComponents> {
     namePermissionChecker,
     notificationService,
     permissionsManager,
+    peersRegistry,
     server,
     snsClient,
     status,
