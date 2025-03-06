@@ -13,10 +13,20 @@ describe('PeersRegistry', () => {
     expect(peersRegistry.getPeerWorld('peer1')).toBe('world1')
   })
 
+  it('should track connected peers with lowercase ids', async () => {
+    peersRegistry.onPeerConnected('PEER1', 'world1')
+    expect(peersRegistry.getPeerWorld('peer1')).toBe('world1')
+  })
+
   it('should remove disconnected peers', async () => {
     peersRegistry.onPeerConnected('peer1', 'world1')
     peersRegistry.onPeerDisconnected('peer1')
     expect(peersRegistry.getPeerWorld('peer1')).toBeUndefined()
+  })
+
+  it('should track connected peers with lowercase ids', async () => {
+    peersRegistry.onPeerConnected('PEER1', 'world1')
+    expect(peersRegistry.getPeerWorld('peer1')).toBe('world1')
   })
 
   it('should update peer world on reconnection', async () => {
