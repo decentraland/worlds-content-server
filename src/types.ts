@@ -61,6 +61,7 @@ export type WorldMetadata = {
   permissions: Permissions
   runtimeMetadata: WorldRuntimeMetadata
   blockedSince?: Date
+  owner?: EthAddress
 }
 
 export type AccessControlList = {
@@ -163,6 +164,7 @@ export type IWorldsManager = {
 
 export type IPermissionsManager = {
   getPermissions(worldName: string): Promise<Permissions>
+  getOwner(worldName: string): Promise<EthAddress | undefined>
   storePermissions(worldName: string, permissions: Permissions): Promise<void>
   addAddressToAllowList(worldName: string, permission: Permission, address: string): Promise<void>
   deleteAddressFromAllowList(worldName: string, permission: Permission, address: string): Promise<void>

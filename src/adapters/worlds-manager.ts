@@ -67,6 +67,9 @@ export async function createWorldsManagerComponent({
     if (row.blocked_since) {
       tempWorldMetadata.blockedSince = row.blocked_since
     }
+    if (row.owner) {
+      tempWorldMetadata.owner = row.owner
+    }
 
     return {
       ...JSON.parse(JSON.stringify(tempWorldMetadata)),

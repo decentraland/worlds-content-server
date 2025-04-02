@@ -40,12 +40,12 @@ export async function getPermissionsHandler(
   const { permissionsManager } = ctx.components
 
   const permissions = await permissionsManager.getPermissions(ctx.params.world_name)
-
+  const owner = await permissionsManager.getOwner(ctx.params.world_name)
   const noSecrets = removeSecrets(permissions)
 
   return {
     status: 200,
-    body: { permissions: noSecrets }
+    body: { permissions: noSecrets, owner }
   }
 }
 

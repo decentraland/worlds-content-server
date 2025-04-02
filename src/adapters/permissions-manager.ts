@@ -1,5 +1,6 @@
 import { AppComponents, IPermissionsManager, Permission, PermissionType, Permissions } from '../types'
 import { defaultPermissions } from '../logic/permissions-checker'
+import { EthAddress } from '@dcl/schemas/dist/misc'
 
 export async function createPermissionsManagerComponent({
   worldsManager
@@ -8,6 +9,12 @@ export async function createPermissionsManagerComponent({
     const metadata = await worldsManager.getMetadataForWorld(worldName)
 
     return metadata?.permissions || defaultPermissions()
+  }
+
+  async function getOwner(worldName: string): Promise<EthAddress | undefined> {
+    const metadata = await worldsManager.getMetadataForWorld(worldName)
+
+    return metadata?.owner
   }
 
   async function storePermissions(worldName: string, permissions: Permissions): Promise<void> {
@@ -48,6 +55,7 @@ export async function createPermissionsManagerComponent({
 
   return {
     getPermissions,
+    getOwner,
     storePermissions,
     addAddressToAllowList,
     deleteAddressFromAllowList
