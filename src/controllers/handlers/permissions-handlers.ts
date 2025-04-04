@@ -39,8 +39,10 @@ export async function getPermissionsHandler(
 ): Promise<IHttpServerComponent.IResponse> {
   const { permissionsManager } = ctx.components
 
-  const permissions = await permissionsManager.getPermissions(ctx.params.world_name)
-  const owner = await permissionsManager.getOwner(ctx.params.world_name)
+  const [permissions, owner] = await Promise.all([
+    permissionsManager.getPermissions(ctx.params.world_name),
+    permissionsManager.getOwner(ctx.params.world_name)
+  ])
   const noSecrets = removeSecrets(permissions)
 
   return {
