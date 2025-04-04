@@ -1,10 +1,13 @@
 import { test } from '../components'
-import { getAuthHeaders, getIdentity, Identity } from '../utils'
+import { getAuthHeaders, getIdentity, Identity, storeJson } from '../utils'
 import { Authenticator } from '@dcl/crypto'
 import { defaultPermissions } from '../../src/logic/permissions-checker'
 import { IFetchComponent } from '@well-known-components/interfaces'
 import { IWorldCreator, IWorldsManager, Permissions, PermissionType } from '../../src/types'
 import bcrypt from 'bcrypt'
+import { EntityType } from '@dcl/schemas'
+import { DeploymentBuilder } from 'dcl-catalyst-client'
+import { bufferToStream } from '@dcl/catalyst-storage'
 
 function makeRequest(
   localFetch: IFetchComponent,
@@ -99,6 +102,39 @@ test('PermissionsHandler', function ({ components, stubComponents }) {
             type: PermissionType.SharedSecret
           }
         }
+      })
+      expect(json.permissions.access.secret).toBeUndefined()
+    })
+
+    it('returns the stored permission object with the owner', async () => {
+      const permissions: Permissions = {
+        ...defaultPermissions(),
+        access: {
+          type: PermissionType.SharedSecret,
+          secret: bcrypt.hashSync('some-super-secret-password', 10)
+        },
+        streaming: {
+          type: PermissionType.AllowList,
+          wallets: ['0xD9370c94253f080272BA1c28E216146ecE806d33', '0xb7DF441676bf3bDb13ad622ADE983d84f86B0df4']
+        }
+      }
+
+      const created = await worldCreator.createWorldWithScene()
+
+      await worldsManager.storePermissions(created.worldName, permissions)
+
+      const r = await localFetch.fetch(`/world/${created.worldName}/permissions`)
+
+      expect(r.status).toBe(200)
+      const json = await r.json()
+      expect(json).toMatchObject({
+        permissions: {
+          ...permissions,
+          access: {
+            type: PermissionType.SharedSecret
+          }
+        },
+        owner: created.owner.authChain[0].payload.toLowerCase()
       })
       expect(json.permissions.access.secret).toBeUndefined()
     })
