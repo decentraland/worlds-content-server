@@ -836,10 +836,10 @@
     ajv-keywords "^5.1.0"
     mitt "^3.0.1"
 
-"@dcl/schemas@^16.0.0":
-  version "16.0.0"
-  resolved "https://registry.yarnpkg.com/@dcl/schemas/-/schemas-16.0.0.tgz#dc7f2e254b49705956a3e2e15d74ff0aebc987c2"
-  integrity sha512-PqWFodZwWXHZDBZohZE+kwKkXtLZZsAgnnqfQhOGqtAhZpW7RIx6Wrlfgmitn19ZAJ7GCOtVqlNADjFmzieN3A==
+"@dcl/schemas@^16.6.4":
+  version "16.6.4"
+  resolved "https://registry.yarnpkg.com/@dcl/schemas/-/schemas-16.6.4.tgz#42ad9174a96b46663f46f6fb0d01861e8cd6b0fb"
+  integrity sha512-fc1uHCw9YwwzlLRXzSCuhuXHeqtzU/dGmVXpIZdpx/ysz1PiVD1UUfzqZ4kLruJs6VOqBk1i0gbT/j5psXcu4A==
   dependencies:
     ajv "^8.11.0"
     ajv-errors "^3.0.0"
