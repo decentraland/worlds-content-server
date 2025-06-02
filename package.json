@@ -19,7 +19,7 @@
     "@dcl/crypto": "^3.4.5",
     "@dcl/hashing": "^3.0.4",
     "@dcl/platform-crypto-middleware": "^1.1.0",
-    "@dcl/platform-server-commons": "^0.0.5",
+    "@dcl/platform-server-commons": "^0.1.0",
     "@dcl/schemas": "^16.0.0",
     "@ensdomains/eth-ens-namehash": "^2.0.15",
     "@types/busboy": "^1.5.3",
