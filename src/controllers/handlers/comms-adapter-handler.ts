@@ -10,14 +10,16 @@ type CommsMetadata = {
 
 export async function commsAdapterHandler(
   context: HandlerContextWithPath<
-    'commsAdapter' | 'config' | 'nameDenyListChecker' | 'namePermissionChecker' | 'worldsManager',
+    'commsAdapter' | 'config' | 'nameDenyListChecker' | 'namePermissionChecker' | 'worldsManager' | 'logs',
     '/get-comms-adapter/:roomId'
   > &
     DecentralandSignatureContext<CommsMetadata>
 ): Promise<IHttpServerComponent.IResponse> {
   const {
-    components: { commsAdapter, config, nameDenyListChecker, namePermissionChecker, worldsManager }
+    components: { commsAdapter, config, nameDenyListChecker, namePermissionChecker, worldsManager, logs }
   } = context
+
+  const logger = logs.getLogger('comms')
 
   const params = new URLSearchParams(context.url.search)
   const ea = params.get('ea')
@@ -29,18 +31,19 @@ export async function commsAdapterHandler(
 
   let roomPrefix = await config.requireString('COMMS_ROOM_PREFIX')
 
-  //PATCH: if ?ea=true, we need to add the scene room prefix to connecto the scene room in the Explorer Alpha
-  //This is a temp PATCH to test cast with the EA
-  if (ea === 'true') {
-    console.log('ea', ea)
-    roomPrefix += '-scene-room-'
-  }
-
   if (!context.params.roomId.startsWith(roomPrefix)) {
     throw new InvalidRequestError('Invalid room id requested.')
   }
 
+  //PATCH: if ?ea=true, we need to add the scene room prefix to connecto the scene room in the Explorer Alpha
+  //This is a temp PATCH to test cast with the EA
+  if (ea === 'true') {
+    roomPrefix += '-scene-room-'
+    logger.info('request for explorer alpha scene room, prefix: ' + roomPrefix)
+  }
+
   const worldName = context.params.roomId.substring(roomPrefix.length)
+  logger.info('worldName: ' + worldName)
 
   if (!(await nameDenyListChecker.checkNameDenyList(worldName))) {
     throw new NotFoundError(`World "${worldName}" does not exist.`)
@@ -63,10 +66,12 @@ export async function commsAdapterHandler(
     throw new NotAuthorizedError(`You are not allowed to access world "${worldName}".`)
   }
 
+  const fixedAdapter = await commsAdapter.connectionString(identity, context.params.roomId)
+  logger.info('fixedAdapter: ' + fixedAdapter)
   return {
     status: 200,
     body: {
-      fixedAdapter: await commsAdapter.connectionString(identity, context.params.roomId)
+      fixedAdapter
     }
   }
 }
