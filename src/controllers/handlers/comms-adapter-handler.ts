@@ -10,16 +10,14 @@ type CommsMetadata = {
 
 export async function commsAdapterHandler(
   context: HandlerContextWithPath<
-    'commsAdapter' | 'config' | 'nameDenyListChecker' | 'namePermissionChecker' | 'worldsManager' | 'logs',
+    'commsAdapter' | 'config' | 'nameDenyListChecker' | 'namePermissionChecker' | 'worldsManager',
     '/get-comms-adapter/:roomId'
   > &
     DecentralandSignatureContext<CommsMetadata>
 ): Promise<IHttpServerComponent.IResponse> {
   const {
-    components: { commsAdapter, config, nameDenyListChecker, namePermissionChecker, worldsManager, logs }
+    components: { commsAdapter, config, nameDenyListChecker, namePermissionChecker, worldsManager }
   } = context
-
-  const logger = logs.getLogger('comms')
 
   const params = new URLSearchParams(context.url.search)
   const ea = params.get('ea')
@@ -29,21 +27,13 @@ export async function commsAdapterHandler(
     throw new InvalidRequestError('Access denied, invalid metadata')
   }
 
-  let roomPrefix = await config.requireString('COMMS_ROOM_PREFIX')
+  const roomPrefix = await config.requireString('COMMS_ROOM_PREFIX')
 
   if (!context.params.roomId.startsWith(roomPrefix)) {
     throw new InvalidRequestError('Invalid room id requested.')
   }
 
-  //PATCH: if ?ea=true, we need to add the scene room prefix to connecto the scene room in the Explorer Alpha
-  //This is a temp PATCH to test cast with the EA
-  if (ea === 'true') {
-    roomPrefix += '-scene-room-'
-    logger.info('request for explorer alpha scene room, prefix: ' + roomPrefix)
-  }
-
   const worldName = context.params.roomId.substring(roomPrefix.length)
-  logger.info('worldName: ' + worldName)
 
   if (!(await nameDenyListChecker.checkNameDenyList(worldName))) {
     throw new NotFoundError(`World "${worldName}" does not exist.`)
@@ -65,9 +55,15 @@ export async function commsAdapterHandler(
   if (!hasPermission) {
     throw new NotAuthorizedError(`You are not allowed to access world "${worldName}".`)
   }
+  //PATCH: if ?ea=true, we need to add the scene room prefix to connecto the scene room in the Explorer Alpha
+  //This is a temp PATCH to test cast with the EA
+  let roomId = context.params.roomId
+  if (ea === 'true') {
+    roomId = roomPrefix + '-scene-room-' + roomId.substring(roomPrefix.length)
+  }
 
-  const fixedAdapter = await commsAdapter.connectionString(identity, context.params.roomId)
-  logger.info('fixedAdapter: ' + fixedAdapter)
+  const fixedAdapter = await commsAdapter.connectionString(identity, roomId)
+
   return {
     status: 200,
     body: {
