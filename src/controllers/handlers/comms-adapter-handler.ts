@@ -19,12 +19,22 @@ export async function commsAdapterHandler(
     components: { commsAdapter, config, nameDenyListChecker, namePermissionChecker, worldsManager }
   } = context
 
+  const params = new URLSearchParams(context.url.search)
+  const ea = params.get('ea')
+
   const authMetadata = context.verification!.authMetadata
   if (!validateMetadata(authMetadata)) {
     throw new InvalidRequestError('Access denied, invalid metadata')
   }
 
-  const roomPrefix = await config.requireString('COMMS_ROOM_PREFIX')
+  let roomPrefix = await config.requireString('COMMS_ROOM_PREFIX')
+
+  //PATCH: if ?ea=true, we need to add the scene room prefix to connecto the scene room in the Explorer Alpha
+  //This is a temp PATCH to test cast with the EA
+  if (ea === 'true') {
+    console.log('ea', ea)
+    roomPrefix += '-scene-room-'
+  }
 
   if (!context.params.roomId.startsWith(roomPrefix)) {
     throw new InvalidRequestError('Invalid room id requested.')
