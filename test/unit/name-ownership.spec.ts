@@ -273,5 +273,42 @@ describe('Name Ownership', () => {
       const map = await nameOwnership.findOwners(['my-super-name.dcl.eth'])
       expect(map.get('my-super-name.dcl.eth')).toBe('0x5de9e77627c79ff6ec787295e4191aeeeea4acab')
     })
+
+    it('splits large batches into smaller chunks to avoid RPC provider limits', async () => {
+      // Create a large batch of 100 names (exceeds the 50 limit)
+      const largeBatch = Array.from({ length: 100 }, (_, i) => `name${i}.dcl.eth`)
+      
+      // Mock responses for all 100 names - need to provide responses for each chunk
+      const mockResponses = [
+        // First chunk (50 responses)
+        largeBatch.slice(0, 50).map((_, i) => ({
+          jsonrpc: '2.0',
+          id: i + 1,
+          result: `0x000000000000000000000000${(i + 1).toString().padStart(40, '0')}`
+        })),
+        // Second chunk (50 responses)
+        largeBatch.slice(50, 100).map((_, i) => ({
+          jsonrpc: '2.0',
+          id: i + 1,
+          result: `0x000000000000000000000000${(i + 51).toString().padStart(40, '0')}`
+        }))
+      ]
+
+      const nameOwnership = await createOnChainDclNameOwnership({
+        config,
+        logs,
+        ethereumProvider: createHttpProviderMock(mockResponses)
+      })
+
+      const map = await nameOwnership.findOwners(largeBatch)
+      
+      // Verify all names were processed
+      expect(map.size).toBe(100)
+      
+      // Verify a few specific results
+      expect(map.get('name0.dcl.eth')).toBe('0x0000000000000000000000000000000000000001')
+      expect(map.get('name49.dcl.eth')).toBe('0x0000000000000000000000000000000000000050')
+      expect(map.get('name99.dcl.eth')).toBe('0x0000000000000000000000000000000000000100')
+    }, 10000) // Increase timeout to 10 seconds
   })
 })
