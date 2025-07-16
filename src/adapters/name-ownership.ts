@@ -107,7 +107,7 @@ export async function createEnsNameOwnership(
   async function getOwnerOf(contract: { ownerOf: any }, names: string[]): Promise<(EthAddress | undefined)[]> {
     const batch: RPCSendableMessage[] = await Promise.all(names.map((name) => contract.ownerOf.toRPCMessage(name)))
 
-    const result = await sendBatch(components.ethereumProvider, batch)
+    const result = await sendBatchWithRetry(components.ethereumProvider, batch)
     return result.map((r: any) => {
       if (!r.result) {
         return undefined
@@ -248,7 +248,7 @@ export async function createOnChainDclNameOwnership(
       names.map((name) => registrarContract.getOwnerOf.toRPCMessage(name))
     )
 
-    const result = await sendBatch(components.ethereumProvider, batch)
+    const result = await sendBatchWithRetry(components.ethereumProvider, batch)
     return result.map((r: any) => {
       if (!r.result) {
         return undefined
@@ -317,6 +317,52 @@ function sendBatch(provider: HTTPProvider, batch: RPCSendableMessage[]) {
       resolve(result)
     })
   })
+}
+
+// Helper function to split arrays into chunks
+function chunkArray<T>(array: T[], chunkSize: number): T[][] {
+  const chunks: T[][] = []
+  for (let i = 0; i < array.length; i += chunkSize) {
+    chunks.push(array.slice(i, i + chunkSize))
+  }
+  return chunks
+}
+
+async function sendBatchWithRetry(provider: HTTPProvider, batch: RPCSendableMessage[], maxRetries = 3): Promise<any> {
+  // Split large batches into smaller chunks (Alchemy limit is typically 100)
+  const BATCH_SIZE_LIMIT = 50 // Conservative limit
+  const chunks = chunkArray(batch, BATCH_SIZE_LIMIT)
+
+  if (chunks.length > 1) {
+    console.log(`Splitting batch of ${batch.length} requests into ${chunks.length} chunks`)
+  }
+
+  const results: any[] = []
+
+  for (const chunk of chunks) {
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const result = await sendBatch(provider, chunk)
+        results.push(...(Array.isArray(result) ? result : [result]))
+        break // Success, move to next chunk
+      } catch (error: any) {
+        const isLastAttempt = attempt === maxRetries - 1
+
+        // If it's a 400 error and not the last attempt, retry
+        if (error.message && error.message.includes('400') && !isLastAttempt) {
+          const delay = Math.pow(2, attempt) * 1000 // Exponential backoff: 1s, 2s, 4s
+          console.warn(`RPC request failed with 400, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`)
+          await new Promise((resolve) => setTimeout(resolve, delay))
+          continue
+        }
+
+        // For other errors or last attempt, throw the error
+        throw error
+      }
+    }
+  }
+
+  return results
 }
 
 // baseRegistrarImplementation has the same address in all networks:
