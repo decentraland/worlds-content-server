@@ -277,7 +277,7 @@ describe('Name Ownership', () => {
     it('splits large batches into smaller chunks to avoid RPC provider limits', async () => {
       // Create a large batch of 100 names (exceeds the 50 limit)
       const largeBatch = Array.from({ length: 100 }, (_, i) => `name${i}.dcl.eth`)
-      
+
       // Mock responses for all 100 names - need to provide responses for each chunk
       const mockResponses = [
         // First chunk (50 responses)
@@ -301,10 +301,10 @@ describe('Name Ownership', () => {
       })
 
       const map = await nameOwnership.findOwners(largeBatch)
-      
+
       // Verify all names were processed
       expect(map.size).toBe(100)
-      
+
       // Verify a few specific results
       expect(map.get('name0.dcl.eth')).toBe('0x0000000000000000000000000000000000000001')
       expect(map.get('name49.dcl.eth')).toBe('0x0000000000000000000000000000000000000050')
