@@ -135,17 +135,24 @@ export async function createWorldsManagerComponent({
     )
   }
 
-  const mapEntity = (row: Pick<WorldRecord, 'entity_id' | 'entity'>) => ({
+  const mapEntity = (row: Pick<WorldRecord, 'entity_id' | 'entity' | 'owner'>) => ({
     ...row.entity,
-    id: row.entity_id
+    id: row.entity_id,
+    entity: {
+      ...row.entity,
+      metadata: {
+        ...row.entity.metadata,
+        owner: row.owner
+      }
+    }
   })
 
   async function getDeployedWorldEntities(): Promise<Entity[]> {
-    const result = await database.query<Pick<WorldRecord, 'name' | 'entity_id' | 'entity'>>(
-      'SELECT name, entity_id, entity FROM worlds WHERE entity_id IS NOT NULL ORDER BY name'
+    const result = await database.query<Pick<WorldRecord, 'name' | 'entity_id' | 'entity' | 'owner'>>(
+      'SELECT name, entity_id, entity, owner FROM worlds WHERE entity_id IS NOT NULL ORDER BY name'
     )
 
-    const filtered: Pick<WorldRecord, 'name' | 'entity_id' | 'entity'>[] = []
+    const filtered: Pick<WorldRecord, 'name' | 'entity_id' | 'entity' | 'owner'>[] = []
     for (const row of result.rows) {
       if (await nameDenyListChecker.checkNameDenyList(row.name)) {
         filtered.push(row)
@@ -161,8 +168,8 @@ export async function createWorldsManagerComponent({
       return undefined
     }
 
-    const result = await database.query<Pick<WorldRecord, 'entity_id' | 'entity'>>(
-      SQL`SELECT entity_id, entity FROM worlds WHERE name = ${worldName.toLowerCase()} AND entity_id IS NOT NULL ORDER BY name`
+    const result = await database.query<Pick<WorldRecord, 'entity_id' | 'entity' | 'owner'>>(
+      SQL`SELECT entity_id, entity, owner FROM worlds WHERE name = ${worldName.toLowerCase()} AND entity_id IS NOT NULL ORDER BY name`
     )
 
     if (result.rowCount === 0) {
