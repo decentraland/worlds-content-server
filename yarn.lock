@@ -754,10 +754,10 @@
   dependencies:
     "@jridgewell/trace-mapping" "0.3.9"
 
-"@dcl/catalyst-api-specs@^3.3.0":
-  version "3.3.0"
-  resolved "https://registry.yarnpkg.com/@dcl/catalyst-api-specs/-/catalyst-api-specs-3.3.0.tgz#6efebe6142e4934bcf51d60367639e203204de2b"
-  integrity sha512-SwOY3+XRP0KBFOkUl4k4plSP8iYMd3On5iDcCeHkcWBuDvNplW2eydC2S9A6XHjjGwRZI7pmqMS9Q2LX1xeGGQ==
+"@dcl/catalyst-api-specs@^3.5.1":
+  version "3.5.1"
+  resolved "https://registry.yarnpkg.com/@dcl/catalyst-api-specs/-/catalyst-api-specs-3.5.1.tgz#03977b4cd67cdc7781aa39848dc9fe657f5629b4"
+  integrity sha512-24/8oH4VzWWoIiHFNt347+AhoF+49il8xe9whKPDsQ8o4IVM7+iIT+YtNPiS5nkyddXpI0u0eiS8f7DgjBfH9w==
   dependencies:
     yaml "^2.3.4"
 
