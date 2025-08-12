@@ -16,7 +16,7 @@ export async function commsAdapterHandler(
     DecentralandSignatureContext<CommsMetadata>
 ): Promise<IHttpServerComponent.IResponse> {
   const {
-    components: { commsAdapter, config, nameDenyListChecker, namePermissionChecker, worldsManager, logs   }
+    components: { commsAdapter, config, nameDenyListChecker, namePermissionChecker, worldsManager, logs }
   } = context
 
   const logger = logs.getLogger('comms')
@@ -61,7 +61,7 @@ export async function commsAdapterHandler(
   //This is a temp PATCH to test cast with the EA
   let roomId = context.params.roomId
   if (ea === 'true') {
-    roomId = roomPrefix + 'scene-room-' + roomId.substring(roomPrefix.length)    
+    roomId = roomPrefix + 'scene-room-' + roomId.substring(roomPrefix.length)
   }
   logger.info('request scene room, roomId: ' + roomId)
 
