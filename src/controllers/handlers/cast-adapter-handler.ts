@@ -22,6 +22,9 @@ export async function castAdapterHandler(
     config.requireString('LIVEKIT_API_SECRET')
   ])
 
+  const params = new URLSearchParams(context.url.search)
+  const ea = params.get('ea')
+
   if (!validateMetadata(context.verification!.authMetadata)) {
     throw new InvalidRequestError('Access denied, invalid metadata')
   }
@@ -50,18 +53,24 @@ export async function castAdapterHandler(
     (await namePermissionChecker.checkPermission(identity, worldName)) ||
     (await permissionChecker.checkPermission('streaming', identity))
 
+  let roomId = context.params.roomId
+  if (ea === 'true') {
+    roomId = roomPrefix + 'scene-room-' + roomId.substring(roomPrefix.length)
+  }
+
   const token = new AccessToken(apiKey, apiSecret, {
     identity,
     ttl: 5 * 60 // 5 minutes
   })
   token.addGrant({
     roomJoin: true,
-    room: context.params.roomId,
+    room: roomId,
     roomList: false,
     canSubscribe: true,
     canPublishData: hasPermission,
     canPublish: hasPermission
   })
+
   return {
     status: 200,
     body: {
