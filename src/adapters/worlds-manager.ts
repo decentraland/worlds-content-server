@@ -138,12 +138,9 @@ export async function createWorldsManagerComponent({
   const mapEntity = (row: Pick<WorldRecord, 'entity_id' | 'entity' | 'owner'>) => ({
     ...row.entity,
     id: row.entity_id,
-    entity: {
-      ...row.entity,
-      metadata: {
-        ...row.entity.metadata,
-        owner: row.owner
-      }
+    metadata: {
+      ...row.entity.metadata,
+      owner: row.owner
     }
   })
 
