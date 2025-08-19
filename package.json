@@ -45,7 +45,7 @@
     "@types/bcrypt": "^5.0.2",
     "@types/node": "^20.11.10",
     "@well-known-components/test-helpers": "^1.5.8",
-    "dcl-catalyst-client": "^21.8.0",
+    "dcl-catalyst-client": "^21.8.1",
     "nodemon": "^3.1.9",
     "ts-node": "^10.9.2",
     "typescript": "^5.3.3"
