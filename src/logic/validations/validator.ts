@@ -3,6 +3,7 @@ import {
   createValidateDeploymentTtl,
   validateAuthChain,
   validateBaseEntity,
+  validateOwner,
   validateEntityId,
   validateFiles,
   validateSignature,
@@ -28,6 +29,7 @@ export function createValidateFns(components: ValidatorComponents): Validation[]
     // Common validations to all entity types
     validateAll([
       validateEntityId,
+      validateOwner,
       validateBaseEntity,
       validateAuthChain,
       validateSigner,
