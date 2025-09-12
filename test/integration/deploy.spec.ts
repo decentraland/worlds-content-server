@@ -48,7 +48,7 @@ test('deployment works', function ({ components, stubComponents }) {
     const { storage, worldsManager } = components
     const { snsClient } = stubComponents
 
-    ;(snsClient.publish as any).mockClear()
+    snsClient.publish.resetHistory()
 
     entityFiles.set('abc.txt', stringToUtf8Bytes(makeid(100)))
     const fileHash = await hashV1(entityFiles.get('abc.txt')!)
@@ -80,10 +80,14 @@ test('deployment works', function ({ components, stubComponents }) {
 
     const authChain = Authenticator.signPayload(identity.authChain, entityId)
 
-    snsClient.publish.resolves({
-      MessageId: 'mocked-message-id',
-      SequenceNumber: 'mocked-sequence-number',
-      $metadata: {}
+    let lastCmd: any
+    snsClient.publish.callsFake((cmd: any) => {
+      lastCmd = cmd
+      return Promise.resolve({
+        MessageId: 'mocked-message-id',
+        SequenceNumber: 'mocked-sequence-number',
+        $metadata: {}
+      })
     })
 
     const response = (await contentClient.deploy({ files, entityId, authChain })) as Response
@@ -115,16 +119,16 @@ test('deployment works', function ({ components, stubComponents }) {
 
     Sinon.assert.calledWithMatch(stubComponents.metrics.increment, 'world_deployments_counter', { kind: 'dcl-name' })
 
-    // Assert SNS attribute isMultiplayer = false when no multiplayerId
-    const publishArg = (snsClient.publish as any).mock.calls[0][0]
-    expect(publishArg.input.MessageAttributes.isMultiplayer.StringValue).toBe('false')
+    // Explicit post-call assertion
+    Sinon.assert.calledOnce(snsClient.publish as any)
+    expect(lastCmd?.input?.MessageAttributes?.isMultiplayer?.StringValue).toBe('false')
   })
 
   it('creates an entity and deploys it (authorized wallet)', async () => {
     const { storage, worldsManager } = components
     const { snsClient } = stubComponents
 
-    ;(snsClient.publish as any).mockClear()
+    snsClient.publish.resetHistory()
 
     const delegatedIdentity = await getIdentity()
 
@@ -193,14 +197,20 @@ test('deployment works', function ({ components, stubComponents }) {
   it('sets isMultiplayer attribute to true when multiplayerId is present', async () => {
     const { snsClient } = stubComponents
 
-    ;(snsClient.publish as any).mockClear()
+    snsClient.publish.resetHistory()
 
     // Build the entity with multiplayerId
+    entityFiles.set('abc.txt', stringToUtf8Bytes(makeid(100)))
     const { files, entityId } = await DeploymentBuilder.buildEntity({
       type: EntityType.SCENE as any,
       pointers: ['0,0'],
       files: entityFiles,
       metadata: {
+        main: 'abc.txt',
+        scene: {
+          base: '0,0',
+          parcels: ['0,0']
+        },
         multiplayerId: 'room-123',
         worldConfiguration: {
           name: worldName
@@ -210,17 +220,21 @@ test('deployment works', function ({ components, stubComponents }) {
 
     const authChain = Authenticator.signPayload(identity.authChain, entityId)
 
-    snsClient.publish.resolves({
-      MessageId: 'mocked-message-id',
-      SequenceNumber: 'mocked-sequence-number',
-      $metadata: {}
+    let lastCmdTrue: any
+    snsClient.publish.callsFake((cmd: any) => {
+      lastCmdTrue = cmd
+      return Promise.resolve({
+        MessageId: 'mocked-message-id',
+        SequenceNumber: 'mocked-sequence-number',
+        $metadata: {}
+      })
     })
 
     await contentClient.deploy({ files, entityId, authChain })
 
-    // Assert SNS attribute isMultiplayer = true when multiplayerId is present
-    const publishArg = (snsClient.publish as any).mock.calls[0][0]
-    expect(publishArg.input.MessageAttributes.isMultiplayer.StringValue).toBe('true')
+    // Explicit post-call assertion
+    Sinon.assert.calledOnce(snsClient.publish as any)
+    expect(lastCmdTrue?.input?.MessageAttributes?.isMultiplayer?.StringValue).toBe('true')
   })
 
   it('creates an entity and deploys it using uppercase letters in the name', async () => {
