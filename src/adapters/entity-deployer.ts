@@ -82,10 +82,12 @@ export function createEntityDeployer(
         },
         contentServerUrls: [baseUrl]
       }
-      const receipt = await snsPublish(snsClient, snsArn, deploymentToSqs)
+      const isMultiplayer = !!entity.metadata?.multiplayerId
+      const receipt = await snsPublish(snsClient, snsArn, deploymentToSqs, { isMultiplayer })
       logger.info('notification sent', {
         MessageId: `${receipt.MessageId}`,
-        SequenceNumber: `${receipt.SequenceNumber}`
+        SequenceNumber: `${receipt.SequenceNumber}`,
+        isMultiplayer: isMultiplayer ? 'true' : 'false'
       })
     }
 
