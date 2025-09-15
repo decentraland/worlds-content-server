@@ -8,7 +8,8 @@ import { Events } from '@dcl/schemas'
 export async function snsPublish(
   client: SnsClient,
   snsArn: string,
-  deploymentToSqs: DeploymentToSqs
+  deploymentToSqs: DeploymentToSqs,
+  opts?: { isMultiplayer?: boolean }
 ): Promise<PublishCommandOutput> {
   const sendCommand = new PublishCommand({
     TopicArn: snsArn,
@@ -25,6 +26,10 @@ export async function snsPublish(
       priority: {
         DataType: 'String',
         StringValue: '1'
+      },
+      isMultiplayer: {
+        DataType: 'String',
+        StringValue: opts?.isMultiplayer ? 'true' : 'false'
       }
     }
   })

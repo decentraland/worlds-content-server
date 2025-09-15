@@ -119,6 +119,7 @@ async function initComponents(): Promise<TestComponents> {
 
   return {
     ...components,
+    config,
     commsAdapter,
     entityDeployer,
     fetch,
