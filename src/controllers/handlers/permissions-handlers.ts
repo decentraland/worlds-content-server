@@ -10,7 +10,7 @@ import {
 import { DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
 import bcrypt from 'bcrypt'
 import { InvalidRequestError, NotAuthorizedError } from '@dcl/platform-server-commons'
-import { EthAddress, NotificationType } from '@dcl/schemas'
+import { EthAddress, WorldsPermissionGrantedEvent, WorldsPermissionRevokedEvent, Events } from '@dcl/schemas'
 import { defaultPermissions } from '../../logic/permissions-checker'
 
 const saltRounds = 10
@@ -147,12 +147,12 @@ export async function postPermissionsHandler(
 
 export async function putPermissionsAddressHandler(
   ctx: HandlerContextWithPath<
-    'config' | 'namePermissionChecker' | 'permissionsManager' | 'worldsManager' | 'notificationService',
+    'config' | 'namePermissionChecker' | 'permissionsManager' | 'worldsManager' | 'snsClient',
     '/world/:world_name/permissions/:permission_name/:address'
   > &
     DecentralandSignatureContext<any>
 ): Promise<IHttpServerComponent.IResponse> {
-  const { config, namePermissionChecker, permissionsManager, worldsManager, notificationService } = ctx.components
+  const { config, namePermissionChecker, permissionsManager, worldsManager, snsClient } = ctx.components
   const builderUrl = await config.requireString('BUILDER_URL')
 
   const worldName = ctx.params.world_name
@@ -183,21 +183,22 @@ export async function putPermissionsAddressHandler(
 
   await permissionsManager.addAddressToAllowList(worldName, permissionName, lowerCaseAddress)
 
-  await notificationService.sendNotifications([
-    {
-      type: NotificationType.WORLDS_PERMISSION_GRANTED,
-      eventKey: randomUUID(),
-      address: lowerCaseAddress,
-      metadata: {
-        title: 'Worlds permission granted',
-        description: `You have been granted ${permissionName} permission for world ${worldName}`,
-        world: worldName,
-        permissions: [permissionName],
-        url: `${builderUrl}/worlds?tab=dcl`
-      },
-      timestamp: Date.now()
+  const permissionGrantedEvent: WorldsPermissionGrantedEvent = {
+    type: Events.Type.WORLD,
+    subType: Events.SubType.Worlds.WORLDS_PERMISSION_GRANTED,
+    key: randomUUID(),
+    timestamp: Date.now(),
+    metadata: {
+      title: 'Worlds permission granted',
+      description: `You have been granted ${permissionName} permission for world ${worldName}`,
+      world: worldName,
+      permissions: [permissionName],
+      url: `${builderUrl}/worlds?tab=dcl`,
+      address: lowerCaseAddress
     }
-  ])
+  }
+
+  await snsClient.publish(permissionGrantedEvent)
 
   return {
     status: 204
@@ -206,12 +207,12 @@ export async function putPermissionsAddressHandler(
 
 export async function deletePermissionsAddressHandler(
   ctx: HandlerContextWithPath<
-    'config' | 'namePermissionChecker' | 'permissionsManager' | 'worldsManager' | 'notificationService',
+    'config' | 'namePermissionChecker' | 'permissionsManager' | 'worldsManager' | 'snsClient',
     '/world/:world_name/permissions/:permission_name/:address'
   > &
     DecentralandSignatureContext<any>
 ): Promise<IHttpServerComponent.IResponse> {
-  const { config, namePermissionChecker, permissionsManager, worldsManager, notificationService } = ctx.components
+  const { config, namePermissionChecker, permissionsManager, worldsManager, snsClient } = ctx.components
   const builderUrl = await config.requireString('BUILDER_URL')
 
   const worldName = ctx.params.world_name
@@ -245,21 +246,22 @@ export async function deletePermissionsAddressHandler(
 
   await permissionsManager.deleteAddressFromAllowList(worldName, permissionName, lowerCaseAddress)
 
-  await notificationService.sendNotifications([
-    {
-      type: NotificationType.WORLDS_PERMISSION_REVOKED,
-      eventKey: randomUUID(),
-      address: lowerCaseAddress,
-      metadata: {
-        title: 'World permission revoked',
-        description: `Your ${permissionName} permission for world ${worldName} has been revoked`,
-        world: worldName,
-        permissions: [permissionName],
-        url: `${builderUrl}/worlds?tab=dcl`
-      },
-      timestamp: Date.now()
+  const permissionRevokedEvent: WorldsPermissionRevokedEvent = {
+    type: Events.Type.WORLD,
+    subType: Events.SubType.Worlds.WORLDS_PERMISSION_REVOKED,
+    key: randomUUID(),
+    timestamp: Date.now(),
+    metadata: {
+      title: 'World permission revoked',
+      description: `Your ${permissionName} permission for world ${worldName} has been revoked`,
+      world: worldName,
+      permissions: [permissionName],
+      url: `${builderUrl}/worlds?tab=dcl`,
+      address: lowerCaseAddress
     }
-  ])
+  }
+
+  await snsClient.publish(permissionRevokedEvent)
 
   return {
     status: 204

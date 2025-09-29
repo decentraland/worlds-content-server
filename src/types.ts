@@ -20,6 +20,13 @@ import {
   PublishCommand,
   PublishCommandOutput
 } from '@aws-sdk/client-sns'
+import {
+  WorldsPermissionGrantedEvent,
+  WorldsPermissionRevokedEvent,
+  WorldsAccessRestrictedEvent,
+  WorldsAccessRestoredEvent,
+  WorldsMissingResourcesEvent
+} from '@dcl/schemas'
 import { IFetchComponent } from '@well-known-components/interfaces'
 import { INatsComponent } from '@well-known-components/nats-component/dist/types'
 import { WebhookEvent } from 'livekit-server-sdk'
@@ -259,8 +266,26 @@ export type AwsConfig = {
 }
 
 export type SnsClient = {
-  publish(payload: PublishCommand): Promise<PublishCommandOutput>
-  publishBatch(payload: PublishBatchCommand): Promise<PublishBatchCommandOutput>
+  publish(
+    payload:
+      | PublishCommand
+      | WorldsPermissionGrantedEvent
+      | WorldsPermissionRevokedEvent
+      | WorldsAccessRestrictedEvent
+      | WorldsAccessRestoredEvent
+      | WorldsMissingResourcesEvent
+  ): Promise<PublishCommandOutput>
+  publishBatch(
+    payload:
+      | PublishBatchCommand
+      | Array<
+          | WorldsPermissionGrantedEvent
+          | WorldsPermissionRevokedEvent
+          | WorldsAccessRestrictedEvent
+          | WorldsAccessRestoredEvent
+          | WorldsMissingResourcesEvent
+        >
+  ): Promise<PublishBatchCommandOutput>
 }
 
 export type LivekitClient = {

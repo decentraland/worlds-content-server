@@ -86,7 +86,7 @@ export async function initComponents(): Promise<AppComponents> {
   const marketplaceSubGraph = await createSubgraphComponent({ config, logs, metrics, fetch }, subGraphUrl)
 
   const status = await createStatusComponent({ logs, fetch, config })
-  const snsClient = await createSnsClient({ awsConfig })
+  const snsClient = await createSnsClient({ awsConfig, config, logs })
 
   const nameDenyListChecker: INameDenyListChecker = await createNameDenyListChecker({
     config,
@@ -149,7 +149,7 @@ export async function initComponents(): Promise<AppComponents> {
     fetch,
     logs,
     nameOwnership,
-    notificationService,
+    snsClient,
     walletStats
   })
 

@@ -12,7 +12,7 @@
     "start:db": "docker-compose up -d && docker exec world_content_server_db bash -c \"until pg_isready; do sleep 1; done\" && sleep 5"
   },
   "dependencies": {
-    "@aws-sdk/client-sns": "^3.501.0",
+    "@aws-sdk/client-sns": "^3.896.0",
     "@dcl/catalyst-api-specs": "^3.3.0",
     "@dcl/catalyst-contracts": "^4.4.2",
     "@dcl/catalyst-storage": "^4.3.0",
