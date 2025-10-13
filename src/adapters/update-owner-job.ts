@@ -94,7 +94,7 @@ export async function createUpdateOwnerJob(
       )
 
       if (snsEvents.length > 0) {
-        await components.snsClient.publishBatch(snsEvents)
+        await components.snsClient.publishMessages(snsEvents)
       }
     }
   }
@@ -122,7 +122,7 @@ export async function createUpdateOwnerJob(
         }
       }))
 
-      await components.snsClient.publishBatch(snsEvents)
+      await components.snsClient.publishMessages(snsEvents)
     }
   }
 

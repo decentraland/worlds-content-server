@@ -32,7 +32,7 @@ import { createNameOwnership } from './adapters/name-ownership'
 import { createNameChecker } from './adapters/dcl-name-checker'
 import { createWalletStatsComponent } from './adapters/wallet-stats'
 import { createUpdateOwnerJob } from './adapters/update-owner-job'
-import { createSnsClient } from './adapters/sns-client'
+import { createSnsComponent } from '@dcl/sns-component'
 import { createAwsConfig } from './adapters/aws-config'
 import { S3 } from 'aws-sdk'
 import { createNotificationsClientComponent } from './adapters/notifications-service'
@@ -86,7 +86,7 @@ export async function initComponents(): Promise<AppComponents> {
   const marketplaceSubGraph = await createSubgraphComponent({ config, logs, metrics, fetch }, subGraphUrl)
 
   const status = await createStatusComponent({ logs, fetch, config })
-  const snsClient = await createSnsClient({ awsConfig, config, logs })
+  const snsClient = await createSnsComponent({ config })
 
   const nameDenyListChecker: INameDenyListChecker = await createNameDenyListChecker({
     config,

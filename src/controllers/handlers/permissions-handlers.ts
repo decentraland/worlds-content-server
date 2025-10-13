@@ -198,7 +198,7 @@ export async function putPermissionsAddressHandler(
     }
   }
 
-  await snsClient.publish(permissionGrantedEvent)
+  await snsClient.publishMessage(permissionGrantedEvent)
 
   return {
     status: 204
@@ -261,7 +261,7 @@ export async function deletePermissionsAddressHandler(
     }
   }
 
-  await snsClient.publish(permissionRevokedEvent)
+  await snsClient.publishMessage(permissionRevokedEvent)
 
   return {
     status: 204

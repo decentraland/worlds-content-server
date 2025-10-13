@@ -30,6 +30,7 @@ import {
 import { IFetchComponent } from '@well-known-components/interfaces'
 import { INatsComponent } from '@well-known-components/nats-component/dist/types'
 import { WebhookEvent } from 'livekit-server-sdk'
+import { IPublisherComponent } from '@dcl/sns-component'
 
 export type GlobalContext = {
   components: BaseComponents
@@ -321,7 +322,7 @@ export type BaseComponents = {
   permissionsManager: IPermissionsManager
   peersRegistry: IPeersRegistry
   server: IHttpServerComponent<GlobalContext>
-  snsClient: SnsClient
+  snsClient: IPublisherComponent
   status: IStatusComponent
   storage: IContentStorageComponent
   updateOwnerJob: IRunnable<void>
