@@ -1,9 +1,7 @@
 import { AppComponents, DeploymentResult, IEntityDeployer } from '../types'
-import { AuthLink, Entity, EntityType } from '@dcl/schemas'
+import { AuthLink, Entity, EntityType, Events, WorldDeploymentEvent } from '@dcl/schemas'
 import { bufferToStream } from '@dcl/catalyst-storage/dist/content-item'
 import { stringToUtf8Bytes } from 'eth-connect'
-import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
-import { snsPublish } from '../logic/sns'
 
 type PostDeploymentHook = (baseUrl: string, entity: Entity, authChain: AuthLink[]) => Promise<DeploymentResult>
 
@@ -73,17 +71,23 @@ export function createEntityDeployer(
     metrics.increment('world_deployments_counter', { kind })
 
     // send deployment notification over sns
-    const snsArn = await config.getString('SNS_ARN')
+    const snsArn = await config.getString('AWS_SNS_ARN')
     if (snsArn) {
-      const deploymentToSqs: DeploymentToSqs = {
+      const deploymentToSqs: WorldDeploymentEvent = {
         entity: {
           entityId: entity.id,
           authChain
         },
-        contentServerUrls: [baseUrl]
+        contentServerUrls: [baseUrl],
+        type: Events.Type.WORLD,
+        subType: Events.SubType.Worlds.DEPLOYMENT,
+        key: entity.id,
+        timestamp: Date.now()
       }
       const isMultiplayer = !!entity.metadata?.multiplayerId
-      const receipt = await snsPublish(snsClient, snsArn, deploymentToSqs, { isMultiplayer })
+      const receipt = await snsClient.publishMessage(deploymentToSqs, {
+        isMultiplayer: { DataType: 'String', StringValue: isMultiplayer ? 'true' : 'false' }
+      })
       logger.info('notification sent', {
         MessageId: `${receipt.MessageId}`,
         SequenceNumber: `${receipt.SequenceNumber}`,

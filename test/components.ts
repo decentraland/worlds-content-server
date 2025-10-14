@@ -29,6 +29,7 @@ import { createSnsClientMock } from './mocks/sns-client-mock'
 import { createDotEnvConfigComponent } from '@well-known-components/env-config-provider'
 import { createMockNatsComponent } from './mocks/nats-mock'
 import { createMockPeersRegistry } from './mocks/peers-registry-mock'
+import { IPublisherComponent } from '@dcl/sns-component'
 
 /**
  * Behaves like Jest "describe" function, used to describe a test for a
@@ -49,7 +50,7 @@ async function initComponents(): Promise<TestComponents> {
   const config = await createDotEnvConfigComponent(
     { path: ['.env.default', '.env'] },
     {
-      SNS_ARN: 'some-arn'
+      AWS_SNS_ARN: 'some-arn'
     }
   )
 
@@ -91,7 +92,7 @@ async function initComponents(): Promise<TestComponents> {
 
   const permissionsManager = await createPermissionsManagerComponent({ worldsManager })
 
-  const snsClient: SnsClient = createSnsClientMock()
+  const snsClient: IPublisherComponent = createSnsClientMock()
 
   const entityDeployer = createEntityDeployer({
     config,

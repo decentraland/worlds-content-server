@@ -5,7 +5,7 @@ import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
 test('reprocess asset-bundles handler /reprocess-ab', function ({ components, stubComponents }) {
   beforeEach(async () => {
     const { config } = stubComponents
-    config.getString.withArgs('SNS_ARN').resolves('some-arn')
+    config.getString.withArgs('AWS_SNS_ARN').resolves('some-arn')
   })
 
   it('can reprocess specified worlds', async () => {
@@ -15,10 +15,9 @@ test('reprocess asset-bundles handler /reprocess-ab', function ({ components, st
     const { entityId, owner, worldName } = await worldCreator.createWorldWithScene({})
     const authChain = Authenticator.signPayload(owner, entityId)
 
-    snsClient.publishBatch.resolves({
-      Successful: [{ Id: entityId, MessageId: 'mocked-message-id', SequenceNumber: '1' }],
-      Failed: [],
-      $metadata: {}
+    snsClient.publishMessages.resolves({
+      successfulMessageIds: [entityId],
+      failedEvents: []
     })
 
     const r = await localFetch.fetch(`/reprocess-ab`, {
@@ -64,7 +63,7 @@ test('reprocess asset-bundles handler /reprocess-ab', function ({ components, st
       error: 'Bad request',
       message: 'No worlds found for reprocessing'
     })
-    expect(snsClient.publishBatch).not.toHaveBeenCalled()
+    expect(snsClient.publishMessages).not.toHaveBeenCalled()
   })
 
   it('can reprocess all worlds', async () => {
@@ -74,10 +73,9 @@ test('reprocess asset-bundles handler /reprocess-ab', function ({ components, st
     const { entityId, owner } = await worldCreator.createWorldWithScene({})
     const authChain = Authenticator.signPayload(owner, entityId)
 
-    snsClient.publishBatch.resolves({
-      Successful: [{ Id: 'mocked-id', MessageId: 'mocked-message-id', SequenceNumber: '1' }],
-      Failed: [],
-      $metadata: {}
+    snsClient.publishMessages.resolves({
+      successfulMessageIds: ['mocked-id'],
+      failedEvents: []
     })
 
     const r = await localFetch.fetch(`/reprocess-ab`, {
@@ -105,11 +103,11 @@ test('reprocess asset-bundles handler /reprocess-ab', function ({ components, st
     })
   })
 
-  it('can not be called if no SNS_ARN configured', async () => {
+  it('can not be called if no AWS_SNS_ARN configured', async () => {
     const { localFetch } = components
     const { config } = stubComponents
 
-    config.getString.withArgs('SNS_ARN').resolves(undefined)
+    config.getString.withArgs('AWS_SNS_ARN').resolves(undefined)
 
     const r = await localFetch.fetch(`/reprocess-ab`, {
       method: 'POST',

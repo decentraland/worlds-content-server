@@ -20,9 +20,17 @@ import {
   PublishCommand,
   PublishCommandOutput
 } from '@aws-sdk/client-sns'
+import {
+  WorldsPermissionGrantedEvent,
+  WorldsPermissionRevokedEvent,
+  WorldsAccessRestrictedEvent,
+  WorldsAccessRestoredEvent,
+  WorldsMissingResourcesEvent
+} from '@dcl/schemas'
 import { IFetchComponent } from '@well-known-components/interfaces'
 import { INatsComponent } from '@well-known-components/nats-component/dist/types'
 import { WebhookEvent } from 'livekit-server-sdk'
+import { IPublisherComponent } from '@dcl/sns-component'
 
 export type GlobalContext = {
   components: BaseComponents
@@ -259,8 +267,26 @@ export type AwsConfig = {
 }
 
 export type SnsClient = {
-  publish(payload: PublishCommand): Promise<PublishCommandOutput>
-  publishBatch(payload: PublishBatchCommand): Promise<PublishBatchCommandOutput>
+  publish(
+    payload:
+      | PublishCommand
+      | WorldsPermissionGrantedEvent
+      | WorldsPermissionRevokedEvent
+      | WorldsAccessRestrictedEvent
+      | WorldsAccessRestoredEvent
+      | WorldsMissingResourcesEvent
+  ): Promise<PublishCommandOutput>
+  publishBatch(
+    payload:
+      | PublishBatchCommand
+      | Array<
+          | WorldsPermissionGrantedEvent
+          | WorldsPermissionRevokedEvent
+          | WorldsAccessRestrictedEvent
+          | WorldsAccessRestoredEvent
+          | WorldsMissingResourcesEvent
+        >
+  ): Promise<PublishBatchCommandOutput>
 }
 
 export type LivekitClient = {
@@ -296,7 +322,7 @@ export type BaseComponents = {
   permissionsManager: IPermissionsManager
   peersRegistry: IPeersRegistry
   server: IHttpServerComponent<GlobalContext>
-  snsClient: SnsClient
+  snsClient: IPublisherComponent
   status: IStatusComponent
   storage: IContentStorageComponent
   updateOwnerJob: IRunnable<void>

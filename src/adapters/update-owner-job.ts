@@ -1,13 +1,19 @@
-import { AppComponents, BlockedRecord, IRunnable, Notification, TWO_DAYS_IN_MS, Whitelist, WorldRecord } from '../types'
+import { AppComponents, BlockedRecord, IRunnable, TWO_DAYS_IN_MS, Whitelist, WorldRecord } from '../types'
 import SQL from 'sql-template-strings'
 import { CronJob } from 'cron'
+import {
+  WorldsAccessRestrictedEvent,
+  WorldsAccessRestoredEvent,
+  WorldsMissingResourcesEvent,
+  Events
+} from '@dcl/schemas'
 
 type WorldData = Pick<WorldRecord, 'name' | 'owner' | 'size' | 'entity'>
 
 export async function createUpdateOwnerJob(
   components: Pick<
     AppComponents,
-    'config' | 'database' | 'fetch' | 'logs' | 'nameOwnership' | 'notificationService' | 'walletStats'
+    'config' | 'database' | 'fetch' | 'logs' | 'nameOwnership' | 'snsClient' | 'walletStats'
   >
 ): Promise<IRunnable<void>> {
   const { config, fetch, logs } = components
@@ -44,48 +50,52 @@ export async function createUpdateOwnerJob(
         { warning: [] as BlockedRecord[], blocked: [] as BlockedRecord[] }
       )
 
-      const notifications: Notification[] = []
+      const snsEvents: (WorldsMissingResourcesEvent | WorldsAccessRestrictedEvent)[] = []
 
       logger.info(
-        `Sending notifications for wallets that are about to be blocked: ${warning.map((r) => r.wallet).join(', ')}`
+        `Sending SNS events for wallets that are about to be blocked: ${warning.map((r) => r.wallet).join(', ')}`
       )
-      notifications.push(
+      snsEvents.push(
         ...warning.map(
-          (record): Notification => ({
-            type: 'worlds_missing_resources',
-            eventKey: `detected-${record.created_at.toISOString().slice(0, 10)}`,
-            address: record.wallet,
+          (record): WorldsMissingResourcesEvent => ({
+            type: Events.Type.WORLD,
+            subType: Events.SubType.Worlds.WORLDS_MISSING_RESOURCES,
+            key: `detected-${record.created_at.toISOString().slice(0, 10)}`,
+            timestamp: record.created_at.getTime(),
             metadata: {
               title: 'Missing Resources',
               description: 'World access at risk in 48hs. Rectify now to prevent disruption.',
               url: `${builderUrl}/worlds?tab=dcl`,
-              when: record.created_at.getTime() + TWO_DAYS_IN_MS
-            },
-            timestamp: record.created_at.getTime()
+              when: record.created_at.getTime() + TWO_DAYS_IN_MS,
+              address: record.wallet
+            }
           })
         )
       )
 
       logger.info(
-        `Sending notifications for wallets that have already been blocked: ${blocked.map((r) => r.wallet).join(', ')}`
+        `Sending SNS events for wallets that have already been blocked: ${blocked.map((r) => r.wallet).join(', ')}`
       )
-      notifications.push(
+      snsEvents.push(
         ...blocked.map(
-          (record): Notification => ({
-            type: 'worlds_access_restricted',
-            eventKey: `detected-${record.created_at.toISOString().slice(0, 10)}`,
-            address: record.wallet,
+          (record): WorldsAccessRestrictedEvent => ({
+            type: Events.Type.WORLD,
+            subType: Events.SubType.Worlds.WORLDS_ACCESS_RESTRICTED,
+            key: `detected-${record.created_at.toISOString().slice(0, 10)}`,
+            timestamp: record.created_at.getTime() + TWO_DAYS_IN_MS,
             metadata: {
               title: 'Worlds restricted',
               description: 'Access to your Worlds has been restricted due to insufficient resources.',
-              url: `${builderUrl}/worlds?tab=dcl`,
-              when: record.created_at.getTime() + TWO_DAYS_IN_MS
-            },
-            timestamp: record.created_at.getTime() + TWO_DAYS_IN_MS
+              when: record.created_at.getTime() + TWO_DAYS_IN_MS,
+              address: record.wallet
+            }
           })
         )
       )
-      await components.notificationService.sendNotifications(notifications)
+
+      if (snsEvents.length > 0) {
+        await components.snsClient.publishMessages(snsEvents)
+      }
     }
   }
 
@@ -98,20 +108,21 @@ export async function createUpdateOwnerJob(
     `
     const result = await components.database.query(sql)
     if (result.rowCount > 0) {
-      logger.info(`Sending block removal notifications for wallets: ${result.rows.map((row) => row.wallet).join(', ')}`)
-      await components.notificationService.sendNotifications(
-        result.rows.map((record) => ({
-          type: 'worlds_access_restored',
-          eventKey: `detected-${record.created_at.toISOString().slice(0, 10)}`,
-          address: record.wallet,
-          metadata: {
-            title: 'Worlds available',
-            description: 'Access to your Worlds has been restored.',
-            url: `${builderUrl}/worlds?tab=dcl`
-          },
-          timestamp: Date.now()
-        }))
-      )
+      logger.info(`Sending block removal SNS events for wallets: ${result.rows.map((row) => row.wallet).join(', ')}`)
+      const snsEvents: WorldsAccessRestoredEvent[] = result.rows.map((record) => ({
+        type: Events.Type.WORLD,
+        subType: Events.SubType.Worlds.WORLDS_ACCESS_RESTORED,
+        key: `detected-${record.created_at.toISOString().slice(0, 10)}`,
+        timestamp: Date.now(),
+        metadata: {
+          title: 'Worlds available',
+          description: 'Access to your Worlds has been restored.',
+          url: `${builderUrl}/worlds?tab=dcl`,
+          attendee: record.wallet
+        }
+      }))
+
+      await components.snsClient.publishMessages(snsEvents)
     }
   }
 
