@@ -1185,20 +1185,20 @@
     "@well-known-components/interfaces" "^1.4.3"
     node-fetch "^2.7.0"
 
-"@dcl/schemas@19.1.0":
-  version "19.1.0"
-  resolved "https://registry.yarnpkg.com/@dcl/schemas/-/schemas-19.1.0.tgz#a444cf6d0ae218a615ae29e2b1f0abc590ba20e0"
-  integrity sha512-v+R/mqYiyGtxzqi2PDBqFR9dRlkVMmMlMYjL9WGIwn5Q5K20lE5WzrS8HxoqHjEgBHrWUwEI/fMsGnNdnP5PbA==
+"@dcl/schemas@^11.5.0":
+  version "11.10.5"
+  resolved "https://registry.npmjs.org/@dcl/schemas/-/schemas-11.10.5.tgz"
+  integrity sha512-/SqtrVh68lQF4iwe0HIU/egR076PPFpmp6NF6HpikKcHywS6xSi+IdMyI6uYdbT2jV3C9QmIB9foVBI0qsIsSA==
   dependencies:
     ajv "^8.11.0"
     ajv-errors "^3.0.0"
     ajv-keywords "^5.1.0"
     mitt "^3.0.1"
 
-"@dcl/schemas@^11.5.0":
-  version "11.10.5"
-  resolved "https://registry.npmjs.org/@dcl/schemas/-/schemas-11.10.5.tgz"
-  integrity sha512-/SqtrVh68lQF4iwe0HIU/egR076PPFpmp6NF6HpikKcHywS6xSi+IdMyI6uYdbT2jV3C9QmIB9foVBI0qsIsSA==
+"@dcl/schemas@^19.4.0":
+  version "19.4.0"
+  resolved "https://registry.yarnpkg.com/@dcl/schemas/-/schemas-19.4.0.tgz#b4627b33764f47afa939ed7fdf4d28613667be89"
+  integrity sha512-B+vys7EeG3ZXbxTLM7jwj7TlRymTtjBYNBjpn6zCisqo3PkG47jcDJr9xliYipRXEmeNKfpmLkcMnyFB/X8PoQ==
   dependencies:
     ajv "^8.11.0"
     ajv-errors "^3.0.0"
@@ -1214,10 +1214,10 @@
     ajv-errors "^3.0.0"
     ajv-keywords "^5.1.0"
 
-"@dcl/sns-component@^2.1.0":
-  version "2.1.0"
-  resolved "https://registry.yarnpkg.com/@dcl/sns-component/-/sns-component-2.1.0.tgz#c0150366de2113791e1bcec5a0925c236eb391fc"
-  integrity sha512-R2aqpydxC9MSM/yDjYK0JlcM9ah+FnsaeLZSkUwThSDvAqTr2Vh0m1uHpJgtMGqIox+BqYQJmGRyCeV3De7THA==
+"@dcl/sns-component@^3.0.0":
+  version "3.0.0"
+  resolved "https://registry.yarnpkg.com/@dcl/sns-component/-/sns-component-3.0.0.tgz#49d035ec26705e2a8b9b98494e98be557aef0149"
+  integrity sha512-wcItwzB0Nov8EcbHDzYfTmY+eW37auQM01KfDGRV/fbiWYbnSptxbfaScmcVJH1av5vWREh/NbfEDjoYZFdznA==
   dependencies:
     "@aws-sdk/client-sns" "^3.782.0"
     "@dcl/core-commons" "0.5.0"
