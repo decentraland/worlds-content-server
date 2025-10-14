@@ -198,7 +198,9 @@ export async function putPermissionsAddressHandler(
     }
   }
 
-  await snsClient.publishMessage(permissionGrantedEvent)
+  await snsClient.publishMessage(permissionGrantedEvent, {
+    isMultiplayer: { DataType: 'String', StringValue: 'false' }
+  })
 
   return {
     status: 204
@@ -261,7 +263,9 @@ export async function deletePermissionsAddressHandler(
     }
   }
 
-  await snsClient.publishMessage(permissionRevokedEvent)
+  await snsClient.publishMessage(permissionRevokedEvent, {
+    isMultiplayer: { DataType: 'String', StringValue: 'false' }
+  })
 
   return {
     status: 204
