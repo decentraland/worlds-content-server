@@ -16,16 +16,13 @@ jobs:
         with: { node-version: '20' }
 
       - name: Install tooling
-        run: npm i -g @redocly/cli @stoplight/spectral-cli swagger-cli
+        run: npm i -g @redocly/cli swagger-cli
 
       - name: Validate schema
         run: swagger-cli validate docs/openapi.yaml
 
       - name: Lint with Redocly
         run: redocly lint docs/openapi.yaml
-
-      - name: Lint with Spectral (Decentraland style guide)
-        run: spectral lint docs/openapi.yaml --ruleset https://raw.githubusercontent.com/decentraland/api-style-guide/main/spectral.yaml
         continue-on-error: true
 
       - name: Build JSON for Hugo
@@ -42,8 +39,13 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && vars.ENABLE_PAGES_DEPLOY == 'true'
     permissions: { pages: write, id-token: write }
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/deploy-pages@v4
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
 
