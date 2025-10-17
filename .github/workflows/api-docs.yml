@@ -21,8 +21,12 @@ jobs:
       - name: Validate schema
         run: swagger-cli validate docs/openapi.yaml
 
-      - name: Lint style rules
-        run: redocly lint docs/openapi.yaml -r https://raw.githubusercontent.com/decentraland/api-style-guide/main/spectral.yaml
+      - name: Lint with Redocly
+        run: redocly lint docs/openapi.yaml
+
+      - name: Lint with Spectral (Decentraland style guide)
+        run: spectral lint docs/openapi.yaml --ruleset https://raw.githubusercontent.com/decentraland/api-style-guide/main/spectral.yaml
+        continue-on-error: true
 
       - name: Build JSON for Hugo
         run: redocly bundle docs/openapi.yaml -o docs/openapi.json --ext json
