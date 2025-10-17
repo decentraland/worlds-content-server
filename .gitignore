@@ -10,4 +10,4 @@ yarn-error.log
 src/client/api-types.ts
 lib/api/
 docs/openapi.json
-docs/index.html
+
