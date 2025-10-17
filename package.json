@@ -4,6 +4,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "build:watch": "tsc -p tsconfig.json --watch",
+    "build:api": "redocly bundle docs/openapi.yaml -o lib/api/openapi.yaml && openapi-typescript lib/api/openapi.yaml -o src/client/api-types.ts",
     "lint:check": "eslint '**/*.{js,ts}'",
     "lint:fix": "eslint '**/*.{js,ts}' --fix",
     "start": "node --trace-warnings --abort-on-uncaught-exception --unhandled-rejections=strict dist/index.js",
@@ -42,11 +43,13 @@
   },
   "devDependencies": {
     "@dcl/eslint-config": "^2.2.1",
+    "@redocly/cli": "^1.25.14",
     "@types/bcrypt": "^5.0.2",
     "@types/node": "^20.11.10",
     "@well-known-components/test-helpers": "^1.5.8",
     "dcl-catalyst-client": "^21.8.0",
     "nodemon": "^3.1.9",
+    "openapi-typescript": "^7.4.4",
     "ts-node": "^10.9.2",
     "typescript": "^5.3.3"
   },
