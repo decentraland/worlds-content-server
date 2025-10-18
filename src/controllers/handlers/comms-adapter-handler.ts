@@ -10,14 +10,19 @@ type CommsMetadata = {
 
 export async function commsAdapterHandler(
   context: HandlerContextWithPath<
-    'commsAdapter' | 'config' | 'nameDenyListChecker' | 'namePermissionChecker' | 'worldsManager',
+    'commsAdapter' | 'config' | 'nameDenyListChecker' | 'namePermissionChecker' | 'worldsManager' | 'logs',
     '/get-comms-adapter/:roomId'
   > &
     DecentralandSignatureContext<CommsMetadata>
 ): Promise<IHttpServerComponent.IResponse> {
   const {
-    components: { commsAdapter, config, nameDenyListChecker, namePermissionChecker, worldsManager }
+    components: { commsAdapter, config, nameDenyListChecker, namePermissionChecker, worldsManager, logs }
   } = context
+
+  const logger = logs.getLogger('comms')
+
+  const params = new URLSearchParams(context.url.search)
+  const ea = params.get('ea')
 
   const authMetadata = context.verification!.authMetadata
   if (!validateMetadata(authMetadata)) {
@@ -52,11 +57,20 @@ export async function commsAdapterHandler(
   if (!hasPermission) {
     throw new NotAuthorizedError(`You are not allowed to access world "${worldName}".`)
   }
+  //PATCH: if ?ea=true, we need to add the scene room prefix to connecto the scene room in the Explorer Alpha
+  //This is a temp PATCH to test cast with the EA
+  let roomId = context.params.roomId
+  if (ea === 'true') {
+    roomId = roomPrefix + 'scene-room-' + roomId.substring(roomPrefix.length)
+  }
+  logger.info('request scene room, roomId: ' + roomId)
+
+  const fixedAdapter = await commsAdapter.connectionString(identity, roomId)
 
   return {
     status: 200,
     body: {
-      fixedAdapter: await commsAdapter.connectionString(identity, context.params.roomId)
+      fixedAdapter
     }
   }
 }
