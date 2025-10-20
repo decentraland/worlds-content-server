@@ -4,7 +4,7 @@
 import { createLocalFetchCompoment, createRunner } from '@well-known-components/test-helpers'
 
 import { main } from '../src/service'
-import { SnsClient, TestComponents } from '../src/types'
+import { TestComponents } from '../src/types'
 import { initComponents as originalInitComponents } from '../src/components'
 import { createMockNameSubGraph } from './mocks/name-subgraph-mock'
 import { createMockNamePermissionChecker } from './mocks/dcl-name-checker-mock'
