@@ -14,19 +14,6 @@ import { AuthChain, AuthLink, Entity, EthAddress, IPFSv2 } from '@dcl/schemas'
 import { MigrationExecutor } from './adapters/migration-executor'
 import { IPgComponent } from '@well-known-components/pg-component'
 import { AuthIdentity } from '@dcl/crypto'
-import {
-  PublishBatchCommand,
-  PublishBatchCommandOutput,
-  PublishCommand,
-  PublishCommandOutput
-} from '@aws-sdk/client-sns'
-import {
-  WorldsPermissionGrantedEvent,
-  WorldsPermissionRevokedEvent,
-  WorldsAccessRestrictedEvent,
-  WorldsAccessRestoredEvent,
-  WorldsMissingResourcesEvent
-} from '@dcl/schemas'
 import { IFetchComponent } from '@well-known-components/interfaces'
 import { INatsComponent } from '@well-known-components/nats-component/dist/types'
 import { WebhookEvent } from 'livekit-server-sdk'
@@ -264,29 +251,6 @@ export type AwsConfig = {
   endpoint?: string
   forcePathStyle?: boolean // for SDK v3
   s3ForcePathStyle?: boolean // for SDK v2
-}
-
-export type SnsClient = {
-  publish(
-    payload:
-      | PublishCommand
-      | WorldsPermissionGrantedEvent
-      | WorldsPermissionRevokedEvent
-      | WorldsAccessRestrictedEvent
-      | WorldsAccessRestoredEvent
-      | WorldsMissingResourcesEvent
-  ): Promise<PublishCommandOutput>
-  publishBatch(
-    payload:
-      | PublishBatchCommand
-      | Array<
-          | WorldsPermissionGrantedEvent
-          | WorldsPermissionRevokedEvent
-          | WorldsAccessRestrictedEvent
-          | WorldsAccessRestoredEvent
-          | WorldsMissingResourcesEvent
-        >
-  ): Promise<PublishBatchCommandOutput>
 }
 
 export type LivekitClient = {
