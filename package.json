@@ -4,7 +4,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "build:watch": "tsc -p tsconfig.json --watch",
-    "build:api": "redocly bundle docs/openapi.yaml -o lib/api/openapi.yaml && openapi-typescript lib/api/openapi.yaml -o src/client/api-types.ts",
+    "build:api": "redocly bundle docs/openapi.yaml -o lib/api/openapi.yaml && openapi-typescript lib/api/openapi.yaml -o src/client/api-types.ts && redocly bundle docs/openapi.yaml -o docs/openapi.json --ext json && redocly build-docs docs/openapi.yaml -o docs/index.html",
     "lint:check": "eslint '**/*.{js,ts}'",
     "lint:fix": "eslint '**/*.{js,ts}' --fix",
     "start": "node --trace-warnings --abort-on-uncaught-exception --unhandled-rejections=strict dist/index.js",
