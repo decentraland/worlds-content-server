@@ -5,3 +5,9 @@ coverage
 contents
 .env
 yarn-error.log
+
+# Generated API client
+src/client/api-types.ts
+lib/api/
+docs/openapi.json
+
