@@ -15,12 +15,15 @@ export async function getActiveEntitiesByContentHashHandler(
 
   // Query worlds table to find all entities that contain this content hash
   // The entity JSON contains a content array with {file, hash} objects
+  // Use CROSS JOIN LATERAL to unnest the content array and check each hash
   const query = SQL`
-    SELECT entity_id, name
+    SELECT DISTINCT worlds.entity_id, worlds.name
     FROM worlds
-    WHERE entity IS NOT NULL
-      AND entity::jsonb @> '{"content": [{"hash": ${hashId}}]}'::jsonb
-      AND blocked_since IS NULL
+    LEFT JOIN blocked ON worlds.owner = blocked.wallet
+    CROSS JOIN LATERAL json_array_elements(worlds.entity->'content') AS content_item
+    WHERE worlds.entity IS NOT NULL
+      AND content_item->>'hash' = ${hashId}
+      AND blocked.wallet IS NULL
   `
 
   const queryResult = await database.query(query)
