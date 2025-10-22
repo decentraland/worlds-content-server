@@ -24,11 +24,11 @@ export async function getActiveEntitiesByContentHashHandler(
   `
 
   const queryResult = await database.query(query)
-  
+
   // Filter out denylisted worlds (check each async)
   const rows = queryResult.rows as Array<{ entity_id: string; name: string }>
   const entityIds: string[] = []
-  
+
   for (const row of rows) {
     const isAllowed = await nameDenyListChecker.checkNameDenyList(row.name)
     if (isAllowed) {
@@ -45,4 +45,3 @@ export async function getActiveEntitiesByContentHashHandler(
     body: entityIds
   }
 }
-
