@@ -48,7 +48,7 @@ test('deployment works', function ({ components, stubComponents }) {
     const { storage, worldsManager } = components
     const { snsClient } = stubComponents
 
-    snsClient.publish.resetHistory()
+    snsClient.publishMessage.resetHistory()
 
     entityFiles.set('abc.txt', stringToUtf8Bytes(makeid(100)))
     const fileHash = await hashV1(entityFiles.get('abc.txt')!)
@@ -80,9 +80,9 @@ test('deployment works', function ({ components, stubComponents }) {
 
     const authChain = Authenticator.signPayload(identity.authChain, entityId)
 
-    let lastCmd: any
-    snsClient.publish.callsFake((cmd: any) => {
-      lastCmd = cmd
+    let capturedMessageAttributes: any
+    snsClient.publishMessage.callsFake((_message: any, messageAttributes: any) => {
+      capturedMessageAttributes = messageAttributes
       return Promise.resolve({
         MessageId: 'mocked-message-id',
         SequenceNumber: 'mocked-sequence-number',
@@ -120,15 +120,15 @@ test('deployment works', function ({ components, stubComponents }) {
     Sinon.assert.calledWithMatch(stubComponents.metrics.increment, 'world_deployments_counter', { kind: 'dcl-name' })
 
     // Explicit post-call assertion
-    Sinon.assert.calledOnce(snsClient.publish as any)
-    expect(lastCmd?.input?.MessageAttributes?.isMultiplayer?.StringValue).toBe('false')
+    Sinon.assert.calledOnce(snsClient.publishMessage as any)
+    expect(capturedMessageAttributes?.isMultiplayer?.StringValue).toBe('false')
   })
 
   it('creates an entity and deploys it (authorized wallet)', async () => {
     const { storage, worldsManager } = components
     const { snsClient } = stubComponents
 
-    snsClient.publish.resetHistory()
+    snsClient.publishMessage.resetHistory()
 
     const delegatedIdentity = await getIdentity()
 
@@ -163,7 +163,7 @@ test('deployment works', function ({ components, stubComponents }) {
 
     const authChain = Authenticator.signPayload(delegatedIdentity.authChain, entityId)
 
-    snsClient.publish.resolves({
+    snsClient.publishMessage.resolves({
       MessageId: 'mocked-message-id',
       SequenceNumber: 'mocked-sequence-number',
       $metadata: {}
@@ -197,7 +197,7 @@ test('deployment works', function ({ components, stubComponents }) {
   it('sets isMultiplayer attribute to true when multiplayerId is present', async () => {
     const { snsClient } = stubComponents
 
-    snsClient.publish.resetHistory()
+    snsClient.publishMessage.resetHistory()
 
     // Build the entity with multiplayerId
     entityFiles.set('abc.txt', stringToUtf8Bytes(makeid(100)))
@@ -220,9 +220,9 @@ test('deployment works', function ({ components, stubComponents }) {
 
     const authChain = Authenticator.signPayload(identity.authChain, entityId)
 
-    let lastCmdTrue: any
-    snsClient.publish.callsFake((cmd: any) => {
-      lastCmdTrue = cmd
+    let capturedMessageAttributes: any
+    snsClient.publishMessage.callsFake((_message: any, messageAttributes: any) => {
+      capturedMessageAttributes = messageAttributes
       return Promise.resolve({
         MessageId: 'mocked-message-id',
         SequenceNumber: 'mocked-sequence-number',
@@ -233,8 +233,8 @@ test('deployment works', function ({ components, stubComponents }) {
     await contentClient.deploy({ files, entityId, authChain })
 
     // Explicit post-call assertion
-    Sinon.assert.calledOnce(snsClient.publish as any)
-    expect(lastCmdTrue?.input?.MessageAttributes?.isMultiplayer?.StringValue).toBe('true')
+    Sinon.assert.calledOnce(snsClient.publishMessage as any)
+    expect(capturedMessageAttributes?.isMultiplayer?.StringValue).toBe('true')
   })
 
   it('creates an entity and deploys it using uppercase letters in the name', async () => {
@@ -264,7 +264,7 @@ test('deployment works', function ({ components, stubComponents }) {
 
     const authChain = Authenticator.signPayload(identity.authChain, entityId)
 
-    snsClient.publish.resolves({
+    snsClient.publishMessage.resolves({
       MessageId: 'mocked-message-id',
       SequenceNumber: 'mocked-sequence-number',
       $metadata: {}
