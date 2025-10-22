@@ -4,43 +4,12 @@ on:
   pull_request:
     paths: ['docs/**']
   push:
-    branches: [main]
-    paths: ['docs/**']
+    branches: [main]  
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: '20' }
-
-      - name: Install tooling
-        run: npm i -g @redocly/cli swagger-cli
-
-      - name: Validate schema
-        run: swagger-cli validate docs/openapi.yaml
-
-      - name: Lint with Redocly
-        run: redocly lint docs/openapi.yaml
-        continue-on-error: true
-
-      - name: Build JSON for Hugo
-        run: redocly bundle docs/openapi.yaml -o docs/openapi.json --ext json
-
-      - name: Build HTML (optional)
-        run: redocly build-docs docs/openapi.yaml -o docs/index.html
-
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: ./docs
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
-    permissions: { pages: write, id-token: write }
-    steps:
-      - uses: actions/deploy-pages@v4
-
+    uses: decentraland/platform-actions/.github/workflows/apps-docs.yml@feat/upsert-api-spec-on-gitbook
+    with:
+      api-spec-file: docs/openapi.yaml
+      api-spec-name: worlds-content-server
+    secrets: inherit
