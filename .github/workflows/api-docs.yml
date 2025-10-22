@@ -4,7 +4,7 @@ on:
   pull_request:
     paths: ['docs/**']
   push:
-    branches: [docs-worflow]  
+    branches: [main]  
 
 jobs:
   build:
