@@ -12,4 +12,5 @@ jobs:
     with:
       api-spec-file: docs/openapi.yaml
       api-spec-name: worlds-content-server
+      output-bundle-file: docs/openapi.yaml
     secrets: inherit
