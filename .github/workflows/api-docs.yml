@@ -11,4 +11,6 @@ jobs:
     uses: decentraland/platform-actions/.github/workflows/apps-docs.yml@feat/upsert-api-spec-on-gitbook
     with:
       service-name: worlds-content-server
+      api-spec-file: docs/openapi.yaml
+      api-spec-name: worlds-content-server
     secrets: inherit
