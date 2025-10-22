@@ -53,9 +53,9 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   router.get('/ipfs/:hashId', getContentFile)
 
   router.post('/entities/active', activeEntitiesHandler)
+  router.get('/contents/:hashId/active-entities', getActiveEntitiesByContentHashHandler)
   router.head('/contents/:hashId', headContentFile)
   router.get('/contents/:hashId', getContentFile)
-  router.get('/contents/:hashId/active-entities', getActiveEntitiesByContentHashHandler)
 
   router.get('/wallet/contribute', signedFetchMiddleware, getContributableDomainsHandler)
 
