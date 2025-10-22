@@ -1,22 +1,22 @@
-import { SnsClient } from '../../src/types'
+import { IPublisherComponent } from '@dcl/sns-component'
 
-export function createSnsClientMock(): SnsClient {
-  const publish = jest.fn()
-  publish.mockImplementation(() => ({
+export function createSnsClientMock(): IPublisherComponent {
+  const publishMessage = jest.fn()
+  publishMessage.mockImplementation(() => ({
     MessageId: 'mocked-message-id',
     SequenceNumber: 'mocked-sequence-number',
     $metadata: {}
   }))
 
-  const publishBatch = jest.fn()
-  publishBatch.mockImplementation(() => ({
+  const publishMessages = jest.fn()
+  publishMessages.mockImplementation(() => ({
     Successful: [{ Id: 'mocked-id', MessageId: 'mocked-message-id', SequenceNumber: '1' }],
     Failed: [],
     $metadata: {}
   }))
 
   return {
-    publish,
-    publishBatch
+    publishMessage,
+    publishMessages
   }
 }

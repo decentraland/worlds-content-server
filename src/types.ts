@@ -14,15 +14,10 @@ import { AuthChain, AuthLink, Entity, EthAddress, IPFSv2 } from '@dcl/schemas'
 import { MigrationExecutor } from './adapters/migration-executor'
 import { IPgComponent } from '@well-known-components/pg-component'
 import { AuthIdentity } from '@dcl/crypto'
-import {
-  PublishBatchCommand,
-  PublishBatchCommandOutput,
-  PublishCommand,
-  PublishCommandOutput
-} from '@aws-sdk/client-sns'
 import { IFetchComponent } from '@well-known-components/interfaces'
 import { INatsComponent } from '@well-known-components/nats-component/dist/types'
 import { WebhookEvent } from 'livekit-server-sdk'
+import { IPublisherComponent } from '@dcl/sns-component'
 
 export type GlobalContext = {
   components: BaseComponents
@@ -258,11 +253,6 @@ export type AwsConfig = {
   s3ForcePathStyle?: boolean // for SDK v2
 }
 
-export type SnsClient = {
-  publish(payload: PublishCommand): Promise<PublishCommandOutput>
-  publishBatch(payload: PublishBatchCommand): Promise<PublishBatchCommandOutput>
-}
-
 export type LivekitClient = {
   receiveWebhookEvent(body: string, authorization: string): Promise<WebhookEvent>
 }
@@ -296,7 +286,7 @@ export type BaseComponents = {
   permissionsManager: IPermissionsManager
   peersRegistry: IPeersRegistry
   server: IHttpServerComponent<GlobalContext>
-  snsClient: SnsClient
+  snsClient: IPublisherComponent
   status: IStatusComponent
   storage: IContentStorageComponent
   updateOwnerJob: IRunnable<void>
