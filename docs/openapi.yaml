@@ -7,8 +7,7 @@ info:
     
     Worlds are scenes that exist outside the Genesis City boundaries and are attached to Decentraland NAMEs. 
     The NAMEs can be used as realms to access your deployed scenes.
-    
-    **Note**: This server is in ALPHA version.
+      
   contact:
     name: Decentraland Foundation
   license:
