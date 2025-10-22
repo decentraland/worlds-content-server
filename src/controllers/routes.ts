@@ -25,6 +25,7 @@ import { garbageCollectionHandler } from './handlers/garbage-collection'
 import { getContributableDomainsHandler } from './handlers/contributor-handler'
 import { livekitWebhookHandler } from './handlers/livekit-webhook-handler'
 import { walletConnectedWorldHandler } from './handlers/wallet-connected-world-handler'
+import { getActiveEntitiesByContentHashHandler } from './handlers/get-active-entities-by-content-hash-handler'
 
 export async function setupRouter(globalContext: GlobalContext): Promise<Router<GlobalContext>> {
   const router = new Router<GlobalContext>()
@@ -54,6 +55,7 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   router.post('/entities/active', activeEntitiesHandler)
   router.head('/contents/:hashId', headContentFile)
   router.get('/contents/:hashId', getContentFile)
+  router.get('/contents/:hashId/active-entities', getActiveEntitiesByContentHashHandler)
 
   router.get('/wallet/contribute', signedFetchMiddleware, getContributableDomainsHandler)
 
