@@ -153,7 +153,7 @@ export async function initComponents(): Promise<AppComponents> {
     walletStats
   })
 
-  const peersRegistry = await createPeersRegistry()
+  const peersRegistry = await createPeersRegistry({ config })
   const livekitClient = await createLivekitClient({ config })
 
   return {
