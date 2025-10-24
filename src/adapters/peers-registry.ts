@@ -1,9 +1,11 @@
-import { IPeersRegistry } from '../types'
+import { AppComponents, IPeersRegistry } from '../types'
 
-export async function createPeersRegistry(): Promise<IPeersRegistry> {
+export async function createPeersRegistry({ config }: Pick<AppComponents, 'config'>): Promise<IPeersRegistry> {
+  const roomPrefix = await config.requireString('COMMS_ROOM_PREFIX')
   const connectedPeers = new Map<string, string>()
 
-  function onPeerConnected(id: string, world: string): void {
+  function onPeerConnected(id: string, roomName: string): void {
+    const world = roomName.startsWith(roomPrefix) ? roomName.substring(roomPrefix.length) : roomName
     connectedPeers.set(id.toLowerCase(), world)
   }
 
