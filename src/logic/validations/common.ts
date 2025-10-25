@@ -16,6 +16,13 @@ export const validateEntityId: Validation = async (deployment: DeploymentToValid
   )
 }
 
+export const validateOwner: Validation = async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
+  if (!deployment.entity.metadata?.owner) {
+    return createValidationResult(['Owner not found.'])
+  }
+  return OK
+}
+
 export const validateBaseEntity: Validation = async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
   if (!Entity.validate(deployment.entity)) {
     return createValidationResult(Entity.validate.errors?.map((error) => error.message || '') || [])
