@@ -86,7 +86,8 @@ export function createEntityDeployer(
       }
       const isMultiplayer = !!entity.metadata?.multiplayerId
       const receipt = await snsClient.publishMessage(deploymentToSqs, {
-        isMultiplayer: { DataType: 'String', StringValue: isMultiplayer ? 'true' : 'false' }
+        isMultiplayer: { DataType: 'String', StringValue: isMultiplayer ? 'true' : 'false' },
+        priority: { DataType: 'String', StringValue: '1' }
       })
       logger.info('notification sent', {
         MessageId: `${receipt.MessageId}`,
