@@ -8,7 +8,10 @@ describe('PeersRegistry', () => {
   let config: IConfigComponent
 
   beforeEach(async () => {
-    config = createConfigComponent({ COMMS_ROOM_PREFIX: 'world-test-' })
+    config = createConfigComponent({
+      COMMS_ROOM_PREFIX: 'world-test-',
+      SCENE_ROOM_PREFIX: 'world-test-scene-room-'
+    })
     peersRegistry = await createPeersRegistry({ config })
   })
 
@@ -46,6 +49,29 @@ describe('PeersRegistry', () => {
       expect(peersRegistry.getPeerWorld('peer1')).toBe('world1')
       expect(peersRegistry.getPeerWorld('peer2')).toBe('world2')
       expect(peersRegistry.getPeerWorld('peer3')).toBe('complex-name')
+    })
+
+    it('should strip gatekeeper room prefix when present', () => {
+      peersRegistry.onPeerConnected('peer1', 'world-test-scene-room-myworld')
+      expect(peersRegistry.getPeerWorld('peer1')).toBe('myworld')
+    })
+
+    it('should prefer gatekeeper prefix over regular prefix when both match', () => {
+      peersRegistry.onPeerConnected('peer1', 'world-test-scene-room-complex-world')
+      expect(peersRegistry.getPeerWorld('peer1')).toBe('complex-world')
+    })
+
+    it('should handle room names with gatekeeper prefix and additional content', () => {
+      peersRegistry.onPeerConnected('peer1', 'world-test-scene-room-very-complex-world-name')
+      expect(peersRegistry.getPeerWorld('peer1')).toBe('very-complex-world-name')
+    })
+
+    it('should handle a mix of gatekeeper and regular prefixes', () => {
+      peersRegistry.onPeerConnected('peer1', 'world-test-scene-room-gatekeeper')
+      peersRegistry.onPeerConnected('peer2', 'world-test-regular')
+
+      expect(peersRegistry.getPeerWorld('peer1')).toBe('gatekeeper')
+      expect(peersRegistry.getPeerWorld('peer2')).toBe('regular')
     })
   })
 
