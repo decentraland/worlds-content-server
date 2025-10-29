@@ -24,7 +24,7 @@ servers:
     description: Local development server
 
 tags:
-  - name: Worlds Content Server
+  - name: Content Server
     description: API endpoints for Decentraland Worlds Content Server
 
 security:
@@ -34,7 +34,7 @@ paths:
   /world/{world_name}/about:
     get:
       tags:
-        - Worlds Content Server
+        - Content Server
       summary: /world/{world_name}/about
       description: Returns detailed information about a deployed world including scene configuration, comms adapter, and status
       operationId: worldsContentServer_getWorldAbout
@@ -63,7 +63,7 @@ paths:
   /entities:
     post:
       tags:
-        - Worlds Content Server
+        - Content Server
       summary: /entities
       description: |
         Deploy a new scene to a world. The deployment must include entity metadata and all content files.
@@ -110,7 +110,7 @@ paths:
   /entities/{world_name}:
     delete:
       tags:
-        - Worlds Content Server
+        - Content Server
       summary: /entities/{world_name}
       description: Remove a deployed scene from a world. Requires signed fetch authentication.
       operationId: worldsContentServer_undeployEntity
@@ -143,7 +143,7 @@ paths:
   /entities/active:
     post:
       tags:
-        - Worlds Content Server
+        - Content Server
       summary: /entities/active
       description: Retrieve information about active entities based on provided pointers
       operationId: worldsContentServer_getActiveEntities
@@ -172,7 +172,7 @@ paths:
   /available-content:
     get:
       tags:
-        - Worlds Content Server
+        - Content Server
       summary: /available-content
       description: Retrieve list of available content hashes
       operationId: worldsContentServer_getAvailableContent
@@ -192,7 +192,7 @@ paths:
   /ipfs/{hashId}:
     get:
       tags:
-        - Worlds Content Server
+        - Content Server
       summary: /ipfs/{hashId}
       description: Retrieve a content file by its IPFS hash
       operationId: worldsContentServer_getContentFileIpfs
@@ -216,7 +216,7 @@ paths:
           description: Content not found
     head:
       tags:
-        - Worlds Content Server
+        - Content Server
       summary: /ipfs/{hashId}
       description: Check if a content file exists without retrieving it
       operationId: worldsContentServer_headContentFileIpfs
@@ -236,7 +236,7 @@ paths:
   /contents/{hashId}:
     get:
       tags:
-        - Worlds Content Server
+        - Content Server
       summary: /contents/{hashId}
       description: Retrieve a content file by its hash
       operationId: worldsContentServer_getContentFile
@@ -260,7 +260,7 @@ paths:
           description: Content not found
     head:
       tags:
-        - Worlds Content Server
+        - Content Server
       summary: /contents/{hashId}
       description: Check if a content file exists without retrieving it
       operationId: worldsContentServer_headContentFile
@@ -280,7 +280,7 @@ paths:
   /world/{world_name}/permissions:
     get:
       tags:
-        - Worlds Content Server
+        - Content Server
       summary: /world/{world_name}/permissions
       description: Retrieve the permissions configuration for a world
       operationId: worldsContentServer_getPermissions
@@ -310,7 +310,7 @@ paths:
   /world/{world_name}/permissions/{permission_name}:
     post:
       tags:
-        - Worlds Content Server
+        - Content Server
       summary: /world/{world_name}/permissions/{permission_name}
       description: Set the permission type for a specific permission (deployment, access, or streaming). Requires signed fetch and world ownership.
       operationId: worldsContentServer_postPermission
@@ -360,7 +360,7 @@ paths:
   /world/{world_name}/permissions/{permission_name}/{address}:
     put:
       tags:
-        - Worlds Content Server
+        - Content Server
       summary: /world/{world_name}/permissions/{permission_name}/{address}
       description: Add an Ethereum address to the allow list for a specific permission. Requires signed fetch and world ownership.
       operationId: worldsContentServer_putPermissionAddress
@@ -405,7 +405,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
     delete:
       tags:
-        - Worlds Content Server
+        - Content Server
       summary: /world/{world_name}/permissions/{permission_name}/{address}
       description: Remove an Ethereum address from the allow list for a specific permission. Requires signed fetch and world ownership.
       operationId: worldsContentServer_deletePermissionAddress
@@ -452,7 +452,7 @@ paths:
   /wallet/{wallet}/stats:
     get:
       tags:
-        - Worlds Content Server
+        - Content Server
       summary: /wallet/{wallet}/stats
       description: Retrieve storage statistics for a wallet address
       operationId: worldsContentServer_getWalletStats
@@ -481,7 +481,7 @@ paths:
   /wallet/{wallet}/connected-world:
     get:
       tags:
-        - Worlds Content Server
+        - Content Server
       summary: /wallet/{wallet}/connected-world
       description: Retrieve the world that a wallet is currently connected to
       operationId: worldsContentServer_getWalletConnectedWorld
@@ -509,7 +509,7 @@ paths:
   /wallet/contribute:
     get:
       tags:
-        - Worlds Content Server
+        - Content Server
       summary: /wallet/contribute
       description: Retrieve list of domains that the authenticated wallet can contribute to. Requires signed fetch.
       operationId: worldsContentServer_getContributableDomains
@@ -539,7 +539,7 @@ paths:
   /status:
     get:
       tags:
-        - Worlds Content Server
+        - Content Server
       summary: /status
       description: Retrieve the current status of the content server and communication services
       operationId: worldsContentServer_getStatus
@@ -554,7 +554,7 @@ paths:
   /index:
     get:
       tags:
-        - Worlds Content Server
+        - Content Server
       summary: /index
       description: Retrieve an index of all deployed worlds
       operationId: worldsContentServer_getIndex
@@ -569,7 +569,7 @@ paths:
   /live-data:
     get:
       tags:
-        - Worlds Content Server
+        - Content Server
       summary: /live-data
       description: Retrieve live data about active worlds and users
       operationId: worldsContentServer_getLiveData
@@ -589,7 +589,7 @@ paths:
   /get-comms-adapter/{roomId}:
     post:
       tags:
-        - Worlds Content Server
+        - Content Server
       summary: /get-comms-adapter/{roomId}
       description: Retrieve communication adapter connection string for a room. Requires signed fetch.
       operationId: worldsContentServer_getCommsAdapter
@@ -622,7 +622,7 @@ paths:
   /cast-adapter/{roomId}:
     post:
       tags:
-        - Worlds Content Server
+        - Content Server
       summary: /cast-adapter/{roomId}
       description: Retrieve cast adapter connection string for a room. Requires signed fetch.
       operationId: worldsContentServer_getCastAdapter
@@ -655,7 +655,7 @@ paths:
   /livekit-webhook:
     post:
       tags:
-        - Worlds Content Server
+        - Content Server
       summary: /livekit-webhook
       description: Webhook endpoint for LiveKit events
       operationId: worldsContentServer_livekitWebhook
