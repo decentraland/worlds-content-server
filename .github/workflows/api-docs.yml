@@ -2,15 +2,19 @@ name: API Docs
 
 on:
   pull_request:
-    paths: ['docs/**']
+    paths:
+      - 'docs/**'
   push:
-    branches: [main]  
+    branches:
+      - master
+    paths:
+      - 'docs/**'
 
 jobs:
   build:
-    uses: decentraland/platform-actions/.github/workflows/apps-docs.yml@feat/upsert-api-spec-on-gitbook
+    uses: decentraland/platform-actions/.github/workflows/apps-docs.yml@main
     with:
       api-spec-file: docs/openapi.yaml
-      api-spec-name: worlds-content-server
+      api-spec-name: places
       output-bundle-file: docs/openapi.yaml
-    secrets: inherit      
+    secrets: inherit
