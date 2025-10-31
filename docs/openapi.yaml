@@ -3,12 +3,33 @@ info:
   title: Decentraland Worlds Content Server API
   version: 1.0.0
   description: |
-    API for Decentraland Worlds, a content server that lets you deploy isolated scenes which are accessible by the Decentraland explorer.
+    ## Overview
     
-    Worlds are scenes that exist outside the Genesis City boundaries and are attached to Decentraland NAMEs. 
-    The NAMEs can be used as realms to access your deployed scenes.
+    The Decentraland Worlds Content Server is a specialized content server that enables users to deploy and manage isolated 3D scenes outside of Genesis City. Each World is a self-contained scene linked to a Decentraland NAME (ENS or DCL domain), providing a personal metaverse space accessible through the Decentraland Explorer.
     
-    **Note**: This server is in ALPHA version.
+    ### Key Features
+    
+    - **Deploy Scenes**: Upload and manage 3D scenes with full metadata and assets
+    - **Access Control**: Configure permissions for deployment, access, and streaming
+    - **Content Management**: Store and retrieve scene assets via IPFS-compatible content addressing
+    - **Live Data**: Real-time information about active worlds and connected users
+    - **Multi-user Support**: Built-in communications adapter integration (LiveKit, WebRTC)
+    
+    ### Authentication
+    
+    Most write operations require **Signed Fetch** authentication (ADR-44). This involves signing requests with an Ethereum wallet to prove ownership of the world's NAME. Read operations are generally public and don't require authentication.
+    
+    ### Getting Started
+    
+    1. Acquire a Decentraland NAME (ENS domain like `myname.eth` or DCL name like `myname.dcl.eth`)
+    2. Deploy your scene using the `/entities` endpoint with signed authentication
+    3. Configure access permissions via `/world/{world_name}/permissions` endpoints
+    4. Access your world at `https://play.decentraland.org/?realm={your-name}.dcl.eth`
+    
+    ### Content Addressing
+    
+    All content is addressed by IPFS CIDv1 hashes (e.g., `bafkreiabc123...`). Content is immutable and content-addressed, ensuring integrity and enabling efficient caching and distribution.
+        
   contact:
     name: Decentraland Foundation
   license:
