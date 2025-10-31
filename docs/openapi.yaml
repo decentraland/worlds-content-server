@@ -24,7 +24,7 @@ info:
     1. Acquire a Decentraland NAME (ENS domain like `myname.eth` or DCL name like `myname.dcl.eth`)
     2. Deploy your scene using the `/entities` endpoint with signed authentication
     3. Configure access permissions via `/world/{world_name}/permissions` endpoints
-    4. Access your world at `https://play.decentraland.org/?realm={your-name}.dcl.eth`
+    4. Access your world using the Decentraland Client and running the chat command `/world {your-name}.dcl.eth` or (DPRECATED) with the web client `https://play.decentraland.org/?realm={your-name}.dcl.eth`
     
     ### Content Addressing
     
