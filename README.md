@@ -106,9 +106,12 @@ These flows are designed to improve the user experience in the areas like onboar
 
 **External Dependencies:**
 
+- Database: PostgreSQL (world metadata, permissions, blocked wallets)
 - Storage: Local disk or AWS S3 (via @dcl/catalyst-storage)
 - Blockchain: DCL Names ownership validation (deployer must own name)
 - Communication: LiveKit (optional, for comms adapter configuration)
+
+**Database Schema:** See [docs/database-schema.md](docs/database-schema.md) for complete database schema documentation including tables, columns, indexes, permissions structure, and migration history.
 
 **Key Concepts:**
 
@@ -121,3 +124,10 @@ These flows are designed to improve the user experience in the areas like onboar
 
 - Deployer wallet must own the DCL name specified in scene.json
 - World name in scene.json must match owned DCL name
+
+**Database Schema:**
+
+- **Tables**: `worlds` (world deployments, permissions, metadata), `blocked` (blocked wallets), `migrations` (migration tracking)
+- **Key Columns**: `worlds.name` (PK), `worlds.entity_id`, `worlds.permissions` (JSON), `worlds.owner`, `worlds.size`
+- **Permissions**: Stored as JSON with `deployment`, `access`, and `streaming` settings (allow-list, unrestricted, shared-secret, NFT ownership)
+- **Full Documentation**: See [docs/database-schema.md](docs/database-schema.md) for detailed schema, column definitions, example queries, and migration history
