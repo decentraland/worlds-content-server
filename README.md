@@ -82,7 +82,7 @@ Portable experiences and single scenes (spaces) can be used at the same time to 
 
 These flows are designed to improve the user experience in the areas like onboarding experiences, helper calendars for events, and for debugging purposes among others.
 
-## 🤖 AI Agent Context
+## AI Agent Context
 
 **Service Purpose:** Content server specifically for Decentraland Worlds (named scenes). Enables deployment and retrieval of world scenes that are identified by DCL names rather than parcel coordinates. Supports global portable experiences and single-scene loading.
 
