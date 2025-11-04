@@ -55,26 +55,6 @@ erDiagram
 
 Stores all deployed worlds (scenes identified by DCL names) and their associated metadata, permissions, and entity data.
 
-### Schema
-
-```sql
-CREATE TABLE worlds
-(
-    name VARCHAR NOT NULL PRIMARY KEY,
-    deployer VARCHAR,
-    entity_id VARCHAR,
-    deployment_auth_chain JSON,
-    entity JSON,
-    permissions JSON NOT NULL,
-    size BIGINT,
-    owner VARCHAR,
-    created_at TIMESTAMP NOT NULL,
-    updated_at TIMESTAMP NOT NULL
-);
-
-CREATE INDEX worlds_deployer_index ON worlds (deployer);
-```
-
 ### Columns
 
 | Column | Type | Nullable | Description |
@@ -238,19 +218,6 @@ The `deployment_auth_chain` column stores an array of authentication links:
 ## Table: `blocked`
 
 Stores wallet addresses that have been blocked from deploying or accessing worlds.
-
-### Schema
-
-```sql
-CREATE TABLE blocked
-(
-    wallet VARCHAR NOT NULL PRIMARY KEY,
-    created_at TIMESTAMP NOT NULL,
-    updated_at TIMESTAMP NOT NULL
-);
-
-CREATE INDEX blocked_wallet_index ON blocked (wallet);
-```
 
 ### Columns
 
