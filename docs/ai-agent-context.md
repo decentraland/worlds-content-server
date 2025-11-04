@@ -27,8 +27,6 @@
 - Blockchain: DCL Names ownership validation (deployer must own name)
 - Communication: LiveKit (optional, for comms adapter configuration)
 
-**Database Schema:** See [docs/database-schema.md](docs/database-schema.md) for complete database schema documentation including tables, columns, indexes, and permissions structure.
-
 **Key Concepts:**
 
 - **World**: A scene identified by a DCL name rather than parcel coordinates
