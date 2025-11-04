@@ -27,7 +27,7 @@
 - Blockchain: DCL Names ownership validation (deployer must own name)
 - Communication: LiveKit (optional, for comms adapter configuration)
 
-**Database Schema:** See [docs/database-schema.md](docs/database-schema.md) for complete database schema documentation including tables, columns, indexes, permissions structure, and migration history.
+**Database Schema:** See [docs/database-schema.md](docs/database-schema.md) for complete database schema documentation including tables, columns, indexes, and permissions structure.
 
 **Key Concepts:**
 
@@ -46,4 +46,15 @@
 - **Tables**: `worlds` (world deployments, permissions, metadata), `blocked` (blocked wallets), `migrations` (migration tracking)
 - **Key Columns**: `worlds.name` (PK), `worlds.entity_id`, `worlds.permissions` (JSON), `worlds.owner`, `worlds.size`
 - **Permissions**: Stored as JSON with `deployment`, `access`, and `streaming` settings (allow-list, unrestricted, shared-secret, NFT ownership)
-- **Full Documentation**: See [docs/database-schema.md](docs/database-schema.md) for detailed schema, column definitions, example queries, and migration history
+- **Full Documentation**: See [docs/database-schema.md](docs/database-schema.md) for detailed schema, column definitions, and relationships
+
+## Database Notes for AI Agents
+
+1. **Case Sensitivity**: All world names and Ethereum addresses are stored in lowercase
+2. **JSON Columns**: The `permissions`, `entity`, and `deployment_auth_chain` columns use PostgreSQL JSON type
+3. **Null Handling**: `entity_id` can be NULL if a world record exists but no deployment has been made
+4. **Size Calculation**: The `size` field is computed from content file sizes, not stored directly in entity
+5. **Permission Validation**: Permission checks are handled in application layer (`src/logic/permissions-checker.ts`)
+6. **Owner Validation**: The `owner` field is validated against blockchain via `nameOwnership` component
+7. **Migration System**: Migrations are auto-executed on startup via `migrationExecutor` component
+8. **Storage Separation**: Entity content files are stored separately in S3/disk storage, not in the database

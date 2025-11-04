@@ -7,7 +7,47 @@ This document describes the database schema for the Worlds Content Server. The s
 The database contains two main tables:
 1. **`worlds`** - Stores world/scene deployment information
 2. **`blocked`** - Stores blocked wallet addresses
-3. **`migrations`** - Tracks executed database migrations (internal)
+3. **`migrations`** - Tracks executed database migrations (internal, managed automatically)
+
+---
+
+## Database Schema Diagram
+
+```mermaid
+erDiagram
+    worlds {
+        VARCHAR name PK "World name (DCL name)"
+        VARCHAR deployer "Ethereum address"
+        VARCHAR entity_id "IPFS hash (CID)"
+        JSON deployment_auth_chain "ADR-44 auth chain"
+        JSON entity "Full entity JSON"
+        JSON permissions "Permissions config (NOT NULL)"
+        BIGINT size "Content size in bytes"
+        VARCHAR owner "DCL name owner address"
+        TIMESTAMP created_at "Creation timestamp"
+        TIMESTAMP updated_at "Update timestamp"
+    }
+    
+    blocked {
+        VARCHAR wallet PK "Ethereum address"
+        TIMESTAMP created_at "Block timestamp"
+        TIMESTAMP updated_at "Update timestamp"
+    }
+    
+    migrations {
+        SERIAL id PK "Auto-increment ID"
+        VARCHAR name "Migration identifier"
+        TIMESTAMP run_on "Execution timestamp"
+    }
+    
+    worlds ||--o{ blocked : "deployer checked against (application logic)"
+```
+
+**Relationship Notes:**
+- `worlds.deployer` and `worlds.owner` store Ethereum addresses (no foreign keys, validated via blockchain in application layer)
+- `blocked.wallet` can be checked against `worlds.deployer` for access control (application-level validation)
+- The `migrations` table is managed automatically by the migration system
+- **No foreign key constraints exist** - relationships are enforced at the application level
 
 ---
 
@@ -234,110 +274,7 @@ CREATE INDEX blocked_wallet_index ON blocked (wallet);
 
 ## Table: `migrations` (Internal)
 
-Tracks which database migrations have been executed. This table is managed automatically by the migration system.
-
-### Schema
-
-```sql
-CREATE TABLE migrations
-(
-    id SERIAL PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    run_on TIMESTAMP NOT NULL
-);
-```
-
-### Columns
-
-| Column | Type | Nullable | Description |
-|--------|------|----------|-------------|
-| `id` | SERIAL | NOT NULL | **Primary Key**. Auto-incrementing ID. |
-| `name` | VARCHAR(255) | NOT NULL | Migration identifier (e.g., `"0002_create_worlds_table"`). |
-| `run_on` | TIMESTAMP | NOT NULL | Timestamp when the migration was executed. |
-
----
-
-## Migration History
-
-The database schema has evolved through the following migrations:
-
-1. **0001_fix_file_ids** - Fixed incorrectly stored file IDs (pre-database migration)
-2. **0002_create_worlds_table** - Created initial `worlds` table with `acl` column
-3. **0003_compute_and_store_runtime_metadata** - Added runtime metadata to world files
-4. **0004_migrate_from_files_to_database** - Migrated world data from file storage to database
-5. **0005_add_permissions_column** - Added `permissions` JSON column
-6. **0006_migrate_acls_to_permissions** - Migrated ACL data to permissions format
-7. **0007_fix_empty_permissions** - Fixed worlds with empty permissions
-8. **0008_make_permissions_column_not_null** - Made `permissions` column required
-9. **0009_drop_acl_column** - Removed deprecated `acl` column
-10. **0010_remove_world_metadata_files** - Cleanup migration for file storage
-11. **0011_add_size_and_owner_columns** - Added `size` and `owner` columns
-12. **0012_store_world_owner_and_size** - Populated `size` and `owner` from entity data
-13. **0013_create_blocked_table** - Created `blocked` table
-14. **0014_permissions_set_addresses_lowercase** - Normalized all permission addresses to lowercase
-
----
-
-## Relationships
-
-- **`worlds.deployer`** → Ethereum address (no foreign key, references blockchain data)
-- **`worlds.owner`** → Ethereum address (no foreign key, validated against DCL name ownership)
-- **`blocked.wallet`** → Ethereum address (can be referenced by `worlds.deployer` for access checks)
-
----
-
-## Common Queries
-
-### Get all deployed worlds
-```sql
-SELECT name, entity_id, owner, size, created_at 
-FROM worlds 
-WHERE entity_id IS NOT NULL 
-ORDER BY name;
-```
-
-### Get world permissions
-```sql
-SELECT name, permissions 
-FROM worlds 
-WHERE name = 'myworld.dcl.eth';
-```
-
-### Check if wallet is blocked
-```sql
-SELECT wallet 
-FROM blocked 
-WHERE wallet = LOWER('0x...');
-```
-
-### Get worlds by deployer
-```sql
-SELECT name, entity_id, created_at 
-FROM worlds 
-WHERE deployer = LOWER('0x...') 
-AND entity_id IS NOT NULL;
-```
-
-### Get world entity data
-```sql
-SELECT name, entity, entity_id, owner 
-FROM worlds 
-WHERE name = 'myworld.dcl.eth' 
-AND entity_id IS NOT NULL;
-```
-
----
-
-## Notes for AI Agents
-
-1. **Case Sensitivity**: All world names and Ethereum addresses are stored in lowercase
-2. **JSON Columns**: The `permissions`, `entity`, and `deployment_auth_chain` columns use PostgreSQL JSON type
-3. **Null Handling**: `entity_id` can be NULL if a world record exists but no deployment has been made
-4. **Size Calculation**: The `size` field is computed from content file sizes, not stored directly in entity
-5. **Permission Validation**: Permission checks are handled in application layer (`src/logic/permissions-checker.ts`)
-6. **Owner Validation**: The `owner` field is validated against blockchain via `nameOwnership` component
-7. **Migration System**: Migrations are auto-executed on startup via `migrationExecutor` component
-8. **Storage Separation**: Entity content files are stored separately in S3/disk storage, not in the database
+Tracks which database migrations have been executed. This table is managed automatically by the migration system and should not be modified manually.
 
 ---
 
@@ -347,4 +284,3 @@ AND entity_id IS NOT NULL;
 - **World Manager**: `src/adapters/worlds-manager.ts`
 - **Permissions Checker**: `src/logic/permissions-checker.ts`
 - **Types**: `src/types.ts` (see `WorldRecord`, `Permissions`, `BlockedRecord`)
-
