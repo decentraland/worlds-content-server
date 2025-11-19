@@ -29,8 +29,6 @@ This server interacts with DCL Names (ENS) for ownership validation, LiveKit for
   - [Testing](#testing)
     - [Running Tests](#running-tests)
     - [Test Structure](#test-structure)
-  - [How to Contribute](#how-to-contribute)
-  - [License](#license)
   - [AI Agent Context](#ai-agent-context)
 
 ## Features
@@ -242,31 +240,6 @@ yarn test test/integration
 - **Integration Tests** (`test/integration/`): Test the complete request/response cycle
 
 For detailed testing guidelines and standards, refer to our [Testing Standards](https://github.com/decentraland/docs/tree/main/development-standards/testing-standards) documentation.
-
-## How to Contribute
-
-Contributions are welcome! Please follow these steps:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'feat: add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-
-- `feat`: A new feature (bumps minor version)
-- `fix`: A bug fix (bumps patch version)
-- `docs`: Documentation only changes (bumps patch version)
-- `style`: Code style changes (formatting, missing semi colons, etc.) (bumps patch version)
-- `refactor`: Code refactoring without feature changes or bug fixes (bumps patch version)
-- `test`: Adding or updating tests (bumps patch version)
-- `chore`: Maintenance tasks, dependency updates, etc. (bumps patch version)
-- `revert`: Reverts a previous commit (bumps patch version)
-- `break`: Breaking changes (bumps major version)
-
-## License
-
-This project is licensed under the Apache-2.0 License - see the [LICENSE](LICENSE) file for details.
 
 ## AI Agent Context
 
