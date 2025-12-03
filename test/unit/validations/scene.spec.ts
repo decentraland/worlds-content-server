@@ -21,6 +21,7 @@ import {
   createValidateSceneDimensions,
   createValidateSdkVersion,
   createValidateSize,
+  validateCreatorIsValidEthAddress,
   validateDeprecatedConfig,
   validateMiniMapImages,
   validateSceneEntity,
@@ -479,6 +480,102 @@ describe('scene validations', function () {
       const result = await validateSkyboxTextures(deployment)
       expect(result.ok()).toBeFalsy()
       expect(result.errors).toContain('The texture file xyz.png is not present in the entity.')
+    })
+  })
+
+  describe('validateCreatorIsValidEthAddress', () => {
+    it('when there is no creator field in metadata, validation passes', async () => {
+      const deployment = await createSceneDeployment(identity.authChain)
+
+      const result = await validateCreatorIsValidEthAddress(deployment)
+      expect(result.ok()).toBeTruthy()
+    })
+
+    it('when creator is null, validation passes', async () => {
+      const deployment = await createSceneDeployment(identity.authChain, {
+        type: EntityType.SCENE,
+        pointers: ['0,0'],
+        timestamp: Date.now(),
+        metadata: {
+          worldConfiguration: {
+            name: 'whatever.dcl.eth'
+          },
+          creator: null
+        }
+      })
+
+      const result = await validateCreatorIsValidEthAddress(deployment)
+      expect(result.ok()).toBeTruthy()
+    })
+
+    it('when creator is empty string, validation passes', async () => {
+      const deployment = await createSceneDeployment(identity.authChain, {
+        type: EntityType.SCENE,
+        pointers: ['0,0'],
+        timestamp: Date.now(),
+        metadata: {
+          worldConfiguration: {
+            name: 'whatever.dcl.eth'
+          },
+          creator: ''
+        }
+      })
+
+      const result = await validateCreatorIsValidEthAddress(deployment)
+      expect(result.ok()).toBeTruthy()
+    })
+
+    it('when creator is whitespace string, validation fails', async () => {
+      const deployment = await createSceneDeployment(identity.authChain, {
+        type: EntityType.SCENE,
+        pointers: ['0,0'],
+        timestamp: Date.now(),
+        metadata: {
+          worldConfiguration: {
+            name: 'whatever.dcl.eth'
+          },
+          creator: ' '
+        }
+      })
+
+      const result = await validateCreatorIsValidEthAddress(deployment)
+      expect(result.ok()).toBeFalsy()
+      expect(result.errors).toContain("Scene creator wallet ' ' is not a valid Ethereum address.")
+    })
+
+    it('when creator is an invalid Ethereum address, validation fails', async () => {
+      const deployment = await createSceneDeployment(identity.authChain, {
+        type: EntityType.SCENE,
+        pointers: ['0,0'],
+        timestamp: Date.now(),
+        metadata: {
+          worldConfiguration: {
+            name: 'whatever.dcl.eth'
+          },
+          creator: 'invalid-address'
+        }
+      })
+
+      const result = await validateCreatorIsValidEthAddress(deployment)
+      expect(result.ok()).toBeFalsy()
+      expect(result.errors).toContain("Scene creator wallet 'invalid-address' is not a valid Ethereum address.")
+    })
+
+    it('when creator is a valid Ethereum address, validation passes', async () => {
+      const deployment = await createSceneDeployment(identity.authChain, {
+        type: EntityType.SCENE,
+        pointers: ['0,0'],
+        timestamp: Date.now(),
+        metadata: {
+          worldConfiguration: {
+            name: 'whatever.dcl.eth'
+          },
+          creator: '0x71c7656ec7ab88b098defb751b7401b5f6d8976f'
+        }
+      })
+
+      const result = await validateCreatorIsValidEthAddress(deployment)
+      expect(result.ok()).toBeTruthy()
     })
   })
 })
