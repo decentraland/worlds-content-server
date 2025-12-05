@@ -241,6 +241,14 @@ yarn test test/integration
 
 For detailed testing guidelines and standards, refer to our [Testing Standards](https://github.com/decentraland/docs/tree/main/development-standards/testing-standards) documentation.
 
+## How to Contribute
+
+Contributions are welcome! Please follow the standard contribution guidelines for Decentraland projects.
+
+## License
+
+This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+
 ## AI Agent Context
 
 For detailed AI Agent context, see [docs/ai-agent-context.md](docs/ai-agent-context.md).
