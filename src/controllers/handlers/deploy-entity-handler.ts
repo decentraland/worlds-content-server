@@ -11,56 +11,64 @@ export function requireString(val: string | null | undefined): string {
 }
 
 export async function deployEntity(
-  ctx: FormDataContext & HandlerContextWithPath<'config' | 'entityDeployer' | 'storage' | 'validator', '/entities'>
+  ctx: FormDataContext &
+    HandlerContextWithPath<'config' | 'entityDeployer' | 'storage' | 'validator' | 'logs', '/entities'>
 ): Promise<IHttpServerComponent.IResponse> {
-  const entityId = requireString(ctx.formData.fields.entityId.value)
-  const authChain = extractAuthChain(ctx)
+  const logger = ctx.components.logs.getLogger('deploy-entity')
 
-  const entityRaw = ctx.formData.files[entityId].value.toString()
-  const entityMetadataJson = JSON.parse(entityRaw)
+  try {
+    const entityId = requireString(ctx.formData.fields.entityId.value)
+    const authChain = extractAuthChain(ctx)
 
-  const entity: Entity = {
-    id: entityId, // this is not part of the published entity
-    timestamp: Date.now(), // this is not part of the published entity
-    ...entityMetadataJson
-  }
+    const entityRaw = ctx.formData.files[entityId].value.toString()
+    const entityMetadataJson = JSON.parse(entityRaw)
 
-  const uploadedFiles: Map<string, Uint8Array> = new Map()
-  for (const filesKey in ctx.formData.files) {
-    uploadedFiles.set(filesKey, ctx.formData.files[filesKey].value)
-  }
-
-  const contentHashesInStorage = await ctx.components.storage.existMultiple(
-    Array.from(new Set(entity.content!.map(($) => $.hash)))
-  )
-
-  // run all validations about the deployment
-  const validationResult = await ctx.components.validator.validate({
-    entity,
-    files: uploadedFiles,
-    authChain,
-    contentHashesInStorage
-  })
-  if (!validationResult.ok()) {
-    throw new InvalidRequestError(`Deployment failed: ${validationResult.errors.join(', ')}`)
-  }
-
-  // Store the entity
-  const baseUrl = (await ctx.components.config.getString('HTTP_BASE_URL')) || `https://${ctx.url.host}`
-  const message = await ctx.components.entityDeployer.deployEntity(
-    baseUrl,
-    entity,
-    contentHashesInStorage,
-    uploadedFiles,
-    entityRaw,
-    authChain
-  )
-
-  return {
-    status: 200,
-    body: {
-      creationTimestamp: Date.now(),
-      ...message
+    const entity: Entity = {
+      id: entityId, // this is not part of the published entity
+      timestamp: Date.now(), // this is not part of the published entity
+      ...entityMetadataJson
     }
+
+    const uploadedFiles: Map<string, Uint8Array> = new Map()
+    for (const filesKey in ctx.formData.files) {
+      uploadedFiles.set(filesKey, ctx.formData.files[filesKey].value)
+    }
+
+    const contentHashesInStorage = await ctx.components.storage.existMultiple(
+      Array.from(new Set(entity.content!.map(($) => $.hash)))
+    )
+
+    // run all validations about the deployment
+    const validationResult = await ctx.components.validator.validate({
+      entity,
+      files: uploadedFiles,
+      authChain,
+      contentHashesInStorage
+    })
+    if (!validationResult.ok()) {
+      throw new InvalidRequestError(`Deployment failed: ${validationResult.errors.join(', ')}`)
+    }
+
+    // Store the entity
+    const baseUrl = (await ctx.components.config.getString('HTTP_BASE_URL')) || `https://${ctx.url.host}`
+    const message = await ctx.components.entityDeployer.deployEntity(
+      baseUrl,
+      entity,
+      contentHashesInStorage,
+      uploadedFiles,
+      entityRaw,
+      authChain
+    )
+
+    return {
+      status: 200,
+      body: {
+        creationTimestamp: Date.now(),
+        ...message
+      }
+    }
+  } catch (error: any) {
+    logger.error('Error deploying entity', { error: error?.message || 'unknown', stack: error?.stack || 'unknown' })
+    throw error
   }
 }
