@@ -300,7 +300,7 @@ export type IWorldCreator = {
   createWorldWithScene(data?: {
     worldName?: string
     metadata?: any
-    files?: Map<string, ArrayBuffer>
+    files?: Map<string, Uint8Array>
     permissions?: Permissions
     owner?: AuthIdentity
   }): Promise<{ worldName: string; entityId: IPFSv2; entity: Entity; owner: AuthIdentity }>
