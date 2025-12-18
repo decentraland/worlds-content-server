@@ -11,9 +11,11 @@ This server interacts with DCL Names (ENS) for ownership validation, LiveKit for
 - [Worlds Content Server](#worlds-content-server)
   - [Table of Contents](#table-of-contents)
   - [Features](#features)
-  - [Dependencies \& Related Services](#dependencies--related-services)
+  - [Dependencies](#dependencies)
   - [API Documentation](#api-documentation)
-  - [Database Schema](#database-schema)
+  - [Database](#database)
+  - [Schema](#schema)
+  - [Migrations](#migrations)
   - [Getting Started](#getting-started)
     - [Prerequisites](#prerequisites)
     - [Installation](#installation)
@@ -41,17 +43,12 @@ This server interacts with DCL Names (ENS) for ownership validation, LiveKit for
 - **Live Data**: Real-time information about active worlds and connected users
 - **Communications Service**: Built-in communications adapter integration (LiveKit, WebRTC)
 
-## Dependencies & Related Services
-
-This service interacts with the following services:
+## Dependencies
 
 - **[Catalyst](https://github.com/decentraland/catalyst)**: Uses similar entity storage patterns and validation logic
 - **[DCL Names/ENS](https://ens.domains/)**: Validates ownership of DCL names for deployment authorization
 - **[LiveKit](https://livekit.io/)**: Optional communications adapter for multi-user experiences
 - **[AWS SNS](https://aws.amazon.com/sns/)**: Publishes deployment notifications
-
-External dependencies:
-
 - **PostgreSQL**: Database for world metadata, permissions, and blocked wallets
 - **NATS**: Message broker for internal event handling
 - **AWS S3** (optional): Cloud storage backend via `@dcl/catalyst-storage`
@@ -61,9 +58,41 @@ External dependencies:
 
 The API is fully documented using the [OpenAPI standard](https://swagger.io/specification/). Its schema is located at [docs/openapi.yaml](docs/openapi.yaml).
 
-## Database Schema
+## Database
+
+### Schema
 
 See [docs/database-schema.md](docs/database-schema.md) for detailed schema, column definitions, and relationships.
+
+### Migrations
+
+The service uses `node-pg-migrate` for database migrations. These migrations are located in `src/migrations/`. The service automatically runs the migrations when starting up.
+
+#### Create a new migration
+
+Migrations are created by running the create command:
+
+```bash
+yarn migrate create name-of-the-migration
+```
+
+This will result in the creation of a migration file inside of the `src/migrations/` directory. This migration file MUST contain the migration set up and rollback procedures.
+
+#### Manually applying migrations
+
+If required, these migrations can be run manually.
+
+To run them manually:
+
+```bash
+yarn migrate up
+```
+
+To rollback them manually:
+
+```bash
+yarn migrate down
+```
 
 ## Getting Started
 
@@ -99,17 +128,13 @@ yarn build
 
 ### Configuration
 
-The service uses environment variables for configuration.
+The service uses environment variables for configuration. Copy the example file and adjust as needed:
 
-Create a `.env` file in the root directory containing the environment variables for the service to run. Key configuration variables include:
+```bash
+cp .env.default .env
+```
 
-- `DATABASE_URL`: PostgreSQL connection string
-- `STORAGE_ROOT_FOLDER`: Local storage path (or S3 configuration)
-- `LIVEKIT_HOST`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`: LiveKit configuration (optional)
-- `COMMS_ADAPTER`: Communication adapter type (`livekit` or `native`)
-- `ETH_NETWORK`: Ethereum network (`mainnet` or `sepolia`)
-
-For a complete list of configuration options, check the service's environment configuration in `src/components.ts`.
+See `.env.default` for available configuration options.
 
 ### Running the Service
 
