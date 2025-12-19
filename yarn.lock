@@ -735,10 +735,19 @@
   resolved "https://registry.yarnpkg.com/@dcl/catalyst-contracts/-/catalyst-contracts-4.4.2.tgz#e7a329d7aee25c90d7ee07dbe82200a048f17ff9"
   integrity sha512-gJZo3IB8U+jhBJWR0DgoLS+zaUDIb/u79e7Rp+MEM78uH3bvC19S3Dd8lxWEbPXNKlCB0saUptfK/Buw0c1y2Q==
 
-"@dcl/catalyst-storage@^4.3.0":
-  version "4.3.0"
-  resolved "https://registry.yarnpkg.com/@dcl/catalyst-storage/-/catalyst-storage-4.3.0.tgz#5ea39d7e80a1027a1e4603f474c9db5a48bab386"
-  integrity sha512-5r+Ip29fgG9sT9qVU5GRP2YmuA9rPd7K+STa/ofjgURdMb+1/uDhoJbMRfMbu+ft9FcEN3qYkVnIipxf5v2KzA==
+"@dcl/catalyst-storage@https://sdk-team-cdn.decentraland.org/@dcl/catalyst-storage/branch/fix/files-handling/dcl-catalyst-storage-4.3.1-20379719296.commit-67574b7.tgz":
+  version "4.3.1-20379719296.commit-67574b7"
+  resolved "https://sdk-team-cdn.decentraland.org/@dcl/catalyst-storage/branch/fix/files-handling/dcl-catalyst-storage-4.3.1-20379719296.commit-67574b7.tgz#e2aa914224280304e012cc4c91e76cf72a5bb932"
+  dependencies:
+    "@well-known-components/interfaces" "^1.1.1"
+    aws-sdk "^2.1426.0"
+    aws-sdk-client-mock "^3.0.0"
+    destroy "^1.2.0"
+    file-type "15"
+
+"@dcl/catalyst-storage@https://sdk-team-cdn.decentraland.org/@dcl/catalyst-storage/branch/fix/files-handling/dcl-catalyst-storage-4.3.1-20380266944.commit-600fef6.tgz":
+  version "4.3.1-20380266944.commit-600fef6"
+  resolved "https://sdk-team-cdn.decentraland.org/@dcl/catalyst-storage/branch/fix/files-handling/dcl-catalyst-storage-4.3.1-20380266944.commit-600fef6.tgz#ad07c71eddc64b35a521ea966dc89b157c025a47"
   dependencies:
     "@well-known-components/interfaces" "^1.1.1"
     aws-sdk "^2.1426.0"
