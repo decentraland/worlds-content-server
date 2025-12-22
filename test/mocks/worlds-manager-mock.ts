@@ -1,6 +1,8 @@
 import {
   AppComponents,
   ContributorDomain,
+  DeploymentFilters,
+  DeploymentsResponse,
   IPermissionChecker,
   IWorldsManager,
   Permissions,
@@ -113,6 +115,23 @@ export async function createWorldsManagerMockComponent({
     return worlds
   }
 
+  async function getDeploymentsWithFilters(filters: DeploymentFilters): Promise<DeploymentsResponse> {
+    return {
+      deployments: [],
+      filters: {
+        name: filters.name,
+        entityIds: filters.entityIds || [],
+        deployer: filters.deployer || [],
+        owner: filters.owner
+      },
+      pagination: {
+        offset: 0,
+        limit: 10,
+        moreData: false
+      }
+    }
+  }
+
   async function permissionCheckerForWorld(worldName: string): Promise<IPermissionChecker> {
     const metadata = await getMetadataForWorld(worldName)
     return createPermissionChecker(metadata?.permissions || defaultPermissions())
@@ -159,6 +178,7 @@ export async function createWorldsManagerMockComponent({
     deployScene,
     storePermissions,
     permissionCheckerForWorld,
+    getDeploymentsWithFilters,
     undeploy
   }
 }
