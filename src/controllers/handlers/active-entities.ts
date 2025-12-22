@@ -27,10 +27,7 @@ export async function activeEntitiesHandler(
     throw new InvalidRequestError(`Maximum ${MAX_POINTERS} pointers allowed per request`)
   }
 
-  // Deduplicate pointers (case-insensitive)
   const uniquePointers = Array.from(new Set(pointers.map((p) => p.toLowerCase())))
-
-  // Filter out banned worlds BEFORE fetching
   const allowedPointers = []
   const bannedWorlds = []
 
@@ -43,7 +40,6 @@ export async function activeEntitiesHandler(
     }
   }
 
-  // Log banned worlds if any
   if (bannedWorlds.length > 0) {
     logger.warn(`Filtered out ${bannedWorlds.length} banned worlds from request: ${bannedWorlds.join(', ')}`, {
       requestedCount: uniquePointers.length,
@@ -51,10 +47,8 @@ export async function activeEntitiesHandler(
     })
   }
 
-  // Fetch entities only for allowed worlds
   const results = await Promise.all(allowedPointers.map((pointer) => worldsManager.getEntityForWorld(pointer)))
 
-  // Filter out null/undefined results (worlds that don't exist)
   const entities = results.filter(Boolean)
 
   return {
