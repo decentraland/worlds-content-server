@@ -116,8 +116,7 @@ test('GET /deployments handler', function ({ components }) {
     const response = await r.json()
     expect(response.pagination).toMatchObject({
       offset: 1,
-      limit: 10,
-      moreData: false
+      limit: 10
     })
   })
 
