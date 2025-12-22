@@ -176,6 +176,25 @@ export async function createWorldsManagerComponent({
     return mapEntity(result.rows[0])
   }
 
+  async function getEntityForWorlds(worldNames: string[]): Promise<Entity[]> {
+    if (worldNames.length === 0) {
+      return []
+    }
+
+    const lowercaseNames = worldNames.map((n) => n.toLowerCase())
+
+    const result = await database.query<Pick<WorldRecord, 'entity_id' | 'entity' | 'owner'>>(
+      SQL`
+        SELECT entity_id, entity, owner 
+        FROM worlds 
+        WHERE name = ANY(${lowercaseNames}) 
+          AND entity_id IS NOT NULL
+      `
+    )
+
+    return result.rows.map(mapEntity)
+  }
+
   async function permissionCheckerForWorld(worldName: string): Promise<IPermissionChecker> {
     const metadata = await getMetadataForWorld(worldName)
     return createPermissionChecker(metadata?.permissions || defaultPermissions())
@@ -222,6 +241,7 @@ export async function createWorldsManagerComponent({
     getDeployedWorldEntities,
     getMetadataForWorld,
     getEntityForWorld,
+    getEntityForWorlds,
     deployScene,
     storePermissions,
     permissionCheckerForWorld,

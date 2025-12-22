@@ -150,6 +150,7 @@ export type IWorldsManager = {
   getDeployedWorldEntities(): Promise<Entity[]>
   getMetadataForWorld(worldName: string): Promise<WorldMetadata | undefined>
   getEntityForWorld(worldName: string): Promise<Entity | undefined>
+  getEntityForWorlds(worldNames: string[]): Promise<Entity[]>
   deployScene(worldName: string, scene: Entity, owner: EthAddress): Promise<void>
   storePermissions(worldName: string, permissions: Permissions): Promise<void>
   permissionCheckerForWorld(worldName: string): Promise<IPermissionChecker>

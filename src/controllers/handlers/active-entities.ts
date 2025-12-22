@@ -28,8 +28,8 @@ export async function activeEntitiesHandler(
   }
 
   const uniquePointers = Array.from(new Set(pointers.map((p) => p.toLowerCase())))
-  const allowedPointers = []
-  const bannedWorlds = []
+  const allowedPointers: string[] = []
+  const bannedWorlds: string[] = []
 
   for (const pointer of uniquePointers) {
     const isAllowed = await nameDenyListChecker.checkNameDenyList(pointer)
@@ -47,9 +47,7 @@ export async function activeEntitiesHandler(
     })
   }
 
-  const results = await Promise.all(allowedPointers.map((pointer) => worldsManager.getEntityForWorld(pointer)))
-
-  const entities = results.filter(Boolean)
+  const entities = await worldsManager.getEntityForWorlds(allowedPointers)
 
   return {
     status: 200,
