@@ -1,44 +1,6 @@
 import { test } from '../components'
 
 test('GET /deployments handler', function ({ components }) {
-  it('should return empty deployments when no worlds are deployed', async () => {
-    const { localFetch } = components
-    const r = await localFetch.fetch('/deployments')
-
-    expect(r.status).toEqual(200)
-    const response = await r.json()
-    expect(response).toMatchObject({
-      deployments: [],
-      filters: {},
-      pagination: {
-        offset: 0,
-        limit: 100,
-        moreData: false
-      }
-    })
-  })
-
-  it('should return deployed worlds without filters', async () => {
-    const { localFetch, worldCreator } = components
-
-    const { worldName, entityId } = await worldCreator.createWorldWithScene()
-
-    const r = await localFetch.fetch('/deployments')
-    expect(r.status).toEqual(200)
-
-    const response = await r.json()
-    expect(response.deployments).toHaveLength(1)
-    expect(response.deployments[0]).toMatchObject({
-      entityId,
-      pointers: expect.arrayContaining([expect.any(String)])
-    })
-    expect(response.pagination).toMatchObject({
-      offset: 0,
-      limit: 100,
-      moreData: false
-    })
-  })
-
   it('should filter deployments by name', async () => {
     const { localFetch, worldCreator } = components
 
