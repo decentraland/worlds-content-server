@@ -159,35 +159,27 @@ export async function createWorldsManagerComponent({
     return filtered.map(mapEntity)
   }
 
-  async function getEntityForWorld(worldName: string): Promise<Entity | undefined> {
-    if (!(await nameDenyListChecker.checkNameDenyList(worldName))) {
-      logger.warn(`Attempt to access entity for world ${worldName} which is banned.`)
-      return undefined
-    }
-
-    const result = await database.query<Pick<WorldRecord, 'entity_id' | 'entity' | 'owner'>>(
-      SQL`SELECT entity_id, entity, owner FROM worlds WHERE name = ${worldName.toLowerCase()} AND entity_id IS NOT NULL ORDER BY name`
-    )
-
-    if (result.rowCount === 0) {
-      return undefined
-    }
-
-    return mapEntity(result.rows[0])
-  }
-
   async function getEntityForWorlds(worldNames: string[]): Promise<Entity[]> {
     if (worldNames.length === 0) {
       return []
     }
 
-    const lowercaseNames = worldNames.map((n) => n.toLowerCase())
+    const allowedNames: string[] = []
+    for (const worldName of worldNames) {
+      if (await nameDenyListChecker.checkNameDenyList(worldName)) {
+        allowedNames.push(worldName)
+      }
+    }
+
+    if (allowedNames.length === 0) {
+      return []
+    }
 
     const result = await database.query<Pick<WorldRecord, 'entity_id' | 'entity' | 'owner'>>(
       SQL`
         SELECT entity_id, entity, owner 
         FROM worlds 
-        WHERE name = ANY(${lowercaseNames}) 
+        WHERE name = ANY(${allowedNames}) 
           AND entity_id IS NOT NULL 
           ORDER BY name
       `
@@ -241,7 +233,6 @@ export async function createWorldsManagerComponent({
     getDeployedWorldCount,
     getDeployedWorldEntities,
     getMetadataForWorld,
-    getEntityForWorld,
     getEntityForWorlds,
     deployScene,
     storePermissions,

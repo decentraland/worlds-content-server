@@ -166,7 +166,6 @@ export async function createWorldsManagerMockComponent({
     getDeployedWorldCount,
     getDeployedWorldEntities,
     getMetadataForWorld,
-    getEntityForWorld,
     getEntityForWorlds,
     deployScene,
     storePermissions,
