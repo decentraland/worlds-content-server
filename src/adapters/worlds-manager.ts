@@ -188,7 +188,8 @@ export async function createWorldsManagerComponent({
         SELECT entity_id, entity, owner 
         FROM worlds 
         WHERE name = ANY(${lowercaseNames}) 
-          AND entity_id IS NOT NULL
+          AND entity_id IS NOT NULL 
+          ORDER BY name
       `
     )
 

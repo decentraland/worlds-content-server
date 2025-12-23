@@ -76,7 +76,7 @@ test('active entities handler /entities/active', function ({ components }) {
     expect(await r.json()).toMatchObject({ message: 'Maximum 50 pointers allowed per request' })
   })
 
-  it('when multiple worlds are deployed it responds with all entities', async () => {
+  it('when multiple worlds are found it responds with all entities', async () => {
     const { localFetch, worldCreator } = components
 
     const world1 = await worldCreator.createWorldWithScene({ worldName: 'multi1.dcl.eth' })
@@ -103,7 +103,7 @@ test('active entities handler /entities/active', function ({ components }) {
     )
   })
 
-  it('when some pointers not deployed it returns only deployed ones', async () => {
+  it('when some pointers not found it returns only found ones', async () => {
     const { localFetch, worldCreator } = components
 
     const world1 = await worldCreator.createWorldWithScene({ worldName: 'deployed-one.dcl.eth' })
