@@ -69,6 +69,7 @@ test('undeploy entity handler /entities/:world_name', function ({ components, st
 
     expect(r.status).toEqual(200)
 
-    expect(await components.worldsManager.getEntityForWorld(worldName)).toBeUndefined()
+    const entities = await components.worldsManager.getEntityForWorlds([worldName])
+    expect(entities.length).toEqual(0)
   })
 })
