@@ -122,6 +122,17 @@ export async function createWorldsManagerMockComponent({
     await storage.delete([`name-${worldName.toLowerCase()}`])
   }
 
+  async function getEntityForWorlds(worldNames: string[]): Promise<Entity[]> {
+    const entities: Entity[] = []
+    for (const worldName of worldNames) {
+      const entity = await getEntityForWorld(worldName)
+      if (entity) {
+        entities.push(entity)
+      }
+    }
+    return entities
+  }
+
   async function getContributableDomains(address: string): Promise<{ domains: ContributorDomain[]; count: number }> {
     const domains: ContributorDomain[] = []
     for await (const name of storage.allFileIds('name-')) {
@@ -155,7 +166,7 @@ export async function createWorldsManagerMockComponent({
     getDeployedWorldCount,
     getDeployedWorldEntities,
     getMetadataForWorld,
-    getEntityForWorld,
+    getEntityForWorlds,
     deployScene,
     storePermissions,
     permissionCheckerForWorld,

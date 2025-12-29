@@ -149,7 +149,7 @@ export type IWorldsManager = {
   getDeployedWorldCount(): Promise<{ ens: number; dcl: number }>
   getDeployedWorldEntities(): Promise<Entity[]>
   getMetadataForWorld(worldName: string): Promise<WorldMetadata | undefined>
-  getEntityForWorld(worldName: string): Promise<Entity | undefined>
+  getEntityForWorlds(worldNames: string[]): Promise<Entity[]>
   deployScene(worldName: string, scene: Entity, owner: EthAddress): Promise<void>
   storePermissions(worldName: string, permissions: Permissions): Promise<void>
   permissionCheckerForWorld(worldName: string): Promise<IPermissionChecker>
@@ -300,7 +300,7 @@ export type IWorldCreator = {
   createWorldWithScene(data?: {
     worldName?: string
     metadata?: any
-    files?: Map<string, ArrayBuffer>
+    files?: Map<string, Uint8Array>
     permissions?: Permissions
     owner?: AuthIdentity
   }): Promise<{ worldName: string; entityId: IPFSv2; entity: Entity; owner: AuthIdentity }>
