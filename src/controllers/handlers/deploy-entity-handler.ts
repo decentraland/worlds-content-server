@@ -1,6 +1,6 @@
 import { Entity } from '@dcl/schemas'
 import { IHttpServerComponent } from '@well-known-components/interfaces'
-import { FormDataContext } from '../../logic/multipart'
+import { FormDataContext } from '@well-known-components/multipart-wrapper'
 import { HandlerContextWithPath } from '../../types'
 import { extractAuthChain } from '../../logic/extract-auth-chain'
 import { InvalidRequestError } from '@dcl/platform-server-commons'
@@ -11,7 +11,8 @@ export function requireString(val: string | null | undefined): string {
 }
 
 export async function deployEntity(
-  ctx: FormDataContext & HandlerContextWithPath<'config' | 'entityDeployer' | 'storage' | 'validator', '/entities'>
+  ctx: FormDataContext<unknown> &
+    HandlerContextWithPath<'config' | 'entityDeployer' | 'storage' | 'validator', '/entities'>
 ): Promise<IHttpServerComponent.IResponse> {
   const entityId = requireString(ctx.formData.fields.entityId.value)
   const authChain = extractAuthChain(ctx)
