@@ -1,10 +1,10 @@
-import { AppComponents, IWalletStats, MB_BigInt, WalletStats, WorldRecord } from '../types'
+import { AppComponents, IWalletStats, MB_BigInt, WalletStats, WorldRecord, IWorldsManager } from '../types'
 import { EthAddress } from '@dcl/schemas'
 import SQL from 'sql-template-strings'
 import { withRetry } from '../logic/utils'
 
 export async function createWalletStatsComponent(
-  components: Pick<AppComponents, 'config' | 'database' | 'logs' | 'fetch'>
+  components: Pick<AppComponents, 'config' | 'database' | 'logs' | 'fetch' | 'worldsManager'>
 ): Promise<IWalletStats> {
   const logger = components.logs.getLogger('wallet-stats')
   const url = await components.config.getString('DCL_NAME_STATS_URL')
@@ -40,15 +40,22 @@ export async function createWalletStatsComponent(
   }
 
   async function fetchStoredData(wallet: string) {
-    const rows = await components.database.query<Pick<WorldRecord, 'name' | 'entity_id' | 'size'>>(SQL`
-        SELECT name, entity_id, size FROM worlds WHERE owner = ${wallet.toLowerCase()}`)
-    return rows.rows.map((row) => {
-      return {
-        name: row.name,
-        entityId: row.entity_id,
-        size: BigInt(row.size)
-      }
-    })
+    const rows = await components.database.query<Pick<WorldRecord, 'name'>>(SQL`
+        SELECT name FROM worlds WHERE owner = ${wallet.toLowerCase()}`)
+    
+    // Calculate total size from all scenes for each world
+    const worldsData = await Promise.all(
+      rows.rows.map(async (row) => {
+        const totalSize = await components.worldsManager.getTotalWorldSize(row.name)
+        return {
+          name: row.name,
+          entityId: null, // Deprecated, kept for compatibility
+          size: totalSize
+        }
+      })
+    )
+    
+    return worldsData
   }
 
   async function fetchBlockedStatus(wallet: string): Promise<Date | undefined> {

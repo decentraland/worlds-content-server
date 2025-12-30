@@ -59,3 +59,54 @@ export function extractWorldRuntimeMetadata(worldName: string, entity: Entity): 
     thumbnailFile: resolveFilename(entity.metadata?.display?.navmapThumbnail)
   }
 }
+
+export function buildWorldRuntimeMetadata(
+  worldName: string,
+  worldSettings: any,
+  scenes: any[]
+): WorldRuntimeMetadata {
+  // If world settings exist, use them as the primary source
+  if (worldSettings) {
+    function resolveFilenameInScenes(filename: string | undefined): string | undefined {
+      if (!filename) return undefined
+      for (const scene of scenes) {
+        const file = scene.entity?.content?.find((content: ContentMapping) => content.file === filename)
+        if (file) {
+          return file.hash
+        }
+      }
+      return undefined
+    }
+
+    return {
+      name: worldSettings.name || worldName,
+      description: worldSettings.description,
+      entityIds: scenes.map((s) => s.id),
+      fixedAdapter: worldSettings.fixedAdapter,
+      minimapDataImage: resolveFilenameInScenes(worldSettings.miniMapConfig?.dataImage),
+      minimapEstateImage: resolveFilenameInScenes(worldSettings.miniMapConfig?.estateImage),
+      minimapVisible: worldSettings.miniMapConfig?.visible ?? false,
+      skyboxFixedTime: worldSettings.skyboxConfig?.fixedTime,
+      skyboxTextures: worldSettings.skyboxConfig?.textures
+        ? worldSettings.skyboxConfig?.textures?.map((texture: string) => resolveFilenameInScenes(texture)!)
+        : undefined,
+      thumbnailFile: resolveFilenameInScenes(worldSettings.thumbnailFile)
+    }
+  }
+
+  // Fallback: if no world settings, derive from scenes (backward compatibility)
+  if (scenes.length > 0) {
+    const firstScene = scenes[0]
+    return extractWorldRuntimeMetadata(worldName, {
+      ...firstScene.entity,
+      id: firstScene.id
+    })
+  }
+
+  // Default empty metadata
+  return {
+    name: worldName,
+    entityIds: [],
+    minimapVisible: false
+  }
+}

@@ -41,6 +41,7 @@ export type DeploymentToValidate = {
 export type WorldRuntimeMetadata = {
   entityIds: string[]
   name: string
+  description?: string
   minimapVisible: boolean
   minimapDataImage?: string
   minimapEstateImage?: string
@@ -50,11 +51,40 @@ export type WorldRuntimeMetadata = {
   thumbnailFile?: string
 }
 
+export type WorldSettings = {
+  name: string
+  description?: string
+  miniMapConfig?: {
+    visible: boolean
+    dataImage?: string
+    estateImage?: string
+  }
+  skyboxConfig?: {
+    fixedTime?: number
+    textures?: string[]
+  }
+  fixedAdapter?: string
+  thumbnailFile?: string
+}
+
+export type WorldScene = {
+  id: string
+  worldName: string
+  deployer: string
+  deploymentAuthChain: AuthChain
+  entity: Entity
+  parcels: string[]
+  size: bigint
+  createdAt: Date
+  updatedAt: Date
+}
+
 export type WorldMetadata = {
-  entityId: string
+  entityId?: string // Deprecated: kept for backward compatibility
   acl?: AuthChain
   permissions: Permissions
   runtimeMetadata: WorldRuntimeMetadata
+  scenes: WorldScene[]
   blockedSince?: Date
   owner?: EthAddress
 }
@@ -150,11 +180,18 @@ export type IWorldsManager = {
   getDeployedWorldEntities(): Promise<Entity[]>
   getMetadataForWorld(worldName: string): Promise<WorldMetadata | undefined>
   getEntityForWorlds(worldNames: string[]): Promise<Entity[]>
-  deployScene(worldName: string, scene: Entity, owner: EthAddress): Promise<void>
+  deployScene(worldName: string, scene: Entity, owner: EthAddress, parcels: string[]): Promise<void>
+  undeployScene(worldName: string, parcels: string[]): Promise<void>
   storePermissions(worldName: string, permissions: Permissions): Promise<void>
   permissionCheckerForWorld(worldName: string): Promise<IPermissionChecker>
   undeploy(worldName: string): Promise<void>
   getContributableDomains(address: string): Promise<{ domains: ContributorDomain[]; count: number }>
+  getWorldScenes(worldName: string): Promise<WorldScene[]>
+  getOccupiedParcels(worldName: string): Promise<string[]>
+  checkParcelsAvailable(worldName: string, parcels: string[]): Promise<{ available: boolean; conflicts: string[] }>
+  updateWorldSettings(worldName: string, settings: WorldSettings): Promise<void>
+  getWorldSettings(worldName: string): Promise<WorldSettings | undefined>
+  getTotalWorldSize(worldName: string): Promise<bigint>
 }
 
 export type IPermissionsManager = {
@@ -367,6 +404,9 @@ export type WorldRecord = {
   entity: any
   permissions: Permissions
   size: bigint
+  world_settings: WorldSettings | null
+  description: string | null
+  thumbnail_hash: string | null
   created_at: Date
   updated_at: Date
   blocked_since: Date | null

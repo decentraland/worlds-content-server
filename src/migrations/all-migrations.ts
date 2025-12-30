@@ -13,6 +13,9 @@ import { migration as migration_0011 } from './0011_add_size_and_owner_columns'
 import { migration as migration_0012 } from './0012_store_world_owner_and_size'
 import { migration as migration_0013 } from './0013_create_blocked_table'
 import { migration as migration_0014 } from './0014_permissions_set_addresses_lowercase'
+import { migration as migration_0015 } from './0015_create_world_scenes_table'
+import { migration as migration_0016 } from './0016_add_world_settings_columns'
+import { migration as migration_0017 } from './0017_migrate_existing_scenes_to_world_scenes'
 
 export const allMigrations: Migration[] = [
   migration_0001,
@@ -28,5 +31,8 @@ export const allMigrations: Migration[] = [
   migration_0011,
   migration_0012,
   migration_0013,
-  migration_0014
+  migration_0014,
+  migration_0015,
+  migration_0016,
+  migration_0017
 ]

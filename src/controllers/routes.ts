@@ -25,6 +25,12 @@ import { garbageCollectionHandler } from './handlers/garbage-collection'
 import { getContributableDomainsHandler } from './handlers/contributor-handler'
 import { livekitWebhookHandler } from './handlers/livekit-webhook-handler'
 import { walletConnectedWorldHandler } from './handlers/wallet-connected-world-handler'
+import {
+  getScenesHandler,
+  getOccupiedParcelsHandler,
+  undeploySceneHandler
+} from './handlers/scenes-handler'
+import { getWorldSettingsHandler, updateWorldSettingsHandler } from './handlers/world-settings-handler'
 
 export async function setupRouter(globalContext: GlobalContext): Promise<Router<GlobalContext>> {
   const router = new Router<GlobalContext>()
@@ -46,6 +52,15 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   router.post('/entities', multipartParserWrapper(deployEntity))
   router.delete('/entities/:world_name', signedFetchMiddleware, undeployEntity)
   router.get('/available-content', availableContentHandler)
+
+  // Multi-scene management
+  router.get('/world/:world_name/scenes', getScenesHandler)
+  router.get('/world/:world_name/parcels', getOccupiedParcelsHandler)
+  router.delete('/world/:world_name/scenes', signedFetchMiddleware, undeploySceneHandler)
+
+  // World settings
+  router.get('/world/:world_name/settings', getWorldSettingsHandler)
+  router.put('/world/:world_name/settings', signedFetchMiddleware, updateWorldSettingsHandler)
 
   // consumption
   router.head('/ipfs/:hashId', headContentFile)

@@ -9,6 +9,9 @@ import { l1Contracts, L1Network } from '@dcl/catalyst-contracts'
 import { assertNotBlockedOrWithinInGracePeriod } from '../../logic/blocked'
 import { NotFoundError } from '@dcl/platform-server-commons'
 
+// OPTIMIZATION 1: Configurable scene limit
+const MAX_SCENES_IN_ABOUT = parseInt(process.env.MAX_SCENES_IN_ABOUT || '100')
+
 export async function worldAboutHandler({
   params,
   url,
@@ -32,10 +35,22 @@ export async function worldAboutHandler({
 
   const baseUrl = (await config.getString('HTTP_BASE_URL')) || `${url.protocol}//${url.host}`
 
-  // Create URNs for all scenes in the world
-  const scenesUrn = runtimeMetadata.entityIds.map(
+  // OPTIMIZATION 2: Limit number of scenes returned + warn if truncated
+  const entityIds = runtimeMetadata.entityIds.slice(0, MAX_SCENES_IN_ABOUT)
+  const truncated = runtimeMetadata.entityIds.length > MAX_SCENES_IN_ABOUT
+
+  // OPTIMIZATION 3: Lazy URN generation (only when needed)
+  const scenesUrn = entityIds.map(
     (entityId) => `urn:decentraland:entity:${entityId}?=&baseUrl=${baseUrl}/contents/`
   )
+
+  if (truncated) {
+    console.warn(
+      `World "${params.world_name}" has ${runtimeMetadata.entityIds.length} scenes, ` +
+      `but only ${MAX_SCENES_IN_ABOUT} are included in /about response. ` +
+      `Consider using /world/${params.world_name}/scenes for full list.`
+    )
+  }
 
   const ethNetwork = await config.requireString('ETH_NETWORK')
   const contracts = l1Contracts[ethNetwork as L1Network]
@@ -91,7 +106,7 @@ export async function worldAboutHandler({
     configurations: {
       networkId: contracts.chainId,
       globalScenesUrn: globalScenesURN ? globalScenesURN.split(' ') : [],
-      scenesUrn, // Multiple scenes support
+      scenesUrn, // Limited to MAX_SCENES_IN_ABOUT
       minimap,
       skybox,
       realmName: runtimeMetadata.name,
@@ -113,6 +128,15 @@ export async function worldAboutHandler({
     }
   }
 
+  // OPTIMIZATION 4: Add metadata about truncation
+  if (truncated) {
+    ;(body as any).sceneCount = {
+      total: runtimeMetadata.entityIds.length,
+      included: entityIds.length,
+      message: `This world has ${runtimeMetadata.entityIds.length} scenes. Use GET /world/${params.world_name}/scenes for the complete list.`
+    }
+  }
+
   return {
     status: 200,
     body
@@ -131,3 +155,4 @@ async function resolveFixedAdapter(
 
   return `fixed-adapter:signed-login:${baseUrl}/get-comms-adapter/${roomPrefix}${worldName.toLowerCase()}`
 }
+

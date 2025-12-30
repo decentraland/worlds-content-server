@@ -61,11 +61,12 @@ export function createEntityDeployer(
 
     // determine the name to use for deploying the world
     const worldName = entity.metadata.worldConfiguration.name
-    logger.debug(`Deployment for scene "${entity.id}" under world name "${worldName}"`)
+    const parcels = entity.pointers // These are the parcel coordinates
+    logger.debug(`Deployment for scene "${entity.id}" under world name "${worldName}" at parcels ${parcels.join(', ')}`)
 
     const owner = (await components.nameOwnership.findOwners([worldName])).get(worldName)
 
-    await worldsManager.deployScene(worldName, entity, owner!)
+    await worldsManager.deployScene(worldName, entity, owner!, parcels)
 
     const kind = worldName.endsWith('dcl.eth') ? 'dcl-name' : 'ens-name'
     metrics.increment('world_deployments_counter', { kind })
@@ -99,8 +100,8 @@ export function createEntityDeployer(
     const worldUrl = `${baseUrl}/world/${worldName}`
     return {
       message: [
-        `Your scene was deployed to a Worlds Content Server!`,
-        `Access world ${worldName}: https://play.decentraland.org/?realm=${encodeURIComponent(worldUrl)}`
+        `Your scene was deployed to World "${worldName}" at parcels: ${parcels.join(', ')}!`,
+        `Access world: https://play.decentraland.org/?realm=${encodeURIComponent(worldUrl)}`
       ].join('\n')
     }
   }

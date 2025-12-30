@@ -5,12 +5,14 @@ import {
   Permissions,
   WorldMetadata,
   WorldRecord,
+  WorldScene,
+  WorldSettings,
   ContributorDomain
 } from '../types'
 import { streamToBuffer } from '@dcl/catalyst-storage'
 import { Entity, EthAddress } from '@dcl/schemas'
 import SQL from 'sql-template-strings'
-import { extractWorldRuntimeMetadata } from '../logic/world-runtime-metadata-utils'
+import { extractWorldRuntimeMetadata, buildWorldRuntimeMetadata } from '../logic/world-runtime-metadata-utils'
 import { createPermissionChecker, defaultPermissions } from '../logic/permissions-checker'
 
 export async function createWorldsManagerComponent({
@@ -56,29 +58,31 @@ export async function createWorldsManagerComponent({
     }
 
     const row = result.rows[0]
-    const tempWorldMetadata: Partial<WorldMetadata> = {}
-    if (row.entity) {
-      tempWorldMetadata.entityId = row.entity_id
-      tempWorldMetadata.runtimeMetadata = extractWorldRuntimeMetadata(worldName, { ...row.entity, id: row.entity_id })
-    }
-    if (row.permissions) {
-      tempWorldMetadata.permissions = row.permissions
-    }
-    if (row.blocked_since) {
-      tempWorldMetadata.blockedSince = row.blocked_since
-    }
-    if (row.owner) {
-      tempWorldMetadata.owner = row.owner
+    
+    // Get all scenes for this world
+    const scenes = await getWorldScenes(worldName)
+    
+    // Build runtime metadata from world settings or scenes
+    const runtimeMetadata = buildWorldRuntimeMetadata(worldName, row.world_settings, scenes)
+    
+    const metadata: WorldMetadata = {
+      entityId: row.entity_id, // Deprecated, kept for backward compatibility
+      permissions: row.permissions,
+      runtimeMetadata,
+      scenes,
+      owner: row.owner,
+      blockedSince: row.blocked_since ? new Date(row.blocked_since) : undefined
     }
 
-    return {
-      ...JSON.parse(JSON.stringify(tempWorldMetadata)),
-      // this field is treated separately so that it does not get serialized to string
-      blockedSince: tempWorldMetadata.blockedSince ? new Date(tempWorldMetadata.blockedSince) : undefined
-    } as WorldMetadata
+    return metadata
   }
 
-  async function deployScene(worldName: string, scene: Entity, owner: EthAddress): Promise<void> {
+  async function deployScene(
+    worldName: string,
+    scene: Entity,
+    owner: EthAddress,
+    parcels: string[]
+  ): Promise<void> {
     const content = await storage.retrieve(`${scene.id}.auth`)
     const deploymentAuthChainString = content ? (await streamToBuffer(await content!.asStream())).toString() : '{}'
     const deploymentAuthChain = JSON.parse(deploymentAuthChainString)
@@ -88,24 +92,76 @@ export async function createWorldsManagerComponent({
     const fileInfos = await storage.fileInfoMultiple(scene.content?.map((c) => c.hash) || [])
     const size = scene.content?.reduce((acc, c) => acc + (fileInfos.get(c.hash)?.size || 0), 0) || 0
 
-    const sql = SQL`
-              INSERT INTO worlds (name, entity_id, owner, deployer, deployment_auth_chain, entity, permissions, size, created_at, updated_at)
-              VALUES (${worldName.toLowerCase()}, ${scene.id},
-                      ${owner?.toLowerCase()}, ${deployer}, ${deploymentAuthChainString}::json,
-                      ${scene}::json,
-                      ${JSON.stringify(defaultPermissions())}::json,
-                      ${size},
-                      ${new Date()}, ${new Date()})
-              ON CONFLICT (name) 
-                  DO UPDATE SET entity_id = ${scene.id}, 
-                                owner = ${owner?.toLowerCase()},
-                                deployer = ${deployer},
-                                entity = ${scene}::json,
-                                size = ${size},
-                                deployment_auth_chain = ${deploymentAuthChainString}::json,
-                                updated_at = ${new Date()}
-    `
-    await database.query(sql)
+    // Use a transaction to ensure atomicity
+    await database.query('BEGIN')
+
+    try {
+      // Ensure world record exists
+      const worldExists = await database.query(SQL`SELECT name FROM worlds WHERE name = ${worldName.toLowerCase()}`)
+
+      if (worldExists.rowCount === 0) {
+        await database.query(SQL`
+          INSERT INTO worlds (name, owner, permissions, created_at, updated_at)
+          VALUES (
+            ${worldName.toLowerCase()}, 
+            ${owner?.toLowerCase()}, 
+            ${JSON.stringify(defaultPermissions())}::json,
+            ${new Date()}, 
+            ${new Date()}
+          )
+        `)
+      } else {
+        // Update owner if changed
+        await database.query(SQL`
+          UPDATE worlds
+          SET owner = ${owner?.toLowerCase()},
+              updated_at = ${new Date()}
+          WHERE name = ${worldName.toLowerCase()}
+        `)
+      }
+
+      // Delete any existing scenes on these parcels
+      await database.query(SQL`
+        DELETE FROM world_scenes 
+        WHERE world_name = ${worldName.toLowerCase()} 
+        AND parcels && ${parcels}::text[]
+      `)
+
+      // Insert new scene
+      await database.query(SQL`
+        INSERT INTO world_scenes (
+          world_name, entity_id, deployer, deployment_auth_chain, 
+          entity, parcels, size, created_at, updated_at
+        ) VALUES (
+          ${worldName.toLowerCase()}, 
+          ${scene.id},
+          ${deployer}, 
+          ${deploymentAuthChainString}::json,
+          ${scene}::json,
+          ${parcels}::text[],
+          ${size},
+          ${new Date()}, 
+          ${new Date()}
+        )
+      `)
+
+      // Keep backward compatibility: update worlds table with latest deployment
+      await database.query(SQL`
+        UPDATE worlds
+        SET entity_id = ${scene.id}, 
+            deployer = ${deployer},
+            entity = ${scene}::json,
+            size = ${size},
+            deployment_auth_chain = ${deploymentAuthChainString}::json,
+            updated_at = ${new Date()}
+        WHERE name = ${worldName.toLowerCase()}
+      `)
+
+      await database.query('COMMIT')
+    } catch (error) {
+      await database.query('ROLLBACK')
+      throw error
+    }
   }
 
   async function storePermissions(worldName: string, permissions: Permissions): Promise<void> {
@@ -228,6 +284,108 @@ export async function createWorldsManagerComponent({
     }
   }
 
+  async function getWorldScenes(worldName: string): Promise<WorldScene[]> {
+    const result = await database.query<{
+      id: number
+      world_name: string
+      entity_id: string
+      deployer: string
+      deployment_auth_chain: any
+      entity: any
+      parcels: string[]
+      size: string
+      created_at: Date
+      updated_at: Date
+    }>(SQL`
+      SELECT * FROM world_scenes 
+      WHERE world_name = ${worldName.toLowerCase()}
+      ORDER BY created_at
+    `)
+
+    return result.rows.map((row) => ({
+      id: row.entity_id,
+      worldName: row.world_name,
+      deployer: row.deployer,
+      deploymentAuthChain: row.deployment_auth_chain,
+      entity: row.entity,
+      parcels: row.parcels,
+      size: BigInt(row.size),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    }))
+  }
+
+  async function undeployScene(worldName: string, parcels: string[]): Promise<void> {
+    await database.query(SQL`
+      DELETE FROM world_scenes 
+      WHERE world_name = ${worldName.toLowerCase()} 
+      AND parcels && ${parcels}::text[]
+    `)
+  }
+
+  async function getOccupiedParcels(worldName: string): Promise<string[]> {
+    const result = await database.query<{ parcel: string }>(SQL`
+      SELECT DISTINCT unnest(parcels) as parcel 
+      FROM world_scenes 
+      WHERE world_name = ${worldName.toLowerCase()}
+    `)
+
+    return result.rows.map((row) => row.parcel)
+  }
+
+  async function checkParcelsAvailable(
+    worldName: string,
+    parcels: string[]
+  ): Promise<{ available: boolean; conflicts: string[] }> {
+    if (parcels.length === 0) {
+      return { available: true, conflicts: [] }
+    }
+
+    const result = await database.query<{ occupied: string[] }>(SQL`
+      SELECT ARRAY(
+        SELECT DISTINCT p 
+        FROM world_scenes, unnest(parcels) as p
+        WHERE world_name = ${worldName.toLowerCase()}
+        AND p = ANY(${parcels}::text[])
+      ) as occupied
+    `)
+
+    const conflicts = result.rows[0]?.occupied || []
+    return {
+      available: conflicts.length === 0,
+      conflicts
+    }
+  }
+
+  async function updateWorldSettings(worldName: string, settings: WorldSettings): Promise<void> {
+    await database.query(SQL`
+      UPDATE worlds 
+      SET world_settings = ${JSON.stringify(settings)}::json,
+          description = ${settings.description || null},
+          thumbnail_hash = ${settings.thumbnailFile || null},
+          updated_at = ${new Date()}
+      WHERE name = ${worldName.toLowerCase()}
+    `)
+  }
+
+  async function getWorldSettings(worldName: string): Promise<WorldSettings | undefined> {
+    const result = await database.query<{ world_settings: WorldSettings }>(SQL`
+      SELECT world_settings FROM worlds WHERE name = ${worldName.toLowerCase()}
+    `)
+
+    return result.rows[0]?.world_settings || undefined
+  }
+
+  async function getTotalWorldSize(worldName: string): Promise<bigint> {
+    const result = await database.query<{ total_size: string }>(SQL`
+      SELECT COALESCE(SUM(size), 0) as total_size 
+      FROM world_scenes 
+      WHERE world_name = ${worldName.toLowerCase()}
+    `)
+
+    return BigInt(result.rows[0]?.total_size || 0)
+  }
+
   return {
     getRawWorldRecords,
     getDeployedWorldCount,
@@ -235,9 +393,16 @@ export async function createWorldsManagerComponent({
     getMetadataForWorld,
     getEntityForWorlds,
     deployScene,
+    undeployScene,
     storePermissions,
     permissionCheckerForWorld,
     undeploy,
-    getContributableDomains
+    getContributableDomains,
+    getWorldScenes,
+    getOccupiedParcels,
+    checkParcelsAvailable,
+    updateWorldSettings,
+    getWorldSettings,
+    getTotalWorldSize
   }
 }

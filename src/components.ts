@@ -108,16 +108,16 @@ export async function initComponents(): Promise<AppComponents> {
 
   const database = await createDatabaseComponent({ config, logs, metrics })
 
-  const walletStats = await createWalletStatsComponent({ config, database, fetch, logs })
-
-  const limitsManager = await createLimitsManagerComponent({ config, fetch, logs, nameOwnership, walletStats })
-
   const worldsManager = await createWorldsManagerComponent({
     logs,
     database,
     nameDenyListChecker,
     storage
   })
+
+  const walletStats = await createWalletStatsComponent({ config, database, fetch, logs, worldsManager })
+
+  const limitsManager = await createLimitsManagerComponent({ config, fetch, logs, nameOwnership, walletStats })
   const worldsIndexer = await createWorldsIndexerComponent({ worldsManager })
   const permissionsManager = await createPermissionsManagerComponent({ worldsManager })
 
