@@ -125,7 +125,7 @@ export async function initComponents(): Promise<AppComponents> {
 
   const limitsManager = await createLimitsManagerComponent({ config, fetch, logs, nameOwnership, walletStats })
   const worldsIndexer = await createWorldsIndexerComponent({ worldsManager })
-  const permissionsManager = await createPermissionsManagerComponent({ worldsManager })
+  const permissionsManager = await createPermissionsManagerComponent({ database, worldsManager })
 
   const entityDeployer = createEntityDeployer({
     config,

@@ -19,7 +19,8 @@ import { Entity, EthAddress } from '@dcl/schemas'
 import SQL from 'sql-template-strings'
 import { PoolClient } from 'pg'
 import { buildWorldRuntimeMetadata } from '../logic/world-runtime-metadata-utils'
-import { createPermissionChecker, defaultPermissions } from '../logic/permissions-checker'
+import { createPermissionCheckerWithRecords, defaultPermissions } from '../logic/permissions-checker'
+import { AllowListPermission, WorldPermissionRecord } from '../types'
 
 type BoundingRow = { min_x: number; max_x: number; min_y: number; max_y: number }
 
@@ -266,7 +267,37 @@ export async function createWorldsManagerComponent({
 
   async function permissionCheckerForWorld(worldName: string): Promise<IPermissionChecker> {
     const metadata = await getMetadataForWorld(worldName)
-    return createPermissionChecker(metadata?.permissions || defaultPermissions())
+    const permissions = metadata?.permissions || defaultPermissions()
+
+    // Get permission records from the world_permissions table
+    const permissionRecords = await getWorldPermissionRecords(worldName)
+
+    return createPermissionCheckerWithRecords(permissions, permissionRecords)
+  }
+
+  async function getWorldPermissionRecords(worldName: string): Promise<WorldPermissionRecord[]> {
+    const result = await database.query<{
+      id: number
+      world_name: string
+      permission_type: string
+      address: string
+      parcels: string[] | null
+      created_at: Date
+      updated_at: Date
+    }>(SQL`
+      SELECT * FROM world_permissions 
+      WHERE world_name = ${worldName.toLowerCase()}
+    `)
+
+    return result.rows.map((row) => ({
+      id: row.id,
+      worldName: row.world_name,
+      permissionType: row.permission_type as AllowListPermission,
+      address: row.address,
+      parcels: row.parcels,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    }))
   }
 
   async function undeployWorld(worldName: string): Promise<void> {
@@ -293,27 +324,18 @@ export async function createWorldsManagerComponent({
   }
 
   async function getContributableDomains(address: string): Promise<{ domains: ContributorDomain[]; count: number }> {
+    // Use the new world_permissions table for efficient lookups
     const result = await database.query<ContributorDomain>(SQL`
       SELECT 
-        wp.name,
-        array_agg(DISTINCT wp.permission) as user_permissions,
-        COALESCE(sizes.total_size, 0)::text as size,
-        wp.owner
-      FROM (
-        SELECT w.name, w.owner, perm.permission
-        FROM worlds w, json_each_text(w.permissions) AS perm(permission, permissionValue)
-        WHERE perm.permission = ANY(ARRAY['deployment', 'streaming'])
-          AND EXISTS (
-            SELECT 1 FROM json_array_elements_text(perm.permissionValue::json -> 'wallets') as wallet 
-            WHERE LOWER(wallet) = LOWER(${address})
-          )
-      ) AS wp
-      LEFT JOIN (
-        SELECT world_name, SUM(size) as total_size
-        FROM world_scenes
-        GROUP BY world_name
-      ) AS sizes ON wp.name = sizes.world_name
-      GROUP BY wp.name, wp.owner, sizes.total_size
+        w.name,
+        array_agg(DISTINCT wp.permission_type) as user_permissions,
+        COALESCE(SUM(ws.size), 0)::text as size,
+        w.owner
+      FROM world_permissions wp
+      JOIN worlds w ON wp.world_name = w.name
+      LEFT JOIN world_scenes ws ON w.name = ws.world_name
+      WHERE LOWER(wp.address) = LOWER(${address})
+      GROUP BY w.name, w.owner
     `)
 
     return {

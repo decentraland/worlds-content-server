@@ -215,8 +215,25 @@ export type IPermissionsManager = {
   getPermissions(worldName: string): Promise<Permissions>
   getOwner(worldName: string): Promise<EthAddress | undefined>
   storePermissions(worldName: string, permissions: Permissions): Promise<void>
-  addAddressToAllowList(worldName: string, permission: Permission, address: string): Promise<void>
-  deleteAddressFromAllowList(worldName: string, permission: Permission, address: string): Promise<void>
+  addAddressToAllowList(
+    worldName: string,
+    permission: AllowListPermission,
+    address: string,
+    parcels?: string[]
+  ): Promise<void>
+  deleteAddressFromAllowList(worldName: string, permission: AllowListPermission, address: string): Promise<void>
+  getAddressPermissions(
+    worldName: string,
+    permission: AllowListPermission,
+    address: string
+  ): Promise<WorldPermissionRecord | undefined>
+  getWorldPermissions(worldName: string, permission: AllowListPermission): Promise<WorldPermissionRecord[]>
+  updateAddressParcels(
+    worldName: string,
+    permission: AllowListPermission,
+    address: string,
+    parcels: string[] | null
+  ): Promise<void>
 }
 
 export type INotificationService = {
@@ -271,8 +288,28 @@ export type Permissions = {
 
 export type Permission = keyof Permissions
 
+// AllowListPermission is a subset of Permission that only includes permissions that can be allow-list based
+export type AllowListPermission = 'deployment' | 'streaming'
+
+// Record stored in world_permissions table
+export type WorldPermissionRecord = {
+  id: number
+  worldName: string
+  permissionType: AllowListPermission
+  address: string
+  parcels: string[] | null // null = world-wide, array = specific parcels
+  createdAt: Date
+  updatedAt: Date
+}
+
 export type IPermissionChecker = {
   checkPermission(permission: Permission, ethAddress: EthAddress, extras?: any): Promise<boolean>
+  // Check if address can deploy/stream to specific parcels
+  checkPermissionForParcels(
+    permission: AllowListPermission,
+    ethAddress: EthAddress,
+    parcels: string[]
+  ): Promise<boolean>
 }
 
 export type WorldsIndex = {

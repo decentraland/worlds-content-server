@@ -6,10 +6,11 @@ This document describes the database schema for the Worlds Content Server. The s
 
 The database contains the following main tables:
 
-1. **`worlds`** - Stores world metadata and permissions
+1. **`worlds`** - Stores world metadata and access permissions.
 2. **`world_scenes`** - Stores individual scene deployments within worlds (multi-scene support)
-3. **`blocked`** - Stores blocked wallet addresses
-4. **`migrations`** - Tracks executed database migrations (internal, managed automatically)
+3. **`world_permissions`** - Stores deployment and streaming permissions with optional parcel granularity
+4. **`blocked`** - Stores blocked wallet addresses
+5. **`migrations`** - Tracks executed database migrations (internal, managed automatically)
 
 ---
 
@@ -37,6 +38,16 @@ erDiagram
         TIMESTAMP created_at "Creation timestamp"
     }
 
+    world_permissions {
+        SERIAL id PK "Auto-increment ID"
+        VARCHAR world_name FK "References worlds(name)"
+        VARCHAR permission_type "deployment or streaming"
+        VARCHAR address "Ethereum address (lowercase)"
+        TEXT_ARRAY parcels "Allowed parcels (NULL = world-wide)"
+        TIMESTAMP created_at "Creation timestamp"
+        TIMESTAMP updated_at "Update timestamp"
+    }
+
     blocked {
         VARCHAR wallet PK "Ethereum address"
         TIMESTAMP created_at "Block timestamp"
@@ -50,13 +61,16 @@ erDiagram
     }
 
     worlds ||--o{ world_scenes : "contains"
+    worlds ||--o{ world_permissions : "has permissions"
     worlds ||--o{ blocked : "owner checked against (application logic)"
 ```
 
 **Relationship Notes:**
 
 - `worlds` → `world_scenes`: One-to-many relationship (one world contains multiple scenes)
+- `worlds` → `world_permissions`: One-to-many relationship (one world has multiple permission grants)
 - `world_scenes.world_name` references `worlds.name` with CASCADE delete
+- `world_permissions.world_name` references `worlds.name` with CASCADE delete
 - `worlds.owner` and `world_scenes.deployer` store Ethereum addresses (validated via blockchain)
 - `blocked.wallet` can be checked against `worlds.owner` for access control (application-level validation)
 - The `migrations` table is managed automatically by the migration system
@@ -259,6 +273,65 @@ The `deployment_auth_chain` column stores an array of authentication links:
 
 ---
 
+## Table: `world_permissions`
+
+Stores granular deployment and streaming permissions for worlds. This table enables parcel-level permission control, allowing world owners to grant permissions to specific wallets for specific parcels.
+
+### Columns
+
+| Column            | Type      | Nullable | Description                                                                                                      |
+| ----------------- | --------- | -------- | ---------------------------------------------------------------------------------------------------------------- |
+| `id`              | SERIAL    | NOT NULL | **Primary Key**. Auto-incrementing unique identifier.                                                            |
+| `world_name`      | VARCHAR   | NOT NULL | **Foreign Key** → `worlds(name)`. The world this permission belongs to.                                          |
+| `permission_type` | VARCHAR   | NOT NULL | Type of permission: `'deployment'` or `'streaming'`.                                                             |
+| `address`         | VARCHAR   | NOT NULL | Ethereum address of the wallet being granted permission (lowercase).                                             |
+| `parcels`         | TEXT[]    | NULL     | Array of parcel coordinates (e.g., `['0,0', '1,0']`). **NULL = world-wide permission** (can access all parcels). |
+| `created_at`      | TIMESTAMP | NOT NULL | Timestamp when the permission was granted.                                                                       |
+| `updated_at`      | TIMESTAMP | NOT NULL | Timestamp when the permission was last updated.                                                                  |
+
+### Indexes
+
+- **Primary Key**: `id`
+- **Unique Constraint**: `(world_name, permission_type, address)` - Each wallet can only have one permission record per type per world
+- **Index**: `world_permissions_address_idx` on `address` column (for fast wallet lookups)
+- **Index**: `world_permissions_world_permission_idx` on `(world_name, permission_type)` (for listing permissions)
+- **GIN Index**: `world_permissions_parcels_idx` on `parcels` column (for parcel-based queries)
+
+### Constraints
+
+- **Foreign Key**: `world_name` REFERENCES `worlds(name)` ON DELETE CASCADE
+  - When a world is deleted, all its permissions are automatically deleted
+
+### Permission Checking Logic
+
+When checking if a wallet can deploy/stream to parcels `["0,0", "1,0"]`:
+
+1. **World-wide permission**: If `parcels` is NULL → ✅ Allowed for all parcels
+2. **Parcel-specific permission**: If `parcels` is an array:
+   - Check if all target parcels are in the `parcels` array
+   - If yes → ✅ Allowed
+   - If any parcel is missing → ❌ Denied
+
+### Example Data
+
+| world_name      | permission_type | address        | parcels         |
+| --------------- | --------------- | -------------- | --------------- |
+| myworld.dcl.eth | deployment      | 0xadmin1...    | NULL            |
+| myworld.dcl.eth | deployment      | 0xbuilder1...  | {0,0; 1,0; 0,1} |
+| myworld.dcl.eth | streaming       | 0xstreamer1... | NULL            |
+| myworld.dcl.eth | streaming       | 0xstreamer2... | {0,0}           |
+
+### Business Rules
+
+1. **Backward Compatibility**: The `worlds.permissions` JSON column is kept in sync for backward compatibility
+2. **Address Normalization**: All addresses are stored in lowercase
+3. **NULL vs Empty Array**:
+   - `NULL` = world-wide permission (can access any parcel)
+   - Empty array `[]` = no parcels allowed (effectively no permission)
+4. **Unique Permission**: A wallet can only have one deployment and one streaming permission per world
+
+---
+
 ## Table: `blocked`
 
 Stores wallet addresses that have been blocked from deploying or accessing worlds.
@@ -293,5 +366,6 @@ Tracks which database migrations have been executed. This table is managed autom
 
 - **Migrations**: `src/migrations/`
 - **World Manager**: `src/adapters/worlds-manager.ts`
+- **Permissions Manager**: `src/adapters/permissions-manager.ts`
 - **Permissions Checker**: `src/logic/permissions-checker.ts`
-- **Types**: `src/types.ts` (see `WorldRecord`, `Permissions`, `BlockedRecord`)
+- **Types**: `src/types.ts` (see `WorldRecord`, `Permissions`, `WorldPermissionRecord`, `BlockedRecord`)

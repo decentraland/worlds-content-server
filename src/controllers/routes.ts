@@ -13,7 +13,10 @@ import { castAdapterHandler } from './handlers/cast-adapter-handler'
 import { wellKnownComponents } from '@dcl/platform-crypto-middleware'
 import {
   deletePermissionsAddressHandler,
+  getAddressPermissionsHandler,
   getPermissionsHandler,
+  getWorldPermissionsDetailedHandler,
+  patchAddressParcelsHandler,
   postPermissionsHandler,
   putPermissionsAddressHandler
 } from './handlers/permissions-handlers'
@@ -79,6 +82,12 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
 
   router.get('/world/:world_name/permissions', getPermissionsHandler)
   router.post('/world/:world_name/permissions/:permission_name', signedFetchMiddleware, postPermissionsHandler)
+
+  // Detailed permission list (with parcel info)
+  router.get('/world/:world_name/permissions/:permission_name/list', getWorldPermissionsDetailedHandler)
+
+  // Address-specific permission endpoints
+  router.get('/world/:world_name/permissions/:permission_name/:address', getAddressPermissionsHandler)
   router.put(
     '/world/:world_name/permissions/:permission_name/:address',
     signedFetchMiddleware,
@@ -88,6 +97,13 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
     '/world/:world_name/permissions/:permission_name/:address',
     signedFetchMiddleware,
     deletePermissionsAddressHandler
+  )
+
+  // Update parcels for an existing permission
+  router.patch(
+    '/world/:world_name/permissions/:permission_name/:address/parcels',
+    signedFetchMiddleware,
+    patchAddressParcelsHandler
   )
 
   router.get('/wallet/:wallet/stats', walletStatsHandler)
