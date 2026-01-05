@@ -58,13 +58,13 @@ export async function createWorldsManagerComponent({
     }
 
     const row = result.rows[0]
-    
+
     // Get all scenes for this world
     const scenes = await getWorldScenes(worldName)
-    
+
     // Build runtime metadata from world settings or scenes
     const runtimeMetadata = buildWorldRuntimeMetadata(worldName, row.world_settings, scenes)
-    
+
     const metadata: WorldMetadata = {
       entityId: row.entity_id, // Deprecated, kept for backward compatibility
       permissions: row.permissions,
@@ -77,12 +77,7 @@ export async function createWorldsManagerComponent({
     return metadata
   }
 
-  async function deployScene(
-    worldName: string,
-    scene: Entity,
-    owner: EthAddress,
-    parcels: string[]
-  ): Promise<void> {
+  async function deployScene(worldName: string, scene: Entity, owner: EthAddress, parcels: string[]): Promise<void> {
     const content = await storage.retrieve(`${scene.id}.auth`)
     const deploymentAuthChainString = content ? (await streamToBuffer(await content!.asStream())).toString() : '{}'
     const deploymentAuthChain = JSON.parse(deploymentAuthChainString)
