@@ -1,14 +1,18 @@
 import {
   AppComponents,
   ContributorDomain,
+  GetWorldScenesFilters,
+  GetWorldScenesResult,
   IPermissionChecker,
   IWorldsManager,
   Permissions,
   WorldMetadata,
-  WorldRecord
+  WorldRecord,
+  WorldScene,
+  WorldSettings
 } from '../../src/types'
 import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage'
-import { Entity } from '@dcl/schemas'
+import { Entity, EthAddress, PaginatedParameters } from '@dcl/schemas'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { extractWorldRuntimeMetadata } from '../../src/logic/world-runtime-metadata-utils'
 import { createPermissionChecker, defaultPermissions } from '../../src/logic/permissions-checker'
@@ -25,15 +29,11 @@ export async function createWorldsManagerMockComponent({
         const authChain = JSON.parse((await streamToBuffer(await content?.asStream())).toString())
         worlds.push({
           name: entity.metadata.worldConfiguration.name,
-          deployer: authChain[0].payload,
-          entity_id: entity.id,
-          deployment_auth_chain: authChain,
-          entity: entity.metadata,
+          owner: authChain[0].payload,
+          permissions: { ...defaultPermissions() },
+          spawn_coordinates: null,
           created_at: new Date(1706019701900),
           updated_at: new Date(1706019701900),
-          permissions: { ...defaultPermissions() },
-          size: 0n,
-          owner: authChain[0].payload,
           blocked_since: null
         })
       }
@@ -43,20 +43,15 @@ export async function createWorldsManagerMockComponent({
 
   async function getEntityForWorld(worldName: string): Promise<Entity | undefined> {
     const metadata = await getMetadataForWorld(worldName)
-    if (!metadata || !metadata.entityId) {
+    if (!metadata || !metadata.scenes || metadata.scenes.length === 0) {
       return undefined
     }
 
-    const content = await storage.retrieve(metadata.entityId)
-    if (!content) {
-      return undefined
-    }
-
-    const json = JSON.parse((await streamToBuffer(await content?.asStream())).toString())
-
+    // Return the first scene's entity for backward compatibility
+    const scene = metadata.scenes[0]
     return {
-      ...json,
-      id: metadata.entityId
+      ...scene.entity,
+      id: scene.id
     }
   }
 
@@ -79,11 +74,52 @@ export async function createWorldsManagerMockComponent({
     )
   }
 
-  async function deployScene(worldName: string, scene: Entity): Promise<void> {
+  async function deployScene(worldName: string, scene: Entity, owner: EthAddress, parcels: string[]): Promise<void> {
+    const existingMetadata = await getMetadataForWorld(worldName)
+    const newScene: WorldScene = {
+      id: scene.id,
+      worldName: worldName.toLowerCase(),
+      deployer: owner,
+      deploymentAuthChain: [],
+      entity: scene,
+      parcels,
+      size: 0n,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    }
+
+    // Filter out existing scenes on these parcels and add the new scene
+    const existingScenes = existingMetadata?.scenes || []
+    const filteredScenes = existingScenes.filter((s) => !s.parcels.some((p) => parcels.includes(p)))
+
     await storeWorldMetadata(worldName, {
-      entityId: scene.id,
-      runtimeMetadata: extractWorldRuntimeMetadata(worldName, scene)
+      scenes: [...filteredScenes, newScene],
+      runtimeMetadata: extractWorldRuntimeMetadata(worldName, scene),
+      owner
     })
+  }
+
+  async function undeployScene(_worldName: string, _parcels: string[]): Promise<void> {
+    // Mock implementation - no-op
+  }
+
+  async function getWorldScenes(
+    _filters?: GetWorldScenesFilters,
+    _options?: PaginatedParameters
+  ): Promise<GetWorldScenesResult> {
+    return { scenes: [], total: 0 }
+  }
+
+  async function updateWorldSettings(_worldName: string, _settings: WorldSettings): Promise<void> {
+    // Mock implementation - no-op
+  }
+
+  async function getWorldSettings(_worldName: string): Promise<WorldSettings | undefined> {
+    return undefined
+  }
+
+  async function getTotalWorldSize(_worldName: string): Promise<bigint> {
+    return 0n
   }
 
   async function storePermissions(worldName: string, permissions: Permissions): Promise<void> {
@@ -102,23 +138,12 @@ export async function createWorldsManagerMockComponent({
     return acc
   }
 
-  async function getDeployedWorldEntities(): Promise<Entity[]> {
-    const worlds: Entity[] = []
-    for await (const key of storage.allFileIds('name-')) {
-      const entity = await getEntityForWorld(key.substring(5))
-      if (entity) {
-        worlds.push(entity)
-      }
-    }
-    return worlds
-  }
-
   async function permissionCheckerForWorld(worldName: string): Promise<IPermissionChecker> {
     const metadata = await getMetadataForWorld(worldName)
     return createPermissionChecker(metadata?.permissions || defaultPermissions())
   }
 
-  async function undeploy(worldName: string): Promise<void> {
+  async function undeployWorld(worldName: string): Promise<void> {
     await storage.delete([`name-${worldName.toLowerCase()}`])
   }
 
@@ -164,12 +189,16 @@ export async function createWorldsManagerMockComponent({
     getContributableDomains,
     getRawWorldRecords,
     getDeployedWorldCount,
-    getDeployedWorldEntities,
     getMetadataForWorld,
     getEntityForWorlds,
     deployScene,
+    undeployScene,
     storePermissions,
     permissionCheckerForWorld,
-    undeploy
+    undeployWorld,
+    getWorldScenes,
+    updateWorldSettings,
+    getWorldSettings,
+    getTotalWorldSize
   }
 }
