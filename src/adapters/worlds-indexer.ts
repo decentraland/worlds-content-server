@@ -1,4 +1,4 @@
-import { AppComponents, IWorldsIndexer, WorldData, WorldsIndex } from '../types'
+import { AppComponents, IWorldsIndexer, SceneData, WorldData, WorldScene, WorldsIndex } from '../types'
 import { ContentMapping } from '@dcl/schemas/dist/misc/content-mapping'
 
 export async function createWorldsIndexerComponent({
@@ -9,7 +9,17 @@ export async function createWorldsIndexerComponent({
     const index: WorldData[] = []
 
     for (const world of worlds) {
-      const scenes = await worldsManager.getWorldScenes(world.name)
+      // Retrieve only the first scene for the world
+      let scenes: WorldScene[] = []
+
+      if (world.spawn_coordinates) {
+        const { scenes: spawnScenes } = await worldsManager.getWorldScenes(
+          { worldName: world.name, coordinates: world.spawn_coordinates ? [world.spawn_coordinates] : undefined },
+          { limit: 1 }
+        )
+
+        scenes = spawnScenes
+      }
 
       // Skip worlds with no scenes
       if (scenes.length === 0) {
