@@ -1,48 +1,52 @@
-import { HandlerContextWithPath } from '../../types'
 import { IHttpServerComponent } from '@well-known-components/interfaces'
-import { DecentralandSignatureContext } from '@dcl/platform-server-commons'
+import { InvalidRequestError, NotAuthorizedError, getPaginationParams } from '@dcl/platform-server-commons'
+import { DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
+import { HandlerContextWithPath } from '../../types'
+
+// Validate coordinate format (x,y where x and y are integers)
+const COORDINATE_REGEX = /^-?\d+,-?\d+$/
+
+function validateCoordinate(coordinate: string): void {
+  if (!COORDINATE_REGEX.test(coordinate)) {
+    throw new InvalidRequestError(`Invalid coordinate format: ${coordinate}. Expected format: x,y (e.g., 0,0 or -1,2)`)
+  }
+}
 
 export async function getScenesHandler(
   ctx: HandlerContextWithPath<'worldsManager', '/world/:world_name/scenes'>
 ): Promise<IHttpServerComponent.IResponse> {
   const { world_name } = ctx.params
-  const scenes = await ctx.components.worldsManager.getWorldScenes(world_name)
 
-  return {
-    status: 200,
-    body: { scenes }
+  // Parse optional coordinates array from query params
+  const coordinates = ctx.url.searchParams.getAll('coordinates')
+
+  // Validate coordinates if provided
+  coordinates.forEach(validateCoordinate)
+
+  // Parse optional pagination params
+  const { limit, offset } = getPaginationParams(ctx.url.searchParams)
+
+  const filters = {
+    worldName: world_name,
+    ...(coordinates.length > 0 && { coordinates })
   }
-}
 
-export async function getOccupiedParcelsHandler(
-  ctx: HandlerContextWithPath<'worldsManager', '/world/:world_name/parcels'>
-): Promise<IHttpServerComponent.IResponse> {
-  const { world_name } = ctx.params
-  const parcels = await ctx.components.worldsManager.getOccupiedParcels(world_name)
+  const { scenes, total } = await ctx.components.worldsManager.getWorldScenes(filters, { limit, offset })
 
   return {
     status: 200,
-    body: { parcels }
+    body: { scenes, total }
   }
 }
 
 export async function undeploySceneHandler(
-  ctx: HandlerContextWithPath<'namePermissionChecker' | 'worldsManager', '/world/:world_name/scenes'> &
+  ctx: HandlerContextWithPath<'namePermissionChecker' | 'worldsManager', '/world/:world_name/scenes/:coordinate'> &
     DecentralandSignatureContext<any>
 ): Promise<IHttpServerComponent.IResponse> {
-  const { world_name } = ctx.params
+  const { world_name, coordinate } = ctx.params
   const signer = ctx.verification!.auth.toLowerCase()
 
-  // Get parcels from query string or body
-  const parcelsParam = ctx.url.searchParams.get('parcels')
-  if (!parcelsParam) {
-    return {
-      status: 400,
-      body: { error: 'Missing parcels parameter. Specify parcels as query parameter (e.g., ?parcels=0,0;0,1)' }
-    }
-  }
-
-  const parcels = parcelsParam.split(';')
+  validateCoordinate(coordinate)
 
   // Check if user owns the name
   const hasNamePermission = await ctx.components.namePermissionChecker.checkPermission(signer, world_name)
@@ -53,18 +57,14 @@ export async function undeploySceneHandler(
     const hasDeploymentPermission = await permissionChecker.checkPermission('deployment', signer)
 
     if (!hasDeploymentPermission) {
-      return {
-        status: 403,
-        body: { error: 'Unauthorized. You do not have permission to undeploy scenes in this world.' }
-      }
+      throw new NotAuthorizedError('Unauthorized. You do not have permission to undeploy scenes in this world.')
     }
   }
 
-  await ctx.components.worldsManager.undeployScene(world_name, parcels)
+  await ctx.components.worldsManager.undeployScene(world_name, [coordinate])
 
   return {
     status: 200,
-    body: { message: `Scene(s) at parcels ${parcels.join(', ')} undeployed successfully` }
+    body: { message: `Scene at parcel ${coordinate} undeployed successfully` }
   }
 }
-
