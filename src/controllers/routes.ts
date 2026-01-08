@@ -27,13 +27,13 @@ import { livekitWebhookHandler } from './handlers/livekit-webhook-handler'
 import { walletConnectedWorldHandler } from './handlers/wallet-connected-world-handler'
 import { getScenesHandler, undeploySceneHandler } from './handlers/scenes-handler'
 import { getWorldSettingsHandler, updateWorldSettingsHandler } from './handlers/world-settings-handler'
+import { worldSettingsSchema } from './schemas/world-settings-schemas'
 
 export async function setupRouter(globalContext: GlobalContext): Promise<Router<GlobalContext>> {
-  const router = new Router<GlobalContext>()
-  router.use(errorHandler)
+  const { fetch, schemaValidator } = globalContext.components
 
   const signedFetchMiddleware = wellKnownComponents({
-    fetcher: globalContext.components.fetch,
+    fetcher: fetch,
     optional: false,
     metadataValidator: (metadata: Record<string, any>): boolean => metadata.signer !== 'decentraland-kernel-scene',
     onError: (err: any) => ({
@@ -41,6 +41,9 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
       message: 'This endpoint requires a signed fetch request. See ADR-44.'
     })
   })
+
+  const router = new Router<GlobalContext>()
+  router.use(errorHandler)
 
   router.get('/world/:world_name/about', worldAboutHandler)
 
@@ -53,11 +56,16 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   // Multi-scene management
   router.get('/world/:world_name/scenes', getScenesHandler)
   // Undeploy a scene
-  router.delete('/world/:world_name/scenes', signedFetchMiddleware, undeploySceneHandler)
+  router.delete('/world/:world_name/scenes/:coordinate', signedFetchMiddleware, undeploySceneHandler)
 
   // World settings
   router.get('/world/:world_name/settings', getWorldSettingsHandler)
-  router.put('/world/:world_name/settings', signedFetchMiddleware, updateWorldSettingsHandler)
+  router.put(
+    '/world/:world_name/settings',
+    signedFetchMiddleware,
+    schemaValidator.withSchemaValidatorMiddleware(worldSettingsSchema),
+    updateWorldSettingsHandler
+  )
 
   // consumption
   router.head('/ipfs/:hashId', headContentFile)

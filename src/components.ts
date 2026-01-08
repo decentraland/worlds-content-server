@@ -37,6 +37,7 @@ import { createAwsConfig } from './adapters/aws-config'
 import { S3 } from 'aws-sdk'
 import { createNotificationsClientComponent } from './adapters/notifications-service'
 import { createNatsComponent } from '@well-known-components/nats-component'
+import { createSchemaValidatorComponent } from '@dcl/schema-validator-component'
 import { createLivekitClient } from './adapters/livekit-client'
 import { createPeersRegistry } from './adapters/peers-registry'
 import { createSettingsComponent } from './logic/settings'
@@ -157,9 +158,11 @@ export async function initComponents(): Promise<AppComponents> {
   const peersRegistry = await createPeersRegistry({ config })
   const livekitClient = await createLivekitClient({ config })
   const settings = createSettingsComponent({ namePermissionChecker, worldsManager })
+  const schemaValidator = createSchemaValidatorComponent()
 
   return {
     awsConfig,
+    schemaValidator,
     settings,
     commsAdapter,
     config,

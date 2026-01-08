@@ -20,6 +20,7 @@ import { INatsComponent } from '@well-known-components/nats-component/dist/types
 import { WebhookEvent } from 'livekit-server-sdk'
 import { IPublisherComponent } from '@dcl/sns-component'
 import { ISettingsComponent } from './logic/settings'
+import { ISchemaValidatorComponent } from '@dcl/schema-validator-component'
 
 export type GlobalContext = {
   components: BaseComponents
@@ -328,6 +329,7 @@ export type BaseComponents = {
   worldsIndexer: IWorldsIndexer
   worldsManager: IWorldsManager
   settings: ISettingsComponent
+  schemaValidator: ISchemaValidatorComponent<GlobalContext>
 }
 
 export type IWorldCreator = {
