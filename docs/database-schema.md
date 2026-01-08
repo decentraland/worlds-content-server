@@ -6,7 +6,7 @@ This document describes the database schema for the Worlds Content Server. The s
 
 The database contains the following main tables:
 
-1. **`worlds`** - Stores world metadata, permissions, and global settings
+1. **`worlds`** - Stores world metadata and permissions
 2. **`world_scenes`** - Stores individual scene deployments within worlds (multi-scene support)
 3. **`blocked`** - Stores blocked wallet addresses
 4. **`migrations`** - Tracks executed database migrations (internal, managed automatically)
@@ -21,9 +21,7 @@ erDiagram
         VARCHAR name PK "World name (DCL name)"
         JSON permissions "Permissions config (NOT NULL)"
         VARCHAR owner "DCL name owner address"
-        JSON world_settings "Global world configuration"
-        TEXT description "World description"
-        VARCHAR thumbnail_hash "World thumbnail hash"
+        VARCHAR spawn_coordinates "Default spawn parcel coordinate"
         TIMESTAMP created_at "Creation timestamp"
         TIMESTAMP updated_at "Update timestamp"
     }
@@ -69,20 +67,18 @@ erDiagram
 
 ## Table: `worlds`
 
-Stores world metadata, global settings, and permissions. With multi-scene support, this table contains world-level configuration while individual scenes are stored in `world_scenes`.
+Stores world metadata and permissions. With multi-scene support, this table contains world-level configuration while individual scenes are stored in `world_scenes`.
 
 ### Columns
 
-| Column           | Type      | Nullable     | Description                                                                                                    |
-| ---------------- | --------- | ------------ | -------------------------------------------------------------------------------------------------------------- |
-| `name`           | VARCHAR   | NOT NULL     | **Primary Key**. World name (DCL name, e.g., `"myworld.dcl.eth"`). Stored in lowercase.                        |
-| `permissions`    | JSON      | **NOT NULL** | Permissions configuration object. See [Permissions Structure](#permissions-structure) below.                   |
-| `owner`          | VARCHAR   | NULL         | Ethereum address of the DCL name owner (verified via blockchain).                                              |
-| `world_settings` | JSON      | NULL         | Global world configuration (minimap, skybox, etc.). See [World Settings Structure](#world-settings-structure). |
-| `description`    | TEXT      | NULL         | World description text.                                                                                        |
-| `thumbnail_hash` | VARCHAR   | NULL         | Content hash of the world thumbnail image.                                                                     |
-| `created_at`     | TIMESTAMP | NOT NULL     | Timestamp when the world record was first created.                                                             |
-| `updated_at`     | TIMESTAMP | NOT NULL     | Timestamp when the world record was last updated.                                                              |
+| Column              | Type      | Nullable     | Description                                                                                  |
+| ------------------- | --------- | ------------ | -------------------------------------------------------------------------------------------- |
+| `name`              | VARCHAR   | NOT NULL     | **Primary Key**. World name (DCL name, e.g., `"myworld.dcl.eth"`). Stored in lowercase.      |
+| `permissions`       | JSON      | **NOT NULL** | Permissions configuration object. See [Permissions Structure](#permissions-structure) below. |
+| `owner`             | VARCHAR   | NULL         | Ethereum address of the DCL name owner (verified via blockchain).                            |
+| `spawn_coordinates` | VARCHAR   | NULL         | Default spawn parcel coordinate (e.g., `"0,0"`). Must belong to a deployed scene.            |
+| `created_at`        | TIMESTAMP | NOT NULL     | Timestamp when the world record was first created.                                           |
+| `updated_at`        | TIMESTAMP | NOT NULL     | Timestamp when the world record was last updated.                                            |
 
 ### Indexes
 
@@ -254,28 +250,6 @@ The `deployment_auth_chain` column stores an array of authentication links:
 ]
 ```
 
-### World Settings Structure
-
-The `world_settings` column stores a JSON object with global world configuration:
-
-```json
-{
-  "name": "Foundation HQ",
-  "description": "Decentraland Foundation Headquarters",
-  "miniMapConfig": {
-    "visible": true,
-    "dataImage": "minimap.png",
-    "estateImage": "estate.png"
-  },
-  "skyboxConfig": {
-    "fixedTime": 36000,
-    "textures": ["sky_top.png", "sky_bottom.png", ...]
-  },
-  "fixedAdapter": "offline:offline",
-  "thumbnailFile": "thumbnail.png"
-}
-```
-
 ### Constraints and Business Rules
 
 1. **Name Uniqueness**: Each world name must be unique (enforced by primary key)
@@ -286,6 +260,7 @@ The `world_settings` column stores a JSON object with global world configuration
 6. **Address Normalization**: All Ethereum addresses in permissions are stored in lowercase
 7. **Parcel Conflicts**: When deploying a scene, any existing scenes on the same parcels are deleted
 8. **Multi-Scene Support**: Multiple scenes can exist per world, each occupying different parcels
+9. **Spawn Coordinates**: Must reference a parcel that belongs to a deployed scene in the world
 
 ---
 
