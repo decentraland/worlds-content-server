@@ -1,10 +1,4 @@
-import {
-  createSettingsComponent,
-  ISettingsComponent,
-  UnauthorizedError,
-  ValidationError,
-  WorldNotFoundError
-} from '../../src/logic/settings'
+import { createSettingsComponent, ISettingsComponent } from '../../src/logic/settings'
 import { IWorldNamePermissionChecker, IWorldsManager, IPermissionChecker, WorldSettings } from '../../src/types'
 import { createMockedNamePermissionChecker } from '../mocks/dcl-name-checker-mock'
 import { createMockedPermissionsChecker } from '../mocks/permissions-checker-mock'
@@ -58,9 +52,11 @@ describe('SettingsComponent', () => {
       })
 
       it('should throw a WorldNotFoundError with the correct message', async () => {
-        await expect(settingsComponent.getWorldSettings(worldName)).rejects.toThrow(WorldNotFoundError)
         await expect(settingsComponent.getWorldSettings(worldName)).rejects.toThrow(
-          `World "${worldName}" not found or has no settings configured.`
+          expect.objectContaining({
+            name: 'WorldNotFoundError',
+            message: `World "${worldName}" not found or has no settings configured.`
+          })
         )
       })
     })
@@ -128,10 +124,10 @@ describe('SettingsComponent', () => {
 
         it('should throw an UnauthorizedError with the correct message', async () => {
           await expect(settingsComponent.updateWorldSettings(worldName, signer, input)).rejects.toThrow(
-            UnauthorizedError
-          )
-          await expect(settingsComponent.updateWorldSettings(worldName, signer, input)).rejects.toThrow(
-            'Unauthorized. You do not have permission to update settings for this world.'
+            expect.objectContaining({
+              name: 'UnauthorizedError',
+              message: 'Unauthorized. You do not have permission to update settings for this world.'
+            })
           )
         })
       })
@@ -145,9 +141,11 @@ describe('SettingsComponent', () => {
       })
 
       it('should throw a ValidationError with the correct message', async () => {
-        await expect(settingsComponent.updateWorldSettings(worldName, signer, input)).rejects.toThrow(ValidationError)
         await expect(settingsComponent.updateWorldSettings(worldName, signer, input)).rejects.toThrow(
-          'Invalid spawnCoordinates "999,999". It must belong to a parcel of a deployed scene.'
+          expect.objectContaining({
+            name: 'ValidationError',
+            message: 'Invalid spawnCoordinates "999,999". It must belong to a parcel of a deployed scene.'
+          })
         )
       })
     })
