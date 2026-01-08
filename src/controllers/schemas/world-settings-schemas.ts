@@ -1,10 +1,10 @@
-import type { JSONSchemaType } from 'ajv'
+import type { Schema } from 'ajv'
 
 export type WorldSettingsInput = {
   spawn_coordinates: string
 }
 
-export const worldSettingsSchema: JSONSchemaType<WorldSettingsInput> = {
+export const worldSettingsSchema: Schema = {
   type: 'object',
   properties: {
     spawn_coordinates: { type: 'string', pattern: '^\\d+,\\d+$' }
