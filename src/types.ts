@@ -54,6 +54,11 @@ export type WorldRuntimeMetadata = {
 export type WorldSettings = {
   name: string
   description?: string
+  spawnPoint?: {
+    x: number
+    y: number
+    z: number
+  }
   miniMapConfig?: {
     visible: boolean
     dataImage?: string
@@ -80,8 +85,6 @@ export type WorldScene = {
 }
 
 export type WorldMetadata = {
-  entityId?: string // Deprecated: kept for backward compatibility
-  acl?: AuthChain
   permissions: Permissions
   runtimeMetadata: WorldRuntimeMetadata
   scenes: WorldScene[]
@@ -184,7 +187,7 @@ export type IWorldsManager = {
   undeployScene(worldName: string, parcels: string[]): Promise<void>
   storePermissions(worldName: string, permissions: Permissions): Promise<void>
   permissionCheckerForWorld(worldName: string): Promise<IPermissionChecker>
-  undeploy(worldName: string): Promise<void>
+  undeployWorld(worldName: string): Promise<void>
   getContributableDomains(address: string): Promise<{ domains: ContributorDomain[]; count: number }>
   getWorldScenes(worldName: string): Promise<WorldScene[]>
   getOccupiedParcels(worldName: string): Promise<string[]>
@@ -398,12 +401,7 @@ export type IWalletStats = {
 export type WorldRecord = {
   name: string
   owner: string
-  deployer: string
-  entity_id: string
-  deployment_auth_chain: AuthChain
-  entity: any
   permissions: Permissions
-  size: bigint
   world_settings: WorldSettings | null
   description: string | null
   thumbnail_hash: string | null

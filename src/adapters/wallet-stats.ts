@@ -1,4 +1,4 @@
-import { AppComponents, IWalletStats, MB_BigInt, WalletStats, WorldRecord, IWorldsManager } from '../types'
+import { AppComponents, IWalletStats, MB_BigInt, WalletStats, WorldRecord } from '../types'
 import { EthAddress } from '@dcl/schemas'
 import SQL from 'sql-template-strings'
 import { withRetry } from '../logic/utils'
@@ -42,7 +42,7 @@ export async function createWalletStatsComponent(
   async function fetchStoredData(wallet: string) {
     const rows = await components.database.query<Pick<WorldRecord, 'name'>>(SQL`
         SELECT name FROM worlds WHERE owner = ${wallet.toLowerCase()}`)
-    
+
     // Calculate total size from all scenes for each world
     const worldsData = await Promise.all(
       rows.rows.map(async (row) => {
@@ -54,7 +54,7 @@ export async function createWalletStatsComponent(
         }
       })
     )
-    
+
     return worldsData
   }
 

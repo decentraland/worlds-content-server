@@ -23,9 +23,10 @@ export function createEntityDeployer(
     authChain: AuthLink[]
   ): Promise<DeploymentResult> {
     // store all files
-    for (const file of entity.content!) {
+    logger.info(`Storing ${entity.content.length} files`, { entityId: entity.id })
+    for (const file of entity.content) {
       if (!allContentHashesInStorage.get(file.hash)) {
-        const filename = entity.content!.find(($) => $.hash === file.hash)
+        const filename = entity.content.find(($) => $.hash === file.hash)
         logger.info(`Storing file`, { cid: file.hash, filename: filename?.file || 'unknown' })
         await storage.storeStream(file.hash, bufferToStream(files.get(file.hash)!))
         allContentHashesInStorage.set(file.hash, true)
@@ -33,8 +34,10 @@ export function createEntityDeployer(
     }
 
     logger.info(`Storing entity`, { cid: entity.id })
-    await storage.storeStream(entity.id, bufferToStream(stringToUtf8Bytes(entityJson)))
-    await storage.storeStream(entity.id + '.auth', bufferToStream(stringToUtf8Bytes(JSON.stringify(authChain))))
+    await Promise.all([
+      storage.storeStream(entity.id, bufferToStream(stringToUtf8Bytes(entityJson))),
+      storage.storeStream(entity.id + '.auth', bufferToStream(stringToUtf8Bytes(JSON.stringify(authChain))))
+    ])
 
     return await postDeployment(baseUrl, entity, authChain)
   }
@@ -98,10 +101,12 @@ export function createEntityDeployer(
     }
 
     const worldUrl = `${baseUrl}/world/${worldName}`
+    // Use the first parcel as the position
+    const position = parcels[0].split(',')
     return {
       message: [
         `Your scene was deployed to World "${worldName}" at parcels: ${parcels.join(', ')}!`,
-        `Access world: https://play.decentraland.org/?realm=${encodeURIComponent(worldUrl)}`
+        `Access world: https://play.decentraland.org/?realm=${encodeURIComponent(worldUrl)}&position=${encodeURIComponent(position.join(','))}`
       ].join('\n')
     }
   }

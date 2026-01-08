@@ -44,12 +44,11 @@ export async function worldAboutHandler({
   }
 
   const roomPrefix = await config.requireString('COMMS_ROOM_PREFIX')
-  const adapter = await resolveFixedAdapter(params.world_name, runtimeMetadata.fixedAdapter, baseUrl, roomPrefix)
+  const adapter = resolveFixedAdapter(params.world_name, runtimeMetadata.fixedAdapter, baseUrl, roomPrefix)
 
   const globalScenesURN = await config.getString('GLOBAL_SCENES_URN')
 
-  const contentStatus = await status.getContentStatus()
-  const lambdasStatus = await status.getLambdasStatus()
+  const [contentStatus, lambdasStatus] = await Promise.all([status.getContentStatus(), status.getLambdasStatus()])
 
   function urlForFile(filename: string | undefined, defaultImage: string = ''): string {
     if (filename) {
@@ -85,9 +84,10 @@ export async function worldAboutHandler({
   }
 
   const healthy = contentStatus.healthy && lambdasStatus.healthy
-  const body: About = {
+  const body: About & { spawnCoordinates?: string | null } = {
     healthy,
     acceptingUsers: healthy,
+    spawnCoordinates: worldMetadata.spawnCoordinates,
     configurations: {
       networkId: contracts.chainId,
       globalScenesUrn: globalScenesURN ? globalScenesURN.split(' ') : [],
@@ -119,12 +119,7 @@ export async function worldAboutHandler({
   }
 }
 
-async function resolveFixedAdapter(
-  worldName: string,
-  fixedAdapter: string | undefined,
-  baseUrl: string,
-  roomPrefix: string
-) {
+function resolveFixedAdapter(worldName: string, fixedAdapter: string | undefined, baseUrl: string, roomPrefix: string) {
   if (fixedAdapter === 'offline:offline') {
     return 'fixed-adapter:offline:offline'
   }

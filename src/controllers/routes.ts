@@ -25,11 +25,7 @@ import { garbageCollectionHandler } from './handlers/garbage-collection'
 import { getContributableDomainsHandler } from './handlers/contributor-handler'
 import { livekitWebhookHandler } from './handlers/livekit-webhook-handler'
 import { walletConnectedWorldHandler } from './handlers/wallet-connected-world-handler'
-import {
-  getScenesHandler,
-  getOccupiedParcelsHandler,
-  undeploySceneHandler
-} from './handlers/scenes-handler'
+import { getScenesHandler, getOccupiedParcelsHandler, undeploySceneHandler } from './handlers/scenes-handler'
 import { getWorldSettingsHandler, updateWorldSettingsHandler } from './handlers/world-settings-handler'
 
 export async function setupRouter(globalContext: GlobalContext): Promise<Router<GlobalContext>> {
@@ -48,14 +44,16 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
 
   router.get('/world/:world_name/about', worldAboutHandler)
 
-  // creation
+  // Post world scene(s)
   router.post('/entities', multipartParserWrapper(deployEntity))
+  // Undeploy the whole world
   router.delete('/entities/:world_name', signedFetchMiddleware, undeployEntity)
   router.get('/available-content', availableContentHandler)
 
   // Multi-scene management
   router.get('/world/:world_name/scenes', getScenesHandler)
   router.get('/world/:world_name/parcels', getOccupiedParcelsHandler)
+  // Undeploy an scene
   router.delete('/world/:world_name/scenes', signedFetchMiddleware, undeploySceneHandler)
 
   // World settings
