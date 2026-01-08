@@ -12,3 +12,5 @@ lib/api/
 docs/openapi.json
 docs/index.html
 
+# Cursor
+.cursor
