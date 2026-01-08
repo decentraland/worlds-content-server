@@ -39,7 +39,7 @@ export async function createWalletStatsComponent(
     )
   }
 
-  async function fetchStoredData(wallet: string) {
+  async function fetchStoredData(wallet: string): Promise<{ name: string; size: bigint }[]> {
     const rows = await components.database.query<Pick<WorldRecord, 'name'>>(SQL`
         SELECT name FROM worlds WHERE owner = ${wallet.toLowerCase()}`)
 
@@ -49,7 +49,6 @@ export async function createWalletStatsComponent(
         const totalSize = await components.worldsManager.getTotalWorldSize(row.name)
         return {
           name: row.name,
-          entityId: null, // Deprecated, kept for compatibility
           size: totalSize
         }
       })
