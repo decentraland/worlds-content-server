@@ -14,7 +14,6 @@ import {
   createValidateDeploymentPermission,
   createValidateSceneDimensions,
   createValidateSize,
-  createValidateParcelConflicts,
   validateDeprecatedConfig,
   validateMiniMapImages,
   validateSceneEntity,
@@ -49,7 +48,6 @@ export function createValidateFns(components: ValidatorComponents): Validation[]
         validateSkyboxTextures,
         validateThumbnail,
         createValidateBannedNames(components),
-        createValidateParcelConflicts(components),
         // validateSdkVersion(components) TODO re-enable (and test) once SDK7 is ready
         createValidateSize(components), // Slow
         createValidateDeploymentPermission(components) // Slow

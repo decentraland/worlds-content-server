@@ -13,6 +13,7 @@ export const validateSceneEntity: Validation = async (deployment: DeploymentToVa
       'scene.json needs to specify a worldConfiguration section with a valid name inside.'
     ])
   }
+
   return OK
 }
 
@@ -212,35 +213,4 @@ export const validateSkyboxTextures: Validation = async (
   }
 
   return createValidationResult(errors)
-}
-
-export function createValidateParcelConflicts(components: Pick<ValidatorComponents, 'worldsManager'>) {
-  return async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
-    const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())
-    const worldName = sceneJson.metadata.worldConfiguration.name
-    const parcels = deployment.entity.pointers
-
-    if (!parcels || parcels.length === 0) {
-      return createValidationResult(['Scene must specify at least one parcel'])
-    }
-
-    try {
-      const { available, conflicts } = await components.worldsManager.checkParcelsAvailable(worldName, parcels)
-
-      // Note: This is informational only - we allow overwriting
-      // The deployment will proceed and delete conflicting scenes
-      if (!available && conflicts.length > 0) {
-        // Log warning but don't block deployment
-        console.warn(
-          `Parcels ${conflicts.join(', ')} are already occupied in world "${worldName}". ` +
-            `The existing scene(s) on these parcels will be overwritten.`
-        )
-      }
-    } catch (error: any) {
-      // If we can't check conflicts (e.g., table doesn't exist yet), allow deployment
-      console.warn(`Could not check parcel conflicts: ${error.message}`)
-    }
-
-    return OK
-  }
 }
