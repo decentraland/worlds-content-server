@@ -25,7 +25,7 @@ import { garbageCollectionHandler } from './handlers/garbage-collection'
 import { getContributableDomainsHandler } from './handlers/contributor-handler'
 import { livekitWebhookHandler } from './handlers/livekit-webhook-handler'
 import { walletConnectedWorldHandler } from './handlers/wallet-connected-world-handler'
-import { getScenesHandler, getOccupiedParcelsHandler, undeploySceneHandler } from './handlers/scenes-handler'
+import { getScenesHandler, undeploySceneHandler } from './handlers/scenes-handler'
 import { getWorldSettingsHandler, updateWorldSettingsHandler } from './handlers/world-settings-handler'
 
 export async function setupRouter(globalContext: GlobalContext): Promise<Router<GlobalContext>> {
@@ -52,8 +52,7 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
 
   // Multi-scene management
   router.get('/world/:world_name/scenes', getScenesHandler)
-  router.get('/world/:world_name/parcels', getOccupiedParcelsHandler)
-  // Undeploy an scene
+  // Undeploy a scene
   router.delete('/world/:world_name/scenes', signedFetchMiddleware, undeploySceneHandler)
 
   // World settings
@@ -87,6 +86,7 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   router.get('/wallet/:wallet/connected-world', walletConnectedWorldHandler)
   router.get('/status', statusHandler)
 
+  // @deprecated This endpoint is no longer used and will be removed in the future.
   router.get('/index', getIndexHandler)
   router.get('/live-data', getLiveDataHandler)
 

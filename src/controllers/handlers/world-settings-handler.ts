@@ -1,23 +1,31 @@
 import { HandlerContextWithPath } from '../../types'
 import { IHttpServerComponent } from '@well-known-components/interfaces'
-import { DecentralandSignatureContext } from '@dcl/platform-server-commons'
+import { DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
+import { createSettingsComponent, UnauthorizedError, ValidationError, WorldNotFoundError } from '../../logic/settings'
+import { WorldSettingsInput } from '../schemas/world-settings-schemas'
 
 export async function getWorldSettingsHandler(
-  ctx: HandlerContextWithPath<'worldsManager', '/world/:world_name/settings'>
+  ctx: HandlerContextWithPath<'settings', '/world/:world_name/settings'>
 ): Promise<IHttpServerComponent.IResponse> {
   const { world_name } = ctx.params
-  const settings = await ctx.components.worldsManager.getWorldSettings(world_name)
+  const { settings } = ctx.components
 
-  if (!settings) {
+  try {
+    const worldSettings = await settings.getWorldSettings(world_name)
+
     return {
-      status: 404,
-      body: { error: `World "${world_name}" not found or has no settings configured.` }
+      status: 200,
+      body: worldSettings
     }
-  }
+  } catch (error) {
+    if (error instanceof WorldNotFoundError) {
+      return {
+        status: 404,
+        body: { error: error.message }
+      }
+    }
 
-  return {
-    status: 200,
-    body: settings
+    throw error
   }
 }
 
@@ -26,48 +34,34 @@ export async function updateWorldSettingsHandler(
     DecentralandSignatureContext<any>
 ): Promise<IHttpServerComponent.IResponse> {
   const { world_name } = ctx.params
-  const signer = ctx.verification!.auth.toLowerCase()
+  const signer = ctx.verification!.auth
+  const settingsComponent = createSettingsComponent(ctx.components)
 
-  // Check if user owns the name
-  const hasNamePermission = await ctx.components.namePermissionChecker.checkPermission(signer, world_name)
+  try {
+    const body = (await ctx.request.json()) as WorldSettingsInput
+    const settings = await settingsComponent.updateWorldSettings(world_name, signer, {
+      spawnCoordinates: body.spawn_coordinates
+    })
 
-  if (!hasNamePermission) {
-    // Check if user has deployment permissions (which includes world settings)
-    const permissionChecker = await ctx.components.worldsManager.permissionCheckerForWorld(world_name)
-    const hasDeploymentPermission = await permissionChecker.checkPermission('deployment', signer)
-
-    if (!hasDeploymentPermission) {
+    return {
+      status: 200,
+      body: { message: 'World settings updated successfully', settings }
+    }
+  } catch (error) {
+    if (error instanceof UnauthorizedError) {
       return {
         status: 403,
-        body: { error: 'Unauthorized. You do not have permission to update settings for this world.' }
+        body: { error: error.message }
       }
     }
-  }
 
-  const body = await ctx.request.json()
-
-  // Validate settings structure
-  if (!body.name) {
-    return {
-      status: 400,
-      body: { error: 'Invalid settings. "name" is required.' }
+    if (error instanceof ValidationError) {
+      return {
+        status: 400,
+        body: { error: error.message }
+      }
     }
-  }
 
-  const settings = {
-    name: body.name,
-    description: body.description,
-    miniMapConfig: body.miniMapConfig,
-    skyboxConfig: body.skyboxConfig,
-    fixedAdapter: body.fixedAdapter,
-    thumbnailFile: body.thumbnailFile
-  }
-
-  await ctx.components.worldsManager.updateWorldSettings(world_name, settings)
-
-  return {
-    status: 200,
-    body: { message: 'World settings updated successfully', settings }
+    throw error
   }
 }
-

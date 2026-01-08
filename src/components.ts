@@ -39,6 +39,7 @@ import { createNotificationsClientComponent } from './adapters/notifications-ser
 import { createNatsComponent } from '@well-known-components/nats-component'
 import { createLivekitClient } from './adapters/livekit-client'
 import { createPeersRegistry } from './adapters/peers-registry'
+import { createSettingsComponent } from './logic/settings'
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
@@ -155,9 +156,11 @@ export async function initComponents(): Promise<AppComponents> {
 
   const peersRegistry = await createPeersRegistry({ config })
   const livekitClient = await createLivekitClient({ config })
+  const settings = createSettingsComponent({ namePermissionChecker, worldsManager })
 
   return {
     awsConfig,
+    settings,
     commsAdapter,
     config,
     database,

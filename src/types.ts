@@ -5,6 +5,7 @@ import type {
   ILoggerComponent,
   IMetricsComponent
 } from '@well-known-components/interfaces'
+import { PaginatedParameters } from '@dcl/schemas'
 import { metricDeclarations } from './metrics'
 import { IContentStorageComponent } from '@dcl/catalyst-storage'
 import { HTTPProvider } from 'eth-connect'
@@ -18,6 +19,7 @@ import { IFetchComponent } from '@well-known-components/interfaces'
 import { INatsComponent } from '@well-known-components/nats-component/dist/types'
 import { WebhookEvent } from 'livekit-server-sdk'
 import { IPublisherComponent } from '@dcl/sns-component'
+import { ISettingsComponent } from './logic/settings'
 
 export type GlobalContext = {
   components: BaseComponents
@@ -52,24 +54,7 @@ export type WorldRuntimeMetadata = {
 }
 
 export type WorldSettings = {
-  name: string
-  description?: string
-  spawnPoint?: {
-    x: number
-    y: number
-    z: number
-  }
-  miniMapConfig?: {
-    visible: boolean
-    dataImage?: string
-    estateImage?: string
-  }
-  skyboxConfig?: {
-    fixedTime?: number
-    textures?: string[]
-  }
-  fixedAdapter?: string
-  thumbnailFile?: string
+  spawnCoordinates?: string
 }
 
 export type WorldScene = {
@@ -84,8 +69,19 @@ export type WorldScene = {
   updatedAt: Date
 }
 
+export type GetWorldScenesFilters = {
+  worldName?: string
+  coordinates?: string[]
+}
+
+export type GetWorldScenesResult = {
+  scenes: WorldScene[]
+  total: number
+}
+
 export type WorldMetadata = {
   permissions: Permissions
+  spawnCoordinates: string | null
   runtimeMetadata: WorldRuntimeMetadata
   scenes: WorldScene[]
   blockedSince?: Date
@@ -180,7 +176,6 @@ export type ILimitsManager = {
 export type IWorldsManager = {
   getRawWorldRecords(): Promise<WorldRecord[]>
   getDeployedWorldCount(): Promise<{ ens: number; dcl: number }>
-  getDeployedWorldEntities(): Promise<Entity[]>
   getMetadataForWorld(worldName: string): Promise<WorldMetadata | undefined>
   getEntityForWorlds(worldNames: string[]): Promise<Entity[]>
   deployScene(worldName: string, scene: Entity, owner: EthAddress, parcels: string[]): Promise<void>
@@ -189,9 +184,7 @@ export type IWorldsManager = {
   permissionCheckerForWorld(worldName: string): Promise<IPermissionChecker>
   undeployWorld(worldName: string): Promise<void>
   getContributableDomains(address: string): Promise<{ domains: ContributorDomain[]; count: number }>
-  getWorldScenes(worldName: string): Promise<WorldScene[]>
-  getOccupiedParcels(worldName: string): Promise<string[]>
-  checkParcelsAvailable(worldName: string, parcels: string[]): Promise<{ available: boolean; conflicts: string[] }>
+  getWorldScenes(filters?: GetWorldScenesFilters, options?: PaginatedParameters): Promise<GetWorldScenesResult>
   updateWorldSettings(worldName: string, settings: WorldSettings): Promise<void>
   getWorldSettings(worldName: string): Promise<WorldSettings | undefined>
   getTotalWorldSize(worldName: string): Promise<bigint>
@@ -334,6 +327,7 @@ export type BaseComponents = {
   walletStats: IWalletStats
   worldsIndexer: IWorldsIndexer
   worldsManager: IWorldsManager
+  settings: ISettingsComponent
 }
 
 export type IWorldCreator = {
@@ -402,9 +396,7 @@ export type WorldRecord = {
   name: string
   owner: string
   permissions: Permissions
-  world_settings: WorldSettings | null
-  description: string | null
-  thumbnail_hash: string | null
+  spawn_coordinates: string | null
   created_at: Date
   updated_at: Date
   blocked_since: Date | null
