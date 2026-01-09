@@ -60,41 +60,27 @@ export function extractWorldRuntimeMetadata(worldName: string, entity: Entity): 
   }
 }
 
-export function buildWorldRuntimeMetadata(
-  worldName: string,
-  worldSettings: any,
-  scenes: any[]
-): WorldRuntimeMetadata {
-  // If world settings exist, use them as the primary source
-  if (worldSettings) {
-    function resolveFilenameInScenes(filename: string | undefined): string | undefined {
-      if (!filename) return undefined
-      for (const scene of scenes) {
-        const file = scene.entity?.content?.find((content: ContentMapping) => content.file === filename)
-        if (file) {
-          return file.hash
-        }
-      }
-      return undefined
-    }
-
-    return {
-      name: worldSettings.name || worldName,
-      description: worldSettings.description,
-      entityIds: scenes.map((s) => s.id),
-      fixedAdapter: worldSettings.fixedAdapter,
-      minimapDataImage: resolveFilenameInScenes(worldSettings.miniMapConfig?.dataImage),
-      minimapEstateImage: resolveFilenameInScenes(worldSettings.miniMapConfig?.estateImage),
-      minimapVisible: worldSettings.miniMapConfig?.visible ?? false,
-      skyboxFixedTime: worldSettings.skyboxConfig?.fixedTime,
-      skyboxTextures: worldSettings.skyboxConfig?.textures
-        ? worldSettings.skyboxConfig?.textures?.map((texture: string) => resolveFilenameInScenes(texture)!)
-        : undefined,
-      thumbnailFile: resolveFilenameInScenes(worldSettings.thumbnailFile)
-    }
+/**
+ * Extracts spawn point parcel coordinate from an Entity's metadata.
+ * Returns a parcel coordinate string like "0,0" from scene.base or scene.parcels[0],
+ * or null if no scene metadata found.
+ */
+export function extractSpawnCoordinates(entity: Entity): string | null {
+  const scene = entity.metadata?.scene
+  if (!scene) {
+    return null
   }
 
-  // Fallback: if no world settings, derive from scenes (backward compatibility)
+  const parcel = scene.base || (scene.parcels && scene.parcels[0])
+  if (parcel && typeof parcel === 'string') {
+    return parcel
+  }
+
+  return null
+}
+
+export function buildWorldRuntimeMetadata(worldName: string, scenes: any[]): WorldRuntimeMetadata {
+  // Derive runtime metadata from scenes
   if (scenes.length > 0) {
     const firstScene = scenes[0]
     return extractWorldRuntimeMetadata(worldName, {

@@ -7,12 +7,14 @@ import {
   WorldRecord,
   WorldScene,
   WorldSettings,
-  ContributorDomain
+  ContributorDomain,
+  GetWorldScenesFilters,
+  GetWorldScenesResult
 } from '../types'
 import { streamToBuffer } from '@dcl/catalyst-storage'
-import { Entity, EthAddress } from '@dcl/schemas'
+import { Entity, EthAddress, PaginatedParameters } from '@dcl/schemas'
 import SQL from 'sql-template-strings'
-import { extractWorldRuntimeMetadata, buildWorldRuntimeMetadata } from '../logic/world-runtime-metadata-utils'
+import { buildWorldRuntimeMetadata, extractSpawnCoordinates } from '../logic/world-runtime-metadata-utils'
 import { createPermissionChecker, defaultPermissions } from '../logic/permissions-checker'
 
 export async function createWorldsManagerComponent({
@@ -59,15 +61,22 @@ export async function createWorldsManagerComponent({
 
     const row = result.rows[0]
 
-    // Get all scenes for this world
-    const scenes = await getWorldScenes(worldName)
+    // Get the scene at spawn point (spawn_coordinates is always set if there are scenes)
+    let scenes: WorldScene[] = []
+    if (row.spawn_coordinates) {
+      const { scenes: spawnScenes } = await getWorldScenes(
+        { worldName, coordinates: [row.spawn_coordinates] },
+        { limit: 1 }
+      )
+      scenes = spawnScenes
+    }
 
-    // Build runtime metadata from world settings or scenes
-    const runtimeMetadata = buildWorldRuntimeMetadata(worldName, row.world_settings, scenes)
+    // Build runtime metadata from scenes
+    const runtimeMetadata = buildWorldRuntimeMetadata(worldName, scenes)
 
     const metadata: WorldMetadata = {
-      entityId: row.entity_id, // Deprecated, kept for backward compatibility
       permissions: row.permissions,
+      spawnCoordinates: row.spawn_coordinates,
       runtimeMetadata,
       scenes,
       owner: row.owner,
@@ -77,7 +86,9 @@ export async function createWorldsManagerComponent({
     return metadata
   }
 
-  async function deployScene(worldName: string, scene: Entity, owner: EthAddress, parcels: string[]): Promise<void> {
+  async function deployScene(worldName: string, scene: Entity, owner: EthAddress): Promise<void> {
+    const parcels: string[] = scene.metadata?.scene?.parcels || []
+
     const content = await storage.retrieve(`${scene.id}.auth`)
     const deploymentAuthChainString = content ? (await streamToBuffer(await content!.asStream())).toString() : '{}'
     const deploymentAuthChain = JSON.parse(deploymentAuthChainString)
@@ -95,12 +106,14 @@ export async function createWorldsManagerComponent({
       const worldExists = await database.query(SQL`SELECT name FROM worlds WHERE name = ${worldName.toLowerCase()}`)
 
       if (worldExists.rowCount === 0) {
+        const spawnCoordinates = extractSpawnCoordinates(scene)
         await database.query(SQL`
-          INSERT INTO worlds (name, owner, permissions, created_at, updated_at)
+          INSERT INTO worlds (name, owner, permissions, spawn_coordinates, created_at, updated_at)
           VALUES (
             ${worldName.toLowerCase()}, 
             ${owner?.toLowerCase()}, 
             ${JSON.stringify(defaultPermissions())}::json,
+            ${spawnCoordinates},
             ${new Date()}, 
             ${new Date()}
           )
@@ -140,18 +153,6 @@ export async function createWorldsManagerComponent({
         )
       `)
 
-      // Keep backward compatibility: update worlds table with latest deployment
-      await database.query(SQL`
-        UPDATE worlds
-        SET entity_id = ${scene.id}, 
-            deployer = ${deployer},
-            entity = ${scene}::json,
-            size = ${size},
-            deployment_auth_chain = ${deploymentAuthChainString}::json,
-            updated_at = ${new Date()}
-        WHERE name = ${worldName.toLowerCase()}
-      `)
-
       await database.query('COMMIT')
     } catch (error) {
       await database.query('ROLLBACK')
@@ -172,7 +173,12 @@ export async function createWorldsManagerComponent({
   }
 
   async function getDeployedWorldCount(): Promise<{ ens: number; dcl: number }> {
-    const result = await database.query<{ name: string }>('SELECT name FROM worlds WHERE entity_id IS NOT NULL')
+    // Count worlds that have at least one scene deployed
+    const result = await database.query<{ name: string }>(`
+      SELECT w.name 
+      FROM worlds w 
+      WHERE EXISTS (SELECT 1 FROM world_scenes ws WHERE ws.world_name = w.name)
+    `)
     return result.rows.reduce(
       (acc, row) => {
         if (row.name.endsWith('.dcl.eth')) {
@@ -186,30 +192,6 @@ export async function createWorldsManagerComponent({
     )
   }
 
-  const mapEntity = (row: Pick<WorldRecord, 'entity_id' | 'entity' | 'owner'>) => ({
-    ...row.entity,
-    id: row.entity_id,
-    metadata: {
-      ...row.entity.metadata,
-      owner: row.owner
-    }
-  })
-
-  async function getDeployedWorldEntities(): Promise<Entity[]> {
-    const result = await database.query<Pick<WorldRecord, 'name' | 'entity_id' | 'entity' | 'owner'>>(
-      'SELECT name, entity_id, entity, owner FROM worlds WHERE entity_id IS NOT NULL ORDER BY name'
-    )
-
-    const filtered: Pick<WorldRecord, 'name' | 'entity_id' | 'entity' | 'owner'>[] = []
-    for (const row of result.rows) {
-      if (await nameDenyListChecker.checkNameDenyList(row.name)) {
-        filtered.push(row)
-      }
-    }
-
-    return filtered.map(mapEntity)
-  }
-
   async function getEntityForWorlds(worldNames: string[]): Promise<Entity[]> {
     if (worldNames.length === 0) {
       return []
@@ -218,7 +200,7 @@ export async function createWorldsManagerComponent({
     const allowedNames: string[] = []
     for (const worldName of worldNames) {
       if (await nameDenyListChecker.checkNameDenyList(worldName)) {
-        allowedNames.push(worldName)
+        allowedNames.push(worldName.toLowerCase())
       }
     }
 
@@ -226,17 +208,31 @@ export async function createWorldsManagerComponent({
       return []
     }
 
-    const result = await database.query<Pick<WorldRecord, 'entity_id' | 'entity' | 'owner'>>(
+    // Get one entity per world: the scene at spawn_coordinates (spawn_coordinates is always set if there are scenes)
+    const result = await database.query<{
+      world_name: string
+      entity_id: string
+      entity: any
+      owner: string
+    }>(
       SQL`
-        SELECT entity_id, entity, owner 
-        FROM worlds 
-        WHERE name = ANY(${allowedNames}) 
-          AND entity_id IS NOT NULL 
-          ORDER BY name
+        SELECT ws.world_name, ws.entity_id, ws.entity, w.owner
+        FROM worlds w
+        INNER JOIN world_scenes ws ON ws.world_name = w.name
+        WHERE w.name = ANY(${allowedNames})
+          AND w.spawn_coordinates IS NOT NULL
+          AND ws.parcels @> ARRAY[w.spawn_coordinates]
       `
     )
 
-    return result.rows.map(mapEntity)
+    return result.rows.map((row) => ({
+      ...row.entity,
+      id: row.entity_id,
+      metadata: {
+        ...row.entity.metadata,
+        owner: row.owner
+      }
+    }))
   }
 
   async function permissionCheckerForWorld(worldName: string): Promise<IPermissionChecker> {
@@ -244,60 +240,107 @@ export async function createWorldsManagerComponent({
     return createPermissionChecker(metadata?.permissions || defaultPermissions())
   }
 
-  async function undeploy(worldName: string): Promise<void> {
-    const sql = SQL`
-             UPDATE worlds
-             SET entity_id = null, 
-                 owner = null,
-                 deployer = null,
-                 entity = null,
-                 size = null,
-                 deployment_auth_chain = null,
-                 updated_at = ${new Date()}
-              WHERE name = ${worldName.toLowerCase()}
-    `
-    await database.query(sql)
+  async function undeployWorld(worldName: string): Promise<void> {
+    const normalizedWorldName = worldName.toLowerCase()
+
+    await database.query('BEGIN')
+
+    try {
+      // Delete all scenes for the world
+      await database.query(SQL`DELETE FROM world_scenes WHERE world_name = ${normalizedWorldName}`)
+
+      // Set spawn_coordinates to null since there are no more scenes
+      await database.query(SQL`UPDATE worlds SET spawn_coordinates = NULL WHERE name = ${normalizedWorldName}`)
+
+      await database.query('COMMIT')
+    } catch (error) {
+      await database.query('ROLLBACK')
+      throw error
+    }
   }
 
   async function getContributableDomains(address: string): Promise<{ domains: ContributorDomain[]; count: number }> {
     const result = await database.query<ContributorDomain>(SQL`
-      SELECT DISTINCT name, array_agg(permission) as user_permissions, size, owner
+      SELECT 
+        wp.name,
+        array_agg(DISTINCT wp.permission) as user_permissions,
+        COALESCE(sizes.total_size, 0)::text as size,
+        wp.owner
       FROM (
-        SELECT *
+        SELECT w.name, w.owner, perm.permission
         FROM worlds w, json_each_text(w.permissions) AS perm(permission, permissionValue)
-        WHERE permission = ANY(ARRAY['deployment', 'streaming'])
+        WHERE perm.permission = ANY(ARRAY['deployment', 'streaming'])
+          AND EXISTS (
+            SELECT 1 FROM json_array_elements_text(perm.permissionValue::json -> 'wallets') as wallet 
+            WHERE LOWER(wallet) = LOWER(${address})
+          )
       ) AS wp
-      WHERE EXISTS (
-        SELECT 1 FROM json_array_elements_text(wp.permissionValue::json -> 'wallets') as wallet WHERE LOWER(wallet) = LOWER(${address})
-      )
-      GROUP BY name, size, owner
+      LEFT JOIN (
+        SELECT world_name, SUM(size) as total_size
+        FROM world_scenes
+        GROUP BY world_name
+      ) AS sizes ON wp.name = sizes.world_name
+      GROUP BY wp.name, wp.owner, sizes.total_size
     `)
 
     return {
       domains: result.rows,
-      count: result.rowCount
+      count: result.rowCount ?? 0
     }
   }
 
-  async function getWorldScenes(worldName: string): Promise<WorldScene[]> {
-    const result = await database.query<{
-      id: number
-      world_name: string
-      entity_id: string
-      deployer: string
-      deployment_auth_chain: any
-      entity: any
-      parcels: string[]
-      size: string
-      created_at: Date
-      updated_at: Date
-    }>(SQL`
-      SELECT * FROM world_scenes 
-      WHERE world_name = ${worldName.toLowerCase()}
-      ORDER BY created_at
-    `)
+  async function getWorldScenes(
+    filters?: GetWorldScenesFilters,
+    options?: PaginatedParameters
+  ): Promise<GetWorldScenesResult> {
+    // Build base queries
+    const countQuery = SQL`SELECT COUNT(*) as total FROM world_scenes WHERE 1=1`
+    const mainQuery = SQL`SELECT * FROM world_scenes WHERE 1=1`
 
-    return result.rows.map((row) => ({
+    // Apply worldName filter
+    if (filters?.worldName) {
+      countQuery.append(SQL` AND world_name = ${filters.worldName.toLowerCase()}`)
+      mainQuery.append(SQL` AND world_name = ${filters.worldName.toLowerCase()}`)
+    }
+
+    // Apply coordinates filter (scenes that contain any of the specified coordinates)
+    if (filters?.coordinates && filters.coordinates.length > 0) {
+      countQuery.append(SQL` AND parcels && ${filters.coordinates}::text[]`)
+      mainQuery.append(SQL` AND parcels && ${filters.coordinates}::text[]`)
+    }
+
+    // Add ordering
+    mainQuery.append(SQL` ORDER BY created_at`)
+
+    // Apply pagination
+    if (options?.limit !== undefined) {
+      mainQuery.append(SQL` LIMIT ${options.limit}`)
+    }
+
+    if (options?.offset !== undefined) {
+      mainQuery.append(SQL` OFFSET ${options.offset}`)
+    }
+
+    // Execute both queries concurrently
+    const [countResult, result] = await Promise.all([
+      database.query<{ total: string }>(countQuery),
+      database.query<{
+        id: number
+        world_name: string
+        entity_id: string
+        deployer: string
+        deployment_auth_chain: any
+        entity: any
+        parcels: string[]
+        size: string
+        created_at: Date
+        updated_at: Date
+      }>(mainQuery)
+    ])
+
+    const total = parseInt(countResult.rows[0]?.total || '0', 10)
+
+    const scenes = result.rows.map((row) => ({
       id: row.entity_id,
       worldName: row.world_name,
       deployer: row.deployer,
@@ -308,67 +351,76 @@ export async function createWorldsManagerComponent({
       createdAt: row.created_at,
       updatedAt: row.updated_at
     }))
+
+    return { scenes, total }
   }
 
   async function undeployScene(worldName: string, parcels: string[]): Promise<void> {
-    await database.query(SQL`
-      DELETE FROM world_scenes 
-      WHERE world_name = ${worldName.toLowerCase()} 
-      AND parcels && ${parcels}::text[]
-    `)
-  }
+    const normalizedWorldName = worldName.toLowerCase()
 
-  async function getOccupiedParcels(worldName: string): Promise<string[]> {
-    const result = await database.query<{ parcel: string }>(SQL`
-      SELECT DISTINCT unnest(parcels) as parcel 
-      FROM world_scenes 
-      WHERE world_name = ${worldName.toLowerCase()}
-    `)
+    await database.query('BEGIN')
 
-    return result.rows.map((row) => row.parcel)
-  }
+    try {
+      // Get current spawn_coordinates before deletion
+      const worldResult = await database.query<{ spawn_coordinates: string | null }>(
+        SQL`SELECT spawn_coordinates FROM worlds WHERE name = ${normalizedWorldName}`
+      )
+      const currentSpawnCoordinates = worldResult.rows[0]?.spawn_coordinates
 
-  async function checkParcelsAvailable(
-    worldName: string,
-    parcels: string[]
-  ): Promise<{ available: boolean; conflicts: string[] }> {
-    if (parcels.length === 0) {
-      return { available: true, conflicts: [] }
-    }
+      // Delete the scene(s) matching the parcels
+      await database.query(SQL`
+        DELETE FROM world_scenes 
+        WHERE world_name = ${normalizedWorldName} 
+        AND parcels && ${parcels}::text[]
+      `)
 
-    const result = await database.query<{ occupied: string[] }>(SQL`
-      SELECT ARRAY(
-        SELECT DISTINCT p 
-        FROM world_scenes, unnest(parcels) as p
-        WHERE world_name = ${worldName.toLowerCase()}
-        AND p = ANY(${parcels}::text[])
-      ) as occupied
-    `)
+      // Check if we need to update spawn_coordinates
+      const deletedSpawnCoordinatesScene = currentSpawnCoordinates && parcels.includes(currentSpawnCoordinates)
 
-    const conflicts = result.rows[0]?.occupied || []
-    return {
-      available: conflicts.length === 0,
-      conflicts
+      if (deletedSpawnCoordinatesScene) {
+        // Find another scene to set as spawn_coordinates, or null if none remain
+        const remainingScene = await database.query<{ parcels: string[] }>(SQL`
+          SELECT parcels FROM world_scenes 
+          WHERE world_name = ${normalizedWorldName} 
+          ORDER BY created_at 
+          LIMIT 1
+        `)
+
+        const newSpawnCoordinates = remainingScene.rows[0]?.parcels[0] || null
+
+        await database.query(SQL`
+          UPDATE worlds SET spawn_coordinates = ${newSpawnCoordinates} WHERE name = ${normalizedWorldName}
+        `)
+      }
+
+      await database.query('COMMIT')
+    } catch (error) {
+      await database.query('ROLLBACK')
+      throw error
     }
   }
 
   async function updateWorldSettings(worldName: string, settings: WorldSettings): Promise<void> {
     await database.query(SQL`
       UPDATE worlds 
-      SET world_settings = ${JSON.stringify(settings)}::json,
-          description = ${settings.description || null},
-          thumbnail_hash = ${settings.thumbnailFile || null},
+      SET spawn_coordinates = ${settings.spawnCoordinates || null},
           updated_at = ${new Date()}
       WHERE name = ${worldName.toLowerCase()}
     `)
   }
 
   async function getWorldSettings(worldName: string): Promise<WorldSettings | undefined> {
-    const result = await database.query<{ world_settings: WorldSettings }>(SQL`
-      SELECT world_settings FROM worlds WHERE name = ${worldName.toLowerCase()}
+    const result = await database.query<{ spawn_coordinates: string | null }>(SQL`
+      SELECT spawn_coordinates FROM worlds WHERE name = ${worldName.toLowerCase()}
     `)
 
-    return result.rows[0]?.world_settings || undefined
+    if (result.rowCount === 0) {
+      return undefined
+    }
+
+    return {
+      spawnCoordinates: result.rows[0].spawn_coordinates || undefined
+    }
   }
 
   async function getTotalWorldSize(worldName: string): Promise<bigint> {
@@ -384,18 +436,15 @@ export async function createWorldsManagerComponent({
   return {
     getRawWorldRecords,
     getDeployedWorldCount,
-    getDeployedWorldEntities,
     getMetadataForWorld,
     getEntityForWorlds,
     deployScene,
     undeployScene,
     storePermissions,
     permissionCheckerForWorld,
-    undeploy,
+    undeployWorld,
     getContributableDomains,
     getWorldScenes,
-    getOccupiedParcels,
-    checkParcelsAvailable,
     updateWorldSettings,
     getWorldSettings,
     getTotalWorldSize
