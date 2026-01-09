@@ -179,7 +179,7 @@ export type IWorldsManager = {
   getDeployedWorldCount(): Promise<{ ens: number; dcl: number }>
   getMetadataForWorld(worldName: string): Promise<WorldMetadata | undefined>
   getEntityForWorlds(worldNames: string[]): Promise<Entity[]>
-  deployScene(worldName: string, scene: Entity, owner: EthAddress, parcels: string[]): Promise<void>
+  deployScene(worldName: string, scene: Entity, owner: EthAddress): Promise<void>
   undeployScene(worldName: string, parcels: string[]): Promise<void>
   storePermissions(worldName: string, permissions: Permissions): Promise<void>
   permissionCheckerForWorld(worldName: string): Promise<IPermissionChecker>

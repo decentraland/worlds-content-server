@@ -64,12 +64,12 @@ export function createEntityDeployer(
 
     // determine the name to use for deploying the world
     const worldName = entity.metadata.worldConfiguration.name
-    const parcels = entity.pointers // These are the parcel coordinates
+    const parcels = entity.metadata?.scene?.parcels || []
     logger.debug(`Deployment for scene "${entity.id}" under world name "${worldName}" at parcels ${parcels.join(', ')}`)
 
     const owner = (await components.nameOwnership.findOwners([worldName])).get(worldName)
 
-    await worldsManager.deployScene(worldName, entity, owner!, parcels)
+    await worldsManager.deployScene(worldName, entity, owner!)
 
     const kind = worldName.endsWith('dcl.eth') ? 'dcl-name' : 'ens-name'
     metrics.increment('world_deployments_counter', { kind })

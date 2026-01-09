@@ -74,7 +74,8 @@ export async function createWorldsManagerMockComponent({
     )
   }
 
-  async function deployScene(worldName: string, scene: Entity, owner: EthAddress, parcels: string[]): Promise<void> {
+  async function deployScene(worldName: string, scene: Entity, owner: EthAddress): Promise<void> {
+    const parcels: string[] = scene.metadata?.scene?.parcels || []
     const existingMetadata = await getMetadataForWorld(worldName)
     const newScene: WorldScene = {
       id: scene.id,
