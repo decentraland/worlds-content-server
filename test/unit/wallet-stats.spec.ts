@@ -6,7 +6,8 @@ import { IPgComponent } from '@well-known-components/pg-component'
 import { createWalletStatsComponent } from '../../src/adapters/wallet-stats'
 import { createDatabaseMock } from '../mocks/database-mock'
 import { getIdentity, Identity } from '../utils'
-import { MB_BigInt } from '../../src/types'
+import { IWorldsManager, MB_BigInt } from '../../src/types'
+import { createMockedWorldsManager } from '../mocks/world-manager-mock'
 
 describe('wallet stats', function () {
   let identity: Identity
@@ -14,6 +15,7 @@ describe('wallet stats', function () {
   let logs: ILoggerComponent
   let config: IConfigComponent
   let database: IPgComponent
+  let worldsManager: jest.Mocked<IWorldsManager>
 
   beforeEach(async () => {
     identity = await getIdentity()
@@ -32,6 +34,11 @@ describe('wallet stats', function () {
         rows: []
       }
     ])
+    worldsManager = createMockedWorldsManager()
+  })
+
+  afterEach(() => {
+    jest.resetAllMocks()
   })
 
   it('when no url provided, it creates a component that does not validate anything, always max integer as allowance', async () => {
@@ -45,7 +52,8 @@ describe('wallet stats', function () {
       config,
       database,
       fetch,
-      logs
+      logs,
+      worldsManager
     })
     await expect(walletStatsComponent.get(identity.realAccount.address)).resolves.toEqual({
       wallet: identity.realAccount.address,
@@ -76,7 +84,8 @@ describe('wallet stats', function () {
       config,
       database,
       fetch,
-      logs
+      logs,
+      worldsManager
     })
 
     await expect(walletStatsComponent.get(identity.realAccount.address)).resolves.toEqual({
@@ -105,13 +114,10 @@ describe('wallet stats', function () {
     })
 
     const blockedAt = new Date()
-    const database = createDatabaseMock([
+    const localDatabase = createDatabaseMock([
       {
-        rowCount: 1,
-        rows: [
-          { name: 'name.dcl.eth', entity_id: 'entity_id', size: 100 * 1024 * 1024 },
-          { name: 'name.eth', entity_id: 'entity_id', size: 15 * 1024 * 1024 }
-        ]
+        rowCount: 2,
+        rows: [{ name: 'name.dcl.eth' }, { name: 'name.eth' }]
       },
       {
         rowCount: 1,
@@ -119,11 +125,22 @@ describe('wallet stats', function () {
       }
     ])
 
+    worldsManager.getTotalWorldSize.mockImplementation((worldName: string) => {
+      if (worldName === 'name.dcl.eth') {
+        return Promise.resolve(BigInt(100 * 1024 * 1024))
+      }
+      if (worldName === 'name.eth') {
+        return Promise.resolve(BigInt(15 * 1024 * 1024))
+      }
+      return Promise.resolve(0n)
+    })
+
     const walletStatsComponent = await createWalletStatsComponent({
       config,
-      database,
+      database: localDatabase,
       fetch,
-      logs
+      logs,
+      worldsManager
     })
 
     await expect(walletStatsComponent.get(identity.realAccount.address)).resolves.toEqual({
