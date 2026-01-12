@@ -51,7 +51,7 @@ export async function createWorldsManagerMockComponent({
     const scene = metadata.scenes[0]
     return {
       ...scene.entity,
-      id: scene.id
+      id: scene.entityId
     }
   }
 
@@ -60,7 +60,17 @@ export async function createWorldsManagerMockComponent({
     if (!content) {
       return undefined
     }
-    return JSON.parse((await streamToBuffer(await content.asStream())).toString())
+    const metadata = JSON.parse((await streamToBuffer(await content.asStream())).toString())
+
+    // Convert size strings back to BigInt in scenes
+    if (metadata.scenes) {
+      metadata.scenes = metadata.scenes.map((scene: any) => ({
+        ...scene,
+        size: typeof scene.size === 'string' ? BigInt(scene.size) : scene.size
+      }))
+    }
+
+    return metadata
   }
 
   async function storeWorldMetadata(worldName: string, worldMetadata: Partial<WorldMetadata>): Promise<void> {
@@ -68,9 +78,14 @@ export async function createWorldsManagerMockComponent({
     const metadata: Partial<WorldMetadata> = Object.assign({}, contentMetadata, worldMetadata)
     Object.assign(metadata, worldMetadata)
 
+    // Convert BigInt values to strings for JSON serialization
+    const serializableMetadata = JSON.stringify(metadata, (_key, value) =>
+      typeof value === 'bigint' ? value.toString() : value
+    )
+
     await storage.storeStream(
       `name-${worldName.toLowerCase()}`,
-      bufferToStream(stringToUtf8Bytes(JSON.stringify(metadata)))
+      bufferToStream(stringToUtf8Bytes(serializableMetadata))
     )
   }
 
@@ -78,8 +93,8 @@ export async function createWorldsManagerMockComponent({
     const parcels: string[] = scene.metadata?.scene?.parcels || []
     const existingMetadata = await getMetadataForWorld(worldName)
     const newScene: WorldScene = {
-      id: scene.id,
       worldName: worldName.toLowerCase(),
+      entityId: scene.id,
       deployer: owner,
       deploymentAuthChain: [],
       entity: scene,
