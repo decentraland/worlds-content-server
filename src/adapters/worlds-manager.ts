@@ -145,7 +145,7 @@ export async function createWorldsManagerComponent({
           ${scene.id},
           ${deployer}, 
           ${deploymentAuthChainString}::json,
-          ${scene}::json,
+          ${scene}::jsonb,
           ${parcels}::text[],
           ${size},
           ${new Date()}, 

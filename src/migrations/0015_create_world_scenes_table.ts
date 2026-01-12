@@ -18,7 +18,7 @@ export const migration: Migration = {
           world_name VARCHAR NOT NULL,
           entity_id VARCHAR NOT NULL,
           deployment_auth_chain JSON NOT NULL,
-          entity JSON NOT NULL,
+          entity JSONB NOT NULL,
           deployer VARCHAR NOT NULL,
           parcels TEXT[] NOT NULL,
           size BIGINT NOT NULL,
@@ -57,11 +57,11 @@ export const migration: Migration = {
         SELECT 
           name,
           entity_id,
-          entity,
+          entity::jsonb,
           deployment_auth_chain,
           deployer,
           COALESCE(
-            ARRAY(SELECT jsonb_array_elements_text(entity->'pointers')),
+            ARRAY(SELECT jsonb_array_elements_text(entity::jsonb->'pointers')),
             ARRAY[]::text[]
           ),
           COALESCE(size, 0),
