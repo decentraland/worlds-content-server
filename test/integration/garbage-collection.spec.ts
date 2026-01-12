@@ -4,8 +4,6 @@ import { Entity, IPFSv2 } from '@dcl/schemas'
 import { makeid } from '../utils'
 
 test('when performing garbage collection through /gc', function ({ components }) {
-  const { worldCreator, storage } = components
-
   describe('and there are unused files from a previous deployment', () => {
     let worldName: string
     let oldEntityId: IPFSv2
@@ -14,6 +12,7 @@ test('when performing garbage collection through /gc', function ({ components })
     let newEntity: Entity
 
     beforeEach(async () => {
+      const { worldCreator } = components
       worldName = worldCreator.randomWorldName()
 
       // deploy an initial version of the scene
@@ -64,7 +63,7 @@ test('when performing garbage collection through /gc', function ({ components })
     })
 
     it('should respond with 200 and the count of removed keys', async () => {
-      const { localFetch } = components
+      const { localFetch, storage } = components
 
       // verify old files exist
       expect(await storage.exist(oldEntityId)).toBeTruthy()

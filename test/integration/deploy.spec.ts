@@ -92,7 +92,7 @@ test('deployment works', function ({ components, stubComponents }) {
 
     const response = (await contentClient.deploy({ files, entityId, authChain })) as Response
     expect(await response.json()).toMatchObject({
-      message: `Your scene was deployed to a Worlds Content Server!\nAccess world ${worldName}: https://play.decentraland.org/?realm=https%3A%2F%2F0.0.0.0%3A3000%2Fworld%2F${worldName}`
+      message: `Your scene was deployed to World "${worldName}" at parcels: 20,24!\nAccess world: https://play.decentraland.org/?realm=https%3A%2F%2F0.0.0.0%3A3000%2Fworld%2F${worldName}&position=20%2C24`
     })
 
     Sinon.assert.calledWith(
@@ -106,7 +106,6 @@ test('deployment works', function ({ components, stubComponents }) {
 
     const stored = await worldsManager.getMetadataForWorld(worldName)
     expect(stored).toMatchObject({
-      entityId,
       runtimeMetadata: {
         name: worldName,
         entityIds: [entityId],
@@ -182,7 +181,6 @@ test('deployment works', function ({ components, stubComponents }) {
 
     const stored = await worldsManager.getMetadataForWorld(worldName)
     expect(stored).toMatchObject({
-      entityId,
       runtimeMetadata: {
         entityIds: [entityId],
         minimapVisible: false,
@@ -272,7 +270,7 @@ test('deployment works', function ({ components, stubComponents }) {
 
     const response = (await contentClient.deploy({ files, entityId, authChain })) as Response
     expect(await response.json()).toMatchObject({
-      message: `Your scene was deployed to a Worlds Content Server!\nAccess world ${worldName}: https://play.decentraland.org/?realm=https%3A%2F%2F0.0.0.0%3A3000%2Fworld%2F${worldName}`
+      message: `Your scene was deployed to World "${worldName}" at parcels: 20,24!\nAccess world: https://play.decentraland.org/?realm=https%3A%2F%2F0.0.0.0%3A3000%2Fworld%2F${worldName}&position=20%2C24`
     })
 
     Sinon.assert.calledWith(
@@ -283,7 +281,6 @@ test('deployment works', function ({ components, stubComponents }) {
 
     const stored = await worldsManager.getMetadataForWorld(worldName)
     expect(stored).toMatchObject({
-      entityId,
       runtimeMetadata: {
         name: worldName,
         entityIds: [entityId],
