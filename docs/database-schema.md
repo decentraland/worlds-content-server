@@ -27,9 +27,8 @@ erDiagram
     }
 
     world_scenes {
-        SERIAL id PK "Auto-increment ID"
-        VARCHAR world_name FK "References worlds(name)"
-        VARCHAR entity_id "IPFS hash (CID)"
+        VARCHAR world_name PK,FK "References worlds(name)"
+        VARCHAR entity_id PK "IPFS hash (CID)"
         JSON deployment_auth_chain "ADR-44 auth chain"
         JSON entity "Full entity JSON"
         VARCHAR deployer "Ethereum address"
@@ -92,23 +91,21 @@ Stores individual scene deployments within worlds. Each world can have multiple 
 
 ### Columns
 
-| Column                  | Type      | Nullable | Description                                                                               |
-| ----------------------- | --------- | -------- | ----------------------------------------------------------------------------------------- |
-| `id`                    | SERIAL    | NOT NULL | **Primary Key**. Auto-incrementing unique identifier for the scene deployment.            |
-| `world_name`            | VARCHAR   | NOT NULL | **Foreign Key** → `worlds(name)`. The world this scene belongs to.                        |
-| `entity_id`             | VARCHAR   | NOT NULL | IPFS hash (CID) of the deployed scene entity.                                             |
-| `deployment_auth_chain` | JSON      | NOT NULL | Authentication chain used for deployment. Array of `AuthLink` objects following ADR-44.   |
-| `entity`                | JSON      | NOT NULL | Full entity JSON object containing scene metadata, content mappings, and all entity data. |
-| `deployer`              | VARCHAR   | NOT NULL | Ethereum address of the wallet that deployed this scene.                                  |
-| `parcels`               | TEXT[]    | NOT NULL | Array of parcel coordinates this scene occupies (e.g., `['0,0', '0,1', '1,0']`).          |
-| `size`                  | BIGINT    | NOT NULL | Total size of this scene's content files in bytes.                                        |
-| `created_at`            | TIMESTAMP | NOT NULL | Timestamp when the scene was first deployed.                                              |
-| `updated_at`            | TIMESTAMP | NOT NULL | Timestamp when the scene was last updated.                                                |
+| Column                  | Type      | Nullable | Description                                                                                  |
+| ----------------------- | --------- | -------- | -------------------------------------------------------------------------------------------- |
+| `world_name`            | VARCHAR   | NOT NULL | **Primary Key (part 1)**, **Foreign Key** → `worlds(name)`. The world this scene belongs to. |
+| `entity_id`             | VARCHAR   | NOT NULL | **Primary Key (part 2)**. IPFS hash (CID) of the deployed scene entity.                      |
+| `deployment_auth_chain` | JSON      | NOT NULL | Authentication chain used for deployment. Array of `AuthLink` objects following ADR-44.      |
+| `entity`                | JSON      | NOT NULL | Full entity JSON object containing scene metadata, content mappings, and all entity data.    |
+| `deployer`              | VARCHAR   | NOT NULL | Ethereum address of the wallet that deployed this scene.                                     |
+| `parcels`               | TEXT[]    | NOT NULL | Array of parcel coordinates this scene occupies (e.g., `['0,0', '0,1', '1,0']`).             |
+| `size`                  | BIGINT    | NOT NULL | Total size of this scene's content files in bytes.                                           |
+| `created_at`            | TIMESTAMP | NOT NULL | Timestamp when the scene was first deployed.                                                 |
+| `updated_at`            | TIMESTAMP | NOT NULL | Timestamp when the scene was last updated.                                                   |
 
 ### Indexes
 
-- **Primary Key**: `id`
-- **Unique Constraint**: `(world_name, entity_id)`
+- **Primary Key**: `(world_name, entity_id)` (composite primary key)
 - **Index**: `world_scenes_world_name_idx` on `world_name` column
 - **GIN Index**: `world_scenes_parcels_idx` on `parcels` column (for array operations)
 - **Index**: `world_scenes_deployer_idx` on `deployer` column

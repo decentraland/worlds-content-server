@@ -15,7 +15,6 @@ export const migration: Migration = {
       logger.info('Creating world_scenes table')
       await database.query(`
         CREATE TABLE IF NOT EXISTS world_scenes (
-          id SERIAL PRIMARY KEY,
           world_name VARCHAR NOT NULL,
           entity_id VARCHAR NOT NULL,
           deployment_auth_chain JSON NOT NULL,
@@ -25,7 +24,7 @@ export const migration: Migration = {
           size BIGINT NOT NULL,
           created_at TIMESTAMP NOT NULL,
           updated_at TIMESTAMP NOT NULL,
-          UNIQUE(world_name, entity_id),
+          PRIMARY KEY (world_name, entity_id),
           CONSTRAINT fk_world_name
             FOREIGN KEY (world_name)
             REFERENCES worlds(name)

@@ -59,11 +59,11 @@ export type WorldSettings = {
 }
 
 export type WorldScene = {
-  id: string
   worldName: string
   deployer: string
   deploymentAuthChain: AuthChain
   entity: Entity
+  entityId: IPFSv2
   parcels: string[]
   size: bigint
   createdAt: Date

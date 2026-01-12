@@ -325,7 +325,6 @@ export async function createWorldsManagerComponent({
     const [countResult, result] = await Promise.all([
       database.query<{ total: string }>(countQuery),
       database.query<{
-        id: number
         world_name: string
         entity_id: string
         deployer: string
@@ -341,9 +340,9 @@ export async function createWorldsManagerComponent({
     const total = parseInt(countResult.rows[0]?.total || '0', 10)
 
     const scenes = result.rows.map((row) => ({
-      id: row.entity_id,
       worldName: row.world_name,
       deployer: row.deployer,
+      entityId: row.entity_id,
       deploymentAuthChain: row.deployment_auth_chain,
       entity: row.entity,
       parcels: row.parcels,

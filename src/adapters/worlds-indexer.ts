@@ -33,7 +33,7 @@ export async function createWorldsIndexerComponent({
         )
 
         return {
-          id: scene.id,
+          id: scene.entityId,
           title: entity.metadata?.display?.title || '',
           description: entity.metadata?.display?.description || '',
           thumbnail: thumbnailFile?.hash,
