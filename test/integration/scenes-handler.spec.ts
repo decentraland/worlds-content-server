@@ -37,17 +37,24 @@ function buildQuery(coordinates: string[]): string {
 }
 
 test('ScenesHandler', function ({ components, stubComponents }) {
-  const { localFetch, worldCreator, worldsManager } = components
-  let worldName: string
+  afterEach(() => {
+    jest.resetAllMocks()
+  })
 
   describe('GET /world/:world_name/scenes', function () {
     describe('when the world has scenes deployed', function () {
+      let worldName: string
+
       beforeEach(async () => {
+        const { worldCreator } = components
+
         const created = await worldCreator.createWorldWithScene()
         worldName = created.worldName
       })
 
       it('should return the scenes', async () => {
+        const { localFetch } = components
+
         const response = await localFetch.fetch(`/world/${worldName}/scenes`)
 
         expect(response.status).toBe(200)
@@ -63,14 +70,16 @@ test('ScenesHandler', function ({ components, stubComponents }) {
       })
 
       describe('and coordinates filter is provided', function () {
-        let coordinates: string[]
-
         describe("and there's a single valid coordinate", function () {
-          beforeEach(async () => {
+          let coordinates: string[]
+
+          beforeEach(() => {
             coordinates = ['20,24']
           })
 
           it('should return scenes matching the coordinates', async () => {
+            const { localFetch } = components
+
             const response = await localFetch.fetch(`/world/${worldName}/scenes?${buildQuery(coordinates)}`)
 
             expect(response.status).toBe(200)
@@ -87,11 +96,15 @@ test('ScenesHandler', function ({ components, stubComponents }) {
         })
 
         describe("and there's a single invalid coordinate", function () {
-          beforeEach(async () => {
+          let coordinates: string[]
+
+          beforeEach(() => {
             coordinates = ['invalid']
           })
 
           it('should respond with 400 and the invalid coordinate', async () => {
+            const { localFetch } = components
+
             const response = await localFetch.fetch(`/world/${worldName}/scenes?${buildQuery(coordinates)}`)
 
             expect(response.status).toBe(400)
@@ -103,11 +116,15 @@ test('ScenesHandler', function ({ components, stubComponents }) {
         })
 
         describe('and there are multiple valid coordinates', function () {
-          beforeEach(async () => {
+          let coordinates: string[]
+
+          beforeEach(() => {
             coordinates = ['20,24', '21,25']
           })
 
           it('should return scenes matching any of the coordinates', async () => {
+            const { localFetch } = components
+
             const response = await localFetch.fetch(`/world/${worldName}/scenes?${buildQuery(coordinates)}`)
 
             expect(response.status).toBe(200)
@@ -117,11 +134,15 @@ test('ScenesHandler', function ({ components, stubComponents }) {
         })
 
         describe('and one of multiple coordinates is invalid', function () {
-          beforeEach(async () => {
+          let coordinates: string[]
+
+          beforeEach(() => {
             coordinates = ['0,0', 'bad']
           })
 
           it('should respond with 400 and the first invalid coordinate', async () => {
+            const { localFetch } = components
+
             const response = await localFetch.fetch(`/world/${worldName}/scenes?${buildQuery(coordinates)}`)
 
             expect(response.status).toBe(400)
@@ -135,6 +156,8 @@ test('ScenesHandler', function ({ components, stubComponents }) {
 
       describe('and pagination is provided', function () {
         it('should return paginated results', async () => {
+          const { localFetch } = components
+
           const response = await localFetch.fetch(`/world/${worldName}/scenes?limit=10&offset=0`)
 
           expect(response.status).toBe(200)
@@ -148,11 +171,17 @@ test('ScenesHandler', function ({ components, stubComponents }) {
     })
 
     describe('when the world does not exist', function () {
+      let worldName: string
+
       beforeEach(() => {
+        const { worldCreator } = components
+
         worldName = worldCreator.randomWorldName()
       })
 
       it('should return empty scenes array', async () => {
+        const { localFetch } = components
+
         const response = await localFetch.fetch(`/world/${worldName}/scenes`)
 
         expect(response.status).toBe(200)
@@ -164,11 +193,17 @@ test('ScenesHandler', function ({ components, stubComponents }) {
     })
 
     describe('when the coordinate has negative values', function () {
+      let worldName: string
+
       beforeEach(() => {
+        const { worldCreator } = components
+
         worldName = worldCreator.randomWorldName()
       })
 
       it('should accept negative coordinate values', async () => {
+        const { localFetch } = components
+
         const response = await localFetch.fetch(`/world/${worldName}/scenes?coordinates=-10,-20`)
 
         expect(response.status).toBe(200)
@@ -177,8 +212,11 @@ test('ScenesHandler', function ({ components, stubComponents }) {
 
     describe('when the world has multiple scenes deployed', function () {
       const sceneCoordinates = ['0,0', '1,1', '2,2']
+      let worldName: string
 
       beforeEach(async () => {
+        const { worldCreator } = components
+
         worldName = worldCreator.randomWorldName()
 
         for (const coordinate of sceneCoordinates) {
@@ -195,6 +233,8 @@ test('ScenesHandler', function ({ components, stubComponents }) {
 
       describe('and the limit query parameter is provided with a value less than total scenes', function () {
         it('should return only the limited number of scenes', async () => {
+          const { localFetch } = components
+
           const response = await localFetch.fetch(`/world/${worldName}/scenes?limit=2&offset=0`)
 
           expect(response.status).toBe(200)
@@ -209,6 +249,8 @@ test('ScenesHandler', function ({ components, stubComponents }) {
 
       describe('and the offset query parameter is provided', function () {
         it('should return scenes starting from the offset position', async () => {
+          const { localFetch } = components
+
           const response = await localFetch.fetch(`/world/${worldName}/scenes?limit=10&offset=1`)
 
           expect(response.status).toBe(200)
@@ -223,6 +265,8 @@ test('ScenesHandler', function ({ components, stubComponents }) {
 
       describe('and the offset query parameter exceeds the total number of scenes', function () {
         it('should return an empty scenes array with the correct total', async () => {
+          const { localFetch } = components
+
           const response = await localFetch.fetch(`/world/${worldName}/scenes?limit=10&offset=10`)
 
           expect(response.status).toBe(200)
@@ -234,6 +278,8 @@ test('ScenesHandler', function ({ components, stubComponents }) {
 
       describe('and both limit and offset query parameters are provided', function () {
         it('should return the correct slice of scenes', async () => {
+          const { localFetch } = components
+
           const response = await localFetch.fetch(`/world/${worldName}/scenes?limit=1&offset=1`)
 
           expect(response.status).toBe(200)
@@ -246,6 +292,8 @@ test('ScenesHandler', function ({ components, stubComponents }) {
 
       describe('and no pagination query parameters are provided', function () {
         it('should return all scenes', async () => {
+          const { localFetch } = components
+
           const response = await localFetch.fetch(`/world/${worldName}/scenes`)
 
           expect(response.status).toBe(200)
@@ -264,6 +312,8 @@ test('ScenesHandler', function ({ components, stubComponents }) {
       let worldName: string
 
       beforeEach(async () => {
+        const { worldCreator } = components
+
         identity = await getIdentity()
         const created = await worldCreator.createWorldWithScene({ owner: identity.authChain })
         worldName = created.worldName
@@ -274,6 +324,8 @@ test('ScenesHandler', function ({ components, stubComponents }) {
       })
 
       it('should successfully undeploy the scene and remove it from the world', async () => {
+        const { localFetch } = components
+
         const response = await makeSignedRequest(localFetch, `/world/${worldName}/scenes/20,24`, identity)
 
         expect(response.status).toBe(200)
@@ -295,6 +347,8 @@ test('ScenesHandler', function ({ components, stubComponents }) {
       let worldName: string
 
       beforeEach(async () => {
+        const { worldCreator, worldsManager } = components
+
         owner = await getIdentity()
         deployer = await getIdentity()
 
@@ -311,6 +365,8 @@ test('ScenesHandler', function ({ components, stubComponents }) {
       })
 
       it('should successfully undeploy the scene and remove it from the world', async () => {
+        const { localFetch } = components
+
         const response = await makeSignedRequest(localFetch, `/world/${worldName}/scenes/20,24`, deployer)
 
         expect(response.status).toBe(200)
@@ -331,12 +387,16 @@ test('ScenesHandler', function ({ components, stubComponents }) {
       let worldName: string
 
       beforeEach(async () => {
+        const { worldCreator } = components
+
         identity = await getIdentity()
         const created = await worldCreator.createWorldWithScene()
         worldName = created.worldName
       })
 
       it('should respond with 401 unauthorized', async () => {
+        const { localFetch } = components
+
         const response = await makeSignedRequest(localFetch, `/world/${worldName}/scenes/20,24`, identity)
 
         expect(response.status).toBe(401)
@@ -352,6 +412,8 @@ test('ScenesHandler', function ({ components, stubComponents }) {
       let worldName: string
 
       beforeEach(async () => {
+        const { worldCreator } = components
+
         identity = await getIdentity()
         const created = await worldCreator.createWorldWithScene({ owner: identity.authChain })
         worldName = created.worldName
@@ -362,6 +424,8 @@ test('ScenesHandler', function ({ components, stubComponents }) {
       })
 
       it('should respond with 400', async () => {
+        const { localFetch } = components
+
         const response = await makeSignedRequest(localFetch, `/world/${worldName}/scenes/abc,def`, identity)
 
         expect(response.status).toBe(400)
@@ -376,11 +440,15 @@ test('ScenesHandler', function ({ components, stubComponents }) {
       let worldName: string
 
       beforeEach(async () => {
+        const { worldCreator } = components
+
         const created = await worldCreator.createWorldWithScene()
         worldName = created.worldName
       })
 
       it('should respond with 400 and require signed fetch', async () => {
+        const { localFetch } = components
+
         const response = await localFetch.fetch(`/world/${worldName}/scenes/0,0`, {
           method: 'DELETE'
         })
@@ -398,6 +466,8 @@ test('ScenesHandler', function ({ components, stubComponents }) {
       let worldName: string
 
       beforeEach(async () => {
+        const { worldCreator } = components
+
         identity = await getIdentity()
         const created = await worldCreator.createWorldWithScene({
           owner: identity.authChain,
@@ -420,6 +490,8 @@ test('ScenesHandler', function ({ components, stubComponents }) {
       })
 
       it('should accept negative coordinate values and remove the scene from the world', async () => {
+        const { localFetch } = components
+
         const response = await makeSignedRequest(localFetch, `/world/${worldName}/scenes/-5,-10`, identity)
 
         expect(response.status).toBe(200)

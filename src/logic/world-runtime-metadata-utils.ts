@@ -85,7 +85,7 @@ export function buildWorldRuntimeMetadata(worldName: string, scenes: any[]): Wor
     const firstScene = scenes[0]
     return extractWorldRuntimeMetadata(worldName, {
       ...firstScene.entity,
-      id: firstScene.id
+      id: firstScene.entityId
     })
   }
 
