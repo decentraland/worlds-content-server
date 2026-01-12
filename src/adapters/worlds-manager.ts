@@ -221,7 +221,7 @@ export async function createWorldsManagerComponent({
         INNER JOIN world_scenes ws ON ws.world_name = w.name
         WHERE w.name = ANY(${allowedNames})
           AND w.spawn_coordinates IS NOT NULL
-          AND ws.parcels @> ARRAY[w.spawn_coordinates]
+          AND ws.parcels @> ARRAY[w.spawn_coordinates]::text[]
       `
     )
 

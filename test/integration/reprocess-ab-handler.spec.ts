@@ -61,7 +61,7 @@ test('reprocess asset-bundles handler /reprocess-ab', function ({ components, st
     expect(r.status).toEqual(400)
     expect(await r.json()).toEqual({
       error: 'Bad request',
-      message: 'No worlds found for reprocessing'
+      message: 'No scenes found for reprocessing'
     })
     expect(snsClient.publishMessages).not.toHaveBeenCalled()
   })
