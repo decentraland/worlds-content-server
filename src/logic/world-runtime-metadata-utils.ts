@@ -61,22 +61,24 @@ export function extractWorldRuntimeMetadata(worldName: string, entity: Entity): 
 }
 
 /**
- * Extracts spawn point parcel coordinate from an Entity's metadata.
- * Returns a parcel coordinate string like "0,0" from scene.base or scene.parcels[0],
- * or null if no scene metadata found.
+ * Extracts the spawn point parcel coordinate from an Entity's metadata
+ *
+ * The spawn coordinate is determined using the following priority:
+ * 1. The scene's base parcel (scene.base)
+ * 2. The first parcel in the scene's parcels array (scene.parcels[0])
+ *
+ * @param entity - The scene entity containing metadata with scene information
+ * @returns The parcel coordinate string (e.g., "0,0")
+ * @throws {Error} If no valid spawn coordinates are found in the entity metadata
  */
-export function extractSpawnCoordinates(entity: Entity): string | null {
+export function extractSpawnCoordinates(entity: Entity): string {
   const scene = entity.metadata?.scene
-  if (!scene) {
-    return null
-  }
-
-  const parcel = scene.base || (scene.parcels && scene.parcels[0])
+  const parcel = scene?.base || (scene?.parcels && scene.parcels[0])
   if (parcel && typeof parcel === 'string') {
     return parcel
   }
 
-  return null
+  throw new Error('No spawn coordinates found in entity metadata')
 }
 
 export function buildWorldRuntimeMetadata(worldName: string, scenes: any[]): WorldRuntimeMetadata {

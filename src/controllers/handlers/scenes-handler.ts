@@ -33,9 +33,15 @@ export async function getScenesHandler(
 
   const { scenes, total } = await ctx.components.worldsManager.getWorldScenes(filters, { limit, offset })
 
+  // Convert BigInt values to strings for JSON serialization
+  const serializedScenes = scenes.map((scene) => ({
+    ...scene,
+    size: scene.size.toString()
+  }))
+
   return {
     status: 200,
-    body: { scenes, total }
+    body: { scenes: serializedScenes, total }
   }
 }
 

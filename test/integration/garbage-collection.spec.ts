@@ -4,8 +4,18 @@ import { Entity, IPFSv2 } from '@dcl/schemas'
 import { makeid } from '../utils'
 
 test('when performing garbage collection through /gc', function ({ components }) {
-  afterEach(() => {
+  afterEach(async () => {
     jest.resetAllMocks()
+
+    // Clear storage to ensure test isolation
+    const { storage } = components
+    const fileIds: string[] = []
+    for await (const fileId of storage.allFileIds()) {
+      fileIds.push(fileId)
+    }
+    if (fileIds.length > 0) {
+      await storage.delete(fileIds)
+    }
   })
 
   describe('and there are unused files from a previous deployment', () => {
@@ -81,8 +91,8 @@ test('when performing garbage collection through /gc', function ({ components })
     })
 
     describe('and garbage collection is triggered', () => {
-      it('should respond with 200, remove old files, and keep active files', async () => {
-        const { localFetch, storage } = components
+      it('should respond with 200 and remove exactly 4 unused keys', async () => {
+        const { localFetch } = components
 
         const response = await localFetch.fetch('/gc', {
           method: 'POST',
@@ -91,19 +101,38 @@ test('when performing garbage collection through /gc', function ({ components })
           }
         })
 
-        // Response verification
         expect(response.status).toEqual(200)
         expect(await response.json()).toMatchObject({
           message: 'Garbage collection removed 4 unused keys.'
         })
+      })
 
-        // Old files should be removed
+      it('should remove the old entity files from storage', async () => {
+        const { localFetch, storage } = components
+
+        await localFetch.fetch('/gc', {
+          method: 'POST',
+          headers: {
+            Authorization: 'Bearer setup_some_secret_here'
+          }
+        })
+
         expect(await storage.exist(oldEntityId)).toBeFalsy()
         expect(await storage.exist(`${oldEntityId}.auth`)).toBeFalsy()
         expect(await storage.exist(oldEntity.content![0].hash)).toBeFalsy()
         expect(await storage.exist(oldEntity.content![1].hash)).toBeFalsy()
+      })
 
-        // Active files should be kept
+      it('should keep the active entity files in storage', async () => {
+        const { localFetch, storage } = components
+
+        await localFetch.fetch('/gc', {
+          method: 'POST',
+          headers: {
+            Authorization: 'Bearer setup_some_secret_here'
+          }
+        })
+
         expect(await storage.exist(newEntityId)).toBeTruthy()
         expect(await storage.exist(`${newEntityId}.auth`)).toBeTruthy()
         expect(await storage.exist(newEntity.content![0].hash)).toBeTruthy()

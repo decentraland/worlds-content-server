@@ -86,6 +86,24 @@ export async function createWorldsManagerComponent({
     return metadata
   }
 
+  /**
+   * Deploys a scene to a world
+   *
+   * This method handles the complete scene deployment workflow within a database transaction:
+   * 1. Extracts parcels and deployment auth chain from the scene
+   * 2. Calculates total scene size from content files
+   * 3. Creates or updates the world record with owner and spawn coordinates
+   * 4. Removes any existing scenes that overlap with the new scene's parcels
+   * 5. Inserts the new scene into the world_scenes table
+   *
+   * The transaction ensures atomicity - if any step fails, all changes are rolled back.
+   *
+   * @param worldName - The name of the world to deploy the scene to
+   * @param scene - The scene entity containing metadata, content, and parcel information
+   * @param owner - The Ethereum address of the world owner
+   * @throws {Error} If the deployment auth chain cannot be retrieved or parsed
+   * @throws {Error} If any database operation fails (triggers rollback)
+   */
   async function deployScene(worldName: string, scene: Entity, owner: EthAddress): Promise<void> {
     const parcels: string[] = scene.metadata?.scene?.parcels || []
 
@@ -119,10 +137,12 @@ export async function createWorldsManagerComponent({
           )
         `)
       } else {
-        // Update owner if changed
+        // Update owner and set spawn_coordinates if not already set
+        const spawnCoordinates = extractSpawnCoordinates(scene)
         await database.query(SQL`
           UPDATE worlds
           SET owner = ${owner?.toLowerCase()},
+              spawn_coordinates = COALESCE(spawn_coordinates, ${spawnCoordinates}),
               updated_at = ${new Date()}
           WHERE name = ${worldName.toLowerCase()}
         `)

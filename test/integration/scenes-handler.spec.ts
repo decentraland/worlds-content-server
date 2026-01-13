@@ -62,7 +62,7 @@ test('ScenesHandler', function ({ components, stubComponents }) {
         expect(body).toMatchObject({
           scenes: expect.arrayContaining([
             expect.objectContaining({
-              id: expect.any(String)
+              entityId: expect.any(String)
             })
           ]),
           total: 1
@@ -87,7 +87,7 @@ test('ScenesHandler', function ({ components, stubComponents }) {
             expect(body).toMatchObject({
               scenes: expect.arrayContaining([
                 expect.objectContaining({
-                  id: expect.any(String)
+                  entityId: expect.any(String)
                 })
               ]),
               total: 1
@@ -241,7 +241,7 @@ test('ScenesHandler', function ({ components, stubComponents }) {
           const body = await response.json()
           expect(body.scenes).toHaveLength(2)
           expect(body.total).toBe(3)
-          expect(body.scenes.map((s: { base_parcel: string }) => s.base_parcel)).toEqual(
+          expect(body.scenes.map((s: { parcels: string[] }) => s.parcels[0])).toEqual(
             expect.arrayContaining(['0,0', '1,1'])
           )
         })
@@ -257,7 +257,7 @@ test('ScenesHandler', function ({ components, stubComponents }) {
           const body = await response.json()
           expect(body.scenes).toHaveLength(2)
           expect(body.total).toBe(3)
-          expect(body.scenes.map((s: { base_parcel: string }) => s.base_parcel)).toEqual(
+          expect(body.scenes.map((s: { parcels: string[] }) => s.parcels[0])).toEqual(
             expect.arrayContaining(['1,1', '2,2'])
           )
         })
@@ -286,7 +286,7 @@ test('ScenesHandler', function ({ components, stubComponents }) {
           const body = await response.json()
           expect(body.scenes).toHaveLength(1)
           expect(body.total).toBe(3)
-          expect(body.scenes[0].base_parcel).toBe('1,1')
+          expect(body.scenes[0].parcels[0]).toBe('1,1')
         })
       })
 
@@ -300,7 +300,7 @@ test('ScenesHandler', function ({ components, stubComponents }) {
           const body = await response.json()
           expect(body.scenes).toHaveLength(3)
           expect(body.total).toBe(3)
-          expect(body.scenes.map((s: { base_parcel: string }) => s.base_parcel).sort()).toEqual(sceneCoordinates)
+          expect(body.scenes.map((s: { parcels: string[] }) => s.parcels[0]).sort()).toEqual(sceneCoordinates)
         })
       })
     })

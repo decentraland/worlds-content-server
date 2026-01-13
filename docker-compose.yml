@@ -1,8 +1,8 @@
 version: '3.8'
 services:
   postgres:
-    container_name: "world_content_server_db"
-    image: 'postgres:latest'
+    container_name: 'world_content_server_db'
+    image: 'postgres:16'
     restart: always
     user: postgres
     volumes:

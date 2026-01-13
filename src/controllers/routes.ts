@@ -30,7 +30,7 @@ import { getWorldSettingsHandler, updateWorldSettingsHandler } from './handlers/
 import { worldSettingsSchema } from './schemas/world-settings-schemas'
 
 export async function setupRouter(globalContext: GlobalContext): Promise<Router<GlobalContext>> {
-  const { fetch, schemaValidator } = globalContext.components
+  const { fetch, schemaValidator, config } = globalContext.components
 
   const signedFetchMiddleware = wellKnownComponents({
     fetcher: fetch,
@@ -104,7 +104,7 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   router.post('/cast-adapter/:roomId', signedFetchMiddleware, castAdapterHandler)
 
   // administrative endpoints
-  const secret = await globalContext.components.config.requireString('AUTH_SECRET')
+  const secret = await config.requireString('AUTH_SECRET')
   if (secret) {
     router.post('/reprocess-ab', bearerTokenMiddleware(secret), reprocessABHandler)
     router.post('/gc', bearerTokenMiddleware(secret), garbageCollectionHandler)
