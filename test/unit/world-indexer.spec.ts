@@ -22,9 +22,7 @@ describe('when indexing worlds', function () {
       id: 'bafkreielwj3ki46munydwn4ayazdvmjln76khmz2xyaf5v6dkmo6yoebbi',
       pointers: ['20,24'],
       timestamp: 1683909215429,
-      content: [
-        { file: 'scene-thumbnail.png', hash: 'bafkreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku' }
-      ],
+      content: [{ file: 'scene-thumbnail.png', hash: 'bafkreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku' }],
       metadata: {
         display: {
           title: 'Mi propia escena',
@@ -45,9 +43,7 @@ describe('when indexing worlds', function () {
       id: 'bafkreic6ix3pdwf7g24reg4ktlyjpmtbqbc2nq4zocupkmul37am4vlt6y',
       pointers: ['20,24'],
       timestamp: 1684263239610,
-      content: [
-        { file: 'scene-thumbnail.png', hash: 'bafkreidduubi76bntd27dewz4cvextrfl3qyd4td6mtztuisxi26q64dnq' }
-      ],
+      content: [{ file: 'scene-thumbnail.png', hash: 'bafkreidduubi76bntd27dewz4cvextrfl3qyd4td6mtztuisxi26q64dnq' }],
       metadata: {
         display: {
           title: 'Mi propia escena',
@@ -117,9 +113,7 @@ describe('when indexing worlds', function () {
         id: 'bafkreielwj3ki46munydwn4ayazdvmjln76khmz2xyaf5v6dkmo6yoebbi',
         pointers: ['20,24'],
         timestamp: 1683909215429,
-        content: [
-          { file: 'scene-thumbnail.png', hash: 'bafkreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku' }
-        ],
+        content: [{ file: 'scene-thumbnail.png', hash: 'bafkreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku' }],
         metadata: {
           display: {
             title: 'Test Scene',
@@ -133,11 +127,7 @@ describe('when indexing worlds', function () {
           scene: { base: '20,24', parcels: ['20,24'] }
         }
       }
-      await worldsManager.deployScene(
-        'world-with-scene.dcl.eth',
-        entity,
-        '0x1234567890123456789012345678901234567890'
-      )
+      await worldsManager.deployScene('world-with-scene.dcl.eth', entity, '0x1234567890123456789012345678901234567890')
     })
 
     it('should only include worlds that have scenes in the index', async () => {
