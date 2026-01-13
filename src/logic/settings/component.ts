@@ -20,17 +20,11 @@ export function createSettingsComponent(
   async function updateWorldSettings(worldName: string, signer: string, input: WorldSettings): Promise<WorldSettings> {
     const normalizedSigner = signer.toLowerCase()
 
-    // Check if user owns the name
+    // Only name owners can update world settings
     const hasNamePermission = await namePermissionChecker.checkPermission(normalizedSigner, worldName)
 
     if (!hasNamePermission) {
-      // Check if user has deployment permissions (which includes world settings)
-      const permissionChecker = await worldsManager.permissionCheckerForWorld(worldName)
-      const hasDeploymentPermission = await permissionChecker.checkPermission('deployment', normalizedSigner)
-
-      if (!hasDeploymentPermission) {
-        throw new UnauthorizedError()
-      }
+      throw new UnauthorizedError()
     }
 
     // Validate spawnCoordinates belongs to a deployed scene

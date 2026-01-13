@@ -1,19 +1,16 @@
 import { createSettingsComponent, ISettingsComponent } from '../../src/logic/settings'
-import { IWorldNamePermissionChecker, IWorldsManager, IPermissionChecker, WorldSettings } from '../../src/types'
+import { IWorldNamePermissionChecker, IWorldsManager, WorldSettings } from '../../src/types'
 import { createMockedNamePermissionChecker } from '../mocks/dcl-name-checker-mock'
-import { createMockedPermissionsChecker } from '../mocks/permissions-checker-mock'
 import { createMockedWorldsManager } from '../mocks/world-manager-mock'
 
 describe('SettingsComponent', () => {
   let settingsComponent: ISettingsComponent
   let namePermissionChecker: jest.Mocked<IWorldNamePermissionChecker>
   let worldsManager: jest.Mocked<IWorldsManager>
-  let permissionChecker: jest.Mocked<IPermissionChecker>
 
   beforeEach(() => {
     namePermissionChecker = createMockedNamePermissionChecker()
     worldsManager = createMockedWorldsManager()
-    permissionChecker = createMockedPermissionsChecker()
 
     settingsComponent = createSettingsComponent({ namePermissionChecker, worldsManager })
   })
@@ -91,45 +88,18 @@ describe('SettingsComponent', () => {
 
     describe('when the signer does not own the world name', () => {
       beforeEach(() => {
-        signer = '0xContributorAddress'
+        signer = '0xUnauthorizedAddress'
+        input = { spawnCoordinates: '5,10' }
         namePermissionChecker.checkPermission.mockResolvedValue(false)
-        worldsManager.permissionCheckerForWorld.mockResolvedValue(permissionChecker)
       })
 
-      describe('and has deployment permission', () => {
-        beforeEach(() => {
-          input = { spawnCoordinates: '5,10' }
-          permissionChecker.checkPermission.mockResolvedValue(true)
-          worldsManager.getWorldScenes.mockResolvedValue({ scenes: [{ id: 'scene-1' }] as any, total: 1 })
-          worldsManager.updateWorldSettings.mockResolvedValue(undefined)
-        })
-
-        it('should update the world settings', async () => {
-          const result = await settingsComponent.updateWorldSettings(worldName, signer, input)
-
-          expect(result).toEqual({ spawnCoordinates: '5,10' })
-          expect(namePermissionChecker.checkPermission).toHaveBeenCalledWith(signer.toLowerCase(), worldName)
-          expect(worldsManager.permissionCheckerForWorld).toHaveBeenCalledWith(worldName)
-          expect(permissionChecker.checkPermission).toHaveBeenCalledWith('deployment', signer.toLowerCase())
-          expect(worldsManager.updateWorldSettings).toHaveBeenCalledWith(worldName, { spawnCoordinates: '5,10' })
-        })
-      })
-
-      describe('and does not have deployment permission', () => {
-        beforeEach(() => {
-          signer = '0xUnauthorizedAddress'
-          input = { spawnCoordinates: '5,10' }
-          permissionChecker.checkPermission.mockResolvedValue(false)
-        })
-
-        it('should throw an UnauthorizedError with the correct message', async () => {
-          await expect(settingsComponent.updateWorldSettings(worldName, signer, input)).rejects.toThrow(
-            expect.objectContaining({
-              name: 'UnauthorizedError',
-              message: 'Unauthorized. You do not have permission to update settings for this world.'
-            })
-          )
-        })
+      it('should throw an UnauthorizedError with the correct message', async () => {
+        await expect(settingsComponent.updateWorldSettings(worldName, signer, input)).rejects.toThrow(
+          expect.objectContaining({
+            name: 'UnauthorizedError',
+            message: 'Unauthorized. You do not have permission to update settings for this world.'
+          })
+        )
       })
     })
 
