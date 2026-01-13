@@ -14,7 +14,7 @@ import {
 import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage'
 import { Entity, EthAddress, PaginatedParameters } from '@dcl/schemas'
 import { stringToUtf8Bytes } from 'eth-connect'
-import { extractWorldRuntimeMetadata } from '../../src/logic/world-runtime-metadata-utils'
+import { extractSpawnCoordinates, extractWorldRuntimeMetadata } from '../../src/logic/world-runtime-metadata-utils'
 import { createPermissionChecker, defaultPermissions } from '../../src/logic/permissions-checker'
 
 export async function createWorldsManagerMockComponent({
@@ -25,13 +25,19 @@ export async function createWorldsManagerMockComponent({
     for await (const key of storage.allFileIds('name-')) {
       const entity = await getEntityForWorld(key.substring(5))
       if (entity) {
-        const content = await storage.retrieve(`${entity.id}.auth`)
-        const authChain = JSON.parse((await streamToBuffer(await content?.asStream())).toString())
+        let owner = ''
+        const authContent = await storage.retrieve(`${entity.id}.auth`)
+        if (authContent) {
+          const authChain = JSON.parse((await streamToBuffer(await authContent.asStream())).toString())
+          owner = authChain[0]?.payload || ''
+        }
+        // Extract spawn coordinates from the entity's scene base parcel
+        const spawnCoordinates = extractSpawnCoordinates(entity)
         worlds.push({
           name: entity.metadata.worldConfiguration.name,
-          owner: authChain[0].payload,
+          owner,
           permissions: { ...defaultPermissions() },
-          spawn_coordinates: null,
+          spawn_coordinates: spawnCoordinates,
           created_at: new Date(1706019701900),
           updated_at: new Date(1706019701900),
           blocked_since: null
@@ -47,7 +53,6 @@ export async function createWorldsManagerMockComponent({
       return undefined
     }
 
-    // Return the first scene's entity for backward compatibility
     const scene = metadata.scenes[0]
     return {
       ...scene.entity,
@@ -120,10 +125,26 @@ export async function createWorldsManagerMockComponent({
   }
 
   async function getWorldScenes(
-    _filters?: GetWorldScenesFilters,
-    _options?: PaginatedParameters
+    filters?: GetWorldScenesFilters,
+    options?: PaginatedParameters
   ): Promise<GetWorldScenesResult> {
-    return { scenes: [], total: 0 }
+    if (!filters?.worldName) {
+      return { scenes: [], total: 0 }
+    }
+
+    const metadata = await getMetadataForWorld(filters.worldName)
+    if (!metadata || !metadata.scenes) {
+      return { scenes: [], total: 0 }
+    }
+
+    const scenes = metadata.scenes
+    const limit = options?.limit || scenes.length
+    const offset = options?.offset || 0
+
+    return {
+      scenes: scenes.slice(offset, offset + limit),
+      total: scenes.length
+    }
   }
 
   async function updateWorldSettings(_worldName: string, _settings: WorldSettings): Promise<void> {
