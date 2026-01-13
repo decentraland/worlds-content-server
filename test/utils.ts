@@ -34,7 +34,7 @@ export async function cleanup(storage: IContentStorageComponent, db: IPgComponen
   }
   await storage.delete(files)
 
-  await db.query(`TRUNCATE worlds`)
+  await db.query(`TRUNCATE worlds, world_scenes CASCADE`)
 }
 
 export type Identity = { authChain: AuthIdentity; realAccount: IdentityType; ephemeralIdentity: IdentityType }

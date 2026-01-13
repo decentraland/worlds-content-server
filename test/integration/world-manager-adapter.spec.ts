@@ -1,5 +1,7 @@
 import { defaultPermissions } from '../../src/logic/permissions-checker'
 import { test } from '../components'
+import { stringToUtf8Bytes } from 'eth-connect'
+import { makeid } from '../utils'
 
 test('WorldManagerAdapter', function ({ components }) {
   afterEach(() => {
@@ -13,7 +15,10 @@ test('WorldManagerAdapter', function ({ components }) {
       beforeEach(async () => {
         const { worldCreator } = components
 
-        const created = await worldCreator.createWorldWithScene()
+        const files = new Map<string, Uint8Array>()
+        files.set('abc.txt', stringToUtf8Bytes(makeid(100)))
+
+        const created = await worldCreator.createWorldWithScene({ files })
         worldName = created.worldName
       })
 
@@ -34,14 +39,21 @@ test('WorldManagerAdapter', function ({ components }) {
 
         worldName = worldCreator.randomWorldName()
 
+        const files1 = new Map<string, Uint8Array>()
+        files1.set('abc.txt', stringToUtf8Bytes(makeid(100)))
+
         await worldCreator.createWorldWithScene({
           worldName,
           metadata: {
             main: 'abc.txt',
             scene: { base: '0,0', parcels: ['0,0'] },
             worldConfiguration: { name: worldName }
-          }
+          },
+          files: files1
         })
+
+        const files2 = new Map<string, Uint8Array>()
+        files2.set('abc.txt', stringToUtf8Bytes(makeid(100)))
 
         await worldCreator.createWorldWithScene({
           worldName,
@@ -49,7 +61,8 @@ test('WorldManagerAdapter', function ({ components }) {
             main: 'abc.txt',
             scene: { base: '1,1', parcels: ['1,1'] },
             worldConfiguration: { name: worldName }
-          }
+          },
+          files: files2
         })
       })
 

@@ -10,3 +10,12 @@ export function createMockNameOwnership(values: Map<string, EthAddress> = new Ma
     }
   }
 }
+
+export function createMockedNameOwnership(
+  overrides?: Partial<jest.Mocked<INameOwnership>>
+): jest.Mocked<INameOwnership> {
+  return {
+    findOwners: jest.fn(),
+    ...overrides
+  }
+}
