@@ -506,5 +506,173 @@ test('ScenesHandler', function ({ components, stubComponents }) {
         expect(scenesBody.total).toBe(0)
       })
     })
+
+    describe('when trying to undeploy a non-existent coordinate', function () {
+      let identity: Identity
+      let worldName: string
+
+      beforeEach(async () => {
+        const { worldCreator } = components
+
+        identity = await getIdentity()
+        const created = await worldCreator.createWorldWithScene({ owner: identity.authChain })
+        worldName = created.worldName
+
+        stubComponents.namePermissionChecker.checkPermission
+          .withArgs(identity.authChain.authChain[0].payload.toLowerCase(), worldName)
+          .resolves(true)
+      })
+
+      it('should respond with 200 but not affect any scenes', async () => {
+        const { localFetch } = components
+
+        const scenesBeforeResponse = await localFetch.fetch(`/world/${worldName}/scenes`)
+        const scenesBeforeBody = await scenesBeforeResponse.json()
+
+        const response = await makeSignedRequest(localFetch, `/world/${worldName}/scenes/99,99`, identity)
+
+        expect(response.status).toBe(200)
+        expect(await response.json()).toMatchObject({
+          message: 'Scene at parcel 99,99 undeployed successfully'
+        })
+
+        const scenesAfterResponse = await localFetch.fetch(`/world/${worldName}/scenes`)
+        const scenesAfterBody = await scenesAfterResponse.json()
+
+        expect(scenesAfterBody.scenes).toHaveLength(scenesBeforeBody.scenes.length)
+        expect(scenesAfterBody.total).toBe(scenesBeforeBody.total)
+      })
+    })
+
+    describe('when undeploying a scene that is at the spawn coordinates', function () {
+      let identity: Identity
+      let worldName: string
+
+      beforeEach(async () => {
+        const { worldCreator } = components
+
+        identity = await getIdentity()
+        worldName = worldCreator.randomWorldName()
+
+        await worldCreator.createWorldWithScene({
+          worldName,
+          owner: identity.authChain,
+          metadata: {
+            main: 'abc.txt',
+            scene: { base: '0,0', parcels: ['0,0'] },
+            worldConfiguration: { name: worldName }
+          }
+        })
+
+        await worldCreator.createWorldWithScene({
+          worldName,
+          owner: identity.authChain,
+          metadata: {
+            main: 'abc.txt',
+            scene: { base: '1,1', parcels: ['1,1'] },
+            worldConfiguration: { name: worldName }
+          }
+        })
+
+        stubComponents.namePermissionChecker.checkPermission
+          .withArgs(identity.authChain.authChain[0].payload.toLowerCase(), worldName)
+          .resolves(true)
+      })
+
+      it('should update spawn coordinates to another deployed scene', async () => {
+        const { localFetch, worldsManager } = components
+
+        const settingsBefore = await worldsManager.getWorldSettings(worldName)
+        expect(settingsBefore?.spawnCoordinates).toBe('0,0')
+
+        const response = await makeSignedRequest(localFetch, `/world/${worldName}/scenes/0,0`, identity)
+
+        expect(response.status).toBe(200)
+
+        const settingsAfter = await worldsManager.getWorldSettings(worldName)
+        expect(settingsAfter?.spawnCoordinates).toBe('1,1')
+      })
+    })
+
+    describe('when undeploying a scene that is not at the spawn coordinates', function () {
+      let identity: Identity
+      let worldName: string
+
+      beforeEach(async () => {
+        const { worldCreator } = components
+
+        identity = await getIdentity()
+        worldName = worldCreator.randomWorldName()
+
+        await worldCreator.createWorldWithScene({
+          worldName,
+          owner: identity.authChain,
+          metadata: {
+            main: 'abc.txt',
+            scene: { base: '0,0', parcels: ['0,0'] },
+            worldConfiguration: { name: worldName }
+          }
+        })
+
+        await worldCreator.createWorldWithScene({
+          worldName,
+          owner: identity.authChain,
+          metadata: {
+            main: 'abc.txt',
+            scene: { base: '1,1', parcels: ['1,1'] },
+            worldConfiguration: { name: worldName }
+          }
+        })
+
+        stubComponents.namePermissionChecker.checkPermission
+          .withArgs(identity.authChain.authChain[0].payload.toLowerCase(), worldName)
+          .resolves(true)
+      })
+
+      it('should not change the spawn coordinates', async () => {
+        const { localFetch, worldsManager } = components
+
+        const settingsBefore = await worldsManager.getWorldSettings(worldName)
+        expect(settingsBefore?.spawnCoordinates).toBe('0,0')
+
+        const response = await makeSignedRequest(localFetch, `/world/${worldName}/scenes/1,1`, identity)
+
+        expect(response.status).toBe(200)
+
+        const settingsAfter = await worldsManager.getWorldSettings(worldName)
+        expect(settingsAfter?.spawnCoordinates).toBe('0,0')
+      })
+    })
+
+    describe('when undeploying the last scene in a world', function () {
+      let identity: Identity
+      let worldName: string
+
+      beforeEach(async () => {
+        const { worldCreator } = components
+
+        identity = await getIdentity()
+        const created = await worldCreator.createWorldWithScene({ owner: identity.authChain })
+        worldName = created.worldName
+
+        stubComponents.namePermissionChecker.checkPermission
+          .withArgs(identity.authChain.authChain[0].payload.toLowerCase(), worldName)
+          .resolves(true)
+      })
+
+      it('should set spawn coordinates to null', async () => {
+        const { localFetch, worldsManager } = components
+
+        const settingsBefore = await worldsManager.getWorldSettings(worldName)
+        expect(settingsBefore?.spawnCoordinates).toBeDefined()
+
+        const response = await makeSignedRequest(localFetch, `/world/${worldName}/scenes/20,24`, identity)
+
+        expect(response.status).toBe(200)
+
+        const settingsAfter = await worldsManager.getWorldSettings(worldName)
+        expect(settingsAfter?.spawnCoordinates).toBeUndefined()
+      })
+    })
   })
 })

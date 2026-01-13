@@ -112,6 +112,27 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
         })
       })
     })
+
+    describe('when the world exists but has no scenes', () => {
+      let worldName: string
+
+      beforeEach(async () => {
+        const { worldCreator, worldsManager } = components
+
+        worldName = worldCreator.randomWorldName()
+
+        await worldsManager.storePermissions(worldName, defaultPermissions())
+      })
+
+      it('should return settings with undefined spawn coordinates', async () => {
+        const { localFetch } = components
+
+        const response = await localFetch.fetch(`/world/${worldName}/settings`)
+
+        expect(response.status).toBe(200)
+        expect(await response.json()).toMatchObject({})
+      })
+    })
   })
 
   describe('PUT /world/:world_name/settings', () => {
@@ -327,6 +348,52 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
           expect(await response.json()).toMatchObject({
             message: 'Invalid JSON body'
           })
+        })
+      })
+
+      describe('and spawn_coordinates is an empty string', () => {
+        it('should respond with 400', async () => {
+          const { localFetch } = components
+
+          const response = await makeSignedRequest(localFetch, `/world/${worldName}/settings`, identity, {
+            spawn_coordinates: ''
+          })
+
+          expect(response.status).toBe(400)
+          expect(await response.json()).toMatchObject({
+            message: 'Invalid JSON body'
+          })
+        })
+      })
+    })
+
+    describe('when the world exists but has no scenes', () => {
+      let identity: Identity
+      let worldName: string
+
+      beforeEach(async () => {
+        const { worldCreator, worldsManager } = components
+
+        identity = await getIdentity()
+        worldName = worldCreator.randomWorldName()
+
+        await worldsManager.storePermissions(worldName, defaultPermissions())
+
+        stubComponents.namePermissionChecker.checkPermission
+          .withArgs(identity.authChain.authChain[0].payload.toLowerCase(), worldName)
+          .resolves(true)
+      })
+
+      it('should respond with 400 validation error since there are no scenes to set spawn to', async () => {
+        const { localFetch } = components
+
+        const response = await makeSignedRequest(localFetch, `/world/${worldName}/settings`, identity, {
+          spawn_coordinates: '10,20'
+        })
+
+        expect(response.status).toBe(400)
+        expect(await response.json()).toMatchObject({
+          error: 'Invalid spawnCoordinates "10,20". It must belong to a parcel of a deployed scene.'
         })
       })
     })
