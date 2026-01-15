@@ -168,7 +168,7 @@ export async function createWorldsManagerComponent({
       await client.query(SQL`
         INSERT INTO world_scenes (
           world_name, entity_id, deployer, deployment_auth_chain, 
-          entity, parcels, size, created_at, updated_at
+          entity, parcels, size, created_at
         ) VALUES (
           ${worldName.toLowerCase()}, 
           ${scene.id},
@@ -177,7 +177,6 @@ export async function createWorldsManagerComponent({
           ${scene}::jsonb,
           ${parcels}::text[],
           ${size},
-          ${new Date()}, 
           ${new Date()}
         )
       `)
@@ -370,7 +369,6 @@ export async function createWorldsManagerComponent({
         parcels: string[]
         size: string
         created_at: Date
-        updated_at: Date
       }>(mainQuery)
     ])
 
@@ -384,8 +382,7 @@ export async function createWorldsManagerComponent({
       entity: row.entity,
       parcels: row.parcels,
       size: BigInt(row.size),
-      createdAt: row.created_at,
-      updatedAt: row.updated_at
+      createdAt: row.created_at
     }))
 
     return { scenes, total }

@@ -35,7 +35,6 @@ erDiagram
         TEXT_ARRAY parcels "Parcel coordinates"
         BIGINT size "Scene size in bytes"
         TIMESTAMP created_at "Creation timestamp"
-        TIMESTAMP updated_at "Update timestamp"
     }
 
     blocked {
@@ -101,7 +100,6 @@ Stores individual scene deployments within worlds. Each world can have multiple 
 | `parcels`               | TEXT[]    | NOT NULL | Array of parcel coordinates this scene occupies (e.g., `['0,0', '0,1', '1,0']`).             |
 | `size`                  | BIGINT    | NOT NULL | Total size of this scene's content files in bytes.                                           |
 | `created_at`            | TIMESTAMP | NOT NULL | Timestamp when the scene was first deployed.                                                 |
-| `updated_at`            | TIMESTAMP | NOT NULL | Timestamp when the scene was last updated.                                                   |
 
 ### Indexes
 

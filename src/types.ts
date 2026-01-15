@@ -68,7 +68,6 @@ export type WorldScene = {
   parcels: string[]
   size: bigint
   createdAt: Date
-  updatedAt: Date
 }
 
 export type GetWorldScenesFilters = {
@@ -77,8 +76,7 @@ export type GetWorldScenesFilters = {
 }
 
 export enum SceneOrderBy {
-  CreatedAt = 'created_at',
-  UpdatedAt = 'updated_at'
+  CreatedAt = 'created_at'
 }
 
 export enum OrderDirection {

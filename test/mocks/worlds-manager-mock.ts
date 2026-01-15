@@ -112,8 +112,7 @@ export async function createWorldsManagerMockComponent({
       entity: scene,
       parcels,
       size: 0n,
-      createdAt: new Date(),
-      updatedAt: new Date()
+      createdAt: new Date()
     }
 
     // Filter out existing scenes on these parcels and add the new scene
@@ -144,15 +143,14 @@ export async function createWorldsManagerMockComponent({
       return { scenes: [], total: 0 }
     }
 
-    let scenes = [...metadata.scenes]
+    const scenes = [...metadata.scenes]
 
     // Apply sorting
-    const orderBy = options?.orderBy ?? SceneOrderBy.CreatedAt
     const orderDirection = options?.orderDirection ?? OrderDirection.Asc
 
     scenes.sort((a, b) => {
-      const aValue = orderBy === SceneOrderBy.CreatedAt ? a.createdAt.getTime() : a.updatedAt.getTime()
-      const bValue = orderBy === SceneOrderBy.CreatedAt ? b.createdAt.getTime() : b.updatedAt.getTime()
+      const aValue = a.createdAt.getTime()
+      const bValue = b.createdAt.getTime()
       return orderDirection === OrderDirection.Asc ? aValue - bValue : bValue - aValue
     })
 

@@ -23,7 +23,6 @@ export const migration: Migration = {
           parcels TEXT[] NOT NULL,
           size BIGINT NOT NULL,
           created_at TIMESTAMP NOT NULL,
-          updated_at TIMESTAMP NOT NULL,
           PRIMARY KEY (world_name, entity_id),
           CONSTRAINT fk_world_name
             FOREIGN KEY (world_name)
@@ -52,7 +51,7 @@ export const migration: Migration = {
       const scenesResult = await database.query(`
         INSERT INTO world_scenes (
           world_name, entity_id, entity, deployment_auth_chain, 
-          deployer, parcels, size, created_at, updated_at
+          deployer, parcels, size, created_at
         )
         SELECT 
           name,
@@ -65,8 +64,7 @@ export const migration: Migration = {
             ARRAY[]::text[]
           ),
           COALESCE(size, 0),
-          created_at,
-          updated_at
+          created_at
         FROM worlds
         WHERE entity_id IS NOT NULL
         ON CONFLICT (world_name, entity_id) DO NOTHING
