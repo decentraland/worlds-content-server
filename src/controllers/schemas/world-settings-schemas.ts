@@ -7,7 +7,7 @@ export type WorldSettingsInput = {
 export const worldSettingsSchema: Schema = {
   type: 'object',
   properties: {
-    spawn_coordinates: { type: 'string', pattern: '^\\d+,\\d+$' }
+    spawn_coordinates: { type: 'string', pattern: '^-?\\d+,-?\\d+$' }
   },
   required: ['spawn_coordinates'],
   additionalProperties: false

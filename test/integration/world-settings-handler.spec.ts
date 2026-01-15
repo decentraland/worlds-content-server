@@ -337,7 +337,7 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
       })
 
       describe('and spawn_coordinates has negative values', () => {
-        it('should respond with 400 due to schema pattern', async () => {
+        it('should respond with 400 validation error since coordinates do not belong to a deployed scene', async () => {
           const { localFetch } = components
 
           const response = await makeSignedRequest(localFetch, `/world/${worldName}/settings`, identity, {
@@ -346,7 +346,7 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
 
           expect(response.status).toBe(400)
           expect(await response.json()).toMatchObject({
-            message: 'Invalid JSON body'
+            error: 'Invalid spawnCoordinates "-5,-10". It must belong to a parcel of a deployed scene.'
           })
         })
       })
