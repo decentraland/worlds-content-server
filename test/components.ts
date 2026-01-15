@@ -22,7 +22,9 @@ import { createEntityDeployer } from '../src/adapters/entity-deployer'
 import { createMockNameDenyListChecker } from './mocks/name-deny-list-checker-mock'
 import { createWorldCreator } from './mocks/world-creator'
 import { createWorldsManagerComponent } from '../src/adapters/worlds-manager'
+import { createCoordinatesComponent } from '../src/logic/coordinates'
 import { createPermissionsManagerComponent } from '../src/adapters/permissions-manager'
+import { createSettingsComponent } from '../src/logic/settings'
 import { createMockNameOwnership } from './mocks/name-ownership-mock'
 import { createMockUpdateOwnerJob } from './mocks/update-owner-job-mock'
 import { createSnsClientMock } from './mocks/sns-client-mock'
@@ -81,7 +83,10 @@ async function initComponents(): Promise<TestComponents> {
 
   const nameOwnership = createMockNameOwnership()
 
+  const coordinates = createCoordinatesComponent()
+
   const worldsManager = await createWorldsManagerComponent({
+    coordinates,
     logs,
     database,
     nameDenyListChecker,
@@ -118,10 +123,13 @@ async function initComponents(): Promise<TestComponents> {
 
   const worldCreator = createWorldCreator({ storage, worldsManager })
 
+  const settings = createSettingsComponent({ coordinates, namePermissionChecker, worldsManager })
+
   return {
     ...components,
     config,
     commsAdapter,
+    coordinates,
     entityDeployer,
     fetch,
     limitsManager,
@@ -132,6 +140,7 @@ async function initComponents(): Promise<TestComponents> {
     nats: createMockNatsComponent(),
     permissionsManager,
     peersRegistry: createMockPeersRegistry(),
+    settings,
     snsClient,
     status,
     storage,

@@ -1,7 +1,7 @@
 import { HandlerContextWithPath } from '../../types'
 import { IHttpServerComponent } from '@well-known-components/interfaces'
 import { DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
-import { createSettingsComponent, UnauthorizedError, ValidationError, WorldNotFoundError } from '../../logic/settings'
+import { UnauthorizedError, ValidationError, WorldNotFoundError } from '../../logic/settings'
 import { WorldSettingsInput } from '../schemas/world-settings-schemas'
 
 export async function getWorldSettingsHandler(
@@ -30,22 +30,25 @@ export async function getWorldSettingsHandler(
 }
 
 export async function updateWorldSettingsHandler(
-  ctx: HandlerContextWithPath<'namePermissionChecker' | 'worldsManager', '/world/:world_name/settings'> &
+  ctx: HandlerContextWithPath<
+    'coordinates' | 'namePermissionChecker' | 'worldsManager' | 'settings',
+    '/world/:world_name/settings'
+  > &
     DecentralandSignatureContext<any>
 ): Promise<IHttpServerComponent.IResponse> {
   const { world_name } = ctx.params
+  const { settings } = ctx.components
   const signer = ctx.verification!.auth
-  const settingsComponent = createSettingsComponent(ctx.components)
 
   try {
     const body = (await ctx.request.json()) as WorldSettingsInput
-    const settings = await settingsComponent.updateWorldSettings(world_name, signer, {
+    const updatedSettings = await settings.updateWorldSettings(world_name, signer, {
       spawnCoordinates: body.spawn_coordinates
     })
 
     return {
       status: 200,
-      body: { message: 'World settings updated successfully', settings }
+      body: { message: 'World settings updated successfully', settings: updatedSettings }
     }
   } catch (error) {
     if (error instanceof UnauthorizedError) {

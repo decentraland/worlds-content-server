@@ -21,6 +21,7 @@ import { WebhookEvent } from 'livekit-server-sdk'
 import { IPublisherComponent } from '@dcl/sns-component'
 import { ISettingsComponent } from './logic/settings'
 import { ISchemaValidatorComponent } from '@dcl/schema-validator-component'
+import { ICoordinatesComponent } from './logic/coordinates'
 
 export type GlobalContext = {
   components: BaseComponents
@@ -73,6 +74,21 @@ export type WorldScene = {
 export type GetWorldScenesFilters = {
   worldName?: string
   coordinates?: string[]
+}
+
+export enum SceneOrderBy {
+  CreatedAt = 'created_at',
+  UpdatedAt = 'updated_at'
+}
+
+export enum OrderDirection {
+  Asc = 'asc',
+  Desc = 'desc'
+}
+
+export type GetWorldScenesOptions = PaginatedParameters & {
+  orderBy?: SceneOrderBy
+  orderDirection?: OrderDirection
 }
 
 export type GetWorldScenesResult = {
@@ -174,6 +190,11 @@ export type ILimitsManager = {
   getMaxAllowedSizeInBytesFor(worldName: string): Promise<bigint>
 }
 
+export type WorldBoundingRectangle = {
+  min: { x: number; y: number }
+  max: { x: number; y: number }
+}
+
 export type IWorldsManager = {
   getRawWorldRecords(): Promise<WorldRecord[]>
   getDeployedWorldCount(): Promise<{ ens: number; dcl: number }>
@@ -185,10 +206,11 @@ export type IWorldsManager = {
   permissionCheckerForWorld(worldName: string): Promise<IPermissionChecker>
   undeployWorld(worldName: string): Promise<void>
   getContributableDomains(address: string): Promise<{ domains: ContributorDomain[]; count: number }>
-  getWorldScenes(filters?: GetWorldScenesFilters, options?: PaginatedParameters): Promise<GetWorldScenesResult>
+  getWorldScenes(filters?: GetWorldScenesFilters, options?: GetWorldScenesOptions): Promise<GetWorldScenesResult>
   updateWorldSettings(worldName: string, settings: WorldSettings): Promise<void>
   getWorldSettings(worldName: string): Promise<WorldSettings | undefined>
   getTotalWorldSize(worldName: string): Promise<bigint>
+  getWorldBoundingRectangle(worldName: string): Promise<WorldBoundingRectangle | undefined>
 }
 
 export type IPermissionsManager = {
@@ -302,6 +324,7 @@ export type BaseComponents = {
   awsConfig: AwsConfig
   commsAdapter: ICommsAdapter
   config: IConfigComponent
+  coordinates: ICoordinatesComponent
   database: IPgComponent
   entityDeployer: IEntityDeployer
   ethereumProvider: HTTPProvider

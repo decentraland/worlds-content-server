@@ -41,6 +41,7 @@ import { createSchemaValidatorComponent } from '@dcl/schema-validator-component'
 import { createLivekitClient } from './adapters/livekit-client'
 import { createPeersRegistry } from './adapters/peers-registry'
 import { createSettingsComponent } from './logic/settings'
+import { createCoordinatesComponent } from './logic/coordinates'
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
@@ -110,7 +111,10 @@ export async function initComponents(): Promise<AppComponents> {
 
   const database = await createDatabaseComponent({ config, logs, metrics })
 
+  const coordinates = createCoordinatesComponent()
+
   const worldsManager = await createWorldsManagerComponent({
+    coordinates,
     logs,
     database,
     nameDenyListChecker,
@@ -157,7 +161,7 @@ export async function initComponents(): Promise<AppComponents> {
 
   const peersRegistry = await createPeersRegistry({ config })
   const livekitClient = await createLivekitClient({ config })
-  const settings = createSettingsComponent({ namePermissionChecker, worldsManager })
+  const settings = createSettingsComponent({ coordinates, namePermissionChecker, worldsManager })
   const schemaValidator = createSchemaValidatorComponent()
 
   return {
@@ -166,6 +170,7 @@ export async function initComponents(): Promise<AppComponents> {
     settings,
     commsAdapter,
     config,
+    coordinates,
     database,
     entityDeployer,
     ethereumProvider,

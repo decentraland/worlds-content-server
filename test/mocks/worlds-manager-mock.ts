@@ -2,6 +2,7 @@ import {
   AppComponents,
   ContributorDomain,
   GetWorldScenesFilters,
+  GetWorldScenesOptions,
   GetWorldScenesResult,
   IPermissionChecker,
   IWorldsManager,
@@ -9,17 +10,23 @@ import {
   WorldMetadata,
   WorldRecord,
   WorldScene,
-  WorldSettings
+  WorldSettings,
+  WorldBoundingRectangle,
+  SceneOrderBy,
+  OrderDirection
 } from '../../src/types'
 import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage'
-import { Entity, EthAddress, PaginatedParameters } from '@dcl/schemas'
+import { Entity, EthAddress } from '@dcl/schemas'
 import { stringToUtf8Bytes } from 'eth-connect'
-import { extractSpawnCoordinates, extractWorldRuntimeMetadata } from '../../src/logic/world-runtime-metadata-utils'
+import { extractWorldRuntimeMetadata } from '../../src/logic/world-runtime-metadata-utils'
 import { createPermissionChecker, defaultPermissions } from '../../src/logic/permissions-checker'
 
 export async function createWorldsManagerMockComponent({
+  coordinates,
   storage
-}: Pick<AppComponents, 'storage'>): Promise<IWorldsManager> {
+}: Pick<AppComponents, 'coordinates' | 'storage'>): Promise<IWorldsManager> {
+  const { extractSpawnCoordinates, calculateBoundingRectangle } = coordinates
+
   async function getRawWorldRecords(): Promise<WorldRecord[]> {
     const worlds: WorldRecord[] = []
     for await (const key of storage.allFileIds('name-')) {
@@ -126,7 +133,7 @@ export async function createWorldsManagerMockComponent({
 
   async function getWorldScenes(
     filters?: GetWorldScenesFilters,
-    options?: PaginatedParameters
+    options?: GetWorldScenesOptions
   ): Promise<GetWorldScenesResult> {
     if (!filters?.worldName) {
       return { scenes: [], total: 0 }
@@ -137,13 +144,24 @@ export async function createWorldsManagerMockComponent({
       return { scenes: [], total: 0 }
     }
 
-    const scenes = metadata.scenes
+    let scenes = [...metadata.scenes]
+
+    // Apply sorting
+    const orderBy = options?.orderBy ?? SceneOrderBy.CreatedAt
+    const orderDirection = options?.orderDirection ?? OrderDirection.Asc
+
+    scenes.sort((a, b) => {
+      const aValue = orderBy === SceneOrderBy.CreatedAt ? a.createdAt.getTime() : a.updatedAt.getTime()
+      const bValue = orderBy === SceneOrderBy.CreatedAt ? b.createdAt.getTime() : b.updatedAt.getTime()
+      return orderDirection === OrderDirection.Asc ? aValue - bValue : bValue - aValue
+    })
+
     const limit = options?.limit || scenes.length
     const offset = options?.offset || 0
 
     return {
       scenes: scenes.slice(offset, offset + limit),
-      total: scenes.length
+      total: metadata.scenes.length
     }
   }
 
@@ -157,6 +175,15 @@ export async function createWorldsManagerMockComponent({
 
   async function getTotalWorldSize(_worldName: string): Promise<bigint> {
     return 0n
+  }
+
+  async function getWorldBoundingRectangle(worldName: string): Promise<WorldBoundingRectangle | undefined> {
+    const metadata = await getMetadataForWorld(worldName)
+    if (!metadata || !metadata.scenes) {
+      return undefined
+    }
+    const allParcels = metadata.scenes.flatMap((scene) => scene.parcels)
+    return calculateBoundingRectangle(allParcels)
   }
 
   async function storePermissions(worldName: string, permissions: Permissions): Promise<void> {
@@ -236,6 +263,7 @@ export async function createWorldsManagerMockComponent({
     getWorldScenes,
     updateWorldSettings,
     getWorldSettings,
-    getTotalWorldSize
+    getTotalWorldSize,
+    getWorldBoundingRectangle
   }
 }

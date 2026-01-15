@@ -368,7 +368,7 @@ test('world about handler /world/:world_name/about', function ({ components, stu
 
     describe('and it has multiple scenes deployed at different parcels', () => {
       let worldName: string
-      let spawnPointEntityId: string
+      let lastDeployedEntityId: string
 
       beforeEach(async () => {
         const { worldCreator } = components
@@ -376,7 +376,7 @@ test('world about handler /world/:world_name/about', function ({ components, stu
         worldName = worldCreator.randomWorldName()
 
         // First scene at spawn point (20,24)
-        const firstResult = await worldCreator.createWorldWithScene({
+        await worldCreator.createWorldWithScene({
           worldName: worldName,
           metadata: {
             main: 'abc.txt',
@@ -389,10 +389,9 @@ test('world about handler /world/:world_name/about', function ({ components, stu
             }
           }
         })
-        spawnPointEntityId = firstResult.entityId
 
-        // Second scene at different parcels (30,34) - should NOT be included in /about
-        await worldCreator.createWorldWithScene({
+        // Second scene at different parcels (30,34) - this is the last deployed scene
+        const secondResult = await worldCreator.createWorldWithScene({
           worldName: worldName,
           metadata: {
             main: 'def.txt',
@@ -405,9 +404,10 @@ test('world about handler /world/:world_name/about', function ({ components, stu
             }
           }
         })
+        lastDeployedEntityId = secondResult.entityId
       })
 
-      it('should respond with 200 and only the spawn point scene in scenesUrn', async () => {
+      it('should respond with 200 and only the last deployed scene in scenesUrn', async () => {
         const { localFetch } = components
 
         const r = await localFetch.fetch(`/world/${worldName}/about`)
@@ -416,8 +416,9 @@ test('world about handler /world/:world_name/about', function ({ components, stu
         const body = await r.json()
         expect(body.configurations.scenesUrn).toHaveLength(1)
         expect(body.configurations.scenesUrn).toContain(
-          `urn:decentraland:entity:${spawnPointEntityId}?=&baseUrl=http://0.0.0.0:3000/contents/`
+          `urn:decentraland:entity:${lastDeployedEntityId}?=&baseUrl=http://0.0.0.0:3000/contents/`
         )
+        // Spawn coordinates remain at the original location
         expect(body.spawnCoordinates).toEqual('20,24')
       })
     })

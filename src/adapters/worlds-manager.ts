@@ -5,25 +5,36 @@ import {
   Permissions,
   WorldMetadata,
   WorldRecord,
-  WorldScene,
   WorldSettings,
   ContributorDomain,
   GetWorldScenesFilters,
-  GetWorldScenesResult
+  GetWorldScenesOptions,
+  GetWorldScenesResult,
+  WorldBoundingRectangle,
+  SceneOrderBy,
+  OrderDirection
 } from '../types'
 import { streamToBuffer } from '@dcl/catalyst-storage'
-import { Entity, EthAddress, PaginatedParameters } from '@dcl/schemas'
+import { Entity, EthAddress } from '@dcl/schemas'
 import SQL from 'sql-template-strings'
-import { buildWorldRuntimeMetadata, extractSpawnCoordinates } from '../logic/world-runtime-metadata-utils'
+import { PoolClient } from 'pg'
+import { buildWorldRuntimeMetadata } from '../logic/world-runtime-metadata-utils'
 import { createPermissionChecker, defaultPermissions } from '../logic/permissions-checker'
 
+type BoundingRow = { min_x: number; max_x: number; min_y: number; max_y: number }
+
 export async function createWorldsManagerComponent({
+  coordinates,
   logs,
   database,
   nameDenyListChecker,
   storage
-}: Pick<AppComponents, 'logs' | 'database' | 'nameDenyListChecker' | 'storage'>): Promise<IWorldsManager> {
+}: Pick<
+  AppComponents,
+  'coordinates' | 'logs' | 'database' | 'nameDenyListChecker' | 'storage'
+>): Promise<IWorldsManager> {
   const logger = logs.getLogger('worlds-manager')
+  const { extractSpawnCoordinates, parseCoordinate, isCoordinateWithinRectangle, getRectangleCenter } = coordinates
 
   async function getRawWorldRecords(): Promise<WorldRecord[]> {
     const result = await database.query<WorldRecord>(
@@ -61,15 +72,11 @@ export async function createWorldsManagerComponent({
 
     const row = result.rows[0]
 
-    // Get the scene at spawn point (spawn_coordinates is always set if there are scenes)
-    let scenes: WorldScene[] = []
-    if (row.spawn_coordinates) {
-      const { scenes: spawnScenes } = await getWorldScenes(
-        { worldName, coordinates: [row.spawn_coordinates] },
-        { limit: 1 }
-      )
-      scenes = spawnScenes
-    }
+    // Get the last deployed scene (most recently deployed)
+    const { scenes } = await getWorldScenes(
+      { worldName },
+      { limit: 1, orderBy: SceneOrderBy.CreatedAt, orderDirection: OrderDirection.Desc }
+    )
 
     // Build runtime metadata from scenes
     const runtimeMetadata = buildWorldRuntimeMetadata(worldName, scenes)
@@ -117,15 +124,17 @@ export async function createWorldsManagerComponent({
     const size = scene.content?.reduce((acc, c) => acc + (fileInfos.get(c.hash)?.size || 0), 0) || 0
 
     // Use a transaction to ensure atomicity
-    await database.query('BEGIN')
+    const client = await database.getPool().connect()
 
     try {
+      await client.query('BEGIN')
+
       // Ensure world record exists
-      const worldExists = await database.query(SQL`SELECT name FROM worlds WHERE name = ${worldName.toLowerCase()}`)
+      const worldExists = await client.query(SQL`SELECT name FROM worlds WHERE name = ${worldName.toLowerCase()}`)
 
       if (worldExists.rowCount === 0) {
         const spawnCoordinates = extractSpawnCoordinates(scene)
-        await database.query(SQL`
+        await client.query(SQL`
           INSERT INTO worlds (name, owner, permissions, spawn_coordinates, created_at, updated_at)
           VALUES (
             ${worldName.toLowerCase()}, 
@@ -139,7 +148,7 @@ export async function createWorldsManagerComponent({
       } else {
         // Update owner and set spawn_coordinates if not already set
         const spawnCoordinates = extractSpawnCoordinates(scene)
-        await database.query(SQL`
+        await client.query(SQL`
           UPDATE worlds
           SET owner = ${owner?.toLowerCase()},
               spawn_coordinates = COALESCE(spawn_coordinates, ${spawnCoordinates}),
@@ -149,14 +158,14 @@ export async function createWorldsManagerComponent({
       }
 
       // Delete any existing scenes on these parcels
-      await database.query(SQL`
+      await client.query(SQL`
         DELETE FROM world_scenes 
         WHERE world_name = ${worldName.toLowerCase()} 
         AND parcels && ${parcels}::text[]
       `)
 
       // Insert new scene
-      await database.query(SQL`
+      await client.query(SQL`
         INSERT INTO world_scenes (
           world_name, entity_id, deployer, deployment_auth_chain, 
           entity, parcels, size, created_at, updated_at
@@ -173,10 +182,12 @@ export async function createWorldsManagerComponent({
         )
       `)
 
-      await database.query('COMMIT')
+      await client.query('COMMIT')
     } catch (error) {
-      await database.query('ROLLBACK')
+      await client.query('ROLLBACK')
       throw error
+    } finally {
+      client.release()
     }
   }
 
@@ -228,7 +239,7 @@ export async function createWorldsManagerComponent({
       return []
     }
 
-    // Get one entity per world: the scene at spawn_coordinates (spawn_coordinates is always set if there are scenes)
+    // Get one entity per world: the last deployed scene (most recently created)
     const result = await database.query<{
       world_name: string
       entity_id: string
@@ -236,12 +247,11 @@ export async function createWorldsManagerComponent({
       owner: string
     }>(
       SQL`
-        SELECT ws.world_name, ws.entity_id, ws.entity, w.owner
+        SELECT DISTINCT ON (ws.world_name) ws.world_name, ws.entity_id, ws.entity, w.owner
         FROM worlds w
         INNER JOIN world_scenes ws ON ws.world_name = w.name
         WHERE w.name = ANY(${allowedNames})
-          AND w.spawn_coordinates IS NOT NULL
-          AND ws.parcels @> ARRAY[w.spawn_coordinates]::text[]
+        ORDER BY ws.world_name, ws.created_at DESC
       `
     )
 
@@ -263,19 +273,23 @@ export async function createWorldsManagerComponent({
   async function undeployWorld(worldName: string): Promise<void> {
     const normalizedWorldName = worldName.toLowerCase()
 
-    await database.query('BEGIN')
+    const client = await database.getPool().connect()
 
     try {
+      await client.query('BEGIN')
+
       // Delete all scenes for the world
-      await database.query(SQL`DELETE FROM world_scenes WHERE world_name = ${normalizedWorldName}`)
+      await client.query(SQL`DELETE FROM world_scenes WHERE world_name = ${normalizedWorldName}`)
 
       // Set spawn_coordinates to null since there are no more scenes
-      await database.query(SQL`UPDATE worlds SET spawn_coordinates = NULL WHERE name = ${normalizedWorldName}`)
+      await client.query(SQL`UPDATE worlds SET spawn_coordinates = NULL WHERE name = ${normalizedWorldName}`)
 
-      await database.query('COMMIT')
+      await client.query('COMMIT')
     } catch (error) {
-      await database.query('ROLLBACK')
+      await client.query('ROLLBACK')
       throw error
+    } finally {
+      client.release()
     }
   }
 
@@ -311,7 +325,7 @@ export async function createWorldsManagerComponent({
 
   async function getWorldScenes(
     filters?: GetWorldScenesFilters,
-    options?: PaginatedParameters
+    options?: GetWorldScenesOptions
   ): Promise<GetWorldScenesResult> {
     // Build base queries
     const countQuery = SQL`SELECT COUNT(*) as total FROM world_scenes WHERE 1=1`
@@ -329,8 +343,11 @@ export async function createWorldsManagerComponent({
       mainQuery.append(SQL` AND parcels && ${filters.coordinates}::text[]`)
     }
 
-    // Add ordering
-    mainQuery.append(SQL` ORDER BY created_at`)
+    // Add ordering (default: created_at ASC)
+    const orderBy = options?.orderBy ?? SceneOrderBy.CreatedAt
+    const orderDirection = options?.orderDirection ?? OrderDirection.Asc
+    // Using safe string interpolation since orderBy and orderDirection are enum values
+    mainQuery.append(` ORDER BY ${orderBy} ${orderDirection.toUpperCase()}`)
 
     // Apply pagination
     if (options?.limit !== undefined) {
@@ -377,45 +394,57 @@ export async function createWorldsManagerComponent({
   async function undeployScene(worldName: string, parcels: string[]): Promise<void> {
     const normalizedWorldName = worldName.toLowerCase()
 
-    await database.query('BEGIN')
+    const client = await database.getPool().connect()
 
     try {
+      await client.query('BEGIN')
+
       // Get current spawn_coordinates before deletion
-      const worldResult = await database.query<{ spawn_coordinates: string | null }>(
+      const worldResult = await client.query<{ spawn_coordinates: string | null }>(
         SQL`SELECT spawn_coordinates FROM worlds WHERE name = ${normalizedWorldName}`
       )
       const currentSpawnCoordinates = worldResult.rows[0]?.spawn_coordinates
 
       // Delete the scene(s) matching the parcels
-      await database.query(SQL`
+      await client.query(SQL`
         DELETE FROM world_scenes 
         WHERE world_name = ${normalizedWorldName} 
         AND parcels && ${parcels}::text[]
       `)
 
+      // Calculate new bounding rectangle (after deletion) using the shared function
+      const boundingRectangle = await getWorldBoundingRectangle(normalizedWorldName, client)
+
       // Check if we need to update spawn_coordinates
-      const deletedSpawnCoordinatesScene = currentSpawnCoordinates && parcels.includes(currentSpawnCoordinates)
+      let newSpawnCoordinates: string | null = currentSpawnCoordinates
 
-      if (deletedSpawnCoordinatesScene) {
-        // Find another scene to set as spawn_coordinates, or null if none remain
-        const remainingScene = await database.query<{ parcels: string[] }>(SQL`
-          SELECT parcels FROM world_scenes 
-          WHERE world_name = ${normalizedWorldName} 
-          ORDER BY created_at 
-          LIMIT 1
-        `)
+      if (!boundingRectangle) {
+        // No scenes remain, set spawn_coordinates to null
+        newSpawnCoordinates = null
+      } else if (currentSpawnCoordinates) {
+        // Check if current spawn coordinates are still within the bounding rectangle
+        const spawnCoord = parseCoordinate(currentSpawnCoordinates)
+        const isWithinBounds = isCoordinateWithinRectangle(spawnCoord, boundingRectangle)
 
-        const newSpawnCoordinates = remainingScene.rows[0]?.parcels[0] || null
+        if (!isWithinBounds) {
+          // Spawn coordinates are outside the new bounding rectangle, update to center of rectangle
+          const center = getRectangleCenter(boundingRectangle)
+          newSpawnCoordinates = `${center.x},${center.y}`
+        }
+      }
 
-        await database.query(SQL`
+      if (newSpawnCoordinates !== currentSpawnCoordinates) {
+        await client.query(SQL`
           UPDATE worlds SET spawn_coordinates = ${newSpawnCoordinates} WHERE name = ${normalizedWorldName}
         `)
       }
 
-      await database.query('COMMIT')
+      await client.query('COMMIT')
     } catch (error) {
-      await database.query('ROLLBACK')
+      await client.query('ROLLBACK')
       throw error
+    } finally {
+      client.release()
     }
   }
 
@@ -452,6 +481,41 @@ export async function createWorldsManagerComponent({
     return BigInt(result.rows[0]?.total_size || 0)
   }
 
+  /**
+   * Gets the bounding rectangle for all deployed scenes in a world
+   * Computed directly in SQL to avoid fetching all parcels
+   *
+   * @param worldName - The name of the world
+   * @param client - Optional database client to use (for transactions)
+   * @returns The bounding rectangle, or undefined if no parcels exist
+   */
+  async function getWorldBoundingRectangle(
+    worldName: string,
+    client?: PoolClient
+  ): Promise<WorldBoundingRectangle | undefined> {
+    const query = SQL`
+      SELECT 
+        MIN(SPLIT_PART(parcel, ',', 1)::integer) as min_x,
+        MAX(SPLIT_PART(parcel, ',', 1)::integer) as max_x,
+        MIN(SPLIT_PART(parcel, ',', 2)::integer) as min_y,
+        MAX(SPLIT_PART(parcel, ',', 2)::integer) as max_y
+      FROM world_scenes, UNNEST(parcels) as parcel
+      WHERE world_name = ${worldName.toLowerCase()}
+    `
+
+    const { rows } = client ? await client.query<BoundingRow>(query) : await database.query<BoundingRow>(query)
+
+    const row = rows[0]
+    if (row.min_x === null || row.max_x === null || row.min_y === null || row.max_y === null) {
+      return undefined
+    }
+
+    return {
+      min: { x: row.min_x, y: row.min_y },
+      max: { x: row.max_x, y: row.max_y }
+    }
+  }
+
   return {
     getRawWorldRecords,
     getDeployedWorldCount,
@@ -466,6 +530,7 @@ export async function createWorldsManagerComponent({
     getWorldScenes,
     updateWorldSettings,
     getWorldSettings,
-    getTotalWorldSize
+    getTotalWorldSize,
+    getWorldBoundingRectangle
   }
 }

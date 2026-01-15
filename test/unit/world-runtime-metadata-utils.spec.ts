@@ -1,10 +1,9 @@
 import {
   extractWorldRuntimeMetadata,
   migrateConfiguration,
-  extractSpawnCoordinates,
   buildWorldRuntimeMetadata
 } from '../../src/logic/world-runtime-metadata-utils'
-import { Entity, EntityType, WorldConfiguration } from '@dcl/schemas'
+import { EntityType, WorldConfiguration } from '@dcl/schemas'
 
 describe('world-runtime-metadata-utils', function () {
   describe('migrateConfiguration', function () {
@@ -175,141 +174,6 @@ describe('world-runtime-metadata-utils', function () {
         name: 'saracatunga.dcl.eth',
         skyboxTextures: ['bafkreidduubi76bntd27dewz4cvextrfl3qyd4td6mtztuisxi26q64dnq'],
         thumbnailFile: 'bafkreic4chubh3cavwuzgsvszpmhi4zqpf5kfgt6goufuarwbzv4yrkdqq'
-      })
-    })
-  })
-
-  describe('when extracting spawn coordinates', function () {
-    describe('when entity has scene.base', () => {
-      let entity: Entity
-
-      beforeEach(() => {
-        entity = {
-          id: 'bafi',
-          version: 'v3',
-          type: EntityType.SCENE,
-          pointers: ['10,20'],
-          timestamp: 1689683357974,
-          content: [],
-          metadata: {
-            scene: { base: '10,20', parcels: ['10,20', '11,20'] }
-          }
-        }
-      })
-
-      it('should return the scene.base coordinate', () => {
-        const result = extractSpawnCoordinates(entity)
-
-        expect(result).toBe('10,20')
-      })
-    })
-
-    describe('when entity has only scene.parcels and no scene.base', () => {
-      let entity: Entity
-
-      beforeEach(() => {
-        entity = {
-          id: 'bafi',
-          version: 'v3',
-          type: EntityType.SCENE,
-          pointers: ['5,10'],
-          timestamp: 1689683357974,
-          content: [],
-          metadata: {
-            scene: { parcels: ['5,10', '6,10'] }
-          }
-        }
-      })
-
-      it('should return the first parcel from scene.parcels', () => {
-        const result = extractSpawnCoordinates(entity)
-
-        expect(result).toBe('5,10')
-      })
-    })
-
-    describe('when entity has negative coordinates', () => {
-      let entity: Entity
-
-      beforeEach(() => {
-        entity = {
-          id: 'bafi',
-          version: 'v3',
-          type: EntityType.SCENE,
-          pointers: ['-5,-10'],
-          timestamp: 1689683357974,
-          content: [],
-          metadata: {
-            scene: { base: '-5,-10', parcels: ['-5,-10'] }
-          }
-        }
-      })
-
-      it('should return the negative coordinate', () => {
-        const result = extractSpawnCoordinates(entity)
-
-        expect(result).toBe('-5,-10')
-      })
-    })
-
-    describe('when entity has no scene metadata', () => {
-      let entity: Entity
-
-      beforeEach(() => {
-        entity = {
-          id: 'bafi',
-          version: 'v3',
-          type: EntityType.SCENE,
-          pointers: ['0,0'],
-          timestamp: 1689683357974,
-          content: [],
-          metadata: {}
-        }
-      })
-
-      it('should throw an error', () => {
-        expect(() => extractSpawnCoordinates(entity)).toThrow('No spawn coordinates found in entity metadata')
-      })
-    })
-
-    describe('when entity has empty scene.parcels and no scene.base', () => {
-      let entity: Entity
-
-      beforeEach(() => {
-        entity = {
-          id: 'bafi',
-          version: 'v3',
-          type: EntityType.SCENE,
-          pointers: ['0,0'],
-          timestamp: 1689683357974,
-          content: [],
-          metadata: {
-            scene: { parcels: [] }
-          }
-        }
-      })
-
-      it('should throw an error', () => {
-        expect(() => extractSpawnCoordinates(entity)).toThrow('No spawn coordinates found in entity metadata')
-      })
-    })
-
-    describe('when entity has undefined metadata', () => {
-      let entity: Entity
-
-      beforeEach(() => {
-        entity = {
-          id: 'bafi',
-          version: 'v3',
-          type: EntityType.SCENE,
-          pointers: ['0,0'],
-          timestamp: 1689683357974,
-          content: []
-        }
-      })
-
-      it('should throw an error', () => {
-        expect(() => extractSpawnCoordinates(entity)).toThrow('No spawn coordinates found in entity metadata')
       })
     })
   })

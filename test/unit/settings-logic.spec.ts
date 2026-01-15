@@ -2,17 +2,20 @@ import { createSettingsComponent, ISettingsComponent } from '../../src/logic/set
 import { IWorldNamePermissionChecker, IWorldsManager, WorldSettings } from '../../src/types'
 import { createMockedNamePermissionChecker } from '../mocks/dcl-name-checker-mock'
 import { createMockedWorldsManager } from '../mocks/world-manager-mock'
+import { createCoordinatesComponent, ICoordinatesComponent } from '../../src/logic/coordinates'
 
 describe('SettingsComponent', () => {
   let settingsComponent: ISettingsComponent
+  let coordinates: ICoordinatesComponent
   let namePermissionChecker: jest.Mocked<IWorldNamePermissionChecker>
   let worldsManager: jest.Mocked<IWorldsManager>
 
   beforeEach(() => {
+    coordinates = createCoordinatesComponent()
     namePermissionChecker = createMockedNamePermissionChecker()
     worldsManager = createMockedWorldsManager()
 
-    settingsComponent = createSettingsComponent({ namePermissionChecker, worldsManager })
+    settingsComponent = createSettingsComponent({ coordinates, namePermissionChecker, worldsManager })
   })
 
   afterEach(() => {
@@ -73,7 +76,11 @@ describe('SettingsComponent', () => {
     describe('when the signer owns the world name', () => {
       beforeEach(() => {
         namePermissionChecker.checkPermission.mockResolvedValue(true)
-        worldsManager.getWorldScenes.mockResolvedValue({ scenes: [{ id: 'scene-1' }] as any, total: 1 })
+        // Bounding rectangle from (0,0) to (20,30) - input coordinates (10,20) are within this range
+        worldsManager.getWorldBoundingRectangle.mockResolvedValue({
+          min: { x: 0, y: 0 },
+          max: { x: 20, y: 30 }
+        })
         worldsManager.updateWorldSettings.mockResolvedValue(undefined)
       })
 
@@ -103,18 +110,40 @@ describe('SettingsComponent', () => {
       })
     })
 
-    describe('when the spawnCoordinates do not belong to a deployed scene', () => {
+    describe('when the spawnCoordinates are outside the world shape rectangle', () => {
       beforeEach(() => {
         input = { spawnCoordinates: '999,999' }
         namePermissionChecker.checkPermission.mockResolvedValue(true)
-        worldsManager.getWorldScenes.mockResolvedValue({ scenes: [], total: 0 })
+        // Bounding rectangle from (0,0) to (20,30) - input coordinates (999,999) are outside this range
+        worldsManager.getWorldBoundingRectangle.mockResolvedValue({
+          min: { x: 0, y: 0 },
+          max: { x: 20, y: 30 }
+        })
+      })
+
+      it('should throw a ValidationError with a message saying that the spawn coordinates are outside the world shape rectangle', async () => {
+        await expect(settingsComponent.updateWorldSettings(worldName, signer, input)).rejects.toThrow(
+          expect.objectContaining({
+            name: 'ValidationError',
+            message:
+              'Invalid spawnCoordinates "999,999". It must be within the world shape rectangle: (0,0) to (20,30).'
+          })
+        )
+      })
+    })
+
+    describe('when the world has no deployed scenes', () => {
+      beforeEach(() => {
+        input = { spawnCoordinates: '10,20' }
+        namePermissionChecker.checkPermission.mockResolvedValue(true)
+        worldsManager.getWorldBoundingRectangle.mockResolvedValue(undefined)
       })
 
       it('should throw a ValidationError with the correct message', async () => {
         await expect(settingsComponent.updateWorldSettings(worldName, signer, input)).rejects.toThrow(
           expect.objectContaining({
             name: 'ValidationError',
-            message: 'Invalid spawnCoordinates "999,999". It must belong to a parcel of a deployed scene.'
+            message: 'Invalid spawnCoordinates "10,20". The world has no deployed scenes.'
           })
         )
       })

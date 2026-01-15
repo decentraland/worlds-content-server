@@ -3,9 +3,10 @@ import { UnauthorizedError, ValidationError, WorldNotFoundError } from './errors
 import { ISettingsComponent } from './types'
 
 export function createSettingsComponent(
-  components: Pick<AppComponents, 'namePermissionChecker' | 'worldsManager'>
+  components: Pick<AppComponents, 'coordinates' | 'namePermissionChecker' | 'worldsManager'>
 ): ISettingsComponent {
-  const { namePermissionChecker, worldsManager } = components
+  const { coordinates, namePermissionChecker, worldsManager } = components
+  const { parseCoordinate, isCoordinateWithinRectangle } = coordinates
 
   async function getWorldSettings(worldName: string): Promise<WorldSettings> {
     const settings = await worldsManager.getWorldSettings(worldName)
@@ -27,16 +28,29 @@ export function createSettingsComponent(
       throw new UnauthorizedError()
     }
 
-    // Validate spawnCoordinates belongs to a deployed scene
+    // Validate spawnCoordinates is within the world's bounding rectangle
     if (input.spawnCoordinates) {
-      const { scenes } = await worldsManager.getWorldScenes(
-        { worldName, coordinates: [input.spawnCoordinates] },
-        { limit: 1 }
-      )
+      const boundingRectangle = await worldsManager.getWorldBoundingRectangle(worldName)
 
-      if (scenes.length === 0) {
+      if (!boundingRectangle) {
         throw new ValidationError(
-          `Invalid spawnCoordinates "${input.spawnCoordinates}". It must belong to a parcel of a deployed scene.`
+          `Invalid spawnCoordinates "${input.spawnCoordinates}". The world has no deployed scenes.`
+        )
+      }
+
+      let spawnCoord: ReturnType<typeof parseCoordinate>
+
+      try {
+        spawnCoord = parseCoordinate(input.spawnCoordinates)
+      } catch (error) {
+        throw new ValidationError(`Invalid spawnCoordinates format: "${input.spawnCoordinates}".`)
+      }
+      const isWithinBounds = isCoordinateWithinRectangle(spawnCoord, boundingRectangle)
+
+      if (!isWithinBounds) {
+        const { min, max } = boundingRectangle
+        throw new ValidationError(
+          `Invalid spawnCoordinates "${input.spawnCoordinates}". It must be within the world shape rectangle: (${min.x},${min.y}) to (${max.x},${max.y}).`
         )
       }
     }

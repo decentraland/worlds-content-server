@@ -235,7 +235,7 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
       })
     })
 
-    describe('when the spawn coordinates do not belong to a deployed scene', () => {
+    describe('when the spawn coordinates are outside the world shape rectangle', () => {
       let identity: Identity
       let worldName: string
 
@@ -243,6 +243,7 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
         const { worldCreator } = components
 
         identity = await getIdentity()
+        // Default scene has parcel '20,24', so bounding rectangle is (20,24) to (20,24)
         const created = await worldCreator.createWorldWithScene({ owner: identity.authChain })
         worldName = created.worldName
 
@@ -260,7 +261,109 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
 
         expect(response.status).toBe(400)
         expect(await response.json()).toMatchObject({
-          error: 'Invalid spawnCoordinates "99,99". It must belong to a parcel of a deployed scene.'
+          error: 'Invalid spawnCoordinates "99,99". It must be within the world shape rectangle: (20,24) to (20,24).'
+        })
+      })
+    })
+
+    describe('when the spawn coordinates are on an actual scene parcel', () => {
+      let identity: Identity
+      let worldName: string
+
+      beforeEach(async () => {
+        const { worldCreator } = components
+
+        identity = await getIdentity()
+        const created = await worldCreator.createWorldWithScene({
+          owner: identity.authChain,
+          metadata: {
+            main: 'abc.txt',
+            scene: {
+              base: '20,24',
+              parcels: ['20,24', '21,24', '22,24']
+            },
+            worldConfiguration: {
+              name: undefined
+            }
+          }
+        })
+        worldName = created.worldName
+
+        stubComponents.namePermissionChecker.checkPermission
+          .withArgs(identity.authChain.authChain[0].payload.toLowerCase(), worldName)
+          .resolves(true)
+      })
+
+      it('should successfully update spawn coordinates to a scene parcel', async () => {
+        const { localFetch, worldsManager } = components
+
+        const response = await makeSignedRequest(localFetch, `/world/${worldName}/settings`, identity, {
+          spawn_coordinates: '21,24'
+        })
+
+        expect(response.status).toBe(200)
+        expect(await response.json()).toMatchObject({
+          message: 'World settings updated successfully',
+          settings: {
+            spawnCoordinates: '21,24'
+          }
+        })
+
+        const settings = await worldsManager.getWorldSettings(worldName)
+        expect(settings).toMatchObject({
+          spawnCoordinates: '21,24'
+        })
+      })
+    })
+
+    describe('when the spawn coordinates are within the world shape rectangle but not on a scene parcel', () => {
+      let identity: Identity
+      let worldName: string
+
+      beforeEach(async () => {
+        const { worldCreator } = components
+
+        identity = await getIdentity()
+        // Create a world with multiple parcels to have a larger bounding rectangle
+        const created = await worldCreator.createWorldWithScene({
+          owner: identity.authChain,
+          metadata: {
+            main: 'abc.txt',
+            scene: {
+              base: '20,24',
+              parcels: ['20,24', '22,26'] // Bounding rectangle is (20,24) to (22,26)
+            },
+            worldConfiguration: {
+              name: undefined // Will be auto-generated
+            }
+          }
+        })
+        worldName = created.worldName
+
+        stubComponents.namePermissionChecker.checkPermission
+          .withArgs(identity.authChain.authChain[0].payload.toLowerCase(), worldName)
+          .resolves(true)
+      })
+
+      it('should successfully update spawn coordinates within the rectangle', async () => {
+        const { localFetch, worldsManager } = components
+
+        // Coordinate (21,25) is within the rectangle but not on an actual parcel
+        const response = await makeSignedRequest(localFetch, `/world/${worldName}/settings`, identity, {
+          spawn_coordinates: '21,25'
+        })
+
+        expect(response.status).toBe(200)
+        expect(await response.json()).toMatchObject({
+          message: 'World settings updated successfully',
+          settings: {
+            spawnCoordinates: '21,25'
+          }
+        })
+
+        const settings = await worldsManager.getWorldSettings(worldName)
+        expect(settings).toMatchObject({
+          spawnCoordinates: '21,25'
         })
       })
     })
@@ -336,8 +439,8 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
         })
       })
 
-      describe('and spawn_coordinates has negative values', () => {
-        it('should respond with 400 validation error since coordinates do not belong to a deployed scene', async () => {
+      describe('and spawn_coordinates has negative values outside the world shape', () => {
+        it('should respond with 400 validation error since coordinates are outside the world shape rectangle', async () => {
           const { localFetch } = components
 
           const response = await makeSignedRequest(localFetch, `/world/${worldName}/settings`, identity, {
@@ -346,7 +449,7 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
 
           expect(response.status).toBe(400)
           expect(await response.json()).toMatchObject({
-            error: 'Invalid spawnCoordinates "-5,-10". It must belong to a parcel of a deployed scene.'
+            error: 'Invalid spawnCoordinates "-5,-10". It must be within the world shape rectangle: (20,24) to (20,24).'
           })
         })
       })
@@ -384,7 +487,7 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
           .resolves(true)
       })
 
-      it('should respond with 400 validation error since there are no scenes to set spawn to', async () => {
+      it('should respond with 400 validation error since there are no scenes deployed', async () => {
         const { localFetch } = components
 
         const response = await makeSignedRequest(localFetch, `/world/${worldName}/settings`, identity, {
@@ -393,7 +496,7 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
 
         expect(response.status).toBe(400)
         expect(await response.json()).toMatchObject({
-          error: 'Invalid spawnCoordinates "10,20". It must belong to a parcel of a deployed scene.'
+          error: 'Invalid spawnCoordinates "10,20". The world has no deployed scenes.'
         })
       })
     })
