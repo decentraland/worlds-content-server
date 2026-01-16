@@ -18,7 +18,7 @@ import {
 import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage'
 import { Entity, EthAddress } from '@dcl/schemas'
 import { stringToUtf8Bytes } from 'eth-connect'
-import { extractWorldRuntimeMetadata } from '../../src/logic/world-runtime-metadata-utils'
+import { buildWorldRuntimeMetadata } from '../../src/logic/world-runtime-metadata-utils'
 import { createPermissionChecker, defaultPermissions } from '../../src/logic/permissions-checker'
 
 export async function createWorldsManagerMockComponent({
@@ -82,6 +82,12 @@ export async function createWorldsManagerMockComponent({
       }))
     }
 
+    // Build runtime metadata from the most recently deployed scene (last in array)
+    if (metadata.scenes && metadata.scenes.length > 0) {
+      const mostRecentScene = metadata.scenes[metadata.scenes.length - 1]
+      metadata.runtimeMetadata = buildWorldRuntimeMetadata(worldName, [mostRecentScene])
+    }
+
     return metadata
   }
 
@@ -119,9 +125,13 @@ export async function createWorldsManagerMockComponent({
     const existingScenes = existingMetadata?.scenes || []
     const filteredScenes = existingScenes.filter((s) => !s.parcels.some((p) => parcels.includes(p)))
 
+    // Set spawn coordinates only if this is the first scene (no existing spawn coordinates)
+    const newSceneCoordinates = extractSpawnCoordinates(scene)
+    const spawnCoordinates = existingMetadata?.spawnCoordinates || newSceneCoordinates
+
     await storeWorldMetadata(worldName, {
       scenes: [...filteredScenes, newScene],
-      runtimeMetadata: extractWorldRuntimeMetadata(worldName, scene),
+      spawnCoordinates,
       owner
     })
   }

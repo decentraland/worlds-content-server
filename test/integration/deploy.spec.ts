@@ -638,10 +638,10 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
       expect(total).toBe(2)
       expect(scenes.map((s) => s.entityId)).toEqual(expect.arrayContaining([firstEntityId, secondEntityId]))
 
-      // getMetadataForWorld only returns the scene at spawn coordinates for efficiency
+      // getMetadataForWorld returns the most recently deployed scene
       const metadata = await worldsManager.getMetadataForWorld(worldName)
       expect(metadata?.runtimeMetadata.entityIds).toHaveLength(1)
-      expect(metadata?.runtimeMetadata.entityIds).toContain(firstEntityId) // spawn is at 0,0
+      expect(metadata?.runtimeMetadata.entityIds).toContain(secondEntityId) // most recently deployed
     })
 
     it('should list both scenes in the scenes endpoint', async () => {
@@ -661,13 +661,13 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
       )
     })
 
-    it('should return the spawn scene entity in the active entities endpoint', async () => {
+    it('should return the most recently deployed scene in the active entities endpoint', async () => {
       const { localFetch } = components
       const authChain = Authenticator.signPayload(identity.authChain, secondEntityId)
 
       await contentClient.deploy({ files: secondFiles, entityId: secondEntityId, authChain })
 
-      // Active entities returns one entity per world (the one at spawn coordinates)
+      // Active entities returns one entity per world (the most recently deployed scene)
       const activeEntitiesResponse = await localFetch.fetch('/entities/active', {
         method: 'POST',
         body: JSON.stringify({ pointers: [worldName] }),
@@ -677,7 +677,7 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
       expect(activeEntitiesResponse.status).toBe(200)
       const entities = await activeEntitiesResponse.json()
       expect(entities).toHaveLength(1)
-      expect(entities[0]).toMatchObject({ id: firstEntityId }) // spawn is at 0,0
+      expect(entities[0]).toMatchObject({ id: secondEntityId }) // most recently deployed
     })
 
     it('should set spawn coordinates to the first deployed scene', async () => {

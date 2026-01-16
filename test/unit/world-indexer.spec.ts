@@ -3,6 +3,7 @@ import { createInMemoryStorage, IContentStorageComponent } from '@dcl/catalyst-s
 import { Entity } from '@dcl/schemas'
 import { IWorldsIndexer, IWorldsManager } from '../../src/types'
 import { createWorldsManagerMockComponent } from '../mocks/worlds-manager-mock'
+import { createCoordinatesComponent } from '../../src/logic/coordinates'
 
 describe('when indexing worlds', function () {
   let storage: IContentStorageComponent
@@ -11,7 +12,8 @@ describe('when indexing worlds', function () {
 
   beforeEach(async () => {
     storage = createInMemoryStorage()
-    worldsManager = await createWorldsManagerMockComponent({ storage })
+    const coordinates = createCoordinatesComponent()
+    worldsManager = await createWorldsManagerMockComponent({ coordinates, storage })
     worldsIndexer = await createWorldsIndexerComponent({ worldsManager })
   })
 

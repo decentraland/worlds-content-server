@@ -15,6 +15,7 @@ import { createSceneDeployment } from './shared'
 import { createValidator } from '../../../src/logic/validations'
 import { createMockNameDenyListChecker } from '../../mocks/name-deny-list-checker-mock'
 import { createWorldsManagerMockComponent } from '../../mocks/worlds-manager-mock'
+import { createCoordinatesComponent } from '../../../src/logic/coordinates'
 
 describe('validator', function () {
   let config: IConfigComponent
@@ -35,7 +36,8 @@ describe('validator', function () {
     limitsManager = createMockLimitsManagerComponent()
     nameDenyListChecker = createMockNameDenyListChecker([])
     worldNamePermissionChecker = createMockNamePermissionChecker(['whatever.dcl.eth'])
-    worldsManager = await createWorldsManagerMockComponent({ storage })
+    const coordinates = createCoordinatesComponent()
+    worldsManager = await createWorldsManagerMockComponent({ coordinates, storage })
 
     identity = await getIdentity()
     components = {

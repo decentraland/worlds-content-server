@@ -5,6 +5,7 @@ import { createWorldsManagerMockComponent } from '../mocks/worlds-manager-mock'
 import { createPermissionsManagerComponent } from '../../src/adapters/permissions-manager'
 import { createWorldCreator } from '../mocks/world-creator'
 import { getIdentity, Identity } from '../utils'
+import { createCoordinatesComponent } from '../../src/logic/coordinates'
 
 describe('PermissionsManager', function () {
   let storage: IContentStorageComponent
@@ -17,7 +18,8 @@ describe('PermissionsManager', function () {
 
   beforeEach(async () => {
     storage = createInMemoryStorage()
-    worldsManager = await createWorldsManagerMockComponent({ storage })
+    const coordinates = createCoordinatesComponent()
+    worldsManager = await createWorldsManagerMockComponent({ coordinates, storage })
     worldCreator = createWorldCreator({ storage, worldsManager })
     permissionsManager = await createPermissionsManagerComponent({ worldsManager })
     identity = await getIdentity()
