@@ -3,7 +3,7 @@ import { IHttpServerComponent } from '@well-known-components/interfaces'
 import { DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
 import { AccessToken } from 'livekit-server-sdk'
 import { assertNotBlockedOrWithinInGracePeriod } from '../../logic/blocked'
-import { InvalidRequestError, NotFoundError } from '@dcl/platform-server-commons'
+import { InvalidRequestError, NotFoundError } from '@dcl/http-commons'
 
 export async function castAdapterHandler(
   context: HandlerContextWithPath<

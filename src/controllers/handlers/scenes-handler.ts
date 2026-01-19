@@ -1,5 +1,5 @@
 import { IHttpServerComponent } from '@well-known-components/interfaces'
-import { InvalidRequestError, NotAuthorizedError, getPaginationParams } from '@dcl/platform-server-commons'
+import { InvalidRequestError, NotAuthorizedError, getPaginationParams } from '@dcl/http-commons'
 import { DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
 import { HandlerContextWithPath } from '../../types'
 

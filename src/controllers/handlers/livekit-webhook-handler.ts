@@ -1,7 +1,7 @@
 import { DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
 import { HandlerContextWithPath, IPeersRegistry } from '../../types'
 import { IHttpServerComponent } from '@well-known-components/interfaces'
-import { InvalidRequestError } from '@dcl/platform-server-commons'
+import { InvalidRequestError } from '@dcl/http-commons'
 import { ParticipantEvent, WebhookEventName } from '../../adapters/livekit-client'
 
 const TOPIC_SUFFIX_BY_EVENT = {

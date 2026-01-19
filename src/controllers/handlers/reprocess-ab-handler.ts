@@ -1,6 +1,6 @@
 import { HandlerContextWithPath } from '../../types'
 import { IHttpServerComponent } from '@well-known-components/interfaces'
-import { InvalidRequestError } from '@dcl/platform-server-commons'
+import { InvalidRequestError } from '@dcl/http-commons'
 import { Events, WorldDeploymentEvent } from '@dcl/schemas'
 
 export async function reprocessABHandler(

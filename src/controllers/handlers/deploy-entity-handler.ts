@@ -3,7 +3,7 @@ import { IHttpServerComponent } from '@well-known-components/interfaces'
 import { FormDataContext } from '../../logic/multipart'
 import { HandlerContextWithPath } from '../../types'
 import { extractAuthChain } from '../../logic/extract-auth-chain'
-import { InvalidRequestError } from '@dcl/platform-server-commons'
+import { InvalidRequestError } from '@dcl/http-commons'
 
 export function requireString(val: string | null | undefined): string {
   if (typeof val !== 'string') throw new Error('A string was expected')

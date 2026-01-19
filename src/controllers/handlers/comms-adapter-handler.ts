@@ -2,7 +2,7 @@ import { HandlerContextWithPath } from '../../types'
 import { IHttpServerComponent } from '@well-known-components/interfaces'
 import { DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
 import { assertNotBlockedOrWithinInGracePeriod } from '../../logic/blocked'
-import { InvalidRequestError, NotAuthorizedError, NotFoundError } from '@dcl/platform-server-commons'
+import { InvalidRequestError, NotAuthorizedError, NotFoundError } from '@dcl/http-commons'
 
 type CommsMetadata = {
   secret?: string
