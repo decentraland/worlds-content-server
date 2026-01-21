@@ -1,5 +1,4 @@
-import { Migration, MigratorComponents, PermissionType } from '../types'
-import SQL from 'sql-template-strings'
+import { Migration, MigratorComponents } from '../types'
 
 export const migration: Migration = {
   id: '0019_migrate_permissions_to_world_permissions',
@@ -9,54 +8,66 @@ export const migration: Migration = {
 
     logger.info('Migrating existing permissions to world_permissions table')
 
-    // Get all worlds with permissions
-    const result = await database.query<{
-      name: string
-      permissions: {
-        deployment?: { type: string; wallets?: string[] }
-        streaming?: { type: string; wallets?: string[] }
-      }
-    }>('SELECT name, permissions FROM worlds WHERE permissions IS NOT NULL')
+    // Migrate deployment permissions using a single INSERT from JSON data
+    // Cast permissions to jsonb to handle both json and jsonb column types
+    const deploymentResult = await database.query(`
+      INSERT INTO world_permissions (world_name, permission_type, address, created_at, updated_at)
+      SELECT 
+        w.name,
+        'deployment',
+        LOWER(wallet),
+        NOW(),
+        NOW()
+      FROM worlds w,
+        jsonb_array_elements_text((w.permissions::jsonb)->'deployment'->'wallets') AS wallet
+      WHERE w.permissions IS NOT NULL
+        AND (w.permissions::jsonb)->'deployment'->>'type' = 'allow-list'
+        AND jsonb_array_length(COALESCE((w.permissions::jsonb)->'deployment'->'wallets', '[]'::jsonb)) > 0
+      ON CONFLICT (world_name, permission_type, address) DO NOTHING
+    `)
 
-    let migrated = 0
-    const now = new Date()
+    // Migrate streaming permissions using a single INSERT from JSON data
+    const streamingResult = await database.query(`
+      INSERT INTO world_permissions (world_name, permission_type, address, created_at, updated_at)
+      SELECT 
+        w.name,
+        'streaming',
+        LOWER(wallet),
+        NOW(),
+        NOW()
+      FROM worlds w,
+        jsonb_array_elements_text((w.permissions::jsonb)->'streaming'->'wallets') AS wallet
+      WHERE w.permissions IS NOT NULL
+        AND (w.permissions::jsonb)->'streaming'->>'type' = 'allow-list'
+        AND jsonb_array_length(COALESCE((w.permissions::jsonb)->'streaming'->'wallets', '[]'::jsonb)) > 0
+      ON CONFLICT (world_name, permission_type, address) DO NOTHING
+    `)
 
-    for (const row of result.rows) {
-      const worldName = row.name
-      const permissions = row.permissions
+    const totalMigrated = (deploymentResult.rowCount || 0) + (streamingResult.rowCount || 0)
+    logger.info(`Migrated ${totalMigrated} permission entries to world_permissions table`)
 
-      // Migrate deployment permissions
-      if (
-        permissions.deployment?.type === PermissionType.AllowList &&
-        permissions.deployment.wallets?.length
-      ) {
-        for (const wallet of permissions.deployment.wallets) {
-          await database.query(SQL`
-            INSERT INTO world_permissions (world_name, permission_type, address, parcels, created_at, updated_at)
-            VALUES (${worldName}, ${'deployment'}, ${wallet.toLowerCase()}, ${null}::text[], ${now}, ${now})
-            ON CONFLICT (world_name, permission_type, address) DO NOTHING
-          `)
-          migrated++
-        }
-      }
+    // Add the new 'access' column for access control settings
+    logger.info('Creating access column and migrating access settings')
+    await database.query(`ALTER TABLE worlds ADD COLUMN IF NOT EXISTS access JSONB`)
 
-      // Migrate streaming permissions
-      if (
-        permissions.streaming?.type === PermissionType.AllowList &&
-        permissions.streaming.wallets?.length
-      ) {
-        for (const wallet of permissions.streaming.wallets) {
-          await database.query(SQL`
-            INSERT INTO world_permissions (world_name, permission_type, address, parcels, created_at, updated_at)
-            VALUES (${worldName}, ${'streaming'}, ${wallet.toLowerCase()}, ${null}::text[], ${now}, ${now})
-            ON CONFLICT (world_name, permission_type, address) DO NOTHING
-          `)
-          migrated++
-        }
-      }
-    }
+    // Copy the access part from permissions to the new access column
+    // Default to unrestricted if no access setting exists
+    await database.query(`
+      UPDATE worlds
+      SET access = COALESCE((permissions::jsonb)->'access', '{"type": "unrestricted"}'::jsonb)
+      WHERE permissions IS NOT NULL
+    `)
 
-    logger.info(`Migrated ${migrated} permission entries to world_permissions table`)
+    // Set default access for worlds without permissions
+    await database.query(`
+      UPDATE worlds
+      SET access = '{"type": "unrestricted"}'::jsonb
+      WHERE access IS NULL
+    `)
+
+    // Drop the old permissions column
+    await database.query(`ALTER TABLE worlds DROP COLUMN IF EXISTS permissions`)
+
+    logger.info('Successfully migrated permissions to access column and world_permissions table')
   }
 }
-

@@ -1,42 +1,26 @@
 import { test } from '../components'
 import { Authenticator } from '@dcl/crypto'
 import { getAuthHeaders, getIdentity, Identity } from '../utils'
+import { IAuthenticatedFetchComponent } from '../../src/types'
+
+const EXPLORER_METADATA = {
+  origin: 'https://play.decentraland.org',
+  intent: 'dcl:explorer:comms-handshake',
+  signer: 'dcl:explorer',
+  isGuest: 'false'
+}
 
 test('cast adapter handler /cast-adapter/:roomId', function ({ components, stubComponents }) {
-  function makeRequest(path: string, identity: Identity) {
-    const { localFetch } = components
-    return localFetch.fetch(path, {
-      method: 'POST',
-      headers: {
-        ...getAuthHeaders(
-          'post',
-          path,
-          {
-            origin: 'https://play.decentraland.org',
-            intent: 'dcl:explorer:comms-handshake',
-            signer: 'dcl:explorer',
-            isGuest: 'false'
-          },
-          (payload) =>
-            Authenticator.signPayload(
-              {
-                ephemeralIdentity: identity.ephemeralIdentity,
-                expiration: new Date(),
-                authChain: identity.authChain.authChain
-              },
-              payload
-            )
-        )
-      }
-    })
-  }
-
+  let localFetch: IAuthenticatedFetchComponent
   let identity: Identity
+
   beforeAll(async () => {
     identity = await getIdentity()
   })
 
   beforeEach(() => {
+    localFetch = components.localFetch
+
     const { config } = stubComponents
     config.requireString.withArgs('LIVEKIT_HOST').resolves('livekit.org')
     config.requireString.withArgs('LIVEKIT_API_KEY').resolves('livekit_key')
@@ -48,7 +32,11 @@ test('cast adapter handler /cast-adapter/:roomId', function ({ components, stubC
     const { worldCreator } = components
     const { worldName } = await worldCreator.createWorldWithScene()
 
-    const r = await makeRequest(`/cast-adapter/world-${worldName}`, identity)
+    const r = await localFetch.fetch(`/cast-adapter/world-${worldName}`, {
+      method: 'POST',
+      identity,
+      metadata: EXPLORER_METADATA
+    })
 
     expect(r.status).toEqual(200)
     const { token, url } = await r.json()
@@ -60,7 +48,11 @@ test('cast adapter handler /cast-adapter/:roomId', function ({ components, stubC
     const { worldCreator } = components
     const worldName = worldCreator.randomWorldName()
 
-    const r = await makeRequest(`/cast-adapter/world-${worldName}`, identity)
+    const r = await localFetch.fetch(`/cast-adapter/world-${worldName}`, {
+      method: 'POST',
+      identity,
+      metadata: EXPLORER_METADATA
+    })
 
     expect(r.status).toEqual(404)
     expect(await r.json()).toMatchObject({ message: `World "${worldName}" does not exist.` })
@@ -73,7 +65,11 @@ test('cast adapter handler /cast-adapter/:roomId', function ({ components, stubC
     const { nameDenyListChecker } = stubComponents
     nameDenyListChecker.checkNameDenyList.withArgs(worldName).resolves(false)
 
-    const r = await makeRequest(`/cast-adapter/world-${worldName}`, identity)
+    const r = await localFetch.fetch(`/cast-adapter/world-${worldName}`, {
+      method: 'POST',
+      identity,
+      metadata: EXPLORER_METADATA
+    })
 
     expect(r.status).toEqual(404)
     expect(await r.json()).toMatchObject({ message: `World "${worldName}" does not exist.` })
@@ -83,18 +79,22 @@ test('cast adapter handler /cast-adapter/:roomId', function ({ components, stubC
     const { worldCreator } = components
     const worldName = worldCreator.randomWorldName()
 
-    const path = `/cast-adapter/${worldName}`
-    const r = await makeRequest(path, identity)
+    const r = await localFetch.fetch(`/cast-adapter/${worldName}`, {
+      method: 'POST',
+      identity,
+      metadata: EXPLORER_METADATA
+    })
 
     expect(r.status).toEqual(400)
     expect(await r.json()).toMatchObject({ message: 'Invalid room id requested.' })
   })
 
   it('fails when signed-fetch request metadata is incorrect', async () => {
-    const { localFetch, worldCreator } = components
+    const { worldCreator } = components
     const worldName = worldCreator.randomWorldName()
     const path = `/cast-adapter/world-${worldName}`
 
+    // Use raw fetch with incomplete metadata
     const r = await localFetch.fetch(path, {
       method: 'POST',
       headers: {
@@ -124,7 +124,7 @@ test('cast adapter handler /cast-adapter/:roomId', function ({ components, stubC
   })
 
   it('fails when request is not a signed-fetch one', async () => {
-    const { localFetch, worldCreator } = components
+    const { worldCreator } = components
     const worldName = worldCreator.randomWorldName()
 
     const r = await localFetch.fetch(`/cast-adapter/world-${worldName}`, {

@@ -1,39 +1,19 @@
 import { test } from '../components'
 import { Authenticator } from '@dcl/crypto'
 import { getAuthHeaders, getIdentity, Identity } from '../utils'
-import { defaultPermissions } from '../../src/logic/permissions-checker'
-import { Permissions, PermissionType } from '../../src/types'
+import { IAuthenticatedFetchComponent, IWorldsManager } from '../../src/types'
+import { AccessType } from '../../src/logic/access'
+
+const EXPLORER_METADATA = {
+  origin: 'https://play.decentraland.org',
+  intent: 'dcl:explorer:comms-handshake',
+  signer: 'dcl:explorer',
+  isGuest: 'false'
+}
 
 test('comms adapter handler /get-comms-adapter/:roomId', function ({ components, stubComponents }) {
-  function makeRequest(path: string, identity: Identity) {
-    const { localFetch } = components
-
-    return localFetch.fetch(path, {
-      method: 'POST',
-      headers: {
-        ...getAuthHeaders(
-          'post',
-          path,
-          {
-            origin: 'https://play.decentraland.org',
-            intent: 'dcl:explorer:comms-handshake',
-            signer: 'dcl:explorer',
-            isGuest: 'false'
-          },
-          (payload) =>
-            Authenticator.signPayload(
-              {
-                ephemeralIdentity: identity.ephemeralIdentity,
-                expiration: new Date(),
-                authChain: identity.authChain.authChain
-              },
-              payload
-            )
-        )
-      }
-    })
-  }
-
+  let localFetch: IAuthenticatedFetchComponent
+  let worldsManager: IWorldsManager
   let identity: Identity
   let worldName: string
 
@@ -42,6 +22,9 @@ test('comms adapter handler /get-comms-adapter/:roomId', function ({ components,
   })
 
   beforeEach(async () => {
+    localFetch = components.localFetch
+    worldsManager = components.worldsManager
+
     const { worldCreator } = components
     const { config } = stubComponents
 
@@ -55,7 +38,11 @@ test('comms adapter handler /get-comms-adapter/:roomId', function ({ components,
   })
 
   it('works when signed-fetch request is correct', async () => {
-    const r = await makeRequest(`/get-comms-adapter/world-${worldName}`, identity)
+    const r = await localFetch.fetch(`/get-comms-adapter/world-${worldName}`, {
+      method: 'POST',
+      identity,
+      metadata: EXPLORER_METADATA
+    })
 
     expect(r.status).toEqual(200)
     expect(await r.json()).toEqual({
@@ -67,51 +54,30 @@ test('comms adapter handler /get-comms-adapter/:roomId', function ({ components,
     const { worldCreator } = components
     const worldName = worldCreator.randomWorldName()
 
-    const r = await makeRequest(`/get-comms-adapter/world-${worldName}`, identity)
+    const r = await localFetch.fetch(`/get-comms-adapter/world-${worldName}`, {
+      method: 'POST',
+      identity,
+      metadata: EXPLORER_METADATA
+    })
 
     expect(r.status).toEqual(404)
     expect(await r.json()).toMatchObject({ message: `World "${worldName}" does not exist.` })
   })
 
   it('fails when signed-fetch request metadata is correct but user does not have access permission', async () => {
-    const { localFetch, worldsManager } = components
-
-    const permissions: Permissions = {
-      ...defaultPermissions(),
-      access: {
-        type: PermissionType.AllowList,
-        wallets: []
-      }
-    }
-    await worldsManager.storePermissions(worldName, permissions)
+    await worldsManager.storeAccess(worldName, {
+      type: AccessType.AllowList,
+      wallets: []
+    })
 
     const path = `/get-comms-adapter/world-${worldName}`
-    const actualInit = {
-      method: 'POST',
-      headers: {
-        ...getAuthHeaders(
-          'post',
-          path,
-          {
-            origin: 'https://play.decentraland.org',
-            intent: 'dcl:explorer:comms-handshake',
-            signer: 'dcl:explorer',
-            isGuest: 'false'
-          },
-          (payload) =>
-            Authenticator.signPayload(
-              {
-                ephemeralIdentity: identity.ephemeralIdentity,
-                expiration: new Date(),
-                authChain: identity.authChain.authChain
-              },
-              payload
-            )
-        )
-      }
-    }
 
-    const r = await localFetch.fetch(path, actualInit)
+    // Use the new localFetch with identity and metadata
+    const r = await localFetch.fetch(path, {
+      method: 'POST',
+      identity,
+      metadata: EXPLORER_METADATA
+    })
 
     expect(r.status).toEqual(401)
     expect(await r.json()).toMatchObject({
@@ -124,23 +90,31 @@ test('comms adapter handler /get-comms-adapter/:roomId', function ({ components,
     const { nameDenyListChecker } = stubComponents
     nameDenyListChecker.checkNameDenyList.withArgs(worldName).resolves(false)
 
-    const r = await makeRequest(`/get-comms-adapter/world-${worldName}`, identity)
+    const r = await localFetch.fetch(`/get-comms-adapter/world-${worldName}`, {
+      method: 'POST',
+      identity,
+      metadata: EXPLORER_METADATA
+    })
 
     expect(r.status).toEqual(404)
     expect(await r.json()).toMatchObject({ message: `World "${worldName}" does not exist.` })
   })
 
   it('fails when signed-fetch request metadata is correct but room id is invalid', async () => {
-    const r = await makeRequest(`/get-comms-adapter/${worldName}`, identity)
+    const r = await localFetch.fetch(`/get-comms-adapter/${worldName}`, {
+      method: 'POST',
+      identity,
+      metadata: EXPLORER_METADATA
+    })
 
     expect(r.status).toEqual(400)
     expect(await r.json()).toMatchObject({ message: 'Invalid room id requested.' })
   })
 
   it('fails when signed-fetch request metadata is incorrect', async () => {
-    const { localFetch } = components
     const path = `/get-comms-adapter/world-${worldName}`
 
+    // Use raw fetch with incomplete metadata
     const r = await localFetch.fetch(path, {
       method: 'POST',
       headers: {
@@ -170,8 +144,6 @@ test('comms adapter handler /get-comms-adapter/:roomId', function ({ components,
   })
 
   it('fails when request is not a signed-fetch one', async () => {
-    const { localFetch } = components
-
     const r = await localFetch.fetch(`/get-comms-adapter/world-${worldName}`, {
       method: 'POST'
     })

@@ -14,7 +14,6 @@ export const migration: Migration = {
         world_name VARCHAR NOT NULL,
         permission_type VARCHAR NOT NULL,
         address VARCHAR NOT NULL,
-        parcels TEXT[],
         created_at TIMESTAMP NOT NULL,
         updated_at TIMESTAMP NOT NULL,
         UNIQUE(world_name, permission_type, address),
@@ -37,12 +36,6 @@ export const migration: Migration = {
       CREATE INDEX IF NOT EXISTS world_permissions_world_permission_idx ON world_permissions(world_name, permission_type);
     `)
 
-    // GIN index for parcel-based lookups
-    await database.query(`
-      CREATE INDEX IF NOT EXISTS world_permissions_parcels_idx ON world_permissions USING GIN(parcels);
-    `)
-
     logger.info('world_permissions table and indexes created successfully')
   }
 }
-

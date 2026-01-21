@@ -12,13 +12,12 @@ export function createMockedWorldsManager(
     getEntityForWorlds: jest.fn(),
     deployScene: jest.fn(),
     undeployScene: jest.fn(),
-    storePermissions: jest.fn(),
-    permissionCheckerForWorld: jest.fn(),
+    storeAccess: jest.fn(),
     undeployWorld: jest.fn(),
     getContributableDomains: jest.fn(),
     getWorldScenes: jest.fn(),
     getTotalWorldSize: jest.fn(),
     getWorldBoundingRectangle: jest.fn(),
     ...overrides
-  }
+  } as jest.Mocked<IWorldsManager>
 }

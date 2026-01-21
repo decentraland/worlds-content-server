@@ -1,7 +1,7 @@
 // This file is the "test-environment" analogous for src/components.ts
 // Here we define the test components to be used in the testing environment
 
-import { createLocalFetchCompoment, createRunner } from '@well-known-components/test-helpers'
+import { createRunner } from '@well-known-components/test-helpers'
 
 import { main } from '../src/service'
 import { TestComponents } from '../src/types'
@@ -25,6 +25,8 @@ import { createWorldsManagerComponent } from '../src/adapters/worlds-manager'
 import { createCoordinatesComponent } from '../src/logic/coordinates'
 import { createPermissionsManagerComponent } from '../src/adapters/permissions-manager'
 import { createSettingsComponent } from '../src/logic/settings'
+import { createPermissionsComponent } from '../src/logic/permissions'
+import { createAccessComponent } from '../src/logic/access'
 import { createMockNameOwnership } from './mocks/name-ownership-mock'
 import { createMockUpdateOwnerJob } from './mocks/update-owner-job-mock'
 import { createSnsClientMock } from './mocks/sns-client-mock'
@@ -32,6 +34,7 @@ import { createDotEnvConfigComponent } from '@well-known-components/env-config-p
 import { createMockNatsComponent } from './mocks/nats-mock'
 import { createMockPeersRegistry } from './mocks/peers-registry-mock'
 import { IPublisherComponent } from '@dcl/sns-component'
+import { createAuthenticatedLocalFetchComponent } from './utils'
 
 /**
  * Behaves like Jest "describe" function, used to describe a test for a
@@ -95,9 +98,12 @@ async function initComponents(): Promise<TestComponents> {
 
   const worldsIndexer = await createWorldsIndexerComponent({ worldsManager })
 
-  const permissionsManager = await createPermissionsManagerComponent({ worldsManager })
+  const permissionsManager = await createPermissionsManagerComponent({ database, worldsManager })
 
   const snsClient: IPublisherComponent = createSnsClientMock()
+
+  const permissions = await createPermissionsComponent({ config, permissionsManager, snsClient })
+  const access = createAccessComponent({ worldsManager })
 
   const entityDeployer = createEntityDeployer({
     config,
@@ -114,6 +120,7 @@ async function initComponents(): Promise<TestComponents> {
     limitsManager,
     nameDenyListChecker,
     namePermissionChecker,
+    permissions,
     storage,
     worldsManager
   })
@@ -127,17 +134,19 @@ async function initComponents(): Promise<TestComponents> {
 
   return {
     ...components,
+    access,
     config,
     commsAdapter,
     coordinates,
     entityDeployer,
     fetch,
     limitsManager,
-    localFetch: await createLocalFetchCompoment(config),
+    localFetch: await createAuthenticatedLocalFetchComponent(config),
     marketplaceSubGraph: createMockNameSubGraph(),
     metrics,
     namePermissionChecker,
     nats: createMockNatsComponent(),
+    permissions,
     permissionsManager,
     peersRegistry: createMockPeersRegistry(),
     settings,

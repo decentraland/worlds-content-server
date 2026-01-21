@@ -7,13 +7,13 @@ import { InvalidRequestError, NotFoundError } from '@dcl/http-commons'
 
 export async function castAdapterHandler(
   context: HandlerContextWithPath<
-    'config' | 'nameDenyListChecker' | 'namePermissionChecker' | 'storage' | 'worldsManager',
+    'config' | 'nameDenyListChecker' | 'namePermissionChecker' | 'permissions' | 'storage' | 'worldsManager',
     '/meet-adapter/:roomId'
   > &
     DecentralandSignatureContext<any>
 ): Promise<IHttpServerComponent.IResponse> {
   const {
-    components: { config, nameDenyListChecker, namePermissionChecker, worldsManager }
+    components: { config, nameDenyListChecker, namePermissionChecker, permissions, worldsManager }
   } = context
 
   const [host, apiKey, apiSecret] = await Promise.all([
@@ -45,10 +45,9 @@ export async function castAdapterHandler(
   assertNotBlockedOrWithinInGracePeriod(worldMetadata)
 
   const identity = context.verification!.auth
-  const permissionChecker = await worldsManager.permissionCheckerForWorld(worldName)
   const hasPermission =
     (await namePermissionChecker.checkPermission(identity, worldName)) ||
-    (await permissionChecker.checkPermission('streaming', identity))
+    (await permissions.hasWorldWidePermission(worldName, 'streaming', identity))
 
   const token = new AccessToken(apiKey, apiSecret, {
     identity,

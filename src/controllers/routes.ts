@@ -13,16 +13,16 @@ import { castAdapterHandler } from './handlers/cast-adapter-handler'
 import { wellKnownComponents } from '@dcl/platform-crypto-middleware'
 import {
   deletePermissionsAddressHandler,
-  getAddressPermissionsHandler,
+  deletePermissionParcelsHandler,
+  getAllowedParcelsForPermissionHandler,
   getPermissionsHandler,
-  getWorldPermissionsDetailedHandler,
-  patchAddressParcelsHandler,
   postPermissionsHandler,
+  postPermissionParcelsHandler,
   putPermissionsAddressHandler
 } from './handlers/permissions-handlers'
 import { walletStatsHandler } from './handlers/wallet-stats-handler'
 import { undeployEntity } from './handlers/undeploy-entity-handler'
-import { bearerTokenMiddleware, errorHandler } from '@dcl/platform-server-commons'
+import { bearerTokenMiddleware, errorHandler } from '@dcl/http-commons'
 import { reprocessABHandler } from './handlers/reprocess-ab-handler'
 import { garbageCollectionHandler } from './handlers/garbage-collection'
 import { getContributableDomainsHandler } from './handlers/contributor-handler'
@@ -30,6 +30,7 @@ import { livekitWebhookHandler } from './handlers/livekit-webhook-handler'
 import { walletConnectedWorldHandler } from './handlers/wallet-connected-world-handler'
 import { getScenesHandler, undeploySceneHandler } from './handlers/scenes-handler'
 import { getWorldSettingsHandler, updateWorldSettingsHandler } from './handlers/world-settings-handler'
+import { permissionParcelsSchema } from './schemas/permission-parcels-schema'
 import { worldSettingsSchema } from './schemas/world-settings-schemas'
 
 export async function setupRouter(globalContext: GlobalContext): Promise<Router<GlobalContext>> {
@@ -80,30 +81,43 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
 
   router.get('/wallet/contribute', signedFetchMiddleware, getContributableDomainsHandler)
 
+  // Permissions endpoints
   router.get('/world/:world_name/permissions', getPermissionsHandler)
-  router.post('/world/:world_name/permissions/:permission_name', signedFetchMiddleware, postPermissionsHandler)
-
-  // Detailed permission list (with parcel info)
-  router.get('/world/:world_name/permissions/:permission_name/list', getWorldPermissionsDetailedHandler)
 
   // Address-specific permission endpoints
-  router.get('/world/:world_name/permissions/:permission_name/:address', getAddressPermissionsHandler)
+  // GET: Paginated parcels for a specific address
+  router.get(
+    '/world/:world_name/permissions/:permission_name/address/:address/parcels',
+    getAllowedParcelsForPermissionHandler
+  )
+  // POST: Add parcels to an existing permission
+  router.post(
+    '/world/:world_name/permissions/:permission_name/address/:address/parcels',
+    signedFetchMiddleware,
+    schemaValidator.withSchemaValidatorMiddleware(permissionParcelsSchema),
+    postPermissionParcelsHandler
+  )
+  // DELETE: Remove parcels from an existing permission
+  router.delete(
+    '/world/:world_name/permissions/:permission_name/address/:address/parcels',
+    signedFetchMiddleware,
+    schemaValidator.withSchemaValidatorMiddleware(permissionParcelsSchema),
+    deletePermissionParcelsHandler
+  )
+
+  // PUT: Set permission (create or replace) - grants world-wide permission
   router.put(
     '/world/:world_name/permissions/:permission_name/:address',
     signedFetchMiddleware,
     putPermissionsAddressHandler
   )
+  router.post('/world/:world_name/permissions/:permission_name', signedFetchMiddleware, postPermissionsHandler)
+
+  // DELETE: Revoke permission
   router.delete(
     '/world/:world_name/permissions/:permission_name/:address',
     signedFetchMiddleware,
     deletePermissionsAddressHandler
-  )
-
-  // Update parcels for an existing permission
-  router.patch(
-    '/world/:world_name/permissions/:permission_name/:address/parcels',
-    signedFetchMiddleware,
-    patchAddressParcelsHandler
   )
 
   router.get('/wallet/:wallet/stats', walletStatsHandler)

@@ -16,6 +16,8 @@ import { createValidator } from '../../../src/logic/validations'
 import { createMockNameDenyListChecker } from '../../mocks/name-deny-list-checker-mock'
 import { createWorldsManagerMockComponent } from '../../mocks/worlds-manager-mock'
 import { createCoordinatesComponent } from '../../../src/logic/coordinates'
+import { createMockedPermissionsComponent } from '../../mocks/permissions-component-mock'
+import { IPermissionsComponent } from '../../../src/logic/permissions'
 
 describe('validator', function () {
   let config: IConfigComponent
@@ -24,6 +26,7 @@ describe('validator', function () {
   let nameDenyListChecker: INameDenyListChecker
   let worldNamePermissionChecker: IWorldNamePermissionChecker
   let worldsManager: IWorldsManager
+  let permissions: jest.Mocked<IPermissionsComponent>
   let identity: Identity
   let components: ValidatorComponents
 
@@ -38,6 +41,7 @@ describe('validator', function () {
     worldNamePermissionChecker = createMockNamePermissionChecker(['whatever.dcl.eth'])
     const coordinates = createCoordinatesComponent()
     worldsManager = await createWorldsManagerMockComponent({ coordinates, storage })
+    permissions = createMockedPermissionsComponent()
 
     identity = await getIdentity()
     components = {
@@ -46,7 +50,8 @@ describe('validator', function () {
       limitsManager,
       nameDenyListChecker,
       namePermissionChecker: worldNamePermissionChecker,
-      worldsManager
+      worldsManager,
+      permissions
     }
   })
 

@@ -1,11 +1,86 @@
 import { createUnsafeIdentity } from '@dcl/crypto/dist/crypto'
-import { Authenticator, AuthIdentity, IdentityType } from '@dcl/crypto'
+import { Authenticator } from '@dcl/crypto'
 import { Readable } from 'stream'
 import { IContentStorageComponent } from '@dcl/catalyst-storage'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { AuthChain } from '@dcl/schemas'
 import { AUTH_CHAIN_HEADER_PREFIX, AUTH_METADATA_HEADER, AUTH_TIMESTAMP_HEADER } from '@dcl/platform-crypto-middleware'
 import { IPgComponent } from '@well-known-components/pg-component'
+import { IFetchComponent, IConfigComponent } from '@well-known-components/interfaces'
+import { createLocalFetchCompoment } from '@well-known-components/test-helpers'
+import { TestIdentity, IAuthenticatedFetchComponent, AuthenticatedRequestInit } from '../src/types'
+
+// Re-export for convenience - tests use "Identity" name
+export type Identity = TestIdentity
+
+/**
+ * Creates a fetch component that wraps the local fetch component and adds support
+ * for authenticated requests. When an identity is provided, it automatically adds
+ * the auth headers using the signed fetch pattern (ADR-44).
+ */
+export async function createAuthenticatedLocalFetchComponent(
+  config: IConfigComponent
+): Promise<IAuthenticatedFetchComponent> {
+  const localFetch: IFetchComponent = await createLocalFetchCompoment(config)
+
+  return {
+    async fetch(path: string, init?: AuthenticatedRequestInit): Promise<Response> {
+      const { identity, metadata, body, ...restInit } = init || {}
+      const method = (restInit.method || 'GET').toUpperCase()
+
+      const headers: Record<string, string> = {}
+
+      // Copy existing headers
+      if (restInit.headers) {
+        if (restInit.headers instanceof Headers) {
+          restInit.headers.forEach((value, key) => {
+            headers[key] = value
+          })
+        } else if (Array.isArray(restInit.headers)) {
+          restInit.headers.forEach(([key, value]) => {
+            headers[key] = value
+          })
+        } else {
+          Object.assign(headers, restInit.headers)
+        }
+      }
+
+      // If there's a body, add content-type header and stringify
+      let bodyString: string | undefined
+      if (body !== undefined) {
+        headers['Content-Type'] = 'application/json'
+        bodyString = JSON.stringify(body)
+      }
+
+      // If identity is provided, add auth headers
+      if (identity) {
+        const authMetadata = metadata || {}
+        const authHeaders = getAuthHeaders(method, path, authMetadata, (payload) =>
+          Authenticator.signPayload(
+            {
+              ephemeralIdentity: identity.ephemeralIdentity,
+              expiration: new Date(),
+              authChain: identity.authChain.authChain
+            },
+            payload
+          )
+        )
+        Object.assign(headers, authHeaders)
+      }
+
+      const fetchInit: any = {
+        ...restInit,
+        headers
+      }
+
+      if (bodyString !== undefined) {
+        fetchInit.body = bodyString
+      }
+
+      return localFetch.fetch(path, fetchInit) as unknown as Promise<Response>
+    }
+  }
+}
 
 export async function storeJson(storage: IContentStorageComponent, fileId: string, data: any) {
   const buffer = stringToUtf8Bytes(JSON.stringify(data))
@@ -36,8 +111,6 @@ export async function cleanup(storage: IContentStorageComponent, db: IPgComponen
 
   await db.query(`TRUNCATE worlds, world_scenes CASCADE`)
 }
-
-export type Identity = { authChain: AuthIdentity; realAccount: IdentityType; ephemeralIdentity: IdentityType }
 
 export async function getIdentity(): Promise<Identity> {
   const ephemeralIdentity = createUnsafeIdentity()

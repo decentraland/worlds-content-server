@@ -1,8 +1,6 @@
 import {
   AppComponents,
-  IPermissionChecker,
   IWorldsManager,
-  Permissions,
   WorldMetadata,
   WorldRecord,
   WorldSettings,
@@ -19,8 +17,7 @@ import { Entity, EthAddress } from '@dcl/schemas'
 import SQL from 'sql-template-strings'
 import { PoolClient } from 'pg'
 import { buildWorldRuntimeMetadata } from '../logic/world-runtime-metadata-utils'
-import { createPermissionCheckerWithRecords, defaultPermissions } from '../logic/permissions-checker'
-import { AllowListPermission, WorldPermissionRecord } from '../types'
+import { AccessSetting, defaultAccess } from '../logic/access'
 
 type BoundingRow = { min_x: number; max_x: number; min_y: number; max_y: number }
 
@@ -83,7 +80,7 @@ export async function createWorldsManagerComponent({
     const runtimeMetadata = buildWorldRuntimeMetadata(worldName, scenes)
 
     const metadata: WorldMetadata = {
-      permissions: row.permissions,
+      access: row.access || defaultAccess(),
       spawnCoordinates: row.spawn_coordinates,
       runtimeMetadata,
       scenes,
@@ -136,11 +133,11 @@ export async function createWorldsManagerComponent({
       if (worldExists.rowCount === 0) {
         const spawnCoordinates = extractSpawnCoordinates(scene)
         await client.query(SQL`
-          INSERT INTO worlds (name, owner, permissions, spawn_coordinates, created_at, updated_at)
+          INSERT INTO worlds (name, owner, access, spawn_coordinates, created_at, updated_at)
           VALUES (
             ${worldName.toLowerCase()}, 
             ${owner?.toLowerCase()}, 
-            ${JSON.stringify(defaultPermissions())}::json,
+            ${JSON.stringify(defaultAccess())}::jsonb,
             ${spawnCoordinates},
             ${new Date()}, 
             ${new Date()}
@@ -191,13 +188,13 @@ export async function createWorldsManagerComponent({
     }
   }
 
-  async function storePermissions(worldName: string, permissions: Permissions): Promise<void> {
+  async function storeAccess(worldName: string, access: AccessSetting): Promise<void> {
     const sql = SQL`
-              INSERT INTO worlds (name, permissions, created_at, updated_at)
-              VALUES (${worldName.toLowerCase()}, ${JSON.stringify(permissions)}::json,
+              INSERT INTO worlds (name, access, created_at, updated_at)
+              VALUES (${worldName.toLowerCase()}, ${JSON.stringify(access)}::jsonb,
                       ${new Date()}, ${new Date()})
               ON CONFLICT (name) 
-                  DO UPDATE SET permissions = ${JSON.stringify(permissions)}::json,
+                  DO UPDATE SET access = ${JSON.stringify(access)}::jsonb,
                                 updated_at = ${new Date()}
     `
     await database.query(sql)
@@ -265,41 +262,6 @@ export async function createWorldsManagerComponent({
     }))
   }
 
-  async function permissionCheckerForWorld(worldName: string): Promise<IPermissionChecker> {
-    const metadata = await getMetadataForWorld(worldName)
-    const permissions = metadata?.permissions || defaultPermissions()
-
-    // Get permission records from the world_permissions table
-    const permissionRecords = await getWorldPermissionRecords(worldName)
-
-    return createPermissionCheckerWithRecords(permissions, permissionRecords)
-  }
-
-  async function getWorldPermissionRecords(worldName: string): Promise<WorldPermissionRecord[]> {
-    const result = await database.query<{
-      id: number
-      world_name: string
-      permission_type: string
-      address: string
-      parcels: string[] | null
-      created_at: Date
-      updated_at: Date
-    }>(SQL`
-      SELECT * FROM world_permissions 
-      WHERE world_name = ${worldName.toLowerCase()}
-    `)
-
-    return result.rows.map((row) => ({
-      id: row.id,
-      worldName: row.world_name,
-      permissionType: row.permission_type as AllowListPermission,
-      address: row.address,
-      parcels: row.parcels,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at
-    }))
-  }
-
   async function undeployWorld(worldName: string): Promise<void> {
     const normalizedWorldName = worldName.toLowerCase()
 
@@ -324,22 +286,48 @@ export async function createWorldsManagerComponent({
   }
 
   async function getContributableDomains(address: string): Promise<{ domains: ContributorDomain[]; count: number }> {
-    // Use the new world_permissions table for efficient lookups
-    const result = await database.query<ContributorDomain>(SQL`
+    // Use the world_permissions table with normalized parcels
+    // parcelCount: 0 if any permission is world-wide (no parcels), otherwise the minimum parcel count
+    const result = await database.query<{
+      name: string
+      user_permissions: string[]
+      size: string
+      owner: string
+      parcel_count: string
+    }>(SQL`
       SELECT 
         w.name,
         array_agg(DISTINCT wp.permission_type) as user_permissions,
-        COALESCE(SUM(ws.size), 0)::text as size,
-        w.owner
+        COALESCE(sizes.total_size, 0)::text as size,
+        w.owner,
+        CASE 
+          WHEN bool_or(COALESCE(parcel_counts.count, 0) = 0) THEN '0'
+          ELSE MIN(parcel_counts.count)::text
+        END as parcel_count
       FROM world_permissions wp
       JOIN worlds w ON wp.world_name = w.name
-      LEFT JOIN world_scenes ws ON w.name = ws.world_name
+      LEFT JOIN (
+        SELECT world_name, SUM(size) as total_size
+        FROM world_scenes
+        GROUP BY world_name
+      ) AS sizes ON w.name = sizes.world_name
+      LEFT JOIN (
+        SELECT permission_id, COUNT(*) as count
+        FROM world_permission_parcels
+        GROUP BY permission_id
+      ) AS parcel_counts ON wp.id = parcel_counts.permission_id
       WHERE LOWER(wp.address) = LOWER(${address})
-      GROUP BY w.name, w.owner
+      GROUP BY w.name, w.owner, sizes.total_size
     `)
 
     return {
-      domains: result.rows,
+      domains: result.rows.map((row) => ({
+        name: row.name,
+        user_permissions: row.user_permissions,
+        size: row.size,
+        owner: row.owner,
+        parcelCount: parseInt(row.parcel_count, 10)
+      })),
       count: result.rowCount ?? 0
     }
   }
@@ -542,8 +530,7 @@ export async function createWorldsManagerComponent({
     getEntityForWorlds,
     deployScene,
     undeployScene,
-    storePermissions,
-    permissionCheckerForWorld,
+    storeAccess,
     undeployWorld,
     getContributableDomains,
     getWorldScenes,

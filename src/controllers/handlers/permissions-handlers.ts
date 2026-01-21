@@ -1,31 +1,20 @@
 import { IHttpServerComponent } from '@well-known-components/interfaces'
-import { randomUUID } from 'crypto'
-import {
-  AllowListPermission,
-  HandlerContextWithPath,
-  IWorldNamePermissionChecker,
-  Permission,
-  Permissions,
-  PermissionType
-} from '../../types'
+import { HandlerContextWithPath, IWorldNamePermissionChecker } from '../../types'
 import { DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
-import bcrypt from 'bcrypt'
-import { InvalidRequestError, NotAuthorizedError } from '@dcl/platform-server-commons'
-import { EthAddress, WorldsPermissionGrantedEvent, WorldsPermissionRevokedEvent, Events } from '@dcl/schemas'
-import { defaultPermissions } from '../../logic/permissions-checker'
+import { getPaginationParams, InvalidRequestError, NotAuthorizedError, NotFoundError } from '@dcl/http-commons'
+import { EthAddress } from '@dcl/schemas'
+import { AllowListPermission, PermissionNotFoundError, PermissionType } from '../../logic/permissions'
+import { AccessInput, AccessSetting, AccessType, InvalidAccessTypeError } from '../../logic/access'
+import { PermissionParcelsInput } from '../schemas/permission-parcels-schema'
 
 function isAllowListPermission(permission: string): permission is AllowListPermission {
   return permission === 'deployment' || permission === 'streaming'
 }
 
-const saltRounds = 10
-
-function removeSecrets(permissions: Permissions): Permissions {
-  const noSecrets = JSON.parse(JSON.stringify(permissions)) as Permissions
-  for (const mayHaveSecret of Object.values(noSecrets)) {
-    if (mayHaveSecret.type === PermissionType.SharedSecret) {
-      delete (mayHaveSecret as any).secret
-    }
+function removeSecrets(access: AccessSetting): AccessSetting {
+  const noSecrets = JSON.parse(JSON.stringify(access)) as AccessSetting
+  if (noSecrets.type === AccessType.SharedSecret) {
+    delete (noSecrets as any).secret
   }
   return noSecrets
 }
@@ -40,262 +29,133 @@ async function checkOwnership(namePermissionChecker: IWorldNamePermissionChecker
 }
 
 export async function getPermissionsHandler(
-  ctx: HandlerContextWithPath<'permissionsManager', '/world/:world_name/permissions'>
+  ctx: HandlerContextWithPath<'permissions' | 'permissionsManager' | 'worldsManager', '/world/:world_name/permissions'>
 ): Promise<IHttpServerComponent.IResponse> {
-  const { permissionsManager } = ctx.components
+  const { permissions, permissionsManager, worldsManager } = ctx.components
+  const worldName = ctx.params.world_name
 
-  // TODO: do single round to DB
-  const [permissions, owner] = await Promise.all([
-    permissionsManager.getPermissions(ctx.params.world_name),
-    permissionsManager.getOwner(ctx.params.world_name)
+  const [metadata, owner, summary] = await Promise.all([
+    worldsManager.getMetadataForWorld(worldName),
+    permissionsManager.getOwner(worldName),
+    permissions.getPermissionsSummary(worldName)
   ])
-  const noSecrets = removeSecrets(permissions)
+
+  // Extract wallets for deployment and streaming from summary
+  const deploymentWallets: string[] = []
+  const streamingWallets: string[] = []
+
+  for (const [address, addressPermissions] of Object.entries(summary)) {
+    for (const perm of addressPermissions) {
+      if (perm.permission === 'deployment') {
+        deploymentWallets.push(address)
+      } else if (perm.permission === 'streaming') {
+        streamingWallets.push(address)
+      }
+    }
+  }
+
+  // Access settings (with secrets removed)
+  const access = metadata?.access || { type: AccessType.Unrestricted }
+  const accessWithoutSecrets = removeSecrets(access)
+
+  // Streaming is allow-list if there are entries, unrestricted otherwise
+  const hasStreamingEntries = streamingWallets.length > 0
+
+  // Transform summary to snake_case for the response
+  const transformedSummary: Record<string, { permission: string; world_wide: boolean; parcel_count?: number }[]> = {}
+  for (const [address, addressPermissions] of Object.entries(summary)) {
+    transformedSummary[address] = addressPermissions.map((perm) => ({
+      permission: perm.permission,
+      world_wide: perm.worldWide,
+      ...(perm.parcelCount !== undefined ? { parcel_count: perm.parcelCount } : {})
+    }))
+  }
 
   return {
     status: 200,
-    body: { permissions: noSecrets, owner }
+    body: {
+      permissions: {
+        deployment: {
+          type: PermissionType.AllowList,
+          wallets: deploymentWallets
+        },
+        streaming: hasStreamingEntries
+          ? {
+              type: PermissionType.AllowList,
+              wallets: streamingWallets
+            }
+          : { type: PermissionType.Unrestricted },
+        access: accessWithoutSecrets
+      },
+      owner,
+      summary: transformedSummary
+    }
   }
 }
 
+type PermissionOrAccess = 'deployment' | 'streaming' | 'access'
+
 export async function postPermissionsHandler(
   ctx: HandlerContextWithPath<
-    'namePermissionChecker' | 'permissionsManager',
+    'access' | 'namePermissionChecker' | 'permissions',
     '/world/:world_name/permissions/:permission_name'
   > &
     DecentralandSignatureContext<any>
 ): Promise<IHttpServerComponent.IResponse> {
-  const { namePermissionChecker, permissionsManager } = ctx.components
+  const { access, namePermissionChecker, permissions } = ctx.components
 
   const worldName = ctx.params.world_name
-  const permissionName = ctx.params.permission_name as Permission
+  const permissionName = ctx.params.permission_name as PermissionOrAccess
 
   await checkOwnership(namePermissionChecker, ctx.verification!.auth, worldName)
 
-  const { type, ...extras } = ctx.verification!.authMetadata
+  const authMetadata = ctx.verification!.authMetadata
 
-  const permissions = await permissionsManager.getPermissions(worldName)
   switch (permissionName) {
     case 'deployment': {
-      switch (type) {
-        case PermissionType.AllowList: {
-          permissions.deployment = { type: PermissionType.AllowList, wallets: [] }
-          break
-        }
-        default: {
-          throw new InvalidRequestError(
-            `Invalid payload received. Deployment permission needs to be '${PermissionType.AllowList}'.`
-          )
-        }
-      }
+      await permissions.setDeploymentPermission(
+        worldName,
+        authMetadata.type as PermissionType,
+        authMetadata.wallets || []
+      )
       break
     }
     case 'streaming': {
-      switch (type) {
-        case PermissionType.AllowList: {
-          permissions.streaming = { type: PermissionType.AllowList, wallets: [] }
-          break
-        }
-        case PermissionType.Unrestricted: {
-          permissions.streaming = { type: PermissionType.Unrestricted }
-          break
-        }
-        default: {
-          throw new InvalidRequestError(
-            `Invalid payload received. Streaming permission needs to be either '${PermissionType.Unrestricted}' or '${PermissionType.AllowList}'.`
-          )
-        }
-      }
+      await permissions.setStreamingPermission(worldName, authMetadata.type as PermissionType, authMetadata.wallets)
       break
     }
     case 'access': {
-      switch (type) {
-        case PermissionType.AllowList: {
-          permissions.access = { type: PermissionType.AllowList, wallets: [] }
-          break
+      try {
+        await access.setAccess(worldName, authMetadata as AccessInput)
+      } catch (error) {
+        if (error instanceof InvalidAccessTypeError) {
+          throw new InvalidRequestError(error.message)
         }
-        case PermissionType.Unrestricted: {
-          permissions.access = { type: PermissionType.Unrestricted }
-          break
-        }
-        case PermissionType.NFTOwnership: {
-          if (!extras.nft) {
-            throw new InvalidRequestError('Invalid payload received. For nft ownership there needs to be a valid nft.')
-          }
-          permissions.access = { type: PermissionType.NFTOwnership, nft: extras.nft }
-          break
-        }
-        case PermissionType.SharedSecret: {
-          if (!extras.secret) {
-            throw new InvalidRequestError(
-              'Invalid payload received. For shared secret there needs to be a valid secret.'
-            )
-          }
-          permissions.access = {
-            type: PermissionType.SharedSecret,
-            secret: bcrypt.hashSync(extras.secret, saltRounds)
-          }
-          break
-        }
-        default: {
-          throw new InvalidRequestError(`Invalid payload received. Need to provide a valid permission type: ${type}.`)
-        }
+        throw error
       }
       break
     }
+    default: {
+      throw new InvalidRequestError(`Invalid permission name: ${permissionName}.`)
+    }
   }
-  await permissionsManager.storePermissions(worldName, permissions)
 
   return {
     status: 204
   }
 }
 
+/**
+ * Grant world-wide permission to an address - idempotent PUT operation
+ */
 export async function putPermissionsAddressHandler(
   ctx: HandlerContextWithPath<
-    'config' | 'namePermissionChecker' | 'permissionsManager' | 'worldsManager' | 'snsClient',
+    'namePermissionChecker' | 'permissions',
     '/world/:world_name/permissions/:permission_name/:address'
   > &
     DecentralandSignatureContext<any>
 ): Promise<IHttpServerComponent.IResponse> {
-  const { config, namePermissionChecker, permissionsManager, worldsManager, snsClient } = ctx.components
-  const builderUrl = await config.requireString('BUILDER_URL')
-
-  const worldName = ctx.params.world_name
-  const permissionName = ctx.params.permission_name as Permission
-  const address = ctx.params.address
-
-  if (!EthAddress.validate(address)) {
-    throw new InvalidRequestError(`Invalid address: ${address}.`)
-  }
-
-  if (!isAllowListPermission(permissionName)) {
-    throw new InvalidRequestError(
-      `Permission '${permissionName}' does not support allow-list. Only 'deployment' and 'streaming' do.`
-    )
-  }
-
-  await checkOwnership(namePermissionChecker, ctx.verification!.auth, worldName)
-
-  const metadata = await worldsManager.getMetadataForWorld(worldName)
-  const permissions = metadata?.permissions || defaultPermissions()
-  const permissionConfig = permissions[permissionName]
-  if (permissionConfig.type !== PermissionType.AllowList) {
-    throw new InvalidRequestError(
-      `World ${worldName} is configured as ${permissionConfig.type} (not '${PermissionType.AllowList}') for permission '${permissionName}'.`
-    )
-  }
-
-  const lowerCaseAddress = address.toLowerCase()
-
-  // Check if already exists in world_permissions table
-  const existingPermission = await permissionsManager.getAddressPermissions(worldName, permissionName, lowerCaseAddress)
-  if (existingPermission) {
-    throw new InvalidRequestError(
-      `World ${worldName} already has address ${address} in the allow list for permission '${permissionName}'.`
-    )
-  }
-
-  // Get parcels from request body if provided (for parcel-specific permissions)
-  const { parcels } = ctx.verification!.authMetadata || {}
-  const validatedParcels = parcels && Array.isArray(parcels) ? parcels : undefined
-
-  await permissionsManager.addAddressToAllowList(worldName, permissionName, lowerCaseAddress, validatedParcels)
-
-  const permissionGrantedEvent: WorldsPermissionGrantedEvent = {
-    type: Events.Type.WORLD,
-    subType: Events.SubType.Worlds.WORLDS_PERMISSION_GRANTED,
-    key: randomUUID(),
-    timestamp: Date.now(),
-    metadata: {
-      title: 'Worlds permission granted',
-      description: validatedParcels
-        ? `You have been granted ${permissionName} permission for parcels ${validatedParcels.join(', ')} in world ${worldName}`
-        : `You have been granted ${permissionName} permission for world ${worldName}`,
-      world: worldName,
-      permissions: [permissionName],
-      url: `${builderUrl}/worlds?tab=dcl`,
-      address: lowerCaseAddress
-    }
-  }
-
-  await snsClient.publishMessage(permissionGrantedEvent, {
-    isMultiplayer: { DataType: 'String', StringValue: 'false' }
-  })
-
-  return {
-    status: 204
-  }
-}
-
-export async function deletePermissionsAddressHandler(
-  ctx: HandlerContextWithPath<
-    'config' | 'namePermissionChecker' | 'permissionsManager' | 'worldsManager' | 'snsClient',
-    '/world/:world_name/permissions/:permission_name/:address'
-  > &
-    DecentralandSignatureContext<any>
-): Promise<IHttpServerComponent.IResponse> {
-  const { config, namePermissionChecker, permissionsManager, snsClient } = ctx.components
-  const builderUrl = await config.requireString('BUILDER_URL')
-
-  const worldName = ctx.params.world_name
-  const permissionName = ctx.params.permission_name as Permission
-  const address = ctx.params.address
-
-  if (!EthAddress.validate(address)) {
-    throw new InvalidRequestError(`Invalid address: ${address}.`)
-  }
-
-  if (!isAllowListPermission(permissionName)) {
-    throw new InvalidRequestError(
-      `Permission '${permissionName}' does not support allow-list. Only 'deployment' and 'streaming' do.`
-    )
-  }
-
-  await checkOwnership(namePermissionChecker, ctx.verification!.auth, worldName)
-
-  const lowerCaseAddress = address.toLowerCase()
-
-  // Check if exists in world_permissions table
-  const existingPermission = await permissionsManager.getAddressPermissions(worldName, permissionName, lowerCaseAddress)
-  if (!existingPermission) {
-    throw new InvalidRequestError(
-      `World ${worldName} does not have address ${address} in the allow list for permission '${permissionName}'.`
-    )
-  }
-
-  await permissionsManager.deleteAddressFromAllowList(worldName, permissionName, lowerCaseAddress)
-
-  const permissionRevokedEvent: WorldsPermissionRevokedEvent = {
-    type: Events.Type.WORLD,
-    subType: Events.SubType.Worlds.WORLDS_PERMISSION_REVOKED,
-    key: randomUUID(),
-    timestamp: Date.now(),
-    metadata: {
-      title: 'World permission revoked',
-      description: `Your ${permissionName} permission for world ${worldName} has been revoked`,
-      world: worldName,
-      permissions: [permissionName],
-      url: `${builderUrl}/worlds?tab=dcl`,
-      address: lowerCaseAddress
-    }
-  }
-
-  await snsClient.publishMessage(permissionRevokedEvent, {
-    isMultiplayer: { DataType: 'String', StringValue: 'false' }
-  })
-
-  return {
-    status: 204
-  }
-}
-
-/**
- * Get detailed permissions for a specific address (including parcels)
- */
-export async function getAddressPermissionsHandler(
-  ctx: HandlerContextWithPath<'permissionsManager', '/world/:world_name/permissions/:permission_name/:address'>
-): Promise<IHttpServerComponent.IResponse> {
-  const { permissionsManager } = ctx.components
+  const { namePermissionChecker, permissions } = ctx.components
 
   const worldName = ctx.params.world_name
   const permissionName = ctx.params.permission_name
@@ -311,43 +171,168 @@ export async function getAddressPermissionsHandler(
     )
   }
 
-  const lowerCaseAddress = address.toLowerCase()
-  const permission = await permissionsManager.getAddressPermissions(worldName, permissionName, lowerCaseAddress)
+  await checkOwnership(namePermissionChecker, ctx.verification!.auth, worldName)
 
-  if (!permission) {
+  await permissions.grantWorldWidePermission(worldName, permissionName, [address])
+
+  return { status: 204 }
+}
+
+/**
+ * Add parcels to an existing permission
+ * POST /world/:world_name/permissions/:permission_name/address/:address/parcels
+ */
+export async function postPermissionParcelsHandler(
+  ctx: HandlerContextWithPath<
+    'namePermissionChecker' | 'permissions',
+    '/world/:world_name/permissions/:permission_name/address/:address/parcels'
+  > &
+    DecentralandSignatureContext<any>
+): Promise<IHttpServerComponent.IResponse> {
+  const { namePermissionChecker, permissions } = ctx.components
+  const { world_name: worldName, permission_name: permissionName, address } = ctx.params
+
+  if (!EthAddress.validate(address)) {
+    throw new InvalidRequestError(`Invalid address: ${address}.`)
+  }
+
+  if (!isAllowListPermission(permissionName)) {
+    throw new InvalidRequestError(
+      `Permission '${permissionName}' does not support allow-list. Only 'deployment' and 'streaming' do.`
+    )
+  }
+
+  await checkOwnership(namePermissionChecker, ctx.verification!.auth, worldName)
+
+  const { parcels } = (await ctx.request.json()) as PermissionParcelsInput
+
+  await permissions.addParcelsToPermission(worldName, permissionName, address, parcels)
+
+  return { status: 204 }
+}
+
+/**
+ * Remove parcels from an existing permission
+ * DELETE /world/:world_name/permissions/:permission_name/address/:address/parcels
+ */
+export async function deletePermissionParcelsHandler(
+  ctx: HandlerContextWithPath<
+    'namePermissionChecker' | 'permissions',
+    '/world/:world_name/permissions/:permission_name/address/:address/parcels'
+  > &
+    DecentralandSignatureContext<any>
+): Promise<IHttpServerComponent.IResponse> {
+  const { namePermissionChecker, permissions } = ctx.components
+  const { world_name: worldName, permission_name: permissionName, address } = ctx.params
+
+  if (!EthAddress.validate(address)) {
+    throw new InvalidRequestError(`Invalid address: ${address}.`)
+  }
+
+  if (!isAllowListPermission(permissionName)) {
+    throw new InvalidRequestError(
+      `Permission '${permissionName}' does not support allow-list. Only 'deployment' and 'streaming' do.`
+    )
+  }
+
+  await checkOwnership(namePermissionChecker, ctx.verification!.auth, worldName)
+
+  const { parcels } = (await ctx.request.json()) as PermissionParcelsInput
+
+  await permissions.removeParcelsFromPermission(worldName, permissionName, address, parcels)
+
+  return { status: 204 }
+}
+
+/**
+ * Get parcels for a specific address permission with pagination.
+ * Optionally filter by a bounding box using x1, y1, x2, y2 query parameters.
+ */
+export async function getAllowedParcelsForPermissionHandler(
+  ctx: HandlerContextWithPath<'permissions', '/world/:world_name/permissions/:permission_name/address/:address/parcels'>
+): Promise<IHttpServerComponent.IResponse> {
+  const { permissions } = ctx.components
+
+  const worldName = ctx.params.world_name
+  const permissionName = ctx.params.permission_name
+  const address = ctx.params.address
+
+  if (!EthAddress.validate(address)) {
+    throw new InvalidRequestError(`Invalid address: ${address}.`)
+  }
+
+  if (!isAllowListPermission(permissionName)) {
+    throw new InvalidRequestError(
+      `Permission '${permissionName}' does not support allow-list. Only 'deployment' and 'streaming' do.`
+    )
+  }
+
+  // Parse pagination from URL params
+  const { limit, offset } = getPaginationParams(ctx.url.searchParams)
+
+  // Parse optional bounding box parameters
+  const x1Param = ctx.url.searchParams.get('x1')
+  const y1Param = ctx.url.searchParams.get('y1')
+  const x2Param = ctx.url.searchParams.get('x2')
+  const y2Param = ctx.url.searchParams.get('y2')
+
+  let boundingBox: { x1: number; y1: number; x2: number; y2: number } | undefined
+
+  // All four parameters must be provided together
+  if (x1Param !== null || y1Param !== null || x2Param !== null || y2Param !== null) {
+    if (x1Param === null || y1Param === null || x2Param === null || y2Param === null) {
+      throw new InvalidRequestError('Bounding box requires all four parameters: x1, y1, x2, y2.')
+    }
+
+    const x1 = parseInt(x1Param, 10)
+    const y1 = parseInt(y1Param, 10)
+    const x2 = parseInt(x2Param, 10)
+    const y2 = parseInt(y2Param, 10)
+
+    if (isNaN(x1) || isNaN(y1) || isNaN(x2) || isNaN(y2)) {
+      throw new InvalidRequestError('Bounding box parameters must be valid integers.')
+    }
+
+    boundingBox = { x1, y1, x2, y2 }
+  }
+
+  try {
+    const result = await permissions.getAllowedParcelsForPermission(
+      worldName,
+      permissionName,
+      address,
+      limit,
+      offset,
+      boundingBox
+    )
+
+    // If total is 0, it means world-wide access (no parcel restrictions)
     return {
-      status: 404,
+      status: 200,
       body: {
-        error: 'Not found',
-        message: `Address ${address} does not have ${permissionName} permission for world ${worldName}.`
+        total: result.total,
+        parcels: result.results
       }
     }
-  }
-
-  return {
-    status: 200,
-    body: {
-      worldName: permission.worldName,
-      permissionType: permission.permissionType,
-      address: permission.address,
-      parcels: permission.parcels, // null means world-wide
-      createdAt: permission.createdAt.toISOString(),
-      updatedAt: permission.updatedAt.toISOString()
+  } catch (error) {
+    if (error instanceof PermissionNotFoundError) {
+      throw new NotFoundError(error.message)
     }
+    throw error
   }
 }
 
 /**
- * Update parcels for an existing permission
+ * Delete permission for an address
  */
-export async function patchAddressParcelsHandler(
+export async function deletePermissionsAddressHandler(
   ctx: HandlerContextWithPath<
-    'namePermissionChecker' | 'permissionsManager',
-    '/world/:world_name/permissions/:permission_name/:address/parcels'
+    'namePermissionChecker' | 'permissions',
+    '/world/:world_name/permissions/:permission_name/:address'
   > &
     DecentralandSignatureContext<any>
 ): Promise<IHttpServerComponent.IResponse> {
-  const { namePermissionChecker, permissionsManager } = ctx.components
+  const { namePermissionChecker, permissions } = ctx.components
 
   const worldName = ctx.params.world_name
   const permissionName = ctx.params.permission_name
@@ -365,55 +350,8 @@ export async function patchAddressParcelsHandler(
 
   await checkOwnership(namePermissionChecker, ctx.verification!.auth, worldName)
 
-  const lowerCaseAddress = address.toLowerCase()
+  // Revoke permission from the address (handles delete and notification)
+  await permissions.revokePermission(worldName, permissionName, [address])
 
-  // Check if permission exists
-  const existingPermission = await permissionsManager.getAddressPermissions(worldName, permissionName, lowerCaseAddress)
-  if (!existingPermission) {
-    throw new InvalidRequestError(
-      `World ${worldName} does not have address ${address} in the allow list for permission '${permissionName}'.`
-    )
-  }
-
-  // Get parcels from request body (null means world-wide)
-  const { parcels } = ctx.verification!.authMetadata || {}
-  const validatedParcels = parcels === null ? null : Array.isArray(parcels) ? parcels : null
-
-  await permissionsManager.updateAddressParcels(worldName, permissionName, lowerCaseAddress, validatedParcels)
-
-  return {
-    status: 204
-  }
-}
-
-/**
- * Get all permissions for a world (with parcel details)
- */
-export async function getWorldPermissionsDetailedHandler(
-  ctx: HandlerContextWithPath<'permissionsManager', '/world/:world_name/permissions/:permission_name/list'>
-): Promise<IHttpServerComponent.IResponse> {
-  const { permissionsManager } = ctx.components
-
-  const worldName = ctx.params.world_name
-  const permissionName = ctx.params.permission_name
-
-  if (!isAllowListPermission(permissionName)) {
-    throw new InvalidRequestError(
-      `Permission '${permissionName}' does not support allow-list. Only 'deployment' and 'streaming' do.`
-    )
-  }
-
-  const permissions = await permissionsManager.getWorldPermissions(worldName, permissionName)
-
-  return {
-    status: 200,
-    body: {
-      permissions: permissions.map((p) => ({
-        address: p.address,
-        parcels: p.parcels, // null means world-wide
-        createdAt: p.createdAt.toISOString(),
-        updatedAt: p.updatedAt.toISOString()
-      }))
-    }
-  }
+  return { status: 204 }
 }

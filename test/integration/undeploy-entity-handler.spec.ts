@@ -1,27 +1,20 @@
 import { test } from '../components'
-import { getAuthHeaders, getIdentity, Identity } from '../utils'
-import { Authenticator } from '@dcl/crypto'
+import { getIdentity } from '../utils'
+import { IAuthenticatedFetchComponent } from '../../src/types'
+
+const BUILDER_METADATA = {
+  origin: 'https://builder.decentraland.org',
+  intent: 'dcl:builder:undeploy',
+  signer: 'dcl:builder',
+  isGuest: 'false'
+}
 
 test('undeploy entity handler /entities/:world_name', function ({ components, stubComponents }) {
-  function makeRequest(path: string, identity: Identity, metadata: Record<string, any> = {}) {
-    const { localFetch } = components
+  let localFetch: IAuthenticatedFetchComponent
 
-    return localFetch.fetch(path, {
-      method: 'DELETE',
-      headers: {
-        ...getAuthHeaders('DELETE', path, metadata, (payload) =>
-          Authenticator.signPayload(
-            {
-              ephemeralIdentity: identity.ephemeralIdentity,
-              expiration: new Date(),
-              authChain: identity.authChain.authChain
-            },
-            payload
-          )
-        )
-      }
-    })
-  }
+  beforeEach(() => {
+    localFetch = components.localFetch
+  })
 
   it('gets user has no permission', async () => {
     const { worldCreator } = components
@@ -30,10 +23,16 @@ test('undeploy entity handler /entities/:world_name', function ({ components, st
 
     const { worldName } = await worldCreator.createWorldWithScene({})
 
-    const r = await makeRequest(`/entities/${worldName}`, identity)
+    const r = await localFetch.fetch(`/entities/${worldName}`, {
+      method: 'DELETE',
+      identity,
+      metadata: BUILDER_METADATA
+    })
 
     expect(r.status).toEqual(400)
-    expect(await r.json()).toMatchObject({ message: 'Invalid request. You have no permission to undeploy the scene.' })
+    expect(await r.json()).toMatchObject({
+      message: 'Invalid request. You must have world-wide deployment permission to undeploy the entire world.'
+    })
   })
 
   it('cannot undeploy if signer is sdk', async () => {
@@ -45,8 +44,10 @@ test('undeploy entity handler /entities/:world_name', function ({ components, st
       owner: identity.authChain
     })
 
-    const r = await makeRequest(`/entities/${worldName}`, identity, {
-      signer: 'decentraland-kernel-scene'
+    const r = await localFetch.fetch(`/entities/${worldName}`, {
+      method: 'DELETE',
+      identity,
+      metadata: { ...BUILDER_METADATA, signer: 'decentraland-kernel-scene' }
     })
 
     expect(r.status).toEqual(400)
@@ -65,7 +66,11 @@ test('undeploy entity handler /entities/:world_name', function ({ components, st
 
     namePermissionChecker.checkPermission.withArgs(identity.realAccount.address.toLowerCase(), worldName).resolves(true)
 
-    const r = await makeRequest(`/entities/${worldName}`, identity)
+    const r = await localFetch.fetch(`/entities/${worldName}`, {
+      method: 'DELETE',
+      identity,
+      metadata: BUILDER_METADATA
+    })
 
     expect(r.status).toEqual(200)
 

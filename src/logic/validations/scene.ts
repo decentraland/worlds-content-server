@@ -60,21 +60,27 @@ export function createValidateBannedNames(
 }
 
 export function createValidateDeploymentPermission(
-  components: Pick<ValidatorComponents, 'namePermissionChecker' | 'worldsManager'>
+  components: Pick<ValidatorComponents, 'namePermissionChecker' | 'permissions' | 'worldsManager'>
 ) {
   return async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
     const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())
     const worldSpecifiedName = sceneJson.metadata.worldConfiguration.name
     const signer = deployment.authChain[0].payload
+    const parcels = deployment.entity.pointers
 
     // Check the address owns the name
     if (await components.namePermissionChecker.checkPermission(signer, worldSpecifiedName)) {
       return OK
     }
 
-    // Check the address has permission to deploy in the world
-    const permissionChecker = await components.worldsManager.permissionCheckerForWorld(worldSpecifiedName)
-    const allowed = await permissionChecker.checkPermission('deployment', signer)
+    // Check the address has permission to deploy in the specific parcels
+    // This validates world-wide permissions OR parcel-specific permissions
+    const allowed = await components.permissions.hasPermissionForParcels(
+      worldSpecifiedName,
+      'deployment',
+      signer,
+      parcels
+    )
     if (allowed) {
       return OK
     }
