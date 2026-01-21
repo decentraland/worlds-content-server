@@ -83,6 +83,7 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
 
   // Permissions endpoints
   router.get('/world/:world_name/permissions', getPermissionsHandler)
+  router.post('/world/:world_name/permissions/:permission_name', signedFetchMiddleware, postPermissionsHandler)
 
   // Address-specific permission endpoints
   // GET: Paginated parcels for a specific address
@@ -111,7 +112,6 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
     signedFetchMiddleware,
     putPermissionsAddressHandler
   )
-  router.post('/world/:world_name/permissions/:permission_name', signedFetchMiddleware, postPermissionsHandler)
 
   // DELETE: Revoke permission
   router.delete(
