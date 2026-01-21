@@ -1,12 +1,18 @@
 import { test } from '../components'
-import { getAuthHeaders, getIdentity, Identity } from '../utils'
-import { Authenticator } from '@dcl/crypto'
-import { IFetchComponent } from '@well-known-components/interfaces'
-import { PermissionType } from '../../src/types'
-import { defaultPermissions } from '../../src/logic/permissions-checker'
+import { getIdentity, Identity } from '../utils'
+import { IAuthenticatedFetchComponent } from '../../src/types'
+import { IPermissionsComponent } from '../../src/logic/permissions'
+import { defaultAccess } from '../../src/logic/access'
+
+const SETTINGS_METADATA = {
+  origin: 'https://builder.decentraland.org',
+  intent: 'dcl:builder:update-world-settings',
+  signer: 'dcl:builder',
+  isGuest: 'false'
+}
 
 const makeSignedRequest = (
-  localFetch: IFetchComponent,
+  localFetch: IAuthenticatedFetchComponent,
   path: string,
   identity: Identity,
   body: Record<string, any>,
@@ -14,29 +20,9 @@ const makeSignedRequest = (
 ) => {
   return localFetch.fetch(path, {
     method,
-    headers: {
-      ...getAuthHeaders(
-        method,
-        path,
-        {
-          origin: 'https://builder.decentraland.org',
-          intent: 'dcl:builder:update-world-settings',
-          signer: 'dcl:builder',
-          isGuest: 'false'
-        },
-        (payload) =>
-          Authenticator.signPayload(
-            {
-              ephemeralIdentity: identity.ephemeralIdentity,
-              expiration: new Date(),
-              authChain: identity.authChain.authChain
-            },
-            payload
-          )
-      ),
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(body)
+    identity,
+    metadata: SETTINGS_METADATA,
+    body
   })
 }
 
@@ -121,7 +107,8 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
 
         worldName = worldCreator.randomWorldName()
 
-        await worldsManager.storePermissions(worldName, defaultPermissions())
+        // Create a world entry without deploying a scene
+        await worldsManager.storeAccess(worldName, defaultAccess())
       })
 
       it('should return settings with undefined spawn coordinates', async () => {
@@ -177,22 +164,21 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
     describe('when the user has deployment permission but does not own the name', () => {
       let deployer: Identity
       let worldName: string
+      let permissions: IPermissionsComponent
 
       beforeEach(async () => {
-        const { worldCreator, worldsManager } = components
+        const { worldCreator } = components
+        permissions = components.permissions
 
         deployer = await getIdentity()
 
         const created = await worldCreator.createWorldWithScene()
         worldName = created.worldName
 
-        await worldsManager.storePermissions(worldName, {
-          ...defaultPermissions(),
-          deployment: {
-            type: PermissionType.AllowList,
-            wallets: [deployer.realAccount.address.toLowerCase()]
-          }
-        })
+        // Grant deployment permission to the deployer
+        await permissions.grantWorldWidePermission(worldName, 'deployment', [
+          deployer.realAccount.address.toLowerCase()
+        ])
       })
 
       it('should respond with 403 unauthorized', async () => {
@@ -480,7 +466,8 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
         identity = await getIdentity()
         worldName = worldCreator.randomWorldName()
 
-        await worldsManager.storePermissions(worldName, defaultPermissions())
+        // Create a world entry without deploying a scene
+        await worldsManager.storeAccess(worldName, defaultAccess())
 
         stubComponents.namePermissionChecker.checkPermission
           .withArgs(identity.authChain.authChain[0].payload.toLowerCase(), worldName)

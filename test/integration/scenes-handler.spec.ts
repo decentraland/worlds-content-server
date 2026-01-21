@@ -1,34 +1,25 @@
 import { test } from '../components'
-import { getAuthHeaders, getIdentity, Identity } from '../utils'
-import { Authenticator } from '@dcl/crypto'
-import { IFetchComponent } from '@well-known-components/interfaces'
-import { PermissionType } from '../../src/types'
-import { defaultPermissions } from '../../src/logic/permissions-checker'
+import { getIdentity, Identity } from '../utils'
+import { IAuthenticatedFetchComponent } from '../../src/types'
+import { IPermissionsComponent } from '../../src/logic/permissions'
 
-function makeSignedRequest(localFetch: IFetchComponent, path: string, identity: Identity, method: string = 'DELETE') {
+const UNDEPLOY_METADATA = {
+  origin: 'https://builder.decentraland.org',
+  intent: 'dcl:builder:undeploy-scene',
+  signer: 'dcl:builder',
+  isGuest: 'false'
+}
+
+function makeSignedRequest(
+  localFetch: IAuthenticatedFetchComponent,
+  path: string,
+  identity: Identity,
+  method: string = 'DELETE'
+) {
   return localFetch.fetch(path, {
     method,
-    headers: {
-      ...getAuthHeaders(
-        method,
-        path,
-        {
-          origin: 'https://builder.decentraland.org',
-          intent: 'dcl:builder:undeploy-scene',
-          signer: 'dcl:builder',
-          isGuest: 'false'
-        },
-        (payload) =>
-          Authenticator.signPayload(
-            {
-              ephemeralIdentity: identity.ephemeralIdentity,
-              expiration: new Date(),
-              authChain: identity.authChain.authChain
-            },
-            payload
-          )
-      )
-    }
+    identity,
+    metadata: UNDEPLOY_METADATA
   })
 }
 
@@ -345,9 +336,11 @@ test('ScenesHandler', function ({ components, stubComponents }) {
       let owner: Identity
       let deployer: Identity
       let worldName: string
+      let permissions: IPermissionsComponent
 
       beforeEach(async () => {
-        const { worldCreator, worldsManager } = components
+        const { worldCreator } = components
+        permissions = components.permissions
 
         owner = await getIdentity()
         deployer = await getIdentity()
@@ -355,13 +348,10 @@ test('ScenesHandler', function ({ components, stubComponents }) {
         const created = await worldCreator.createWorldWithScene({ owner: owner.authChain })
         worldName = created.worldName
 
-        await worldsManager.storePermissions(worldName, {
-          ...defaultPermissions(),
-          deployment: {
-            type: PermissionType.AllowList,
-            wallets: [deployer.realAccount.address.toLowerCase()]
-          }
-        })
+        // Grant deployment permission to the deployer
+        await permissions.grantWorldWidePermission(worldName, 'deployment', [
+          deployer.realAccount.address.toLowerCase()
+        ])
       })
 
       it('should successfully undeploy the scene and remove it from the world', async () => {

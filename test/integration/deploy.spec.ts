@@ -5,8 +5,7 @@ import { Authenticator } from '@dcl/crypto'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { hashV1 } from '@dcl/hashing'
 import { getIdentity, Identity, makeid, cleanup } from '../utils'
-import { defaultPermissions } from '../../src/logic/permissions-checker'
-import { Permissions, PermissionType } from '../../src/types'
+import { defaultAccess } from '../../src/logic/access'
 
 test('DeployEntity POST /entities', function ({ components, stubComponents }) {
   afterEach(async () => {
@@ -182,8 +181,7 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
 
         const activeEntitiesResponse = await localFetch.fetch('/entities/active', {
           method: 'POST',
-          body: JSON.stringify({ pointers: [worldName] }),
-          headers: { 'Content-Type': 'application/json' }
+          body: { pointers: [worldName] }
         })
 
         expect(activeEntitiesResponse.status).toBe(200)
@@ -304,24 +302,22 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
     let identity: Identity
     let delegatedIdentity: Identity
     let worldName: string
-    let permissions: Permissions
 
     beforeEach(async () => {
       const { config, fetch, worldCreator, worldsManager } = components
       const { namePermissionChecker, nameOwnership, snsClient } = stubComponents
+      const permissions = components.permissions
 
       identity = await getIdentity()
       delegatedIdentity = await getIdentity()
       worldName = worldCreator.randomWorldName()
 
-      permissions = {
-        ...defaultPermissions(),
-        deployment: {
-          type: PermissionType.AllowList,
-          wallets: [delegatedIdentity.realAccount.address]
-        }
-      }
-      await worldsManager.storePermissions(worldName, permissions)
+      // Create a world entry without deploying a scene
+      await worldsManager.storeAccess(worldName, defaultAccess())
+      // Grant deployment permission to the delegated identity
+      await permissions.grantWorldWidePermission(worldName, 'deployment', [
+        delegatedIdentity.realAccount.address.toLowerCase()
+      ])
 
       contentClient = createContentClient({
         url: `http://${await config.requireString('HTTP_SERVER_HOST')}:${await config.requireNumber('HTTP_SERVER_PORT')}`,
@@ -395,19 +391,26 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
 
       it('should preserve the existing permissions', async () => {
         const { worldsManager } = components
+        const permissions = components.permissions
         const authChain = Authenticator.signPayload(delegatedIdentity.authChain, entityId)
 
         await contentClient.deploy({ files, entityId, authChain })
 
         const stored = await worldsManager.getMetadataForWorld(worldName)
         expect(stored).toMatchObject({
-          permissions,
           runtimeMetadata: {
             entityIds: [entityId],
             minimapVisible: false,
             name: worldName
           }
         })
+        // Verify permissions are preserved (now stored in separate table)
+        const hasPermission = await permissions.hasWorldWidePermission(
+          worldName,
+          'deployment',
+          delegatedIdentity.realAccount.address.toLowerCase()
+        )
+        expect(hasPermission).toBe(true)
       })
 
       it('should increment the world deployments counter metric', async () => {
@@ -519,8 +522,7 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
 
       const activeEntitiesResponse = await localFetch.fetch('/entities/active', {
         method: 'POST',
-        body: JSON.stringify({ pointers: [worldName] }),
-        headers: { 'Content-Type': 'application/json' }
+        body: { pointers: [worldName] }
       })
 
       expect(activeEntitiesResponse.status).toBe(200)
@@ -670,8 +672,7 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
       // Active entities returns one entity per world (the most recently deployed scene)
       const activeEntitiesResponse = await localFetch.fetch('/entities/active', {
         method: 'POST',
-        body: JSON.stringify({ pointers: [worldName] }),
-        headers: { 'Content-Type': 'application/json' }
+        body: { pointers: [worldName] }
       })
 
       expect(activeEntitiesResponse.status).toBe(200)

@@ -1,8 +1,7 @@
 import { test } from '../components'
 import { getIdentity } from '../utils'
 import { stringToUtf8Bytes } from 'eth-connect'
-import { defaultPermissions } from '../../src/logic/permissions-checker'
-import { PermissionType } from '../../src/types'
+import { defaultAccess } from '../../src/logic/access'
 import SQL from 'sql-template-strings'
 
 test('world about handler /world/:world_name/about', function ({ components, stubComponents }) {
@@ -39,17 +38,18 @@ test('world about handler /world/:world_name/about', function ({ components, stu
     let worldName: string
 
     beforeEach(async () => {
-      const { worldsManager, worldCreator } = components
+      const { worldCreator, worldsManager } = components
+      const permissions = components.permissions
 
       const delegatedIdentity = await getIdentity()
       worldName = worldCreator.randomWorldName()
-      await worldsManager.storePermissions(worldName, {
-        ...defaultPermissions(),
-        deployment: {
-          type: PermissionType.AllowList,
-          wallets: [delegatedIdentity.realAccount.address]
-        }
-      })
+
+      // Create a world entry without deploying a scene
+      await worldsManager.storeAccess(worldName, defaultAccess())
+      // Grant deployment permission to the delegated identity
+      await permissions.grantWorldWidePermission(worldName, 'deployment', [
+        delegatedIdentity.realAccount.address.toLowerCase()
+      ])
     })
 
     it('should respond with 404 status and an error message indicating no scenes are deployed', async () => {

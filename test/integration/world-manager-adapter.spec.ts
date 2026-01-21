@@ -1,7 +1,7 @@
-import { defaultPermissions } from '../../src/logic/permissions-checker'
 import { test } from '../components'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { makeid } from '../utils'
+import { defaultAccess } from '../../src/logic/access'
 
 test('WorldManagerAdapter', function ({ components }) {
   afterEach(() => {
@@ -104,7 +104,8 @@ test('WorldManagerAdapter', function ({ components }) {
 
         worldName = worldCreator.randomWorldName()
 
-        await worldsManager.storePermissions(worldName, defaultPermissions())
+        // Create a world entry without deploying a scene
+        await worldsManager.storeAccess(worldName, defaultAccess())
       })
 
       it('should return zero', async () => {
