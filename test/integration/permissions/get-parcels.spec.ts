@@ -3,7 +3,10 @@ import { getIdentity, Identity } from '../../utils'
 import { IAuthenticatedFetchComponent, IPermissionsManager, IWorldCreator } from '../../../src/types'
 import { IPermissionsComponent } from '../../../src/logic/permissions'
 
-test('GET /world/:world_name/permissions/:permission_name/address/:address/parcels', ({ components, stubComponents }) => {
+test('GET /world/:world_name/permissions/:permission_name/address/:address/parcels', ({
+  components,
+  stubComponents
+}) => {
   let localFetch: IAuthenticatedFetchComponent
   let worldCreator: IWorldCreator
   let permissionsManager: IPermissionsManager
