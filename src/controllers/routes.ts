@@ -28,6 +28,7 @@ import { walletConnectedWorldHandler } from './handlers/wallet-connected-world-h
 import { getScenesHandler, undeploySceneHandler } from './handlers/scenes-handler'
 import { getWorldSettingsHandler, updateWorldSettingsHandler } from './handlers/world-settings-handler'
 import { worldSettingsSchema } from './schemas/world-settings-schemas'
+import { reprocessABSchema } from './schemas/reprocess-ab-schemas'
 
 export async function setupRouter(globalContext: GlobalContext): Promise<Router<GlobalContext>> {
   const { fetch, schemaValidator, config } = globalContext.components
@@ -106,7 +107,12 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   // administrative endpoints
   const secret = await config.requireString('AUTH_SECRET')
   if (secret) {
-    router.post('/reprocess-ab', bearerTokenMiddleware(secret), reprocessABHandler)
+    router.post(
+      '/reprocess-ab',
+      bearerTokenMiddleware(secret),
+      schemaValidator.withSchemaValidatorMiddleware(reprocessABSchema),
+      reprocessABHandler
+    )
     router.post('/gc', bearerTokenMiddleware(secret), garbageCollectionHandler)
   }
   return router

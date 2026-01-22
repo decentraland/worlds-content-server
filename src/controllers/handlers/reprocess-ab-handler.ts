@@ -2,6 +2,7 @@ import { HandlerContextWithPath } from '../../types'
 import { IHttpServerComponent } from '@well-known-components/interfaces'
 import { InvalidRequestError } from '@dcl/platform-server-commons'
 import { Events, WorldDeploymentEvent } from '@dcl/schemas'
+import { ReprocessABInput } from '../schemas/reprocess-ab-schemas'
 
 export async function reprocessABHandler(
   context: HandlerContextWithPath<'config' | 'logs' | 'snsClient' | 'worldsManager', '/reprocess-ab'>
@@ -16,17 +17,29 @@ export async function reprocessABHandler(
     throw new Error('SNS ARN is not defined.')
   }
 
-  const body = await context.request
-    .json()
-    .then((name) => name.map((s: string) => s.toLowerCase()))
-    .catch((_) => undefined)
+  // Body is validated by schema middleware
+  const body = (await context.request.json()) as ReprocessABInput
 
-  // Get all scenes using worldsManager
-  // TODO: Get only the scenes that are in the body
+  // Create a map of world names to their optional entity IDs for filtering
+  const worldsToProcess = new Map<string, string[] | undefined>(
+    body.worlds.map((w) => [w.worldName.toLowerCase(), w.entityIds])
+  )
+
+  // Get scenes for the specified worlds
   const { scenes: allScenes } = await worldsManager.getWorldScenes()
 
-  // Filter scenes by world name if body is provided
-  const filteredScenes = allScenes.filter((scene) => !body || body.includes(scene.worldName))
+  // Filter scenes by world name and optionally by entity IDs
+  const filteredScenes = allScenes.filter((scene) => {
+    if (!worldsToProcess.has(scene.worldName)) {
+      return false
+    }
+    const entityIds = worldsToProcess.get(scene.worldName)
+    // If entityIds are specified, only include scenes with matching entity IDs
+    if (entityIds && entityIds.length > 0) {
+      return entityIds.includes(scene.entityId)
+    }
+    return true
+  })
 
   // Also check the world is not in deny list
   const allowedWorlds = await worldsManager.getRawWorldRecords()
