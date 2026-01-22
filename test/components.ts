@@ -24,6 +24,8 @@ import { createWorldCreator } from './mocks/world-creator'
 import { createWorldsManagerComponent } from '../src/adapters/worlds-manager'
 import { createCoordinatesComponent } from '../src/logic/coordinates'
 import { createPermissionsManagerComponent } from '../src/adapters/permissions-manager'
+import { createPermissionsComponent } from '../src/logic/permissions'
+import { createAccessComponent } from '../src/logic/access'
 import { createSettingsComponent } from '../src/logic/settings'
 import { createMockedNameOwnership } from './mocks/name-ownership-mock'
 import { createMockUpdateOwnerJob } from './mocks/update-owner-job-mock'
@@ -83,8 +85,6 @@ async function initComponents(): Promise<TestComponents> {
   const commsAdapter = createMockCommsAdapterComponent()
 
   const nameOwnership = createMockedNameOwnership()
-
-  const coordinates = createCoordinatesComponent()
 
   const coordinates = createCoordinatesComponent()
 
