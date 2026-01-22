@@ -370,10 +370,12 @@ export type AppComponents = BaseComponents & {
 }
 
 // components used in tests
-export type TestComponents = BaseComponents & {
+export type TestComponents = Omit<BaseComponents, 'nameOwnership'> & {
   // A fetch component that only hits the test server
   localFetch: IFetchComponent
   worldCreator: IWorldCreator
+  // Mocked version of nameOwnership for testing
+  nameOwnership: jest.Mocked<INameOwnership>
 }
 
 // this type simplifies the typings of http handlers

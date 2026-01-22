@@ -69,7 +69,13 @@ export function createEntityDeployer(
 
     const owner = (await components.nameOwnership.findOwners([worldName])).get(worldName)
 
-    await worldsManager.deployScene(worldName, entity, owner!)
+    if (!owner) {
+      throw new Error(
+        `Cannot deploy scene "${entity.id}" to world "${worldName}": owner address could not be resolved.`
+      )
+    }
+
+    await worldsManager.deployScene(worldName, entity, owner)
 
     const kind = worldName.endsWith('dcl.eth') ? 'dcl-name' : 'ens-name'
     metrics.increment('world_deployments_counter', { kind })

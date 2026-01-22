@@ -25,7 +25,7 @@ import { createWorldsManagerComponent } from '../src/adapters/worlds-manager'
 import { createCoordinatesComponent } from '../src/logic/coordinates'
 import { createPermissionsManagerComponent } from '../src/adapters/permissions-manager'
 import { createSettingsComponent } from '../src/logic/settings'
-import { createMockNameOwnership } from './mocks/name-ownership-mock'
+import { createMockedNameOwnership } from './mocks/name-ownership-mock'
 import { createMockUpdateOwnerJob } from './mocks/update-owner-job-mock'
 import { createSnsClientMock } from './mocks/sns-client-mock'
 import { createDotEnvConfigComponent } from '@well-known-components/env-config-provider'
@@ -81,7 +81,7 @@ async function initComponents(): Promise<TestComponents> {
 
   const commsAdapter = createMockCommsAdapterComponent()
 
-  const nameOwnership = createMockNameOwnership()
+  const nameOwnership = createMockedNameOwnership()
 
   const coordinates = createCoordinatesComponent()
 
@@ -136,6 +136,7 @@ async function initComponents(): Promise<TestComponents> {
     localFetch: await createLocalFetchCompoment(config),
     marketplaceSubGraph: createMockNameSubGraph(),
     metrics,
+    nameOwnership,
     namePermissionChecker,
     nats: createMockNatsComponent(),
     permissionsManager,
