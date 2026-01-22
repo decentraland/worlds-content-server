@@ -55,7 +55,8 @@ async function initComponents(): Promise<TestComponents> {
   const config = await createDotEnvConfigComponent(
     { path: ['.env.default', '.env'] },
     {
-      AWS_SNS_ARN: 'some-arn'
+      AWS_SNS_ARN: 'some-arn',
+      BUILDER_URL: 'https://builder.example.com'
     }
   )
 

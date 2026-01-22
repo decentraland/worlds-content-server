@@ -25,7 +25,7 @@ describe('PermissionsComponent', () => {
     config = createMockedConfig()
     config.requireString.mockImplementation((key: string) => {
       if (key === 'BUILDER_URL') return Promise.resolve('https://builder.example.com')
-      if (key === 'SNS_ARN') return Promise.resolve('arn:aws:sns:us-east-1:123456789:test-topic')
+      if (key === 'AWS_SNS_ARN') return Promise.resolve('arn:aws:sns:us-east-1:123456789:test-topic')
       return Promise.resolve('')
     })
 

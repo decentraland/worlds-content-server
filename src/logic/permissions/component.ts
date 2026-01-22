@@ -11,7 +11,7 @@ export async function createPermissionsComponent({
   snsClient
 }: Pick<AppComponents, 'config' | 'permissionsManager' | 'snsClient'>): Promise<IPermissionsComponent> {
   const builderUrl = await config.requireString('BUILDER_URL')
-  const snsArn = await config.requireString('SNS_ARN')
+  const snsArn = await config.requireString('AWS_SNS_ARN')
 
   /**
    * Sends a WorldsPermissionGrantedEvent notification.
