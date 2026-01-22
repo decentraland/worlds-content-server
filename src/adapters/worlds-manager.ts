@@ -113,6 +113,9 @@ export async function createWorldsManagerComponent({
    */
   async function deployScene(worldName: string, scene: Entity, owner: EthAddress): Promise<void> {
     const parcels: string[] = scene.metadata?.scene?.parcels || []
+    if (!parcels.length) {
+      throw new Error(`Attempt to deploy scene ${scene.id} to world ${worldName} with no parcels.`)
+    }
 
     const content = await storage.retrieve(`${scene.id}.auth`)
     const deploymentAuthChainString = content ? (await streamToBuffer(await content.asStream())).toString() : '{}'
