@@ -133,7 +133,7 @@ export async function createWorldsManagerComponent({
 
       // Ensure world record exists, update if it does
       await client.query(SQL`
-        INSERT INTO worlds (name, owner, permissions, spawn_coordinates, created_at, updated_at)
+        INSERT INTO worlds (name, owner, access, spawn_coordinates, created_at, updated_at)
         VALUES (
           ${worldName.toLowerCase()}, 
           ${owner.toLowerCase()}, 
