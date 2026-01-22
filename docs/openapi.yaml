@@ -254,6 +254,40 @@ paths:
         '404':
           description: Content not found
 
+  /contents/{hashId}/active-entities:
+    get:
+      tags:
+        - Worlds Content Server
+      summary: /contents/{hashId}/active-entities
+      description: Returns all active entity IDs that contain the specified content file hash
+      operationId: worldsContentServer_getActiveEntitiesByContentHash
+      parameters:
+        - name: hashId
+          in: path
+          required: true
+          description: Content file hash (IPFS CID)
+          schema:
+            type: string
+            example: bafkreiabi74jam7uh5gmm6x4hox664j53bmt7dy4alrltkhyj3ozcxs2iu
+      responses:
+        '200':
+          description: List of entity IDs containing this content
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+                example:
+                  - bafkreig5hmbhdiuormwg4okdwmgksl73fk3gxmvubxfqqd3rsyy66dsfqm
+                  - bafkreialcddyuy7xabqaquyzo62m4qay6hk5e7m2fns72ugxafuonxxwvq
+        '404':
+          description: No active entities found containing this content hash
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /contents/{hashId}:
     get:
       tags:
