@@ -112,9 +112,9 @@ describe('SettingsComponent', () => {
 
     describe('when the spawnCoordinates are outside the world shape rectangle', () => {
       beforeEach(() => {
-        input = { spawnCoordinates: '999,999' }
+        input = { spawnCoordinates: '100,100' }
         namePermissionChecker.checkPermission.mockResolvedValue(true)
-        // Bounding rectangle from (0,0) to (20,30) - input coordinates (999,999) are outside this range
+        // Bounding rectangle from (0,0) to (20,30) - input coordinates (100,100) are outside this range
         worldsManager.getWorldBoundingRectangle.mockResolvedValue({
           min: { x: 0, y: 0 },
           max: { x: 20, y: 30 }
@@ -126,7 +126,7 @@ describe('SettingsComponent', () => {
           expect.objectContaining({
             name: 'ValidationError',
             message:
-              'Invalid spawnCoordinates "999,999". It must be within the world shape rectangle: (0,0) to (20,30).'
+              'Invalid spawnCoordinates "100,100". It must be within the world shape rectangle: (0,0) to (20,30).'
           })
         )
       })
