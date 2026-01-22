@@ -5,7 +5,10 @@ import {
   Permissions,
   WorldMetadata,
   WorldRecord,
-  ContributorDomain
+  ContributorDomain,
+  DeploymentFilters,
+  DeploymentsResponse,
+  DeploymentInfo
 } from '../types'
 import { streamToBuffer } from '@dcl/catalyst-storage'
 import { Entity, EthAddress } from '@dcl/schemas'
@@ -228,6 +231,77 @@ export async function createWorldsManagerComponent({
     }
   }
 
+  async function getDeploymentsWithFilters(filters: DeploymentFilters): Promise<DeploymentsResponse> {
+    const sql = SQL`
+    SELECT 
+      name, 
+      deployer, 
+      entity_id, 
+      entity, 
+      created_at, 
+      updated_at, 
+      owner
+    FROM worlds
+    WHERE entity_id IS NOT NULL
+  `
+
+    if (filters.name) {
+      sql.append(SQL` AND LOWER(name) = ANY(${filters.name})`)
+    }
+
+    if (filters.entityIds) {
+      sql.append(SQL` AND entity_id = ANY(${filters.entityIds})`)
+    }
+
+    if (filters.deployer) {
+      sql.append(SQL` AND LOWER(deployer) = ANY(${filters.deployer})`)
+    }
+
+    if (filters.owner) {
+      sql.append(SQL` AND LOWER(owner) = ANY(${filters.owner})`)
+    }
+
+    sql.append(SQL` ORDER BY updated_at DESC`)
+    sql.append(SQL` LIMIT ${filters.limit + 1} OFFSET ${filters.offset}`)
+
+    const result = await database.query<WorldRecord>(sql)
+
+    const moreData = result.rows.length > filters.limit
+    const rows = moreData ? result.rows.slice(0, filters.limit) : result.rows
+
+    const filteredRows: WorldRecord[] = []
+    for (const row of rows) {
+      if (await nameDenyListChecker.checkNameDenyList(row.name)) {
+        filteredRows.push(row)
+      }
+    }
+
+    const deployments: DeploymentInfo[] = filteredRows.map((row) => ({
+      entityId: row.entity_id,
+      entityVersion: row.entity.version || 'v3',
+      entityTimestamp: row.entity.timestamp || new Date(row.updated_at).getTime(),
+      deployedBy: row.deployer,
+      pointers: row.entity.pointers || [row.name],
+      metadata: row.entity.metadata || {},
+      content: row.entity.content || []
+    }))
+
+    return {
+      deployments,
+      filters: {
+        name: filters.name,
+        entityIds: filters.entityIds,
+        deployer: filters.deployer,
+        owner: filters.owner
+      },
+      pagination: {
+        offset: filters.offset,
+        limit: filters.limit,
+        moreData
+      }
+    }
+  }
+
   return {
     getRawWorldRecords,
     getDeployedWorldCount,
@@ -238,6 +312,7 @@ export async function createWorldsManagerComponent({
     storePermissions,
     permissionCheckerForWorld,
     undeploy,
-    getContributableDomains
+    getContributableDomains,
+    getDeploymentsWithFilters
   }
 }

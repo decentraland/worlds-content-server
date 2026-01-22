@@ -144,6 +144,40 @@ export type ILimitsManager = {
   getMaxAllowedSizeInBytesFor(worldName: string): Promise<bigint>
 }
 
+export type DeploymentFilters = {
+  name?: string[]
+  entityIds?: string[]
+  deployer?: string[]
+  owner?: string[]
+  limit: number
+  offset: number
+}
+
+export type DeploymentInfo = {
+  entityId: string
+  entityVersion: string
+  entityTimestamp: number
+  deployedBy: string
+  pointers: string[]
+  metadata: any
+  content: Array<{ key: string; hash: string }>
+}
+
+export type DeploymentsResponse = {
+  deployments: DeploymentInfo[]
+  filters: {
+    name?: string[]
+    entityIds?: string[]
+    deployer?: string[]
+    owner?: string[]
+  }
+  pagination: {
+    offset: number
+    limit: number
+    moreData: boolean
+  }
+}
+
 export type IWorldsManager = {
   getRawWorldRecords(): Promise<WorldRecord[]>
   getDeployedWorldCount(): Promise<{ ens: number; dcl: number }>
@@ -155,6 +189,7 @@ export type IWorldsManager = {
   permissionCheckerForWorld(worldName: string): Promise<IPermissionChecker>
   undeploy(worldName: string): Promise<void>
   getContributableDomains(address: string): Promise<{ domains: ContributorDomain[]; count: number }>
+  getDeploymentsWithFilters(filters: DeploymentFilters): Promise<DeploymentsResponse>
 }
 
 export type IPermissionsManager = {

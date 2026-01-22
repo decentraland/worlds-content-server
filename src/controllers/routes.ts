@@ -25,6 +25,7 @@ import { garbageCollectionHandler } from './handlers/garbage-collection'
 import { getContributableDomainsHandler } from './handlers/contributor-handler'
 import { livekitWebhookHandler } from './handlers/livekit-webhook-handler'
 import { walletConnectedWorldHandler } from './handlers/wallet-connected-world-handler'
+import { getDeploymentsHandler } from './handlers/get-deployments-handler'
 
 export async function setupRouter(globalContext: GlobalContext): Promise<Router<GlobalContext>> {
   const router = new Router<GlobalContext>()
@@ -46,6 +47,7 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   router.post('/entities', multipartParserWrapper(deployEntity))
   router.delete('/entities/:world_name', signedFetchMiddleware, undeployEntity)
   router.get('/available-content', availableContentHandler)
+  router.get('/deployments', getDeploymentsHandler)
 
   // consumption
   router.head('/ipfs/:hashId', headContentFile)
