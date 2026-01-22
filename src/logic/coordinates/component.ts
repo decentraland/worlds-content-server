@@ -1,13 +1,16 @@
 import { Entity } from '@dcl/schemas'
 import { BoundingRectangle, Coordinate, ICoordinatesComponent } from './types'
 
+const MIN_PARCEL_COORDINATE = -150
+const MAX_PARCEL_COORDINATE = 150
+
 export function createCoordinatesComponent(): ICoordinatesComponent {
   /**
    * Parses a coordinate string (e.g., "10,20" or "-5,-10") into a Coordinate object
    *
    * @param coordinateString - The coordinate string to parse
    * @returns The parsed Coordinate object
-   * @throws {Error} If the coordinate string is invalid
+   * @throws {Error} If the coordinate string is invalid or out of bounds
    */
   function parseCoordinate(coordinateString: string): Coordinate {
     const parts = coordinateString.split(',')
@@ -20,6 +23,18 @@ export function createCoordinatesComponent(): ICoordinatesComponent {
 
     if (isNaN(x) || isNaN(y)) {
       throw new Error(`Invalid coordinate values: ${coordinateString}`)
+    }
+
+    if (x < MIN_PARCEL_COORDINATE || x > MAX_PARCEL_COORDINATE) {
+      throw new Error(
+        `Coordinate X value ${x} is out of bounds. Must be between ${MIN_PARCEL_COORDINATE} and ${MAX_PARCEL_COORDINATE}.`
+      )
+    }
+
+    if (y < MIN_PARCEL_COORDINATE || y > MAX_PARCEL_COORDINATE) {
+      throw new Error(
+        `Coordinate Y value ${y} is out of bounds. Must be between ${MIN_PARCEL_COORDINATE} and ${MAX_PARCEL_COORDINATE}.`
+      )
     }
 
     return { x, y }
