@@ -115,13 +115,13 @@ export async function createWorldsManagerComponent({
     const parcels: string[] = scene.metadata?.scene?.parcels || []
 
     const content = await storage.retrieve(`${scene.id}.auth`)
-    const deploymentAuthChainString = content ? (await streamToBuffer(await content!.asStream())).toString() : '{}'
+    const deploymentAuthChainString = content ? (await streamToBuffer(await content.asStream())).toString() : '{}'
     const deploymentAuthChain = JSON.parse(deploymentAuthChainString)
 
     const deployer = deploymentAuthChain[0].payload.toLowerCase()
 
     const fileInfos = await storage.fileInfoMultiple(scene.content?.map((c) => c.hash) || [])
-    const size = scene.content?.reduce((acc, c) => acc + (fileInfos.get(c.hash)?.size || 0), 0) || 0
+    const size = scene.content.reduce((acc, c) => acc + (fileInfos.get(c.hash)?.size || 0), 0) || 0
 
     // Use a transaction to ensure atomicity
     const client = await database.getPool().connect()
@@ -142,7 +142,7 @@ export async function createWorldsManagerComponent({
           ${new Date()}
         )
         ON CONFLICT (name) DO UPDATE SET
-          owner = ${owner?.toLowerCase()},
+          owner = ${owner.toLowerCase()},
           spawn_coordinates = COALESCE(worlds.spawn_coordinates, EXCLUDED.spawn_coordinates),
           updated_at = ${new Date()}
       `)
