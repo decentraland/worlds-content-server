@@ -5,6 +5,7 @@ import type {
   ILoggerComponent,
   IMetricsComponent
 } from '@well-known-components/interfaces'
+import { PaginatedParameters } from '@dcl/schemas'
 import { metricDeclarations } from './metrics'
 import { IContentStorageComponent } from '@dcl/catalyst-storage'
 import { HTTPProvider } from 'eth-connect'
@@ -18,6 +19,9 @@ import { IFetchComponent } from '@well-known-components/interfaces'
 import { INatsComponent } from '@well-known-components/nats-component/dist/types'
 import { WebhookEvent } from 'livekit-server-sdk'
 import { IPublisherComponent } from '@dcl/sns-component'
+import { ISettingsComponent } from './logic/settings'
+import { ISchemaValidatorComponent } from '@dcl/schema-validator-component'
+import { ICoordinatesComponent } from './logic/coordinates'
 
 export type GlobalContext = {
   components: BaseComponents
@@ -41,6 +45,7 @@ export type DeploymentToValidate = {
 export type WorldRuntimeMetadata = {
   entityIds: string[]
   name: string
+  description?: string
   minimapVisible: boolean
   minimapDataImage?: string
   minimapEstateImage?: string
@@ -50,11 +55,50 @@ export type WorldRuntimeMetadata = {
   thumbnailFile?: string
 }
 
+export type WorldSettings = {
+  spawnCoordinates?: string
+}
+
+export type WorldScene = {
+  worldName: string
+  deployer: string
+  deploymentAuthChain: AuthChain
+  entity: Entity
+  entityId: IPFSv2
+  parcels: string[]
+  size: bigint
+  createdAt: Date
+}
+
+export type GetWorldScenesFilters = {
+  worldName?: string
+  coordinates?: string[]
+}
+
+export enum SceneOrderBy {
+  CreatedAt = 'created_at'
+}
+
+export enum OrderDirection {
+  Asc = 'asc',
+  Desc = 'desc'
+}
+
+export type GetWorldScenesOptions = PaginatedParameters & {
+  orderBy?: SceneOrderBy
+  orderDirection?: OrderDirection
+}
+
+export type GetWorldScenesResult = {
+  scenes: WorldScene[]
+  total: number
+}
+
 export type WorldMetadata = {
-  entityId: string
-  acl?: AuthChain
   permissions: Permissions
+  spawnCoordinates: string | null
   runtimeMetadata: WorldRuntimeMetadata
+  scenes: WorldScene[]
   blockedSince?: Date
   owner?: EthAddress
 }
@@ -144,17 +188,27 @@ export type ILimitsManager = {
   getMaxAllowedSizeInBytesFor(worldName: string): Promise<bigint>
 }
 
+export type WorldBoundingRectangle = {
+  min: { x: number; y: number }
+  max: { x: number; y: number }
+}
+
 export type IWorldsManager = {
   getRawWorldRecords(): Promise<WorldRecord[]>
   getDeployedWorldCount(): Promise<{ ens: number; dcl: number }>
-  getDeployedWorldEntities(): Promise<Entity[]>
   getMetadataForWorld(worldName: string): Promise<WorldMetadata | undefined>
   getEntityForWorlds(worldNames: string[]): Promise<Entity[]>
   deployScene(worldName: string, scene: Entity, owner: EthAddress): Promise<void>
+  undeployScene(worldName: string, parcels: string[]): Promise<void>
   storePermissions(worldName: string, permissions: Permissions): Promise<void>
   permissionCheckerForWorld(worldName: string): Promise<IPermissionChecker>
-  undeploy(worldName: string): Promise<void>
+  undeployWorld(worldName: string): Promise<void>
   getContributableDomains(address: string): Promise<{ domains: ContributorDomain[]; count: number }>
+  getWorldScenes(filters?: GetWorldScenesFilters, options?: GetWorldScenesOptions): Promise<GetWorldScenesResult>
+  updateWorldSettings(worldName: string, settings: WorldSettings): Promise<void>
+  getWorldSettings(worldName: string): Promise<WorldSettings | undefined>
+  getTotalWorldSize(worldName: string): Promise<bigint>
+  getWorldBoundingRectangle(worldName: string): Promise<WorldBoundingRectangle | undefined>
 }
 
 export type IPermissionsManager = {
@@ -268,6 +322,7 @@ export type BaseComponents = {
   awsConfig: AwsConfig
   commsAdapter: ICommsAdapter
   config: IConfigComponent
+  coordinates: ICoordinatesComponent
   database: IPgComponent
   entityDeployer: IEntityDeployer
   ethereumProvider: HTTPProvider
@@ -294,6 +349,8 @@ export type BaseComponents = {
   walletStats: IWalletStats
   worldsIndexer: IWorldsIndexer
   worldsManager: IWorldsManager
+  settings: ISettingsComponent
+  schemaValidator: ISchemaValidatorComponent<GlobalContext>
 }
 
 export type IWorldCreator = {
@@ -313,10 +370,12 @@ export type AppComponents = BaseComponents & {
 }
 
 // components used in tests
-export type TestComponents = BaseComponents & {
+export type TestComponents = Omit<BaseComponents, 'nameOwnership'> & {
   // A fetch component that only hits the test server
   localFetch: IFetchComponent
   worldCreator: IWorldCreator
+  // Mocked version of nameOwnership for testing
+  nameOwnership: jest.Mocked<INameOwnership>
 }
 
 // this type simplifies the typings of http handlers
@@ -361,12 +420,8 @@ export type IWalletStats = {
 export type WorldRecord = {
   name: string
   owner: string
-  deployer: string
-  entity_id: string
-  deployment_auth_chain: AuthChain
-  entity: any
   permissions: Permissions
-  size: bigint
+  spawn_coordinates: string | null
   created_at: Date
   updated_at: Date
   blocked_since: Date | null

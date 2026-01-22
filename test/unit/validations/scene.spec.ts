@@ -15,6 +15,7 @@ import { getIdentity, Identity } from '../../utils'
 import { IConfigComponent } from '@well-known-components/interfaces'
 import { hashV1 } from '@dcl/hashing'
 import { createWorldsManagerMockComponent } from '../../mocks/worlds-manager-mock'
+import { createCoordinatesComponent } from '../../../src/logic/coordinates'
 import {
   createValidateBannedNames,
   createValidateDeploymentPermission,
@@ -48,7 +49,8 @@ describe('scene validations', function () {
     limitsManager = createMockLimitsManagerComponent()
     nameDenyListChecker = createMockNameDenyListChecker(['banned'])
     worldNamePermissionChecker = createMockNamePermissionChecker(['whatever.dcl.eth'])
-    worldsManager = await createWorldsManagerMockComponent({ storage })
+    const coordinates = createCoordinatesComponent()
+    worldsManager = await createWorldsManagerMockComponent({ coordinates, storage })
 
     identity = await getIdentity()
     components = {

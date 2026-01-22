@@ -13,6 +13,7 @@ export const validateSceneEntity: Validation = async (deployment: DeploymentToVa
       'scene.json needs to specify a worldConfiguration section with a valid name inside.'
     ])
   }
+
   return OK
 }
 

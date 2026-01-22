@@ -22,8 +22,8 @@ export async function worldAboutHandler({
   }
 
   const worldMetadata = await worldsManager.getMetadataForWorld(params.world_name)
-  if (!worldMetadata || !worldMetadata.entityId) {
-    throw new NotFoundError(`World "${params.world_name}" has no scene deployed.`)
+  if (!worldMetadata || worldMetadata.scenes.length === 0) {
+    throw new NotFoundError(`World "${params.world_name}" has no scenes deployed.`)
   }
 
   assertNotBlockedOrWithinInGracePeriod(worldMetadata)
@@ -32,7 +32,10 @@ export async function worldAboutHandler({
 
   const baseUrl = (await config.getString('HTTP_BASE_URL')) || `${url.protocol}//${url.host}`
 
-  const urn = `urn:decentraland:entity:${worldMetadata.entityId}?=&baseUrl=${baseUrl}/contents/`
+  // Create URNs for all scenes in the world
+  const scenesUrn = runtimeMetadata.entityIds.map(
+    (entityId) => `urn:decentraland:entity:${entityId}?=&baseUrl=${baseUrl}/contents/`
+  )
 
   const ethNetwork = await config.requireString('ETH_NETWORK')
   const contracts = l1Contracts[ethNetwork as L1Network]
@@ -41,12 +44,11 @@ export async function worldAboutHandler({
   }
 
   const roomPrefix = await config.requireString('COMMS_ROOM_PREFIX')
-  const adapter = await resolveFixedAdapter(params.world_name, runtimeMetadata.fixedAdapter, baseUrl, roomPrefix)
+  const adapter = resolveFixedAdapter(params.world_name, runtimeMetadata.fixedAdapter, baseUrl, roomPrefix)
 
   const globalScenesURN = await config.getString('GLOBAL_SCENES_URN')
 
-  const contentStatus = await status.getContentStatus()
-  const lambdasStatus = await status.getLambdasStatus()
+  const [contentStatus, lambdasStatus] = await Promise.all([status.getContentStatus(), status.getLambdasStatus()])
 
   function urlForFile(filename: string | undefined, defaultImage: string = ''): string {
     if (filename) {
@@ -82,13 +84,14 @@ export async function worldAboutHandler({
   }
 
   const healthy = contentStatus.healthy && lambdasStatus.healthy
-  const body: About = {
+  const body: About & { spawnCoordinates?: string | null } = {
     healthy,
     acceptingUsers: healthy,
+    spawnCoordinates: worldMetadata.spawnCoordinates,
     configurations: {
       networkId: contracts.chainId,
       globalScenesUrn: globalScenesURN ? globalScenesURN.split(' ') : [],
-      scenesUrn: [urn],
+      scenesUrn, // Multiple scenes support
       minimap,
       skybox,
       realmName: runtimeMetadata.name,
@@ -116,12 +119,7 @@ export async function worldAboutHandler({
   }
 }
 
-async function resolveFixedAdapter(
-  worldName: string,
-  fixedAdapter: string | undefined,
-  baseUrl: string,
-  roomPrefix: string
-) {
+function resolveFixedAdapter(worldName: string, fixedAdapter: string | undefined, baseUrl: string, roomPrefix: string) {
   if (fixedAdapter === 'offline:offline') {
     return 'fixed-adapter:offline:offline'
   }

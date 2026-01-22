@@ -23,7 +23,7 @@ export async function undeployEntity({
   }
 
   logger.info(`Un-deploying world ${params.world_name}`)
-  await worldsManager.undeploy(params.world_name)
+  await worldsManager.undeployWorld(params.world_name)
 
   return {
     status: 200,

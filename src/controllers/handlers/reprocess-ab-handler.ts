@@ -2,6 +2,7 @@ import { HandlerContextWithPath } from '../../types'
 import { IHttpServerComponent } from '@well-known-components/interfaces'
 import { InvalidRequestError } from '@dcl/platform-server-commons'
 import { Events, WorldDeploymentEvent } from '@dcl/schemas'
+import { ReprocessABInput } from '../schemas/reprocess-ab-schemas'
 
 export async function reprocessABHandler(
   context: HandlerContextWithPath<'config' | 'logs' | 'snsClient' | 'worldsManager', '/reprocess-ab'>
@@ -16,28 +17,48 @@ export async function reprocessABHandler(
     throw new Error('SNS ARN is not defined.')
   }
 
-  const body = await context.request
-    .json()
-    .then((name) => name.map((s: string) => s.toLowerCase()))
-    .catch((_) => undefined)
+  // Body is validated by schema middleware
+  const body = (await context.request.json()) as ReprocessABInput
 
-  const allWorlds = await worldsManager.getRawWorldRecords()
-  const filteredWorlds = allWorlds
-    .filter((world) => !body || body.includes(world.name))
-    .filter((world) => world.entity_id !== null)
-  if (filteredWorlds.length === 0) {
-    throw new InvalidRequestError('No worlds found for reprocessing')
+  // Create a map of world names to their optional entity IDs for filtering
+  const worldsToProcess = new Map<string, string[] | undefined>(
+    body.worlds.map((w) => [w.worldName.toLowerCase(), w.entityIds])
+  )
+
+  // Get scenes for the specified worlds
+  const { scenes: allScenes } = await worldsManager.getWorldScenes()
+
+  // Filter scenes by world name and optionally by entity IDs
+  const filteredScenes = allScenes.filter((scene) => {
+    if (!worldsToProcess.has(scene.worldName)) {
+      return false
+    }
+    const entityIds = worldsToProcess.get(scene.worldName)
+    // If entityIds are specified, only include scenes with matching entity IDs
+    if (entityIds && entityIds.length > 0) {
+      return entityIds.includes(scene.entityId)
+    }
+    return true
+  })
+
+  // Also check the world is not in deny list
+  const allowedWorlds = await worldsManager.getRawWorldRecords()
+  const allowedWorldNames = new Set(allowedWorlds.map((w) => w.name))
+  const validScenes = filteredScenes.filter((scene) => allowedWorldNames.has(scene.worldName))
+
+  if (validScenes.length === 0) {
+    throw new InvalidRequestError('No scenes found for reprocessing')
   }
 
-  const mapped: WorldDeploymentEvent[] = filteredWorlds.map((world) => ({
+  const mapped: WorldDeploymentEvent[] = validScenes.map((scene) => ({
     entity: {
-      entityId: world.entity_id,
-      authChain: world.deployment_auth_chain
+      entityId: scene.entityId,
+      authChain: scene.deploymentAuthChain
     },
     contentServerUrls: [baseUrl],
     type: Events.Type.WORLD,
     subType: Events.SubType.Worlds.DEPLOYMENT,
-    key: world.entity_id,
+    key: scene.entityId,
     timestamp: Date.now()
   }))
   const result = await snsClient.publishMessages(mapped)

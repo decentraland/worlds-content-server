@@ -13,3 +13,12 @@ export function createMockNamePermissionChecker(names?: string[]): IWorldNamePer
     checkPermission
   }
 }
+
+export function createMockedNamePermissionChecker(
+  overrides?: Partial<jest.Mocked<IWorldNamePermissionChecker>>
+): jest.Mocked<IWorldNamePermissionChecker> {
+  return {
+    checkPermission: jest.fn(),
+    ...overrides
+  }
+}

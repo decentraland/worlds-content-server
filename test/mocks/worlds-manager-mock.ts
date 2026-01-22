@@ -1,39 +1,52 @@
 import {
   AppComponents,
   ContributorDomain,
+  GetWorldScenesFilters,
+  GetWorldScenesOptions,
+  GetWorldScenesResult,
   IPermissionChecker,
   IWorldsManager,
   Permissions,
   WorldMetadata,
-  WorldRecord
+  WorldRecord,
+  WorldScene,
+  WorldSettings,
+  WorldBoundingRectangle,
+  SceneOrderBy,
+  OrderDirection
 } from '../../src/types'
 import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage'
-import { Entity } from '@dcl/schemas'
+import { Entity, EthAddress } from '@dcl/schemas'
 import { stringToUtf8Bytes } from 'eth-connect'
-import { extractWorldRuntimeMetadata } from '../../src/logic/world-runtime-metadata-utils'
+import { buildWorldRuntimeMetadata } from '../../src/logic/world-runtime-metadata-utils'
 import { createPermissionChecker, defaultPermissions } from '../../src/logic/permissions-checker'
 
 export async function createWorldsManagerMockComponent({
+  coordinates,
   storage
-}: Pick<AppComponents, 'storage'>): Promise<IWorldsManager> {
+}: Pick<AppComponents, 'coordinates' | 'storage'>): Promise<IWorldsManager> {
+  const { extractSpawnCoordinates, calculateBoundingRectangle } = coordinates
+
   async function getRawWorldRecords(): Promise<WorldRecord[]> {
     const worlds: WorldRecord[] = []
     for await (const key of storage.allFileIds('name-')) {
       const entity = await getEntityForWorld(key.substring(5))
       if (entity) {
-        const content = await storage.retrieve(`${entity.id}.auth`)
-        const authChain = JSON.parse((await streamToBuffer(await content?.asStream())).toString())
+        let owner = ''
+        const authContent = await storage.retrieve(`${entity.id}.auth`)
+        if (authContent) {
+          const authChain = JSON.parse((await streamToBuffer(await authContent.asStream())).toString())
+          owner = authChain[0]?.payload || ''
+        }
+        // Extract spawn coordinates from the entity's scene base parcel
+        const spawnCoordinates = extractSpawnCoordinates(entity)
         worlds.push({
           name: entity.metadata.worldConfiguration.name,
-          deployer: authChain[0].payload,
-          entity_id: entity.id,
-          deployment_auth_chain: authChain,
-          entity: entity.metadata,
+          owner,
+          permissions: { ...defaultPermissions() },
+          spawn_coordinates: spawnCoordinates,
           created_at: new Date(1706019701900),
           updated_at: new Date(1706019701900),
-          permissions: { ...defaultPermissions() },
-          size: 0n,
-          owner: authChain[0].payload,
           blocked_since: null
         })
       }
@@ -43,20 +56,14 @@ export async function createWorldsManagerMockComponent({
 
   async function getEntityForWorld(worldName: string): Promise<Entity | undefined> {
     const metadata = await getMetadataForWorld(worldName)
-    if (!metadata || !metadata.entityId) {
+    if (!metadata || !metadata.scenes || metadata.scenes.length === 0) {
       return undefined
     }
 
-    const content = await storage.retrieve(metadata.entityId)
-    if (!content) {
-      return undefined
-    }
-
-    const json = JSON.parse((await streamToBuffer(await content?.asStream())).toString())
-
+    const scene = metadata.scenes[0]
     return {
-      ...json,
-      id: metadata.entityId
+      ...scene.entity,
+      id: scene.entityId
     }
   }
 
@@ -65,7 +72,23 @@ export async function createWorldsManagerMockComponent({
     if (!content) {
       return undefined
     }
-    return JSON.parse((await streamToBuffer(await content.asStream())).toString())
+    const metadata = JSON.parse((await streamToBuffer(await content.asStream())).toString())
+
+    // Convert size strings back to BigInt in scenes
+    if (metadata.scenes) {
+      metadata.scenes = metadata.scenes.map((scene: any) => ({
+        ...scene,
+        size: typeof scene.size === 'string' ? BigInt(scene.size) : scene.size
+      }))
+    }
+
+    // Build runtime metadata from the most recently deployed scene (last in array)
+    if (metadata.scenes && metadata.scenes.length > 0) {
+      const mostRecentScene = metadata.scenes[metadata.scenes.length - 1]
+      metadata.runtimeMetadata = buildWorldRuntimeMetadata(worldName, [mostRecentScene])
+    }
+
+    return metadata
   }
 
   async function storeWorldMetadata(worldName: string, worldMetadata: Partial<WorldMetadata>): Promise<void> {
@@ -73,17 +96,102 @@ export async function createWorldsManagerMockComponent({
     const metadata: Partial<WorldMetadata> = Object.assign({}, contentMetadata, worldMetadata)
     Object.assign(metadata, worldMetadata)
 
+    // Convert BigInt values to strings for JSON serialization
+    const serializableMetadata = JSON.stringify(metadata, (_key, value) =>
+      typeof value === 'bigint' ? value.toString() : value
+    )
+
     await storage.storeStream(
       `name-${worldName.toLowerCase()}`,
-      bufferToStream(stringToUtf8Bytes(JSON.stringify(metadata)))
+      bufferToStream(stringToUtf8Bytes(serializableMetadata))
     )
   }
 
-  async function deployScene(worldName: string, scene: Entity): Promise<void> {
-    await storeWorldMetadata(worldName, {
+  async function deployScene(worldName: string, scene: Entity, owner: EthAddress): Promise<void> {
+    const parcels: string[] = scene.metadata?.scene?.parcels || []
+    const existingMetadata = await getMetadataForWorld(worldName)
+    const newScene: WorldScene = {
+      worldName: worldName.toLowerCase(),
       entityId: scene.id,
-      runtimeMetadata: extractWorldRuntimeMetadata(worldName, scene)
+      deployer: owner,
+      deploymentAuthChain: [],
+      entity: scene,
+      parcels,
+      size: 0n,
+      createdAt: new Date()
+    }
+
+    // Filter out existing scenes on these parcels and add the new scene
+    const existingScenes = existingMetadata?.scenes || []
+    const filteredScenes = existingScenes.filter((s) => !s.parcels.some((p) => parcels.includes(p)))
+
+    // Set spawn coordinates only if this is the first scene (no existing spawn coordinates)
+    const newSceneCoordinates = extractSpawnCoordinates(scene)
+    const spawnCoordinates = existingMetadata?.spawnCoordinates || newSceneCoordinates
+
+    await storeWorldMetadata(worldName, {
+      scenes: [...filteredScenes, newScene],
+      spawnCoordinates,
+      owner
     })
+  }
+
+  async function undeployScene(_worldName: string, _parcels: string[]): Promise<void> {
+    // Mock implementation - no-op
+  }
+
+  async function getWorldScenes(
+    filters?: GetWorldScenesFilters,
+    options?: GetWorldScenesOptions
+  ): Promise<GetWorldScenesResult> {
+    if (!filters?.worldName) {
+      return { scenes: [], total: 0 }
+    }
+
+    const metadata = await getMetadataForWorld(filters.worldName)
+    if (!metadata || !metadata.scenes) {
+      return { scenes: [], total: 0 }
+    }
+
+    const scenes = [...metadata.scenes]
+
+    // Apply sorting
+    const orderDirection = options?.orderDirection ?? OrderDirection.Asc
+
+    scenes.sort((a, b) => {
+      const aValue = a.createdAt.getTime()
+      const bValue = b.createdAt.getTime()
+      return orderDirection === OrderDirection.Asc ? aValue - bValue : bValue - aValue
+    })
+
+    const limit = options?.limit || scenes.length
+    const offset = options?.offset || 0
+
+    return {
+      scenes: scenes.slice(offset, offset + limit),
+      total: metadata.scenes.length
+    }
+  }
+
+  async function updateWorldSettings(_worldName: string, _settings: WorldSettings): Promise<void> {
+    // Mock implementation - no-op
+  }
+
+  async function getWorldSettings(_worldName: string): Promise<WorldSettings | undefined> {
+    return undefined
+  }
+
+  async function getTotalWorldSize(_worldName: string): Promise<bigint> {
+    return 0n
+  }
+
+  async function getWorldBoundingRectangle(worldName: string): Promise<WorldBoundingRectangle | undefined> {
+    const metadata = await getMetadataForWorld(worldName)
+    if (!metadata || !metadata.scenes) {
+      return undefined
+    }
+    const allParcels = metadata.scenes.flatMap((scene) => scene.parcels)
+    return calculateBoundingRectangle(allParcels)
   }
 
   async function storePermissions(worldName: string, permissions: Permissions): Promise<void> {
@@ -102,23 +210,12 @@ export async function createWorldsManagerMockComponent({
     return acc
   }
 
-  async function getDeployedWorldEntities(): Promise<Entity[]> {
-    const worlds: Entity[] = []
-    for await (const key of storage.allFileIds('name-')) {
-      const entity = await getEntityForWorld(key.substring(5))
-      if (entity) {
-        worlds.push(entity)
-      }
-    }
-    return worlds
-  }
-
   async function permissionCheckerForWorld(worldName: string): Promise<IPermissionChecker> {
     const metadata = await getMetadataForWorld(worldName)
     return createPermissionChecker(metadata?.permissions || defaultPermissions())
   }
 
-  async function undeploy(worldName: string): Promise<void> {
+  async function undeployWorld(worldName: string): Promise<void> {
     await storage.delete([`name-${worldName.toLowerCase()}`])
   }
 
@@ -164,12 +261,17 @@ export async function createWorldsManagerMockComponent({
     getContributableDomains,
     getRawWorldRecords,
     getDeployedWorldCount,
-    getDeployedWorldEntities,
     getMetadataForWorld,
     getEntityForWorlds,
     deployScene,
+    undeployScene,
     storePermissions,
     permissionCheckerForWorld,
-    undeploy
+    undeployWorld,
+    getWorldScenes,
+    updateWorldSettings,
+    getWorldSettings,
+    getTotalWorldSize,
+    getWorldBoundingRectangle
   }
 }

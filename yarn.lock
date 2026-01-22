@@ -753,6 +753,13 @@
   dependencies:
     "@well-known-components/interfaces" "^1.5.2"
 
+"@dcl/core-commons@0.6.0":
+  version "0.6.0"
+  resolved "https://registry.yarnpkg.com/@dcl/core-commons/-/core-commons-0.6.0.tgz#30e98852e2a12a9f1f4d6eaafa4466973b557b3a"
+  integrity sha512-t7+Q+oZcj8PKjvP0iQXkjnK5+pNCNUpBcEFP+V0Lcurl3DdndI7sOsYPIzkxhdjFgOfcaT9SdgFD/LxmjwA3Tg==
+  dependencies:
+    "@well-known-components/interfaces" "^1.5.2"
+
 "@dcl/crypto@^3.4.0", "@dcl/crypto@^3.4.3", "@dcl/crypto@^3.4.5":
   version "3.4.5"
   resolved "https://registry.yarnpkg.com/@dcl/crypto/-/crypto-3.4.5.tgz#95ca2beab46fa3494b4d38f009bf0d49c87ba235"
@@ -784,6 +791,21 @@
   resolved "https://registry.yarnpkg.com/@dcl/hashing/-/hashing-3.0.4.tgz#4df2a4cb3a8114765aed34cb57b91c93bf33bfb3"
   integrity sha512-Cg+MoIOn+BYmQV2q8zSFnNYY+GldlnUazwBnfgrq3i66ZxOaZ65h01btd8OUtSAlfWG4VTNIOHDjtKqmuwJNBg==
 
+"@dcl/http-server@^1.0.0":
+  version "1.0.1"
+  resolved "https://registry.yarnpkg.com/@dcl/http-server/-/http-server-1.0.1.tgz#aa0d93b1a9d945c62cf46ba72cfa8d52f55c0332"
+  integrity sha512-dFKJtSr0ESS388PkzOnJLNd2KfsV3nacRZvOlaIH0GpVwemZfYe5SjZv3VTGygKxUA5C/knqiKrUtBiYFP2j3w==
+  dependencies:
+    "@types/http-errors" "^2.0.4"
+    destroy "^1.2.0"
+    fp-future "^1.0.1"
+    http-errors "^2.0.0"
+    mitt "^3.0.0"
+    node-fetch "^2.6.9"
+    on-finished "^2.4.1"
+    path-to-regexp "^6.3.0"
+    reflect-metadata "^0.2.2"
+
 "@dcl/platform-crypto-middleware@^1.1.0":
   version "1.1.0"
   resolved "https://registry.yarnpkg.com/@dcl/platform-crypto-middleware/-/platform-crypto-middleware-1.1.0.tgz#11434eb4fc8d461799ab71d28ce869ab330bdb23"
@@ -793,19 +815,40 @@
     "@well-known-components/fetch-component" "^2.0.2"
     "@well-known-components/interfaces" "^1.4.2"
 
-"@dcl/platform-server-commons@^0.0.5":
-  version "0.0.5"
-  resolved "https://registry.yarnpkg.com/@dcl/platform-server-commons/-/platform-server-commons-0.0.5.tgz#2eaaef2125a699b08be93fe3402c2f4771ad3fe5"
-  integrity sha512-ATMZ57rEx6rAZzN5SSkgAHyqKPfuLN0tpnljERGTUegbUNjFxjrxaVzIz+r2UeW8lTIYaUl1sxhTt7udBDp+Qw==
+"@dcl/platform-server-commons@^1.0.1":
+  version "1.0.1"
+  resolved "https://registry.yarnpkg.com/@dcl/platform-server-commons/-/platform-server-commons-1.0.1.tgz#c88e339b83958ca3b3203aca20d64eacff2ac26c"
+  integrity sha512-qXd/UCTxQC2A5uJuE5MiDXGmxNpk+kMPZjdCEFVZsvmFjDEKxg5oonMI26iNoYrjhfnSt9u1We9qf62MbqdlDg==
   dependencies:
-    "@well-known-components/http-server" "^2.1.0"
+    "@dcl/http-server" "^1.0.0"
+    "@dcl/schemas" "^18.0.0"
     "@well-known-components/interfaces" "^1.4.3"
     node-fetch "^2.7.0"
+
+"@dcl/schema-validator-component@^0.2.2":
+  version "0.2.2"
+  resolved "https://registry.yarnpkg.com/@dcl/schema-validator-component/-/schema-validator-component-0.2.2.tgz#21a66d0e857deb183312d9c986e28338862ff793"
+  integrity sha512-2mTWgwq+iM6kNnJe9V1WXtvb0QQQLb81vg1b7L93GsZwmhD1zh2Lve1fC9RAbqZVZR17zu0x1KYbC8J3otaJNg==
+  dependencies:
+    "@dcl/core-commons" "0.6.0"
+    "@well-known-components/interfaces" "^1.5.2"
+    ajv "^8.17.1"
+    ajv-formats "^3.0.1"
 
 "@dcl/schemas@^11.5.0":
   version "11.12.0"
   resolved "https://registry.yarnpkg.com/@dcl/schemas/-/schemas-11.12.0.tgz#f52493b615ebdea8e02819bc2ed4a456239f3747"
   integrity sha512-L04KTucvxSnrHDAl3/rnkzhjfZ785dSSPeKarBVfzyuw41uyQ0Mh4HVFWjX9hC+f/nMpM5Adg5udlT5efmepcA==
+  dependencies:
+    ajv "^8.11.0"
+    ajv-errors "^3.0.0"
+    ajv-keywords "^5.1.0"
+    mitt "^3.0.1"
+
+"@dcl/schemas@^18.0.0":
+  version "18.8.0"
+  resolved "https://registry.yarnpkg.com/@dcl/schemas/-/schemas-18.8.0.tgz#fe8e3fb47d01b848481f54887008118aafee0f51"
+  integrity sha512-1HxbL0azB7N+kMwYyU4/Uqltc+7F8Lv8UcS3dxDNVTPn71gldIDImj58OM9Y3gIyQG5Tauacrlk5cDkXhjMkOA==
   dependencies:
     ajv "^8.11.0"
     ajv-errors "^3.0.0"
@@ -2127,7 +2170,7 @@
   dependencies:
     "@types/node" "*"
 
-"@types/http-errors@^2.0.1":
+"@types/http-errors@^2.0.1", "@types/http-errors@^2.0.4":
   version "2.0.5"
   resolved "https://registry.yarnpkg.com/@types/http-errors/-/http-errors-2.0.5.tgz#5b749ab2b16ba113423feb1a64a95dcd30398472"
   integrity sha512-r8Tayk8HJnX0FztbZN7oVqGccWgw98T/0neJphO91KkmOzug1KkofZURD4UaD5uH8AqcFLfdPErnBod0u71/qg==
@@ -2591,6 +2634,13 @@ ajv-errors@^3.0.0:
   resolved "https://registry.yarnpkg.com/ajv-errors/-/ajv-errors-3.0.0.tgz#e54f299f3a3d30fe144161e5f0d8d51196c527bc"
   integrity sha512-V3wD15YHfHz6y0KdhYFjyy9vWtEVALT9UrxfN3zqlI6dMioHnJrqOYfyPKol3oqrnCM9uwkcdCwkJ0WUcbLMTQ==
 
+ajv-formats@^3.0.1:
+  version "3.0.1"
+  resolved "https://registry.yarnpkg.com/ajv-formats/-/ajv-formats-3.0.1.tgz#3d5dc762bca17679c3c2ea7e90ad6b7532309578"
+  integrity sha512-8iUql50EUR+uUcdRQ3HDqa6EVyo3docL8g5WJ3FNcWmu62IbkGUue/pEyLBW8VGKKucTPgqeks4fIU1DA4yowQ==
+  dependencies:
+    ajv "^8.0.0"
+
 ajv-keywords@^5.1.0:
   version "5.1.0"
   resolved "https://registry.yarnpkg.com/ajv-keywords/-/ajv-keywords-5.1.0.tgz#69d4d385a4733cdbeab44964a1170a88f87f0e16"
@@ -2608,7 +2658,7 @@ ajv@^6.12.4:
     json-schema-traverse "^0.4.1"
     uri-js "^4.2.2"
 
-ajv@^8.11.0:
+ajv@^8.0.0, ajv@^8.11.0, ajv@^8.17.1:
   version "8.17.1"
   resolved "https://registry.yarnpkg.com/ajv/-/ajv-8.17.1.tgz#37d9a5c776af6bc92d7f4f9510eba4c0a60d11a6"
   integrity sha512-B/gBuNg5SiMTrPkC+A2+cW0RszwxYmn6VYxB/inlBStS5nx6xHIt/ehKRhIMhqusl7a8LjQoZnjCs5vhwxOQ1g==
@@ -5478,7 +5528,7 @@ path-parse@^1.0.7:
   resolved "https://registry.yarnpkg.com/path-parse/-/path-parse-1.0.7.tgz#fbc114b60ca42b30d9daf5858e4bd68bbedb6735"
   integrity sha512-LDJzPVEEEPR+y48z93A0Ed0yXb8pAByGWo/k5YYdYgpY2/2EsOsksJrq7lOHxryrVOn1ejG6oAp8ahvOIQD8sw==
 
-path-to-regexp@^6.2.1:
+path-to-regexp@^6.2.1, path-to-regexp@^6.3.0:
   version "6.3.0"
   resolved "https://registry.yarnpkg.com/path-to-regexp/-/path-to-regexp-6.3.0.tgz#2b6a26a337737a8e1416f9272ed0766b1c0389f4"
   integrity sha512-Yhpw4T9C6hPpgPeA28us07OJeqZ5EzQTkbfwuhsUg0c237RomFoETJgmp2sa3F/41gfLE6G5cqcYwznmeEeOlQ==
@@ -5851,6 +5901,11 @@ redoc@2.5.0:
     stickyfill "^1.1.1"
     swagger2openapi "^7.0.8"
     url-template "^2.0.8"
+
+reflect-metadata@^0.2.2:
+  version "0.2.2"
+  resolved "https://registry.yarnpkg.com/reflect-metadata/-/reflect-metadata-0.2.2.tgz#400c845b6cba87a21f2c65c4aeb158f4fa4d9c5b"
+  integrity sha512-urBwgfrvVP/eAyXx4hluJivBKzuEbSQs9rKWCrCkbSxNv8mxPcUZKeuoF3Uy4mJl3Lwprp6yy5/39VWigZ4K6Q==
 
 reftools@^1.1.9:
   version "1.1.9"
