@@ -135,7 +135,7 @@ export async function createWorldsManagerComponent({
         INSERT INTO worlds (name, owner, permissions, spawn_coordinates, created_at, updated_at)
         VALUES (
           ${worldName.toLowerCase()}, 
-          ${owner?.toLowerCase()}, 
+          ${owner.toLowerCase()}, 
           ${JSON.stringify(defaultPermissions())}::json,
           ${spawnCoordinates},
           ${new Date()}, 
