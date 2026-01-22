@@ -125,37 +125,27 @@ export async function createWorldsManagerComponent({
 
     // Use a transaction to ensure atomicity
     const client = await database.getPool().connect()
+    const spawnCoordinates = extractSpawnCoordinates(scene)
 
     try {
       await client.query('BEGIN')
 
-      // Ensure world record exists
-      const worldExists = await client.query(SQL`SELECT name FROM worlds WHERE name = ${worldName.toLowerCase()}`)
-
-      if (worldExists.rowCount === 0) {
-        const spawnCoordinates = extractSpawnCoordinates(scene)
-        await client.query(SQL`
-          INSERT INTO worlds (name, owner, permissions, spawn_coordinates, created_at, updated_at)
-          VALUES (
-            ${worldName.toLowerCase()}, 
-            ${owner?.toLowerCase()}, 
-            ${JSON.stringify(defaultPermissions())}::json,
-            ${spawnCoordinates},
-            ${new Date()}, 
-            ${new Date()}
-          )
-        `)
-      } else {
-        // Update owner and set spawn_coordinates if not already set
-        const spawnCoordinates = extractSpawnCoordinates(scene)
-        await client.query(SQL`
-          UPDATE worlds
-          SET owner = ${owner?.toLowerCase()},
-              spawn_coordinates = COALESCE(spawn_coordinates, ${spawnCoordinates}),
-              updated_at = ${new Date()}
-          WHERE name = ${worldName.toLowerCase()}
-        `)
-      }
+      // Ensure world record exists, update if it does
+      await client.query(SQL`
+        INSERT INTO worlds (name, owner, permissions, spawn_coordinates, created_at, updated_at)
+        VALUES (
+          ${worldName.toLowerCase()}, 
+          ${owner?.toLowerCase()}, 
+          ${JSON.stringify(defaultPermissions())}::json,
+          ${spawnCoordinates},
+          ${new Date()}, 
+          ${new Date()}
+        )
+        ON CONFLICT (name) DO UPDATE SET
+          owner = ${owner?.toLowerCase()},
+          spawn_coordinates = COALESCE(worlds.spawn_coordinates, EXCLUDED.spawn_coordinates),
+          updated_at = ${new Date()}
+      `)
 
       // Delete any existing scenes on these parcels
       await client.query(SQL`
