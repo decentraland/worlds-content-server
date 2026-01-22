@@ -425,6 +425,7 @@ export type IWalletStats = {
 export type WorldRecord = {
   name: string
   owner: string
+  access: AccessSetting
   spawn_coordinates: string | null
   created_at: Date
   updated_at: Date
