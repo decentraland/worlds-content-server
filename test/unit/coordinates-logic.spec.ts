@@ -86,6 +86,42 @@ describe('CoordinatesComponent', () => {
           expect(result.y).toBe(0)
         })
       })
+
+      describe('and the coordinates are at the minimum boundary (-150)', () => {
+        let coordinateString: string
+        let result: Coordinate
+
+        beforeEach(() => {
+          coordinateString = '-150,-150'
+          result = coordinatesComponent.parseCoordinate(coordinateString)
+        })
+
+        it('should return -150 for x', () => {
+          expect(result.x).toBe(-150)
+        })
+
+        it('should return -150 for y', () => {
+          expect(result.y).toBe(-150)
+        })
+      })
+
+      describe('and the coordinates are at the maximum boundary (150)', () => {
+        let coordinateString: string
+        let result: Coordinate
+
+        beforeEach(() => {
+          coordinateString = '150,150'
+          result = coordinatesComponent.parseCoordinate(coordinateString)
+        })
+
+        it('should return 150 for x', () => {
+          expect(result.x).toBe(150)
+        })
+
+        it('should return 150 for y', () => {
+          expect(result.y).toBe(150)
+        })
+      })
     })
 
     describe('when the coordinate string is invalid', () => {
@@ -136,6 +172,76 @@ describe('CoordinatesComponent', () => {
 
         it('should throw an error with the correct message', () => {
           expect(() => coordinatesComponent.parseCoordinate(coordinateString)).toThrow('Invalid coordinate format: ')
+        })
+      })
+
+      describe('and the x coordinate is below the minimum (-150)', () => {
+        let coordinateString: string
+
+        beforeEach(() => {
+          coordinateString = '-151,0'
+        })
+
+        it('should throw an error with the correct message', () => {
+          expect(() => coordinatesComponent.parseCoordinate(coordinateString)).toThrow(
+            'Coordinate X value -151 is out of bounds. Must be between -150 and 150.'
+          )
+        })
+      })
+
+      describe('and the x coordinate is above the maximum (150)', () => {
+        let coordinateString: string
+
+        beforeEach(() => {
+          coordinateString = '151,0'
+        })
+
+        it('should throw an error with the correct message', () => {
+          expect(() => coordinatesComponent.parseCoordinate(coordinateString)).toThrow(
+            'Coordinate X value 151 is out of bounds. Must be between -150 and 150.'
+          )
+        })
+      })
+
+      describe('and the y coordinate is below the minimum (-150)', () => {
+        let coordinateString: string
+
+        beforeEach(() => {
+          coordinateString = '0,-151'
+        })
+
+        it('should throw an error with the correct message', () => {
+          expect(() => coordinatesComponent.parseCoordinate(coordinateString)).toThrow(
+            'Coordinate Y value -151 is out of bounds. Must be between -150 and 150.'
+          )
+        })
+      })
+
+      describe('and the y coordinate is above the maximum (150)', () => {
+        let coordinateString: string
+
+        beforeEach(() => {
+          coordinateString = '0,151'
+        })
+
+        it('should throw an error with the correct message', () => {
+          expect(() => coordinatesComponent.parseCoordinate(coordinateString)).toThrow(
+            'Coordinate Y value 151 is out of bounds. Must be between -150 and 150.'
+          )
+        })
+      })
+
+      describe('and both coordinates are out of bounds', () => {
+        let coordinateString: string
+
+        beforeEach(() => {
+          coordinateString = '200,-200'
+        })
+
+        it('should throw an error for x first', () => {
+          expect(() => coordinatesComponent.parseCoordinate(coordinateString)).toThrow(
+            'Coordinate X value 200 is out of bounds. Must be between -150 and 150.'
+          )
         })
       })
     })

@@ -379,6 +379,8 @@ export type TestComponents = BaseComponents & {
   // A fetch component that only hits the test server with optional authentication support
   localFetch: IAuthenticatedFetchComponent
   worldCreator: IWorldCreator
+  // Mocked version of nameOwnership for testing
+  nameOwnership: jest.Mocked<INameOwnership>
 }
 
 // this type simplifies the typings of http handlers
@@ -423,7 +425,6 @@ export type IWalletStats = {
 export type WorldRecord = {
   name: string
   owner: string
-  access: AccessSetting
   spawn_coordinates: string | null
   created_at: Date
   updated_at: Date

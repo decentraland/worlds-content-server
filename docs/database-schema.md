@@ -96,7 +96,7 @@ Stores world metadata and access settings. With multi-scene support, this table 
 | `name`              | VARCHAR   | NOT NULL     | **Primary Key**. World name (DCL name, e.g., `"myworld.dcl.eth"`). Stored in lowercase.  |
 | `access`            | JSONB     | **NOT NULL** | Access control settings. See [Access Settings](#access-settings) below.                  |
 | `owner`             | VARCHAR   | NULL         | Ethereum address of the DCL name owner (verified via blockchain).                        |
-| `spawn_coordinates` | VARCHAR   | NULL         | Default spawn parcel coordinate (e.g., `"0,0"`). Must belong to a deployed scene.        |
+| `spawn_coordinates` | VARCHAR   | NULL         | World spawn parcel coordinate (e.g., `"0,0"`). Must belong be a coordinate inside of the world's shape. |
 | `created_at`        | TIMESTAMP | NOT NULL     | Timestamp when the world record was first created.                                       |
 | `updated_at`        | TIMESTAMP | NOT NULL     | Timestamp when the world record was last updated.                                        |
 

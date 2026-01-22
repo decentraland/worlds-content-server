@@ -238,7 +238,7 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
       let files: Map<string, Uint8Array>
 
       beforeEach(async () => {
-        const { worldCreator } = components
+        const { worldCreator, nameOwnership } = components
         const { namePermissionChecker } = stubComponents
 
         uppercaseWorldName = worldCreator.randomWorldName().toUpperCase()
@@ -246,6 +246,9 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
         namePermissionChecker.checkPermission
           .withArgs(identity.authChain.authChain[0].payload, uppercaseWorldName)
           .resolves(true)
+        nameOwnership.findOwners.mockResolvedValue(
+          new Map([[uppercaseWorldName, identity.authChain.authChain[0].payload]])
+        )
 
         const entityFiles = new Map<string, Uint8Array>()
         const result = await DeploymentBuilder.buildEntity({

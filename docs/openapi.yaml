@@ -1145,9 +1145,10 @@ components:
         spawnCoordinates:
           type: string
           description: |
-            The default spawn parcel coordinate for the world.
-            Must belong to a parcel of a deployed scene.
-            Supports both positive and negative coordinates.
+            The parcel coordinate where players will spawn.
+            Must be within the world shape rectangle (the bounding box covering all deployed scene parcels).
+            Does not need to be on a specific scene parcel, just anywhere within the rectangle.
+            Supports both positive and negative coordinates (e.g., "10,20" or "-5,-10").
           pattern: '^-?\d+,-?\d+$'
           example: '10,20'
           nullable: true

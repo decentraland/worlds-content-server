@@ -3,22 +3,11 @@ import { createNameChecker } from '../../src/adapters/dcl-name-checker'
 import { createLogComponent } from '@well-known-components/logger'
 import { ILoggerComponent } from '@well-known-components/interfaces'
 import { INameOwnership } from '../../src/types'
-import { EthAddress } from '@dcl/schemas'
-
-function createMockNameOwnership(owner: string | undefined = undefined): INameOwnership {
-  return {
-    findOwners: (worldNames: string[]): Promise<Map<string, EthAddress | undefined>> => {
-      const result = new Map<string, EthAddress | undefined>()
-      for (const worldName of worldNames) {
-        result.set(worldName, owner)
-      }
-      return Promise.resolve(result)
-    }
-  }
-}
+import { createMockedNameOwnership } from '../mocks/name-ownership-mock'
 
 describe('dcl name checker', function () {
   let logs: ILoggerComponent
+  let nameOwnership: jest.Mocked<INameOwnership>
 
   beforeEach(async () => {
     logs = await createLogComponent({
@@ -26,32 +15,36 @@ describe('dcl name checker', function () {
         LOG_LEVEL: 'DEBUG'
       })
     })
+    nameOwnership = createMockedNameOwnership()
   })
 
-  it('when permission asked for invalid name it returns false', async () => {
-    const dclNameChecker = createNameChecker({
-      logs,
-      nameOwnership: createMockNameOwnership()
-    })
+  describe('when permission asked for invalid name', () => {
+    it('should return false', async () => {
+      nameOwnership.findOwners.mockResolvedValue(new Map([['', undefined]]))
 
-    await expect(dclNameChecker.checkPermission('0xb', '')).resolves.toBeFalsy()
+      const dclNameChecker = createNameChecker({ logs, nameOwnership })
+
+      await expect(dclNameChecker.checkPermission('0xb', '')).resolves.toBeFalsy()
+    })
   })
 
-  it('when called with non-owner address it returns false', async () => {
-    const dclNameChecker = createNameChecker({
-      logs,
-      nameOwnership: createMockNameOwnership('0xabc')
-    })
+  describe('when called with non-owner address', () => {
+    it('should return false', async () => {
+      nameOwnership.findOwners.mockResolvedValue(new Map([['my-super-name.dcl.eth', '0xabc']]))
 
-    await expect(dclNameChecker.checkPermission('0xdef', 'my-super-name.dcl.eth')).resolves.toBeFalsy()
+      const dclNameChecker = createNameChecker({ logs, nameOwnership })
+
+      await expect(dclNameChecker.checkPermission('0xdef', 'my-super-name.dcl.eth')).resolves.toBeFalsy()
+    })
   })
 
-  it('when called with owner address it returns true', async () => {
-    const dclNameChecker = createNameChecker({
-      logs,
-      nameOwnership: createMockNameOwnership('0xabc')
-    })
+  describe('when called with owner address', () => {
+    it('should return true', async () => {
+      nameOwnership.findOwners.mockResolvedValue(new Map([['my-super-name.dcl.eth', '0xabc']]))
 
-    await expect(dclNameChecker.checkPermission('0xabc', 'my-super-name.dcl.eth')).resolves.toBeTruthy()
+      const dclNameChecker = createNameChecker({ logs, nameOwnership })
+
+      await expect(dclNameChecker.checkPermission('0xabc', 'my-super-name.dcl.eth')).resolves.toBeTruthy()
+    })
   })
 })

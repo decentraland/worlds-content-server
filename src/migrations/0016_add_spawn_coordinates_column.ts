@@ -41,11 +41,6 @@ export const migration: Migration = {
         DROP COLUMN IF EXISTS size;
       `)
 
-      // Drop the deprecated index on deployer column
-      await database.query(`
-        DROP INDEX IF EXISTS worlds_deployer_index;
-      `)
-
       await database.query('COMMIT')
       logger.info(
         `Successfully added spawn_coordinates column, updated ${migrateResult.rowCount} rows, ` +
