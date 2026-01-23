@@ -153,23 +153,44 @@ export async function createWorldsManagerMockComponent({
       return { scenes: [], total: 0 }
     }
 
-    const scenes = [...metadata.scenes]
+    let scenes = [...metadata.scenes]
+
+    // Apply coordinates filter (scenes that contain any of the specified coordinates)
+    if (filters.coordinates && filters.coordinates.length > 0) {
+      scenes = scenes.filter((s) => s.parcels.some((p) => filters.coordinates!.includes(p)))
+    }
+
+    // Apply bounding box filter (scenes that have at least one parcel within the rectangle)
+    if (filters.boundingBox) {
+      const { x1, x2, y1, y2 } = filters.boundingBox
+      const xMin = Math.min(x1, x2)
+      const xMax = Math.max(x1, x2)
+      const yMin = Math.min(y1, y2)
+      const yMax = Math.max(y1, y2)
+      scenes = scenes.filter((s) =>
+        s.parcels.some((p) => {
+          const [x, y] = p.split(',').map(Number)
+          return x >= xMin && x <= xMax && y >= yMin && y <= yMax
+        })
+      )
+    }
+
+    const total = scenes.length
 
     // Apply sorting
     const orderDirection = options?.orderDirection ?? OrderDirection.Asc
-
     scenes.sort((a, b) => {
       const aValue = a.createdAt.getTime()
       const bValue = b.createdAt.getTime()
       return orderDirection === OrderDirection.Asc ? aValue - bValue : bValue - aValue
     })
 
-    const limit = options?.limit || scenes.length
-    const offset = options?.offset || 0
+    const limit = options?.limit ?? scenes.length
+    const offset = options?.offset ?? 0
 
     return {
       scenes: scenes.slice(offset, offset + limit),
-      total: metadata.scenes.length
+      total
     }
   }
 

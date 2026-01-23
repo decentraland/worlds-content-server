@@ -70,9 +70,17 @@ export type WorldScene = {
   createdAt: Date
 }
 
+export type BoundingBox = {
+  x1: number
+  x2: number
+  y1: number
+  y2: number
+}
+
 export type GetWorldScenesFilters = {
   worldName?: string
   coordinates?: string[]
+  boundingBox?: BoundingBox
 }
 
 export enum SceneOrderBy {

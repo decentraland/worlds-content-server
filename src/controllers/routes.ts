@@ -29,6 +29,7 @@ import { getScenesHandler, undeploySceneHandler } from './handlers/scenes-handle
 import { getWorldSettingsHandler, updateWorldSettingsHandler } from './handlers/world-settings-handler'
 import { worldSettingsSchema } from './schemas/world-settings-schemas'
 import { reprocessABSchema } from './schemas/reprocess-ab-schemas'
+import { getWorldScenesSchema } from './schemas/scenes-query-schemas'
 
 export async function setupRouter(globalContext: GlobalContext): Promise<Router<GlobalContext>> {
   const { fetch, schemaValidator, config } = globalContext.components
@@ -56,6 +57,11 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
 
   // Multi-scene management
   router.get('/world/:world_name/scenes', getScenesHandler)
+  router.post(
+    '/world/:world_name/scenes',
+    schemaValidator.withSchemaValidatorMiddleware(getWorldScenesSchema),
+    getScenesHandler
+  )
   // Undeploy a scene
   router.delete('/world/:world_name/scenes/:coordinate', signedFetchMiddleware, undeploySceneHandler)
 
