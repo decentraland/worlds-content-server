@@ -1,4 +1,4 @@
-import type { JSONSchema } from '@dcl/schemas'
+import type { Schema } from 'ajv'
 
 const COORDINATE_PATTERN = '^-?\\d+,-?\\d+$'
 
@@ -6,7 +6,7 @@ export type GetWorldScenesRequestBody = {
   coordinates: string[]
 }
 
-export const getWorldScenesSchema: JSONSchema<GetWorldScenesRequestBody> = {
+export const getWorldScenesSchema: Schema = {
   type: 'object',
   properties: {
     coordinates: {
