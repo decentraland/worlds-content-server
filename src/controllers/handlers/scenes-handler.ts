@@ -2,6 +2,8 @@ import { IHttpServerComponent } from '@well-known-components/interfaces'
 import { InvalidRequestError, NotAuthorizedError, getPaginationParams } from '@dcl/platform-server-commons'
 import { DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
 import { HandlerContextWithPath } from '../../types'
+import { GetWorldScenesRequestBody } from '../schemas/scenes-query-schemas'
+import type { GetWorldScenesFilters } from '../../types'
 
 // Validate coordinate format (x,y where x and y are integers)
 const COORDINATE_REGEX = /^-?\d+,-?\d+$/
@@ -17,18 +19,39 @@ export async function getScenesHandler(
 ): Promise<IHttpServerComponent.IResponse> {
   const { world_name } = ctx.params
 
-  // Parse optional coordinates array from query params
-  const coordinates = ctx.url.searchParams.getAll('coordinates')
+  // GET: no body, browse only (no coordinates). POST: body validated by schema, coordinates from body.
+  let coordinates: string[] = []
+  if (ctx.request.method === 'POST') {
+    const body = (await ctx.request.json()) as GetWorldScenesRequestBody
+    coordinates = body.coordinates
+  }
 
-  // Validate coordinates if provided
-  coordinates.forEach(validateCoordinate)
+  // Bounding box (query params): if any of x1, x2, y1, y2 is present, all must be non-null, non-empty, and valid integers
+  let boundingBox: GetWorldScenesFilters['boundingBox']
+  const boundingBoxParams = ['x1', 'x2', 'y1', 'y2']
+    .map((k) => ctx.url.searchParams.get(k))
+    .filter((v) => v !== null)
+    .map((v) => Number(v))
+  if (boundingBoxParams.length > 0) {
+    if (boundingBoxParams.some((v) => isNaN(v))) {
+      throw new InvalidRequestError(
+        'Bounding box requires all of x1, x2, y1, y2 to be provided with valid integer values.'
+      )
+    }
+    boundingBox = {
+      x1: boundingBoxParams[0],
+      x2: boundingBoxParams[1],
+      y1: boundingBoxParams[2],
+      y2: boundingBoxParams[3]
+    }
+  }
 
-  // Parse optional pagination params
   const { limit, offset } = getPaginationParams(ctx.url.searchParams)
 
-  const filters = {
+  const filters: GetWorldScenesFilters = {
     worldName: world_name,
-    ...(coordinates.length > 0 && { coordinates })
+    ...(coordinates.length > 0 && { coordinates }),
+    ...(boundingBox && { boundingBox })
   }
 
   const { scenes, total } = await ctx.components.worldsManager.getWorldScenes(filters, { limit, offset })
