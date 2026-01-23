@@ -25,7 +25,7 @@ export async function createAuthenticatedLocalFetchComponent(
 
   return {
     async fetch(path: string, init?: AuthenticatedRequestInit): Promise<Response> {
-      const { identity, metadata, body, ...restInit } = init || {}
+      const { identity, metadata, ...restInit } = init || {}
       const method = (restInit.method || 'GET').toUpperCase()
 
       const headers: Record<string, string> = {}
@@ -45,13 +45,6 @@ export async function createAuthenticatedLocalFetchComponent(
         }
       }
 
-      // If there's a body, add content-type header and stringify
-      let bodyString: string | undefined
-      if (body !== undefined) {
-        headers['Content-Type'] = 'application/json'
-        bodyString = JSON.stringify(body)
-      }
-
       // If identity is provided, add auth headers
       if (identity) {
         const authMetadata = metadata || {}
@@ -68,16 +61,7 @@ export async function createAuthenticatedLocalFetchComponent(
         Object.assign(headers, authHeaders)
       }
 
-      const fetchInit: any = {
-        ...restInit,
-        headers
-      }
-
-      if (bodyString !== undefined) {
-        fetchInit.body = bodyString
-      }
-
-      return localFetch.fetch(path, fetchInit) as unknown as Promise<Response>
+      return localFetch.fetch(path, { ...restInit, headers }) as unknown as Promise<Response>
     }
   }
 }

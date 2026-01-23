@@ -22,7 +22,8 @@ const makeSignedRequest = (
     method,
     identity,
     metadata: SETTINGS_METADATA,
-    body
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
   })
 }
 

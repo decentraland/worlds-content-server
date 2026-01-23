@@ -58,7 +58,8 @@ test('POST /world/:world_name/permissions/:permission_name/address/:address/parc
         method: 'POST',
         identity,
         metadata: BUILDER_METADATA,
-        body: { parcels: parcelsToAdd }
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parcels: parcelsToAdd })
       })
 
       expect(response.status).toBe(204)
@@ -87,7 +88,8 @@ test('POST /world/:world_name/permissions/:permission_name/address/:address/parc
           method: 'POST',
           identity,
           metadata: BUILDER_METADATA,
-          body: { parcels: parcelsToAdd }
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ parcels: parcelsToAdd })
         })
 
         expect(response.status).toBe(204)
@@ -122,7 +124,8 @@ test('POST /world/:world_name/permissions/:permission_name/address/:address/parc
         method: 'POST',
         identity,
         metadata: BUILDER_METADATA,
-        body: { parcels: parcelsToAdd }
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parcels: parcelsToAdd })
       })
 
       expect(response.status).toBe(204)
@@ -152,7 +155,8 @@ test('POST /world/:world_name/permissions/:permission_name/address/:address/parc
         method: 'POST',
         identity,
         metadata: BUILDER_METADATA,
-        body: { parcels: ['0,0'] }
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parcels: ['0,0'] })
       })
 
       expect(response.status).toBe(400)
@@ -177,7 +181,8 @@ test('POST /world/:world_name/permissions/:permission_name/address/:address/parc
         method: 'POST',
         identity,
         metadata: BUILDER_METADATA,
-        body: { parcels: ['0,0'] }
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parcels: ['0,0'] })
       })
 
       expect(response.status).toBe(400)
@@ -202,7 +207,8 @@ test('POST /world/:world_name/permissions/:permission_name/address/:address/parc
         method: 'POST',
         identity,
         metadata: BUILDER_METADATA,
-        body: { parcels: [] }
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parcels: [] })
       })
 
       expect(response.status).toBe(400)
@@ -223,7 +229,8 @@ test('POST /world/:world_name/permissions/:permission_name/address/:address/parc
         method: 'POST',
         identity,
         metadata: BUILDER_METADATA,
-        body: { parcels: ['invalid'] }
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parcels: ['invalid'] })
       })
 
       expect(response.status).toBe(400)
@@ -246,7 +253,8 @@ test('POST /world/:world_name/permissions/:permission_name/address/:address/parc
         method: 'POST',
         identity: nonOwnerIdentity,
         metadata: BUILDER_METADATA,
-        body: { parcels: ['0,0'] }
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parcels: ['0,0'] })
       })
 
       expect(response.status).toBe(401)

@@ -64,7 +64,8 @@ test('DELETE /world/:world_name/permissions/:permission_name/address/:address/pa
         method: 'DELETE',
         identity,
         metadata: BUILDER_METADATA,
-        body: { parcels: parcelsToRemove }
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parcels: parcelsToRemove })
       })
 
       expect(response.status).toBe(204)
@@ -103,7 +104,8 @@ test('DELETE /world/:world_name/permissions/:permission_name/address/:address/pa
         method: 'DELETE',
         identity,
         metadata: BUILDER_METADATA,
-        body: { parcels: existingParcels }
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parcels: existingParcels })
       })
 
       expect(response.status).toBe(204)
@@ -135,7 +137,8 @@ test('DELETE /world/:world_name/permissions/:permission_name/address/:address/pa
         method: 'DELETE',
         identity,
         metadata: BUILDER_METADATA,
-        body: { parcels: ['0,0'] }
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parcels: ['0,0'] })
       })
 
       expect(response.status).toBe(400)
@@ -158,7 +161,8 @@ test('DELETE /world/:world_name/permissions/:permission_name/address/:address/pa
         method: 'DELETE',
         identity,
         metadata: BUILDER_METADATA,
-        body: { parcels: ['0,0'] }
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parcels: ['0,0'] })
       })
 
       expect(response.status).toBe(400)
@@ -189,7 +193,8 @@ test('DELETE /world/:world_name/permissions/:permission_name/address/:address/pa
         method: 'DELETE',
         identity: nonOwnerIdentity,
         metadata: BUILDER_METADATA,
-        body: { parcels: ['0,0'] }
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parcels: ['0,0'] })
       })
 
       expect(response.status).toBe(401)

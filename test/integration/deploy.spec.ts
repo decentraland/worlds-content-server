@@ -181,7 +181,8 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
 
         const activeEntitiesResponse = await localFetch.fetch('/entities/active', {
           method: 'POST',
-          body: { pointers: [worldName] }
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pointers: [worldName] })
         })
 
         expect(activeEntitiesResponse.status).toBe(200)
@@ -525,7 +526,8 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
 
       const activeEntitiesResponse = await localFetch.fetch('/entities/active', {
         method: 'POST',
-        body: { pointers: [worldName] }
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pointers: [worldName] })
       })
 
       expect(activeEntitiesResponse.status).toBe(200)
@@ -675,7 +677,8 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
       // Active entities returns one entity per world (the most recently deployed scene)
       const activeEntitiesResponse = await localFetch.fetch('/entities/active', {
         method: 'POST',
-        body: { pointers: [worldName] }
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pointers: [worldName] })
       })
 
       expect(activeEntitiesResponse.status).toBe(200)
