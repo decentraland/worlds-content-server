@@ -59,3 +59,21 @@ export function extractWorldRuntimeMetadata(worldName: string, entity: Entity): 
     thumbnailFile: resolveFilename(entity.metadata?.display?.navmapThumbnail)
   }
 }
+
+export function buildWorldRuntimeMetadata(worldName: string, scenes: any[]): WorldRuntimeMetadata {
+  // Derive runtime metadata from scenes
+  if (scenes.length > 0) {
+    const firstScene = scenes[0]
+    return extractWorldRuntimeMetadata(worldName, {
+      ...firstScene.entity,
+      id: firstScene.entityId
+    })
+  }
+
+  // Default empty metadata
+  return {
+    name: worldName,
+    entityIds: [],
+    minimapVisible: false
+  }
+}

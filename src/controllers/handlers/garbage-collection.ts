@@ -1,5 +1,4 @@
-import { HandlerContextWithPath, WorldRecord } from '../../types'
-import SQL from 'sql-template-strings'
+import { HandlerContextWithPath } from '../../types'
 import { IHttpServerComponent } from '@well-known-components/interfaces'
 
 function formatSecs(millis: number): string {
@@ -17,19 +16,23 @@ export async function garbageCollectionHandler(
     logger.info('Getting all keys active in the database...')
 
     const activeKeys = new Set<string>()
-    const result = await database.query<WorldRecord>(
-      SQL`SELECT *
-          FROM worlds
-          WHERE worlds.entity IS NOT NULL`
-    )
+    // Get all scenes from world_scenes table
+    const result = await database.query<{
+      entity_id: string
+      entity: {
+        content?: Array<{ hash: string }>
+      }
+    }>('SELECT entity_id, entity FROM world_scenes WHERE entity IS NOT NULL')
     result.rows.forEach((row) => {
       // Add entity file and deployment auth-chain
       activeKeys.add(row.entity_id)
       activeKeys.add(`${row.entity_id}.auth`)
 
       // Add all referenced content files
-      for (const file of row.entity.content) {
-        activeKeys.add(file.hash)
+      if (row.entity.content) {
+        for (const file of row.entity.content) {
+          activeKeys.add(file.hash)
+        }
       }
     })
 

@@ -32,7 +32,7 @@ export async function deployEntity(
   }
 
   const contentHashesInStorage = await ctx.components.storage.existMultiple(
-    Array.from(new Set(entity.content!.map(($) => $.hash)))
+    Array.from(new Set(entity.content.map(($) => $.hash)))
   )
 
   // run all validations about the deployment
@@ -42,6 +42,7 @@ export async function deployEntity(
     authChain,
     contentHashesInStorage
   })
+
   if (!validationResult.ok()) {
     throw new InvalidRequestError(`Deployment failed: ${validationResult.errors.join(', ')}`)
   }

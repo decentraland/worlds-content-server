@@ -2,7 +2,7 @@ import { Request, Response } from 'node-fetch'
 import { createLimitsManagerComponent } from '../../src/adapters/limits-manager'
 import { createConfigComponent } from '@well-known-components/env-config-provider'
 import { createLogComponent } from '@well-known-components/logger'
-import { createMockNameOwnership } from '../mocks/name-ownership-mock'
+import { createMockedNameOwnership } from '../mocks/name-ownership-mock'
 import { createMockWalletStatsComponent } from '../mocks/wallet-stats-mock'
 import { EthAddress } from '@dcl/schemas'
 import { ILimitsManager, INameOwnership, IWalletStats, MB_BigInt, WalletStats } from '../../src/types'
@@ -12,7 +12,7 @@ describe('limits manager', function () {
   let logs: ILoggerComponent
   let config: IConfigComponent
   let fetch: IFetchComponent
-  let nameOwnership: INameOwnership
+  let nameOwnership: jest.Mocked<INameOwnership>
   let walletStats: IWalletStats
   let limitsManager: ILimitsManager
 
@@ -37,7 +37,13 @@ describe('limits manager', function () {
           })
         )
     }
-    nameOwnership = createMockNameOwnership(new Map([['whatever.dcl.eth', '0x123']]))
+    nameOwnership = createMockedNameOwnership()
+    nameOwnership.findOwners.mockImplementation(async (worldNames: string[]) => {
+      const owners = new Map([['whatever.dcl.eth', '0x123']])
+      const result = new Map<string, string | undefined>()
+      worldNames.forEach((name) => result.set(name, owners.get(name)))
+      return result
+    })
     walletStats = createMockWalletStatsComponent(
       new Map<EthAddress, WalletStats>([
         [

@@ -25,13 +25,16 @@ import { garbageCollectionHandler } from './handlers/garbage-collection'
 import { getContributableDomainsHandler } from './handlers/contributor-handler'
 import { livekitWebhookHandler } from './handlers/livekit-webhook-handler'
 import { walletConnectedWorldHandler } from './handlers/wallet-connected-world-handler'
+import { getScenesHandler, undeploySceneHandler } from './handlers/scenes-handler'
+import { getWorldSettingsHandler, updateWorldSettingsHandler } from './handlers/world-settings-handler'
+import { worldSettingsSchema } from './schemas/world-settings-schemas'
+import { reprocessABSchema } from './schemas/reprocess-ab-schemas'
 
 export async function setupRouter(globalContext: GlobalContext): Promise<Router<GlobalContext>> {
-  const router = new Router<GlobalContext>()
-  router.use(errorHandler)
+  const { fetch, schemaValidator, config } = globalContext.components
 
   const signedFetchMiddleware = wellKnownComponents({
-    fetcher: globalContext.components.fetch,
+    fetcher: fetch,
     optional: false,
     metadataValidator: (metadata: Record<string, any>): boolean => metadata.signer !== 'decentraland-kernel-scene',
     onError: (err: any) => ({
@@ -40,12 +43,30 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
     })
   })
 
+  const router = new Router<GlobalContext>()
+  router.use(errorHandler)
+
   router.get('/world/:world_name/about', worldAboutHandler)
 
-  // creation
+  // Post world scene(s)
   router.post('/entities', multipartParserWrapper(deployEntity))
+  // Undeploy the whole world
   router.delete('/entities/:world_name', signedFetchMiddleware, undeployEntity)
   router.get('/available-content', availableContentHandler)
+
+  // Multi-scene management
+  router.get('/world/:world_name/scenes', getScenesHandler)
+  // Undeploy a scene
+  router.delete('/world/:world_name/scenes/:coordinate', signedFetchMiddleware, undeploySceneHandler)
+
+  // World settings
+  router.get('/world/:world_name/settings', getWorldSettingsHandler)
+  router.put(
+    '/world/:world_name/settings',
+    signedFetchMiddleware,
+    schemaValidator.withSchemaValidatorMiddleware(worldSettingsSchema),
+    updateWorldSettingsHandler
+  )
 
   // consumption
   router.head('/ipfs/:hashId', headContentFile)
@@ -74,6 +95,7 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   router.get('/wallet/:wallet/connected-world', walletConnectedWorldHandler)
   router.get('/status', statusHandler)
 
+  // @deprecated This endpoint is no longer used and will be removed in the future.
   router.get('/index', getIndexHandler)
   router.get('/live-data', getLiveDataHandler)
 
@@ -83,9 +105,14 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   router.post('/cast-adapter/:roomId', signedFetchMiddleware, castAdapterHandler)
 
   // administrative endpoints
-  const secret = await globalContext.components.config.requireString('AUTH_SECRET')
+  const secret = await config.requireString('AUTH_SECRET')
   if (secret) {
-    router.post('/reprocess-ab', bearerTokenMiddleware(secret), reprocessABHandler)
+    router.post(
+      '/reprocess-ab',
+      bearerTokenMiddleware(secret),
+      schemaValidator.withSchemaValidatorMiddleware(reprocessABSchema),
+      reprocessABHandler
+    )
     router.post('/gc', bearerTokenMiddleware(secret), garbageCollectionHandler)
   }
   return router

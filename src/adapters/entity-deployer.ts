@@ -23,9 +23,10 @@ export function createEntityDeployer(
     authChain: AuthLink[]
   ): Promise<DeploymentResult> {
     // store all files
-    for (const file of entity.content!) {
+    logger.info(`Storing ${entity.content.length} files`, { entityId: entity.id })
+    for (const file of entity.content) {
       if (!allContentHashesInStorage.get(file.hash)) {
-        const filename = entity.content!.find(($) => $.hash === file.hash)
+        const filename = entity.content.find(($) => $.hash === file.hash)
         logger.info(`Storing file`, { cid: file.hash, filename: filename?.file || 'unknown' })
         await storage.storeStream(file.hash, bufferToStream(files.get(file.hash)!))
         allContentHashesInStorage.set(file.hash, true)
@@ -33,8 +34,10 @@ export function createEntityDeployer(
     }
 
     logger.info(`Storing entity`, { cid: entity.id })
-    await storage.storeStream(entity.id, bufferToStream(stringToUtf8Bytes(entityJson)))
-    await storage.storeStream(entity.id + '.auth', bufferToStream(stringToUtf8Bytes(JSON.stringify(authChain))))
+    await Promise.all([
+      storage.storeStream(entity.id, bufferToStream(stringToUtf8Bytes(entityJson))),
+      storage.storeStream(entity.id + '.auth', bufferToStream(stringToUtf8Bytes(JSON.stringify(authChain))))
+    ])
 
     return await postDeployment(baseUrl, entity, authChain)
   }
@@ -61,11 +64,18 @@ export function createEntityDeployer(
 
     // determine the name to use for deploying the world
     const worldName = entity.metadata.worldConfiguration.name
-    logger.debug(`Deployment for scene "${entity.id}" under world name "${worldName}"`)
+    const parcels = entity.metadata?.scene?.parcels || []
+    logger.debug(`Deployment for scene "${entity.id}" under world name "${worldName}" at parcels ${parcels.join(', ')}`)
 
     const owner = (await components.nameOwnership.findOwners([worldName])).get(worldName)
 
-    await worldsManager.deployScene(worldName, entity, owner!)
+    if (!owner) {
+      throw new Error(
+        `Cannot deploy scene "${entity.id}" to world "${worldName}": owner address could not be resolved.`
+      )
+    }
+
+    await worldsManager.deployScene(worldName, entity, owner)
 
     const kind = worldName.endsWith('dcl.eth') ? 'dcl-name' : 'ens-name'
     metrics.increment('world_deployments_counter', { kind })
@@ -97,10 +107,12 @@ export function createEntityDeployer(
     }
 
     const worldUrl = `${baseUrl}/world/${worldName}`
+    // Use the first parcel as the position
+    const position = parcels[0].split(',')
     return {
       message: [
-        `Your scene was deployed to a Worlds Content Server!`,
-        `Access world ${worldName}: https://play.decentraland.org/?realm=${encodeURIComponent(worldUrl)}`
+        `Your scene was deployed to World "${worldName}" at parcels: ${parcels.join(', ')}!`,
+        `Access world: https://play.decentraland.org/?realm=${encodeURIComponent(worldUrl)}&position=${encodeURIComponent(position.join(','))}`
       ].join('\n')
     }
   }

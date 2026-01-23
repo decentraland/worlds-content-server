@@ -37,8 +37,11 @@ import { createAwsConfig } from './adapters/aws-config'
 import { S3 } from 'aws-sdk'
 import { createNotificationsClientComponent } from './adapters/notifications-service'
 import { createNatsComponent } from '@well-known-components/nats-component'
+import { createSchemaValidatorComponent } from '@dcl/schema-validator-component'
 import { createLivekitClient } from './adapters/livekit-client'
 import { createPeersRegistry } from './adapters/peers-registry'
+import { createSettingsComponent } from './logic/settings'
+import { createCoordinatesComponent } from './logic/coordinates'
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
@@ -108,16 +111,19 @@ export async function initComponents(): Promise<AppComponents> {
 
   const database = await createDatabaseComponent({ config, logs, metrics })
 
-  const walletStats = await createWalletStatsComponent({ config, database, fetch, logs })
-
-  const limitsManager = await createLimitsManagerComponent({ config, fetch, logs, nameOwnership, walletStats })
+  const coordinates = createCoordinatesComponent()
 
   const worldsManager = await createWorldsManagerComponent({
+    coordinates,
     logs,
     database,
     nameDenyListChecker,
     storage
   })
+
+  const walletStats = await createWalletStatsComponent({ config, database, fetch, logs, worldsManager })
+
+  const limitsManager = await createLimitsManagerComponent({ config, fetch, logs, nameOwnership, walletStats })
   const worldsIndexer = await createWorldsIndexerComponent({ worldsManager })
   const permissionsManager = await createPermissionsManagerComponent({ worldsManager })
 
@@ -155,11 +161,16 @@ export async function initComponents(): Promise<AppComponents> {
 
   const peersRegistry = await createPeersRegistry({ config })
   const livekitClient = await createLivekitClient({ config })
+  const settings = createSettingsComponent({ coordinates, namePermissionChecker, worldsManager })
+  const schemaValidator = createSchemaValidatorComponent()
 
   return {
     awsConfig,
+    schemaValidator,
+    settings,
     commsAdapter,
     config,
+    coordinates,
     database,
     entityDeployer,
     ethereumProvider,

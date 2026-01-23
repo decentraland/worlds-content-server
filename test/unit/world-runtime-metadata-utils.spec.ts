@@ -1,4 +1,8 @@
-import { extractWorldRuntimeMetadata, migrateConfiguration } from '../../src/logic/world-runtime-metadata-utils'
+import {
+  extractWorldRuntimeMetadata,
+  migrateConfiguration,
+  buildWorldRuntimeMetadata
+} from '../../src/logic/world-runtime-metadata-utils'
 import { EntityType, WorldConfiguration } from '@dcl/schemas'
 
 describe('world-runtime-metadata-utils', function () {
@@ -170,6 +174,122 @@ describe('world-runtime-metadata-utils', function () {
         name: 'saracatunga.dcl.eth',
         skyboxTextures: ['bafkreidduubi76bntd27dewz4cvextrfl3qyd4td6mtztuisxi26q64dnq'],
         thumbnailFile: 'bafkreic4chubh3cavwuzgsvszpmhi4zqpf5kfgt6goufuarwbzv4yrkdqq'
+      })
+    })
+  })
+
+  describe('buildWorldRuntimeMetadata', () => {
+    describe('when scenes array is empty', () => {
+      let worldName: string
+      let scenes: any[]
+
+      beforeEach(() => {
+        worldName = 'test-world.dcl.eth'
+        scenes = []
+      })
+
+      it('should return default empty metadata', () => {
+        const result = buildWorldRuntimeMetadata(worldName, scenes)
+
+        expect(result).toEqual({
+          name: 'test-world.dcl.eth',
+          entityIds: [],
+          minimapVisible: false
+        })
+      })
+    })
+
+    describe('when scenes array has scenes', () => {
+      let worldName: string
+      let scenes: any[]
+
+      beforeEach(() => {
+        worldName = 'test-world.dcl.eth'
+        scenes = [
+          {
+            entityId: 'bafi123',
+            entity: {
+              version: 'v3',
+              type: EntityType.SCENE,
+              pointers: ['20,24'],
+              timestamp: 1689683357974,
+              content: [
+                { file: 'scene-thumbnail.png', hash: 'bafkreic4chubh3cavwuzgsvszpmhi4zqpf5kfgt6goufuarwbzv4yrkdqq' }
+              ],
+              metadata: {
+                display: {
+                  navmapThumbnail: 'scene-thumbnail.png'
+                },
+                worldConfiguration: {
+                  name: 'test-world.dcl.eth',
+                  miniMapConfig: { visible: true }
+                },
+                scene: { base: '20,24', parcels: ['20,24'] }
+              }
+            }
+          }
+        ]
+      })
+
+      it('should extract metadata from the first scene', () => {
+        const result = buildWorldRuntimeMetadata(worldName, scenes)
+
+        expect(result).toEqual({
+          name: 'test-world.dcl.eth',
+          entityIds: ['bafi123'],
+          minimapVisible: true,
+          thumbnailFile: 'bafkreic4chubh3cavwuzgsvszpmhi4zqpf5kfgt6goufuarwbzv4yrkdqq'
+        })
+      })
+    })
+
+    describe('when scenes array has multiple scenes', () => {
+      let worldName: string
+      let scenes: any[]
+
+      beforeEach(() => {
+        worldName = 'multi-scene-world.dcl.eth'
+        scenes = [
+          {
+            entityId: 'first-scene',
+            entity: {
+              version: 'v3',
+              type: EntityType.SCENE,
+              pointers: ['0,0'],
+              timestamp: 1689683357974,
+              content: [],
+              metadata: {
+                worldConfiguration: {
+                  name: 'first-scene-name'
+                },
+                scene: { base: '0,0', parcels: ['0,0'] }
+              }
+            }
+          },
+          {
+            entityId: 'second-scene',
+            entity: {
+              version: 'v3',
+              type: EntityType.SCENE,
+              pointers: ['1,1'],
+              timestamp: 1689683357975,
+              content: [],
+              metadata: {
+                worldConfiguration: {
+                  name: 'second-scene-name'
+                },
+                scene: { base: '1,1', parcels: ['1,1'] }
+              }
+            }
+          }
+        ]
+      })
+
+      it('should only use the first scene for metadata', () => {
+        const result = buildWorldRuntimeMetadata(worldName, scenes)
+
+        expect(result.entityIds).toEqual(['first-scene'])
+        expect(result.name).toBe('first-scene-name')
       })
     })
   })
