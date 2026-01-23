@@ -1,5 +1,5 @@
 import { Router } from '@well-known-components/http-server'
-import { multipartParserWrapper } from '../logic/multipart'
+import { multipartParserWrapper } from '@well-known-components/multipart-wrapper'
 import { GlobalContext } from '../types'
 import { availableContentHandler, getContentFile, headContentFile } from './handlers/content-file-handler'
 import { deployEntity } from './handlers/deploy-entity-handler'

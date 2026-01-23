@@ -1,8 +1,8 @@
-import { FormDataContext } from './multipart'
+import { FormDataContext } from '@well-known-components/multipart-wrapper'
 import { AuthChain } from '@dcl/schemas'
 import { requireString } from '../controllers/handlers/deploy-entity-handler'
 
-export function extractAuthChain(ctx: FormDataContext): AuthChain {
+export function extractAuthChain(ctx: FormDataContext<unknown>): AuthChain {
   const ret: AuthChain = []
 
   let biggestIndex = -1
