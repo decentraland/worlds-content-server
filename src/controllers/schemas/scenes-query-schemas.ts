@@ -11,7 +11,10 @@ export const getWorldScenesSchema: Schema = {
   properties: {
     coordinates: {
       type: 'array',
-      items: { type: 'string', pattern: COORDINATE_PATTERN }
+      items: {
+        type: 'string',
+        pattern: COORDINATE_PATTERN
+      }
     }
   },
   required: ['coordinates'],

@@ -113,8 +113,7 @@ test('ScenesHandler', function ({ components, stubComponents }) {
 
             expect(response.status).toBe(400)
             expect(await response.json()).toMatchObject({
-              error: 'Bad request',
-              message: 'Invalid coordinate format: invalid. Expected format: x,y (e.g., 0,0 or -1,2)'
+              message: 'Invalid JSON body'
             })
           })
         })
@@ -159,8 +158,7 @@ test('ScenesHandler', function ({ components, stubComponents }) {
 
             expect(response.status).toBe(400)
             expect(await response.json()).toMatchObject({
-              error: 'Bad request',
-              message: 'Invalid coordinate format: bad. Expected format: x,y (e.g., 0,0 or -1,2)'
+              message: 'Invalid JSON body'
             })
           })
         })

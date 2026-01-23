@@ -2,7 +2,7 @@ import { IHttpServerComponent } from '@well-known-components/interfaces'
 import { InvalidRequestError, NotAuthorizedError, getPaginationParams } from '@dcl/platform-server-commons'
 import { DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
 import { HandlerContextWithPath } from '../../types'
-import { GetWorldScenesRequestBody } from '../schemas/scenes-query-schemas'
+import type { GetWorldScenesRequestBody } from '../schemas/scenes-query-schemas'
 import type { GetWorldScenesFilters } from '../../types'
 
 // Validate coordinate format (x,y where x and y are integers)
@@ -30,13 +30,13 @@ export async function getScenesHandler(
   let boundingBox: GetWorldScenesFilters['boundingBox']
   const boundingBoxParams = ['x1', 'x2', 'y1', 'y2']
     .map((k) => ctx.url.searchParams.get(k))
-    .filter((v) => v !== null)
+    .filter((v) => v !== null && v !== '')
     .map((v) => Number(v))
+    .filter((v) => !isNaN(v))
+
   if (boundingBoxParams.length > 0) {
-    if (boundingBoxParams.some((v) => isNaN(v))) {
-      throw new InvalidRequestError(
-        'Bounding box requires all of x1, x2, y1, y2 to be provided with valid integer values.'
-      )
+    if (boundingBoxParams.length < 4) {
+      throw new InvalidRequestError('Bounding box requires all of x1, x2, y1, y2 to be provided.')
     }
     boundingBox = {
       x1: boundingBoxParams[0],
