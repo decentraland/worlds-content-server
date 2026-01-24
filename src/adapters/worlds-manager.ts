@@ -386,6 +386,25 @@ export async function createWorldsManagerComponent({
       mainQuery.append(bboxCondition)
     }
 
+    // Apply bounding box filter (scenes that have at least one parcel within the rectangle).
+    // LATERAL parses each "x,y" once; EXISTS short-circuits on first matching parcel.
+    if (filters?.boundingBox) {
+      const { x1, x2, y1, y2 } = filters.boundingBox
+      const xMin = Math.min(x1, x2)
+      const xMax = Math.max(x1, x2)
+      const yMin = Math.min(y1, y2)
+      const yMax = Math.max(y1, y2)
+      const bboxCondition = SQL` AND EXISTS (
+        SELECT 1
+        FROM unnest(parcels) AS coord,
+             LATERAL (SELECT string_to_array(coord, ',') AS arr) a
+        WHERE (a.arr)[1]::int BETWEEN ${xMin} AND ${xMax}
+          AND (a.arr)[2]::int BETWEEN ${yMin} AND ${yMax}
+      )`
+      countQuery.append(bboxCondition)
+      mainQuery.append(bboxCondition)
+    }
+
     // Add ordering (default: created_at ASC)
     const orderBy = options?.orderBy ?? SceneOrderBy.CreatedAt
     const orderDirection = options?.orderDirection ?? OrderDirection.Asc
