@@ -1,13 +1,10 @@
 import { test } from '../components'
-import { getAuthHeaders, getIdentity, Identity, storeJson } from '../utils'
+import { getAuthHeaders, getIdentity, Identity } from '../utils'
 import { Authenticator } from '@dcl/crypto'
 import { defaultPermissions } from '../../src/logic/permissions-checker'
 import { IFetchComponent } from '@well-known-components/interfaces'
 import { IWorldCreator, IWorldsManager, Permissions, PermissionType } from '../../src/types'
 import bcrypt from 'bcrypt'
-import { EntityType } from '@dcl/schemas'
-import { DeploymentBuilder } from 'dcl-catalyst-client'
-import { bufferToStream } from '@dcl/catalyst-storage'
 
 function makeRequest(
   localFetch: IFetchComponent,
