@@ -161,7 +161,14 @@ export async function initComponents(): Promise<AppComponents> {
 
   const peersRegistry = await createPeersRegistry({ config })
   const livekitClient = await createLivekitClient({ config })
-  const settings = createSettingsComponent({ coordinates, namePermissionChecker, worldsManager })
+  const settings = await createSettingsComponent({
+    config,
+    coordinates,
+    namePermissionChecker,
+    storage,
+    snsClient,
+    worldsManager
+  })
   const schemaValidator = createSchemaValidatorComponent()
 
   return {

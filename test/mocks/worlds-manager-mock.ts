@@ -12,7 +12,6 @@ import {
   WorldScene,
   WorldSettings,
   WorldBoundingRectangle,
-  SceneOrderBy,
   OrderDirection
 } from '../../src/types'
 import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage'
@@ -47,7 +46,15 @@ export async function createWorldsManagerMockComponent({
           spawn_coordinates: spawnCoordinates,
           created_at: new Date(1706019701900),
           updated_at: new Date(1706019701900),
-          blocked_since: null
+          blocked_since: null,
+          title: '',
+          description: '',
+          content_rating: '',
+          skybox_time: 0,
+          categories: [],
+          single_player: false,
+          show_in_places: false,
+          thumbnail_hash: ''
         })
       }
     }
@@ -153,32 +160,79 @@ export async function createWorldsManagerMockComponent({
       return { scenes: [], total: 0 }
     }
 
-    const scenes = [...metadata.scenes]
+    let scenes = [...metadata.scenes]
+
+    // Apply coordinates filter (scenes that contain any of the specified coordinates)
+    if (filters.coordinates && filters.coordinates.length > 0) {
+      scenes = scenes.filter((s) => s.parcels.some((p) => filters.coordinates!.includes(p)))
+    }
+
+    // Apply bounding box filter (scenes that have at least one parcel within the rectangle)
+    if (filters.boundingBox) {
+      const { x1, x2, y1, y2 } = filters.boundingBox
+      const xMin = Math.min(x1, x2)
+      const xMax = Math.max(x1, x2)
+      const yMin = Math.min(y1, y2)
+      const yMax = Math.max(y1, y2)
+      scenes = scenes.filter((s) =>
+        s.parcels.some((p) => {
+          const [x, y] = p.split(',').map(Number)
+          return x >= xMin && x <= xMax && y >= yMin && y <= yMax
+        })
+      )
+    }
+
+    const total = scenes.length
 
     // Apply sorting
     const orderDirection = options?.orderDirection ?? OrderDirection.Asc
-
     scenes.sort((a, b) => {
       const aValue = a.createdAt.getTime()
       const bValue = b.createdAt.getTime()
       return orderDirection === OrderDirection.Asc ? aValue - bValue : bValue - aValue
     })
 
-    const limit = options?.limit || scenes.length
-    const offset = options?.offset || 0
+    const limit = options?.limit ?? scenes.length
+    const offset = options?.offset ?? 0
 
     return {
       scenes: scenes.slice(offset, offset + limit),
-      total: metadata.scenes.length
+      total
     }
   }
 
-  async function updateWorldSettings(_worldName: string, _settings: WorldSettings): Promise<void> {
-    // Mock implementation - no-op
+  async function updateWorldSettings(
+    worldName: string,
+    _owner: EthAddress,
+    settings: WorldSettings
+  ): Promise<WorldSettings> {
+    const existingMetadata = await getMetadataForWorld(worldName)
+
+    // Merge new settings with existing settings
+    const updatedSettings: WorldSettings = {
+      ...existingMetadata,
+      ...settings
+    }
+
+    await storeWorldMetadata(worldName, {
+      spawnCoordinates: updatedSettings.spawnCoordinates || null
+    })
+
+    return updatedSettings
   }
 
-  async function getWorldSettings(_worldName: string): Promise<WorldSettings | undefined> {
-    return undefined
+  async function getWorldSettings(worldName: string): Promise<WorldSettings | undefined> {
+    const metadata = await getMetadataForWorld(worldName)
+    if (!metadata) {
+      return undefined
+    }
+    return {
+      spawnCoordinates: metadata.spawnCoordinates || undefined
+    }
+  }
+
+  async function deleteThumbnail(_worldName: string): Promise<void> {
+    // Mock implementation - no-op
   }
 
   async function getTotalWorldSize(_worldName: string): Promise<bigint> {

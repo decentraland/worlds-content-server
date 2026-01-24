@@ -81,6 +81,169 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /world/{world_name}/scenes:
+    get:
+      tags:
+        - Content Server
+      summary: GET /world/{world_name}/scenes
+      description: |
+        Browse scenes in a world. Use query params for filtering and pagination.
+        - **Query (x1, x2, y1, y2)**: Bounding box. When provided, all four must be set.
+        - **Query (limit, offset)**: Pagination (defaults: limit 100, offset 0).
+      operationId: worldsContentServer_getWorldScenes
+      parameters:
+        - name: world_name
+          in: path
+          required: true
+          description: The name of the world
+          schema:
+            type: string
+            example: my-name.dcl.eth
+        - name: x1
+          in: query
+          required: false
+          schema: { type: integer }
+          description: 'Bounding box min x (required with x2, y1, y2)'
+        - name: x2
+          in: query
+          required: false
+          schema: { type: integer }
+          description: 'Bounding box max x (required with x1, y1, y2)'
+        - name: y1
+          in: query
+          required: false
+          schema: { type: integer }
+          description: 'Bounding box min y (required with x1, x2, y2)'
+        - name: y2
+          in: query
+          required: false
+          schema: { type: integer }
+          description: 'Bounding box max y (required with x1, x2, y1)'
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 0 }
+          description: 'Max number of scenes to return (default 100)'
+        - name: offset
+          in: query
+          required: false
+          schema: { type: integer, minimum: 0 }
+          description: 'Number of scenes to skip (default 0)'
+      responses:
+        '200':
+          description: Scenes and total count
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  scenes:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        worldName: { type: string }
+                        entityId: { type: string }
+                        deployer: { type: string }
+                        deploymentAuthChain: { type: array }
+                        entity: { $ref: '#/components/schemas/Entity' }
+                        parcels:
+                          type: array
+                          items: { type: string }
+                        size: { type: string }
+                        createdAt: { type: string, format: date-time }
+                  total: { type: integer }
+        '400':
+          description: Invalid request (e.g. partial bounding box)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags:
+        - Content Server
+      summary: POST /world/{world_name}/scenes
+      description: |
+        Query scenes with optional coordinates in the body. Body is validated. Same query params as GET.
+        - **Body (coordinates)**: Optional. Return only scenes that contain any of these parcel coordinates (e.g. "0,0", "-1,2").
+        - **Query (x1, x2, y1, y2)**: Bounding box. When provided, all four must be set.
+        - **Query (limit, offset)**: Pagination (defaults: limit 100, offset 0).
+      operationId: worldsContentServer_postWorldScenes
+      parameters:
+        - name: world_name
+          in: path
+          required: true
+          description: The name of the world
+          schema:
+            type: string
+            example: my-name.dcl.eth
+        - name: x1
+          in: query
+          required: false
+          schema: { type: integer }
+          description: 'Bounding box min x (required with x2, y1, y2)'
+        - name: x2
+          in: query
+          required: false
+          schema: { type: integer }
+          description: 'Bounding box max x (required with x1, y1, y2)'
+        - name: y1
+          in: query
+          required: false
+          schema: { type: integer }
+          description: 'Bounding box min y (required with x1, x2, y2)'
+        - name: y2
+          in: query
+          required: false
+          schema: { type: integer }
+          description: 'Bounding box max y (required with x1, x2, y1)'
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 0 }
+          description: 'Max number of scenes to return (default 100)'
+        - name: offset
+          in: query
+          required: false
+          schema: { type: integer, minimum: 0 }
+          description: 'Number of scenes to skip (default 0)'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GetWorldScenesRequestBody'
+      responses:
+        '200':
+          description: Scenes and total count
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  scenes:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        worldName: { type: string }
+                        entityId: { type: string }
+                        deployer: { type: string }
+                        deploymentAuthChain: { type: array }
+                        entity: { $ref: '#/components/schemas/Entity' }
+                        parcels:
+                          type: array
+                          items: { type: string }
+                        size: { type: string }
+                        createdAt: { type: string, format: date-time }
+                  total: { type: integer }
+        '400':
+          description: Invalid request (e.g. invalid coordinate format, partial bounding box)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /entities:
     post:
       tags:
@@ -503,10 +666,14 @@ paths:
         - Content Server
       summary: /world/{world_name}/settings
       description: |
-        Update world settings including spawn coordinates. Requires signed fetch and world ownership.
+        Update world settings via multipart/form-data. Requires signed fetch and world ownership.
+        All fields are optional to allow partial updates.
 
-        The spawn coordinates must belong to a parcel of a deployed scene within the world.
-        Both positive and negative coordinates are supported (e.g., "10,20" or "-5,-10").
+        Settings include title, description, content rating, spawn coordinates, skybox time,
+        categories, single player mode, show in places, and a thumbnail image.
+
+        For spawn coordinates, they must be within the world shape rectangle if the world has deployed scenes.
+        Worlds without deployments can have most settings pre-defined (except spawn coordinates).
       operationId: worldsContentServer_updateWorldSettings
       security:
         - SignedFetch: []
@@ -521,9 +688,39 @@ paths:
       requestBody:
         required: true
         content:
-          application/json:
+          multipart/form-data:
             schema:
-              $ref: '#/components/schemas/WorldSettingsInput'
+              type: object
+              properties:
+                title:
+                  type: string
+                  description: World title
+                description:
+                  type: string
+                  description: World description
+                content_rating:
+                  type: string
+                  description: Content rating
+                spawn_coordinates:
+                  type: string
+                  description: Spawn coordinates (e.g., "10,20")
+                  pattern: '^-?\d+,-?\d+$'
+                skybox_time:
+                  type: string
+                  description: Fixed skybox time (number or "null" to reset)
+                categories:
+                  type: string
+                  description: Categories as JSON array or comma-separated string
+                single_player:
+                  type: string
+                  description: Single player mode ("true" or "false")
+                show_in_places:
+                  type: string
+                  description: Show in places ("true" or "false")
+                thumbnail:
+                  type: string
+                  format: binary
+                  description: Thumbnail image file
       responses:
         '200':
           description: World settings updated successfully
@@ -538,7 +735,7 @@ paths:
                   settings:
                     $ref: '#/components/schemas/WorldSettings'
         '400':
-          description: Invalid request - spawn coordinates do not belong to a deployed scene
+          description: Invalid request - validation failed (e.g., spawn coordinates outside world bounds)
           content:
             application/json:
               schema:
@@ -1140,8 +1337,23 @@ components:
 
     WorldSettings:
       type: object
-      description: World settings configuration
+      description: World settings configuration that defines how the world behaves and appears in Places
       properties:
+        title:
+          type: string
+          description: The title of the world displayed in Places
+          example: 'My Awesome World'
+          nullable: true
+        description:
+          type: string
+          description: A description of the world displayed in Places
+          example: 'A beautiful world with amazing experiences'
+          nullable: true
+        contentRating:
+          type: string
+          description: Content rating for the world
+          example: 'T'
+          nullable: true
         spawnCoordinates:
           type: string
           description: |
@@ -1152,19 +1364,90 @@ components:
           pattern: '^-?\d+,-?\d+$'
           example: '10,20'
           nullable: true
+        skyboxTime:
+          type: number
+          description: Fixed skybox time (0-24 hours). Null to use dynamic day/night cycle.
+          example: 12.5
+          nullable: true
+        categories:
+          type: array
+          items:
+            type: string
+          description: Categories/tags for the world
+          example: ['game', 'adventure']
+          nullable: true
+        singlePlayer:
+          type: boolean
+          description: Whether the world is single player only
+          example: false
+          nullable: true
+        showInPlaces:
+          type: boolean
+          description: Whether the world should be shown in Places
+          example: true
+          nullable: true
+        thumbnailUrl:
+          type: string
+          description: URL of the world thumbnail image
+          example: 'https://worlds-content-server.decentraland.org/contents/world-thumbnails/my-world.dcl.eth/abc123'
+          nullable: true
 
     WorldSettingsInput:
       type: object
-      description: Input for updating world settings
-      required:
-        - spawn_coordinates
+      description: |
+        Input for updating world settings via multipart/form-data.
+        All fields are optional to allow partial updates.
+
+        Note: This is sent as multipart/form-data, not JSON, to support thumbnail file uploads.
       properties:
+        title:
+          type: string
+          description: The title of the world
+        description:
+          type: string
+          description: A description of the world
+        content_rating:
+          type: string
+          description: Content rating for the world
         spawn_coordinates:
           type: string
           description: |
             The parcel coordinate where players will spawn.
-            Must be within the world shape rectangle (the bounding box covering all deployed scene parcels).
-            Does not need to be on a specific scene parcel, just anywhere within the rectangle.
-            Supports both positive and negative coordinates (e.g., "10,20" or "-5,-10").
+            Must be within the world shape rectangle.
           pattern: '^-?\d+,-?\d+$'
           example: '10,20'
+        skybox_time:
+          type: number
+          description: Fixed skybox time (0-24 hours). Use 'null' string to reset.
+          nullable: true
+        categories:
+          type: string
+          description: Categories as JSON array or comma-separated string
+          example: '["game", "adventure"]'
+        single_player:
+          type: string
+          description: Single player mode ("true" or "false")
+          example: 'false'
+        show_in_places:
+          type: string
+          description: Show in places ("true" or "false")
+          example: 'true'
+        thumbnail:
+          type: string
+          format: binary
+          description: Thumbnail image file
+
+    GetWorldScenesRequestBody:
+      type: object
+      description: Body for POST /world/{world_name}/scenes.
+      properties:
+        coordinates:
+          type: array
+          items:
+            type: string
+            pattern: '^-?\d+,-?\d+$'
+            description: Parcel coordinate (e.g. "0,0", "-1,2")
+          description: Return only scenes that contain any of these coordinates
+      required:
+        - coordinates
+      additionalProperties: false

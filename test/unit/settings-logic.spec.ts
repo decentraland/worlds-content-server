@@ -1,21 +1,42 @@
+import { IConfigComponent } from '@well-known-components/interfaces'
+import { createConfigComponent } from '@well-known-components/env-config-provider'
+import { IContentStorageComponent, createInMemoryStorage } from '@dcl/catalyst-storage'
+import { IPublisherComponent } from '@dcl/sns-component'
 import { createSettingsComponent, ISettingsComponent } from '../../src/logic/settings'
 import { IWorldNamePermissionChecker, IWorldsManager, WorldSettings } from '../../src/types'
 import { createMockedNamePermissionChecker } from '../mocks/dcl-name-checker-mock'
 import { createMockedWorldsManager } from '../mocks/world-manager-mock'
 import { createCoordinatesComponent, ICoordinatesComponent } from '../../src/logic/coordinates'
+import { createSnsClientMock } from '../mocks/sns-client-mock'
 
 describe('SettingsComponent', () => {
   let settingsComponent: ISettingsComponent
+  let config: IConfigComponent
   let coordinates: ICoordinatesComponent
   let namePermissionChecker: jest.Mocked<IWorldNamePermissionChecker>
+  let storage: IContentStorageComponent
+  let snsClient: IPublisherComponent
   let worldsManager: jest.Mocked<IWorldsManager>
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    config = createConfigComponent({
+      HTTP_BASE_URL: 'http://localhost:3000',
+      AWS_SNS_ARN: 'test-arn'
+    })
     coordinates = createCoordinatesComponent()
     namePermissionChecker = createMockedNamePermissionChecker()
+    storage = createInMemoryStorage()
+    snsClient = createSnsClientMock()
     worldsManager = createMockedWorldsManager()
 
-    settingsComponent = createSettingsComponent({ coordinates, namePermissionChecker, worldsManager })
+    settingsComponent = await createSettingsComponent({
+      config,
+      coordinates,
+      namePermissionChecker,
+      storage,
+      snsClient,
+      worldsManager
+    })
   })
 
   afterEach(() => {
@@ -74,22 +95,43 @@ describe('SettingsComponent', () => {
     })
 
     describe('when the signer owns the world name', () => {
+      let updatedSettings: WorldSettings
+
       beforeEach(() => {
+        updatedSettings = { spawnCoordinates: '10,20' }
         namePermissionChecker.checkPermission.mockResolvedValue(true)
+        worldsManager.getWorldSettings.mockResolvedValue({ spawnCoordinates: '0,0' })
         // Bounding rectangle from (0,0) to (20,30) - input coordinates (10,20) are within this range
         worldsManager.getWorldBoundingRectangle.mockResolvedValue({
           min: { x: 0, y: 0 },
           max: { x: 20, y: 30 }
         })
-        worldsManager.updateWorldSettings.mockResolvedValue(undefined)
+        worldsManager.updateWorldSettings.mockResolvedValue(updatedSettings)
       })
 
       it('should update the world settings', async () => {
         const result = await settingsComponent.updateWorldSettings(worldName, signer, input)
 
-        expect(result).toEqual({ spawnCoordinates: '10,20' })
+        expect(result).toEqual(updatedSettings)
         expect(namePermissionChecker.checkPermission).toHaveBeenCalledWith(signer.toLowerCase(), worldName)
-        expect(worldsManager.updateWorldSettings).toHaveBeenCalledWith(worldName, { spawnCoordinates: '10,20' })
+        expect(worldsManager.updateWorldSettings).toHaveBeenCalledWith(worldName, signer.toLowerCase(), {
+          spawnCoordinates: '10,20'
+        })
+      })
+
+      it('should emit an SNS notification for settings change', async () => {
+        await settingsComponent.updateWorldSettings(worldName, signer, input)
+
+        expect(snsClient.publishMessage).toHaveBeenCalledWith(
+          expect.objectContaining({
+            type: 'worlds',
+            subType: 'worlds-settings-changed',
+            worldName,
+            settings: expect.objectContaining({
+              spawnCoordinates: '10,20'
+            })
+          })
+        )
       })
     })
 
@@ -114,6 +156,7 @@ describe('SettingsComponent', () => {
       beforeEach(() => {
         input = { spawnCoordinates: '100,100' }
         namePermissionChecker.checkPermission.mockResolvedValue(true)
+        worldsManager.getWorldSettings.mockResolvedValue({ spawnCoordinates: '0,0' })
         // Bounding rectangle from (0,0) to (20,30) - input coordinates (100,100) are outside this range
         worldsManager.getWorldBoundingRectangle.mockResolvedValue({
           min: { x: 0, y: 0 },
@@ -136,6 +179,7 @@ describe('SettingsComponent', () => {
       beforeEach(() => {
         input = { spawnCoordinates: '10,20' }
         namePermissionChecker.checkPermission.mockResolvedValue(true)
+        worldsManager.getWorldSettings.mockResolvedValue({ spawnCoordinates: '0,0' })
         worldsManager.getWorldBoundingRectangle.mockResolvedValue(undefined)
       })
 
@@ -150,32 +194,60 @@ describe('SettingsComponent', () => {
     })
 
     describe('when the input does not include spawnCoordinates', () => {
+      let updatedSettings: WorldSettings
+
       beforeEach(() => {
         input = {}
+        updatedSettings = {}
         namePermissionChecker.checkPermission.mockResolvedValue(true)
-        worldsManager.updateWorldSettings.mockResolvedValue(undefined)
+        worldsManager.getWorldSettings.mockResolvedValue({ spawnCoordinates: '0,0' })
+        worldsManager.updateWorldSettings.mockResolvedValue(updatedSettings)
       })
 
       it('should update settings without validating spawnCoordinates', async () => {
         const result = await settingsComponent.updateWorldSettings(worldName, signer, input)
 
-        expect(result).toEqual({ spawnCoordinates: undefined })
-        expect(worldsManager.updateWorldSettings).toHaveBeenCalledWith(worldName, { spawnCoordinates: undefined })
+        expect(result).toEqual(updatedSettings)
+        expect(worldsManager.updateWorldSettings).toHaveBeenCalledWith(worldName, signer.toLowerCase(), {})
       })
     })
 
     describe('when the signer address is mixed case', () => {
+      let updatedSettings: WorldSettings
+
       beforeEach(() => {
         signer = '0xAbCdEf1234567890AbCdEf1234567890AbCdEf12'
         input = {}
+        updatedSettings = {}
         namePermissionChecker.checkPermission.mockResolvedValue(true)
-        worldsManager.updateWorldSettings.mockResolvedValue(undefined)
+        worldsManager.getWorldSettings.mockResolvedValue({ spawnCoordinates: '0,0' })
+        worldsManager.updateWorldSettings.mockResolvedValue(updatedSettings)
       })
 
       it('should normalize the signer address to lowercase', async () => {
         await settingsComponent.updateWorldSettings(worldName, signer, input)
 
         expect(namePermissionChecker.checkPermission).toHaveBeenCalledWith(signer.toLowerCase(), worldName)
+      })
+    })
+
+    describe('when the world does not exist yet', () => {
+      let updatedSettings: WorldSettings
+
+      beforeEach(() => {
+        input = { title: 'My World' }
+        updatedSettings = { title: 'My World' }
+        namePermissionChecker.checkPermission.mockResolvedValue(true)
+        worldsManager.updateWorldSettings.mockResolvedValue(updatedSettings)
+      })
+
+      it('should create the world entry via upsert and update settings', async () => {
+        const result = await settingsComponent.updateWorldSettings(worldName, signer, input)
+
+        expect(worldsManager.updateWorldSettings).toHaveBeenCalledWith(worldName, signer.toLowerCase(), {
+          title: 'My World'
+        })
+        expect(result).toEqual(updatedSettings)
       })
     })
   })

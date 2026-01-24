@@ -13,7 +13,7 @@ export function requireString(val: string | null | undefined): string {
 export async function deployEntity(
   ctx: FormDataContext & HandlerContextWithPath<'config' | 'entityDeployer' | 'storage' | 'validator', '/entities'>
 ): Promise<IHttpServerComponent.IResponse> {
-  const entityId = requireString(ctx.formData.fields.entityId.value)
+  const entityId = requireString(ctx.formData.fields.entityId?.value[0])
   const authChain = extractAuthChain(ctx)
 
   const entityRaw = ctx.formData.files[entityId].value.toString()

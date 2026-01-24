@@ -56,7 +56,27 @@ export type WorldRuntimeMetadata = {
 }
 
 export type WorldSettings = {
+  title?: string
+  description?: string
+  contentRating?: string
   spawnCoordinates?: string
+  skyboxTime?: number | null
+  categories?: string[]
+  singlePlayer?: boolean
+  showInPlaces?: boolean
+  thumbnailHash?: string
+}
+
+export type WorldSettingsInput = {
+  title?: string
+  description?: string
+  contentRating?: string
+  spawnCoordinates?: string
+  skyboxTime?: number | null
+  categories?: string[]
+  singlePlayer?: boolean
+  showInPlaces?: boolean
+  thumbnail?: Buffer
 }
 
 export type WorldScene = {
@@ -70,9 +90,17 @@ export type WorldScene = {
   createdAt: Date
 }
 
+export type BoundingBox = {
+  x1: number
+  x2: number
+  y1: number
+  y2: number
+}
+
 export type GetWorldScenesFilters = {
   worldName?: string
   coordinates?: string[]
+  boundingBox?: BoundingBox
 }
 
 export enum SceneOrderBy {
@@ -205,7 +233,7 @@ export type IWorldsManager = {
   undeployWorld(worldName: string): Promise<void>
   getContributableDomains(address: string): Promise<{ domains: ContributorDomain[]; count: number }>
   getWorldScenes(filters?: GetWorldScenesFilters, options?: GetWorldScenesOptions): Promise<GetWorldScenesResult>
-  updateWorldSettings(worldName: string, settings: WorldSettings): Promise<void>
+  updateWorldSettings(worldName: string, owner: EthAddress, settings: WorldSettings): Promise<WorldSettings>
   getWorldSettings(worldName: string): Promise<WorldSettings | undefined>
   getTotalWorldSize(worldName: string): Promise<bigint>
   getWorldBoundingRectangle(worldName: string): Promise<WorldBoundingRectangle | undefined>
@@ -421,7 +449,15 @@ export type WorldRecord = {
   name: string
   owner: string
   permissions: Permissions
+  title: string | null
+  description: string | null
+  content_rating: string | null
   spawn_coordinates: string | null
+  skybox_time: number | null
+  categories: string[] | null
+  single_player: boolean | null
+  show_in_places: boolean | null
+  thumbnail_hash: string | null
   created_at: Date
   updated_at: Date
   blocked_since: Date | null

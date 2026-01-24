@@ -15,6 +15,7 @@ import { migration as migration_0013 } from './0013_create_blocked_table'
 import { migration as migration_0014 } from './0014_permissions_set_addresses_lowercase'
 import { migration as migration_0015 } from './0015_create_world_scenes_table'
 import { migration as migration_0016 } from './0016_add_spawn_coordinates_column'
+import { migration as migration_0017 } from './0017_add_world_settings_columns'
 
 export const allMigrations: Migration[] = [
   migration_0001,
@@ -32,5 +33,6 @@ export const allMigrations: Migration[] = [
   migration_0013,
   migration_0014,
   migration_0015,
-  migration_0016
+  migration_0016,
+  migration_0017
 ]

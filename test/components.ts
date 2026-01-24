@@ -123,7 +123,14 @@ async function initComponents(): Promise<TestComponents> {
 
   const worldCreator = createWorldCreator({ storage, worldsManager })
 
-  const settings = createSettingsComponent({ coordinates, namePermissionChecker, worldsManager })
+  const settings = await createSettingsComponent({
+    config,
+    coordinates,
+    namePermissionChecker,
+    storage,
+    snsClient,
+    worldsManager
+  })
 
   return {
     ...components,

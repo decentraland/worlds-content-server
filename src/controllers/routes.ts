@@ -27,8 +27,8 @@ import { livekitWebhookHandler } from './handlers/livekit-webhook-handler'
 import { walletConnectedWorldHandler } from './handlers/wallet-connected-world-handler'
 import { getScenesHandler, undeploySceneHandler } from './handlers/scenes-handler'
 import { getWorldSettingsHandler, updateWorldSettingsHandler } from './handlers/world-settings-handler'
-import { worldSettingsSchema } from './schemas/world-settings-schemas'
 import { reprocessABSchema } from './schemas/reprocess-ab-schemas'
+import { getWorldScenesSchema } from './schemas/scenes-query-schemas'
 
 export async function setupRouter(globalContext: GlobalContext): Promise<Router<GlobalContext>> {
   const { fetch, schemaValidator, config } = globalContext.components
@@ -56,17 +56,17 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
 
   // Multi-scene management
   router.get('/world/:world_name/scenes', getScenesHandler)
+  router.post(
+    '/world/:world_name/scenes',
+    schemaValidator.withSchemaValidatorMiddleware(getWorldScenesSchema),
+    getScenesHandler
+  )
   // Undeploy a scene
   router.delete('/world/:world_name/scenes/:coordinate', signedFetchMiddleware, undeploySceneHandler)
 
   // World settings
   router.get('/world/:world_name/settings', getWorldSettingsHandler)
-  router.put(
-    '/world/:world_name/settings',
-    signedFetchMiddleware,
-    schemaValidator.withSchemaValidatorMiddleware(worldSettingsSchema),
-    updateWorldSettingsHandler
-  )
+  router.put('/world/:world_name/settings', signedFetchMiddleware, multipartParserWrapper(updateWorldSettingsHandler))
 
   // consumption
   router.head('/ipfs/:hashId', headContentFile)

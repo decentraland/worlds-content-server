@@ -130,17 +130,47 @@ export async function createWorldsManagerComponent({
     const client = await database.getPool().connect()
     const spawnCoordinates = extractSpawnCoordinates(scene)
 
+    // Extract settings from scene metadata for first deployment
+    const sceneMetadata = scene.metadata || {}
+    const title = sceneMetadata.display?.title || null
+    const description = sceneMetadata.display?.description || null
+    const skyboxTime = sceneMetadata.worldConfiguration?.skyboxConfig?.fixedTime ?? null
+    const categories: string[] | null = sceneMetadata.tags?.length > 0 ? sceneMetadata.tags : null
+    const rating = sceneMetadata?.rating ?? null
+    const singlePlayer = sceneMetadata.worldConfiguration?.fixedAdapter === 'offline:offline'
+    const showInPlaces = !!sceneMetadata.worldConfiguration?.placesConfig?.optOut
+
+    // Extract thumbnail hash from scene content
+    const navmapThumbnail = sceneMetadata.display?.navmapThumbnail
+    const thumbnailContent = navmapThumbnail ? scene.content?.find((c) => c.file === navmapThumbnail) : null
+    const thumbnailHash = thumbnailContent?.hash || null
+
     try {
       await client.query('BEGIN')
 
       // Ensure world record exists, update if it does
+      // On first deployment (INSERT), set settings from scene metadata
+      // On subsequent deployments (UPDATE), preserve existing settings
       await client.query(SQL`
-        INSERT INTO worlds (name, owner, permissions, spawn_coordinates, created_at, updated_at)
+        INSERT INTO worlds (
+          name, owner, permissions, spawn_coordinates, 
+          title, description, content_rating, skybox_time, categories,
+          single_player, show_in_places, thumbnail_hash,
+          created_at, updated_at
+        )
         VALUES (
           ${worldName.toLowerCase()}, 
           ${owner.toLowerCase()}, 
           ${JSON.stringify(defaultPermissions())}::json,
           ${spawnCoordinates},
+          ${title},
+          ${description},
+          ${rating},
+          ${skyboxTime},
+          ${categories}::text[],
+          ${singlePlayer},
+          ${showInPlaces},
+          ${thumbnailHash},
           ${new Date()}, 
           ${new Date()}
         )
@@ -325,14 +355,35 @@ export async function createWorldsManagerComponent({
 
     // Apply worldName filter
     if (filters?.worldName) {
-      countQuery.append(SQL` AND world_name = ${filters.worldName.toLowerCase()}`)
-      mainQuery.append(SQL` AND world_name = ${filters.worldName.toLowerCase()}`)
+      const worldNameFilter = SQL` AND world_name = ${filters.worldName.toLowerCase()}`
+      countQuery.append(worldNameFilter)
+      mainQuery.append(worldNameFilter)
     }
 
     // Apply coordinates filter (scenes that contain any of the specified coordinates)
     if (filters?.coordinates && filters.coordinates.length > 0) {
-      countQuery.append(SQL` AND parcels && ${filters.coordinates}::text[]`)
-      mainQuery.append(SQL` AND parcels && ${filters.coordinates}::text[]`)
+      const coordinatesFilter = SQL` AND parcels && ${filters.coordinates}::text[]`
+      countQuery.append(coordinatesFilter)
+      mainQuery.append(coordinatesFilter)
+    }
+
+    // Apply bounding box filter (scenes that have at least one parcel within the rectangle).
+    // LATERAL parses each "x,y" once; EXISTS short-circuits on first matching parcel.
+    if (filters?.boundingBox) {
+      const { x1, x2, y1, y2 } = filters.boundingBox
+      const xMin = Math.min(x1, x2)
+      const xMax = Math.max(x1, x2)
+      const yMin = Math.min(y1, y2)
+      const yMax = Math.max(y1, y2)
+      const bboxCondition = SQL` AND EXISTS (
+        SELECT 1
+        FROM unnest(parcels) AS coord,
+             LATERAL (SELECT string_to_array(coord, ',') AS arr) a
+        WHERE (a.arr)[1]::int BETWEEN ${xMin} AND ${xMax}
+          AND (a.arr)[2]::int BETWEEN ${yMin} AND ${yMax}
+      )`
+      countQuery.append(bboxCondition)
+      mainQuery.append(bboxCondition)
     }
 
     // Add ordering (default: created_at ASC)
@@ -438,26 +489,76 @@ export async function createWorldsManagerComponent({
     }
   }
 
-  async function updateWorldSettings(worldName: string, settings: WorldSettings): Promise<void> {
-    await database.query(SQL`
-      UPDATE worlds 
-      SET spawn_coordinates = ${settings.spawnCoordinates || null},
-          updated_at = ${new Date()}
-      WHERE name = ${worldName.toLowerCase()}
+  async function updateWorldSettings(
+    worldName: string,
+    owner: EthAddress,
+    settings: WorldSettings
+  ): Promise<WorldSettings> {
+    const result = await database.query<WorldRecord>(SQL`
+      INSERT INTO worlds (
+        name, owner, permissions,
+        title, description, content_rating, spawn_coordinates, 
+        skybox_time, categories, single_player, show_in_places, thumbnail_hash,
+        created_at, updated_at
+      )
+      VALUES (
+        ${worldName.toLowerCase()},
+        ${owner.toLowerCase()},
+        ${JSON.stringify(defaultPermissions())}::json,
+        ${settings.title ?? null},
+        ${settings.description ?? null},
+        ${settings.contentRating ?? null},
+        ${settings.spawnCoordinates ?? null},
+        ${settings.skyboxTime ?? null},
+        ${settings.categories ?? null}::text[],
+        ${settings.singlePlayer ?? null},
+        ${settings.showInPlaces ?? null},
+        ${settings.thumbnailHash ?? null},
+        ${new Date()},
+        ${new Date()}
+      )
+      ON CONFLICT (name) DO UPDATE SET
+        title = COALESCE(EXCLUDED.title, worlds.title),
+        description = COALESCE(EXCLUDED.description, worlds.description),
+        content_rating = COALESCE(EXCLUDED.content_rating, worlds.content_rating),
+        spawn_coordinates = COALESCE(EXCLUDED.spawn_coordinates, worlds.spawn_coordinates),
+        skybox_time = COALESCE(EXCLUDED.skybox_time, worlds.skybox_time),
+        categories = COALESCE(EXCLUDED.categories, worlds.categories),
+        single_player = COALESCE(EXCLUDED.single_player, worlds.single_player),
+        show_in_places = COALESCE(EXCLUDED.show_in_places, worlds.show_in_places),
+        thumbnail_hash = COALESCE(EXCLUDED.thumbnail_hash, worlds.thumbnail_hash),
+        updated_at = ${new Date()}
+      RETURNING *
     `)
+
+    return mapWorldRecordToSettings(result.rows[0])
   }
 
   async function getWorldSettings(worldName: string): Promise<WorldSettings | undefined> {
-    const result = await database.query<{ spawn_coordinates: string | null }>(SQL`
-      SELECT spawn_coordinates FROM worlds WHERE name = ${worldName.toLowerCase()}
+    const result = await database.query<WorldRecord>(SQL`
+      SELECT title, description, content_rating, spawn_coordinates, skybox_time, 
+             categories, single_player, show_in_places, thumbnail_hash 
+      FROM worlds WHERE name = ${worldName.toLowerCase()}
     `)
 
     if (result.rowCount === 0) {
       return undefined
     }
 
+    return mapWorldRecordToSettings(result.rows[0])
+  }
+
+  function mapWorldRecordToSettings(row: Partial<WorldRecord>): WorldSettings {
     return {
-      spawnCoordinates: result.rows[0].spawn_coordinates || undefined
+      title: row.title || undefined,
+      description: row.description || undefined,
+      contentRating: row.content_rating || undefined,
+      spawnCoordinates: row.spawn_coordinates || undefined,
+      skyboxTime: row.skybox_time ?? undefined,
+      categories: row.categories || undefined,
+      singlePlayer: row.single_player ?? undefined,
+      showInPlaces: row.show_in_places ?? undefined,
+      thumbnailHash: row.thumbnail_hash || undefined
     }
   }
 
