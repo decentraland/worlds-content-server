@@ -10,16 +10,35 @@ type CommsMetadata = {
 
 export async function commsAdapterHandler(
   context: HandlerContextWithPath<
-    'commsAdapter' | 'config' | 'nameDenyListChecker' | 'namePermissionChecker' | 'worldsManager',
+    'commsAdapter' | 'config' | 'nameDenyListChecker' | 'namePermissionChecker' | 'worldsManager' | 'logs',
     '/get-comms-adapter/:roomId'
   > &
     DecentralandSignatureContext<CommsMetadata>
 ): Promise<IHttpServerComponent.IResponse> {
   const {
-    components: { commsAdapter, config, nameDenyListChecker, namePermissionChecker, worldsManager }
+    components: { commsAdapter, config, nameDenyListChecker, namePermissionChecker, worldsManager, logs }
   } = context
-
+  const logger = logs.getLogger('comms-adapter-handler')
   const authMetadata = context.verification!.authMetadata
+  async function fetchDenyList(): Promise<Set<string>> {
+    try {
+      const response = await fetch('https://config.decentraland.org/denylist.json')
+      if (!response.ok) {
+        throw new Error(`Failed to fetch deny list, status: ${response.status}`)
+      }
+      const data = await response.json()
+      if (data.users && Array.isArray(data.users)) {
+        return new Set(data.users.map((user: { wallet: string }) => user.wallet.toLocaleLowerCase()))
+      } else {
+        logger.warn('Deny list is missing "users" field or it is not an array.')
+        return new Set()
+      }
+    } catch (error) {
+      logger.error(`Error fetching deny list: ${(error as Error).message}`)
+      return new Set()
+    }
+  }
+
   if (!validateMetadata(authMetadata)) {
     throw new InvalidRequestError('Access denied, invalid metadata')
   }
@@ -44,6 +63,11 @@ export async function commsAdapterHandler(
   assertNotBlockedOrWithinInGracePeriod(worldMetadata)
 
   const identity = context.verification!.auth
+  const denyList = await fetchDenyList()
+  if (denyList.has(identity)) {
+    logger.warn(`Rejected connection from deny-listed wallet: ${identity}`)
+    throw new NotAuthorizedError('Access denied, deny-listed wallet')
+  }
   const permissionChecker = await worldsManager.permissionCheckerForWorld(worldName)
   const hasPermission =
     // TODO See if we can avoid the first check
