@@ -753,6 +753,119 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /worlds:
+    get:
+      tags:
+        - Content Server
+      summary: GET /worlds
+      description: |
+        Retrieve a paginated list of worlds with optional search and sorting.
+        
+        This endpoint supports:
+        - **Pagination**: Use `limit` and `offset` query parameters
+        - **Search**: Full-text search across world name, title, and description
+        - **Sorting**: Sort by world name or last deployment time
+        - **Filtering**: Filter by deployment permissions (placeholder, not implemented yet)
+      operationId: worldsContentServer_getWorlds
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 100
+          description: Maximum number of worlds to return (default 100)
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: Number of worlds to skip (default 0)
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+          description: |
+            Full-text search query. Searches across world name (highest priority), 
+            title (medium priority), and description (lowest priority).
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [name, last_deployed_at]
+            default: name
+          description: Field to sort by (default "name")
+        - name: order
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: asc
+          description: Sort direction (default "asc")
+        - name: canDeploy
+          in: query
+          required: false
+          schema:
+            type: string
+          description: |
+            Ethereum address to filter worlds by deployment permissions.
+            **Note**: This filter is not yet implemented. The parameter is accepted 
+            but filtering is not applied.
+      responses:
+        '200':
+          description: Paginated list of worlds
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorldsResponse'
+              example:
+                worlds:
+                  - name: my-world.dcl.eth
+                    owner: '0x1234567890123456789012345678901234567890'
+                    title: My Awesome World
+                    description: A beautiful virtual world
+                    shape:
+                      x1: 0
+                      x2: 2
+                      y1: 0
+                      y2: 1
+                    content_rating: T
+                    spawn_coordinates: '1,1'
+                    skybox_time: 12
+                    categories: ['game', 'adventure']
+                    single_player: false
+                    show_in_places: true
+                    thumbnail_hash: bafkreiabi74jam7uh5gmm6x4hox664j53bmt7dy4alrltkhyj3ozcxs2iu
+                    last_deployed_at: '2024-01-15T10:30:00.000Z'
+                    blocked_since: null
+                  - name: empty-world.dcl.eth
+                    owner: '0xabcdef1234567890abcdef1234567890abcdef12'
+                    title: Empty World
+                    description: null
+                    shape: null
+                    content_rating: null
+                    spawn_coordinates: null
+                    skybox_time: null
+                    categories: null
+                    single_player: null
+                    show_in_places: null
+                    thumbnail_hash: null
+                    last_deployed_at: null
+                    blocked_since: null
+                total: 42
+        '400':
+          description: Invalid request (e.g., invalid sort or order parameter)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /wallet/{wallet}/stats:
     get:
       tags:
@@ -1451,3 +1564,134 @@ components:
       required:
         - coordinates
       additionalProperties: false
+
+    WorldsResponse:
+      type: object
+      description: Paginated response containing worlds information
+      properties:
+        worlds:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorldInfo'
+          description: List of worlds
+        total:
+          type: integer
+          description: Total number of worlds matching the query (for pagination)
+      required:
+        - worlds
+        - total
+
+    WorldInfo:
+      type: object
+      description: Information about a world including settings and deployment status
+      properties:
+        name:
+          type: string
+          description: The world name (ENS or DCL domain)
+          example: my-world.dcl.eth
+        owner:
+          type: string
+          description: Ethereum address of the world owner
+          example: '0x1234567890123456789012345678901234567890'
+        title:
+          type: string
+          nullable: true
+          description: The title of the world
+          example: My Awesome World
+        description:
+          type: string
+          nullable: true
+          description: A description of the world
+          example: A beautiful virtual world
+        shape:
+          type: object
+          nullable: true
+          description: |
+            The bounding rectangle of the world in parcel coordinates.
+            Null if the world has no deployed scenes.
+          properties:
+            x1:
+              type: integer
+              description: Minimum x coordinate
+              example: 0
+            x2:
+              type: integer
+              description: Maximum x coordinate
+              example: 2
+            y1:
+              type: integer
+              description: Minimum y coordinate
+              example: 0
+            y2:
+              type: integer
+              description: Maximum y coordinate
+              example: 1
+        content_rating:
+          type: string
+          nullable: true
+          description: Content rating for the world
+          example: T
+        spawn_coordinates:
+          type: string
+          nullable: true
+          description: The parcel coordinate where players will spawn
+          pattern: '^-?\d+,-?\d+$'
+          example: '10,20'
+        skybox_time:
+          type: number
+          nullable: true
+          description: Fixed skybox time (0-24 hours)
+          example: 12
+        categories:
+          type: array
+          nullable: true
+          items:
+            type: string
+          description: Categories/tags for the world
+          example: ['game', 'adventure']
+        single_player:
+          type: boolean
+          nullable: true
+          description: Whether the world is single player only
+          example: false
+        show_in_places:
+          type: boolean
+          nullable: true
+          description: Whether the world should be shown in Places
+          example: true
+        thumbnail_hash:
+          type: string
+          nullable: true
+          description: IPFS hash of the world thumbnail image
+          example: bafkreiabi74jam7uh5gmm6x4hox664j53bmt7dy4alrltkhyj3ozcxs2iu
+        last_deployed_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: |
+            ISO 8601 timestamp of the last scene deployment.
+            Null if the world has no deployed scenes.
+          example: '2024-01-15T10:30:00.000Z'
+        blocked_since:
+          type: string
+          format: date-time
+          nullable: true
+          description: |
+            ISO 8601 timestamp when the world owner was blocked.
+            Null if the owner is not blocked.
+          example: null
+      required:
+        - name
+        - owner
+        - title
+        - description
+        - shape
+        - content_rating
+        - spawn_coordinates
+        - skybox_time
+        - categories
+        - single_player
+        - show_in_places
+        - thumbnail_hash
+        - last_deployed_at
+        - blocked_since

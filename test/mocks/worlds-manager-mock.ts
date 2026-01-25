@@ -311,6 +311,10 @@ export async function createWorldsManagerMockComponent({
     return { domains, count: domains.length }
   }
 
+  async function getWorlds() {
+    return { worlds: [], total: 0 }
+  }
+
   return {
     getContributableDomains,
     getRawWorldRecords,
@@ -326,6 +330,7 @@ export async function createWorldsManagerMockComponent({
     updateWorldSettings,
     getWorldSettings,
     getTotalWorldSize,
-    getWorldBoundingRectangle
+    getWorldBoundingRectangle,
+    getWorlds
   }
 }

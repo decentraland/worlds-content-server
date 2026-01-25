@@ -12,7 +12,12 @@ import {
   GetWorldScenesResult,
   WorldBoundingRectangle,
   SceneOrderBy,
-  OrderDirection
+  OrderDirection,
+  GetWorldsFilters,
+  GetWorldsOptions,
+  GetWorldsResult,
+  WorldInfo,
+  WorldsOrderBy
 } from '../types'
 import { streamToBuffer } from '@dcl/catalyst-storage'
 import { Entity, EthAddress } from '@dcl/schemas'
@@ -626,6 +631,156 @@ export async function createWorldsManagerComponent({
     }
   }
 
+  /**
+   * Gets a paginated list of worlds with optional search and sorting
+   *
+   * @param filters - Optional filters for search and canDeploy address (canDeploy not implemented yet)
+   * @param options - Pagination and sorting options
+   * @returns Paginated list of worlds with total count
+   */
+  async function getWorlds(filters: GetWorldsFilters = {}, options: GetWorldsOptions = {}): Promise<GetWorldsResult> {
+    const { search, canDeploy } = filters
+    const { limit = 100, offset = 0, orderBy = WorldsOrderBy.Name, orderDirection = OrderDirection.Asc } = options
+
+    // Log canDeploy parameter - filtering not implemented yet
+    if (canDeploy) {
+      logger.debug(`canDeploy filter received for address: ${canDeploy} (filter not implemented yet)`)
+    }
+
+    // Get banned names to exclude from query
+    const bannedNames = await nameDenyListChecker.getBannedNames()
+
+    // Build base count query
+    const countQuery = SQL`
+      SELECT COUNT(*) as total
+      FROM worlds w
+      WHERE 1=1
+    `
+
+    // Build the main query
+    // Join with world_scenes to get last deployment time and bounding rectangle
+    const mainQuery = SQL`
+      WITH world_stats AS (
+        SELECT 
+          world_name,
+          MAX(created_at) as last_deployed_at,
+          MIN(SPLIT_PART(parcel, ',', 1)::integer) as min_x,
+          MAX(SPLIT_PART(parcel, ',', 1)::integer) as max_x,
+          MIN(SPLIT_PART(parcel, ',', 2)::integer) as min_y,
+          MAX(SPLIT_PART(parcel, ',', 2)::integer) as max_y
+        FROM world_scenes, UNNEST(parcels) as parcel
+        GROUP BY world_name
+      )
+      SELECT 
+        w.name,
+        w.owner,
+        w.title,
+        w.description,
+        w.content_rating,
+        w.spawn_coordinates,
+        w.skybox_time,
+        w.categories,
+        w.single_player,
+        w.show_in_places,
+        w.thumbnail_hash,
+        ws.last_deployed_at,
+        ws.min_x,
+        ws.max_x,
+        ws.min_y,
+        ws.max_y,
+        b.created_at as blocked_since
+      FROM worlds w
+      LEFT JOIN world_stats ws ON w.name = ws.world_name
+      LEFT JOIN blocked b ON w.owner = b.wallet
+      WHERE 1=1
+    `
+
+    // Exclude banned names from both queries
+    if (bannedNames.length > 0) {
+      const bannedFilter = SQL` AND w.name != ALL(${bannedNames})`
+      countQuery.append(bannedFilter)
+      mainQuery.append(bannedFilter)
+    }
+
+    // Apply full-text search filter to both queries
+    if (search && search.trim().length > 0) {
+      // Convert search term to tsquery format for PostgreSQL full-text search
+      // Use plainto_tsquery for user-friendly input (handles spaces, etc.)
+      const searchFilter = SQL` AND w.search_vector @@ plainto_tsquery('english', ${search})`
+      countQuery.append(searchFilter)
+      mainQuery.append(searchFilter)
+    }
+
+    // Add ordering
+    // Using safe string interpolation since orderBy and orderDirection are enum values
+    if (orderBy === WorldsOrderBy.LastDeployedAt) {
+      // Put worlds without deployments last when sorting by last_deployed_at
+      mainQuery.append(
+        ` ORDER BY ws.last_deployed_at IS NULL ${orderDirection === OrderDirection.Asc ? 'ASC' : 'DESC'}, ws.last_deployed_at ${orderDirection.toUpperCase()}`
+      )
+    } else {
+      mainQuery.append(` ORDER BY w.name ${orderDirection.toUpperCase()}`)
+    }
+
+    // Apply pagination
+    mainQuery.append(SQL` LIMIT ${limit} OFFSET ${offset}`)
+
+    type WorldRow = {
+      name: string
+      owner: string
+      title: string | null
+      description: string | null
+      content_rating: string | null
+      spawn_coordinates: string | null
+      skybox_time: number | null
+      categories: string[] | null
+      single_player: boolean | null
+      show_in_places: boolean | null
+      thumbnail_hash: string | null
+      last_deployed_at: Date | null
+      min_x: number | null
+      max_x: number | null
+      min_y: number | null
+      max_y: number | null
+      blocked_since: Date | null
+    }
+
+    // Execute both queries concurrently
+    const [countResult, result] = await Promise.all([
+      database.query<{ total: string }>(countQuery),
+      database.query<WorldRow>(mainQuery)
+    ])
+
+    const total = parseInt(countResult.rows[0]?.total || '0', 10)
+
+    const worlds: WorldInfo[] = result.rows.map((row) => ({
+      name: row.name,
+      owner: row.owner,
+      title: row.title,
+      description: row.description,
+      contentRating: row.content_rating,
+      spawnCoordinates: row.spawn_coordinates,
+      skyboxTime: row.skybox_time,
+      categories: row.categories,
+      singlePlayer: row.single_player,
+      showInPlaces: row.show_in_places,
+      thumbnailHash: row.thumbnail_hash,
+      shape:
+        row.min_x !== null && row.max_x !== null && row.min_y !== null && row.max_y !== null
+          ? {
+              x1: row.min_x,
+              x2: row.max_x,
+              y1: row.min_y,
+              y2: row.max_y
+            }
+          : null,
+      lastDeployedAt: row.last_deployed_at,
+      blockedSince: row.blocked_since
+    }))
+
+    return { worlds, total }
+  }
+
   return {
     getRawWorldRecords,
     getDeployedWorldCount,
@@ -641,6 +796,7 @@ export async function createWorldsManagerComponent({
     updateWorldSettings,
     getWorldSettings,
     getTotalWorldSize,
-    getWorldBoundingRectangle
+    getWorldBoundingRectangle,
+    getWorlds
   }
 }
