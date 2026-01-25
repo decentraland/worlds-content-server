@@ -702,11 +702,20 @@ export async function createWorldsManagerComponent({
       mainQuery.append(bannedFilter)
     }
 
-    // Apply full-text search filter to both queries
+    // Apply combined full-text search and trigram search filter to both queries
+    // This combines:
+    // 1. Full-text search (tsvector) for semantic matching of words
+    // 2. Trigram similarity for fuzzy/partial matching (handles typos, partial words)
     if (search && search.trim().length > 0) {
-      // Convert search term to tsquery format for PostgreSQL full-text search
-      // Use plainto_tsquery for user-friendly input (handles spaces, etc.)
-      const searchFilter = SQL` AND w.search_vector @@ plainto_tsquery('english', ${search})`
+      const searchFilter = SQL` AND (
+        w.search_vector @@ plainto_tsquery('english', ${search})
+        OR w.name ILIKE '%' || ${search} || '%'
+        OR w.title ILIKE '%' || ${search} || '%'
+        OR w.description ILIKE '%' || ${search} || '%'
+        OR similarity(w.name, ${search}) > 0.3
+        OR similarity(COALESCE(w.title, ''), ${search}) > 0.3
+        OR similarity(COALESCE(w.description, ''), ${search}) > 0.3
+      )`
       countQuery.append(searchFilter)
       mainQuery.append(searchFilter)
     }

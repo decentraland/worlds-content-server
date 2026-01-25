@@ -17,6 +17,7 @@ import { migration as migration_0015 } from './0015_create_world_scenes_table'
 import { migration as migration_0016 } from './0016_add_spawn_coordinates_column'
 import { migration as migration_0017 } from './0017_add_world_settings_columns'
 import { migration as migration_0018 } from './0018_add_search_index'
+import { migration as migration_0019 } from './0019_add_trigram_search'
 
 export const allMigrations: Migration[] = [
   migration_0001,
@@ -36,5 +37,6 @@ export const allMigrations: Migration[] = [
   migration_0015,
   migration_0016,
   migration_0017,
-  migration_0018
+  migration_0018,
+  migration_0019
 ]

@@ -306,6 +306,32 @@ test('WorldsHandler GET /worlds', function ({ components }) {
           expect(body.worlds.length).toBeLessThanOrEqual(2)
         })
       })
+
+      describe('and the search term is a partial match', function () {
+        it('should return matching worlds using fuzzy search', async () => {
+          const { localFetch } = components
+
+          const response = await localFetch.fetch('/worlds?search=alph')
+
+          expect(response.status).toBe(200)
+          const body = await response.json()
+          expect(body.worlds).toHaveLength(1)
+          expect(body.worlds[0].name).toBe(worldName1)
+        })
+      })
+
+      describe('and the search term is a substring of the title', function () {
+        it('should return matching worlds using ILIKE search', async () => {
+          const { localFetch } = components
+
+          const response = await localFetch.fetch('/worlds?search=Gamma')
+
+          expect(response.status).toBe(200)
+          const body = await response.json()
+          expect(body.worlds).toHaveLength(1)
+          expect(body.worlds[0].name).toBe(worldName3)
+        })
+      })
     })
 
     describe('and canDeploy filter is provided', function () {
