@@ -4,11 +4,10 @@ import {
   PermissionType,
   WorldPermissionRecordForChecking
 } from '../../src/logic/permissions/types'
-import { PermissionNotFoundError } from '../../src/logic/permissions/errors'
+import { InvalidPermissionRequestError, PermissionNotFoundError } from '../../src/logic/permissions/errors'
 import { IPermissionsManager } from '../../src/types'
 import { IConfigComponent } from '@well-known-components/interfaces'
 import { IPublisherComponent } from '@dcl/sns-component'
-import { InvalidRequestError } from '@dcl/http-commons'
 import { createMockedPermissionsManager } from '../mocks/permissions-manager-mock'
 import { createMockedConfig } from '../mocks/config-mock'
 import { createMockedSnsClient } from '../mocks/sns-client-mock'
@@ -25,12 +24,14 @@ describe('PermissionsComponent', () => {
     config = createMockedConfig()
     config.requireString.mockImplementation((key: string) => {
       if (key === 'BUILDER_URL') return Promise.resolve('https://builder.example.com')
-      if (key === 'AWS_SNS_ARN') return Promise.resolve('arn:aws:sns:us-east-1:123456789:test-topic')
       return Promise.resolve('')
     })
 
     snsClient = createMockedSnsClient()
-    snsClient.publishMessage.mockResolvedValue({ MessageId: 'test-message-id' } as any)
+    snsClient.publishMessages.mockResolvedValue({
+      successfulMessageIds: ['test-message-id'],
+      failedEvents: []
+    })
 
     permissionsComponent = await createPermissionsComponent({
       config,
@@ -231,9 +232,19 @@ describe('PermissionsComponent', () => {
         ])
       })
 
-      it('should send notifications to all added addresses', async () => {
+      it('should send batched notifications to all added addresses', async () => {
         await permissionsComponent.grantWorldWidePermission('test-world', 'deployment', ['0x1234', '0x5678'])
-        expect(snsClient.publishMessage).toHaveBeenCalledTimes(2)
+        expect(snsClient.publishMessages).toHaveBeenCalledTimes(1)
+        expect(snsClient.publishMessages).toHaveBeenCalledWith(
+          expect.arrayContaining([
+            expect.objectContaining({
+              metadata: expect.objectContaining({ address: '0x1234' })
+            }),
+            expect.objectContaining({
+              metadata: expect.objectContaining({ address: '0x5678' })
+            })
+          ])
+        )
       })
     })
 
@@ -244,7 +255,14 @@ describe('PermissionsComponent', () => {
 
       it('should only send notifications to newly added addresses', async () => {
         await permissionsComponent.grantWorldWidePermission('test-world', 'deployment', ['0x1234', '0x5678'])
-        expect(snsClient.publishMessage).toHaveBeenCalledTimes(1)
+        expect(snsClient.publishMessages).toHaveBeenCalledTimes(1)
+        expect(snsClient.publishMessages).toHaveBeenCalledWith(
+          expect.arrayContaining([
+            expect.objectContaining({
+              metadata: expect.objectContaining({ address: '0x5678' })
+            })
+          ])
+        )
       })
     })
 
@@ -256,7 +274,7 @@ describe('PermissionsComponent', () => {
 
       it('should not send notifications', async () => {
         await permissionsComponent.grantWorldWidePermission('test-world', 'deployment', [])
-        expect(snsClient.publishMessage).not.toHaveBeenCalled()
+        expect(snsClient.publishMessages).not.toHaveBeenCalled()
       })
     })
   })
@@ -276,9 +294,19 @@ describe('PermissionsComponent', () => {
         ])
       })
 
-      it('should send notifications to all revoked addresses', async () => {
+      it('should send batched notifications to all revoked addresses', async () => {
         await permissionsComponent.revokePermission('test-world', 'deployment', ['0x1234', '0x5678'])
-        expect(snsClient.publishMessage).toHaveBeenCalledTimes(2)
+        expect(snsClient.publishMessages).toHaveBeenCalledTimes(1)
+        expect(snsClient.publishMessages).toHaveBeenCalledWith(
+          expect.arrayContaining([
+            expect.objectContaining({
+              metadata: expect.objectContaining({ address: '0x1234' })
+            }),
+            expect.objectContaining({
+              metadata: expect.objectContaining({ address: '0x5678' })
+            })
+          ])
+        )
       })
     })
 
@@ -289,7 +317,14 @@ describe('PermissionsComponent', () => {
 
       it('should only send notifications to actually revoked addresses', async () => {
         await permissionsComponent.revokePermission('test-world', 'deployment', ['0x1234', '0x5678'])
-        expect(snsClient.publishMessage).toHaveBeenCalledTimes(1)
+        expect(snsClient.publishMessages).toHaveBeenCalledTimes(1)
+        expect(snsClient.publishMessages).toHaveBeenCalledWith(
+          expect.arrayContaining([
+            expect.objectContaining({
+              metadata: expect.objectContaining({ address: '0x5678' })
+            })
+          ])
+        )
       })
     })
 
@@ -301,7 +336,7 @@ describe('PermissionsComponent', () => {
 
       it('should not send notifications', async () => {
         await permissionsComponent.revokePermission('test-world', 'deployment', [])
-        expect(snsClient.publishMessage).not.toHaveBeenCalled()
+        expect(snsClient.publishMessages).not.toHaveBeenCalled()
       })
     })
   })
@@ -356,10 +391,10 @@ describe('PermissionsComponent', () => {
     })
 
     describe('and setting unrestricted permission', () => {
-      it('should throw InvalidRequestError', async () => {
+      it('should throw InvalidPermissionRequestError', async () => {
         await expect(
           permissionsComponent.setDeploymentPermission('test-world', PermissionType.Unrestricted, [])
-        ).rejects.toThrow(InvalidRequestError)
+        ).rejects.toThrow(InvalidPermissionRequestError)
       })
     })
   })
@@ -408,10 +443,10 @@ describe('PermissionsComponent', () => {
     })
 
     describe('and setting an invalid permission type', () => {
-      it('should throw InvalidRequestError', async () => {
+      it('should throw InvalidPermissionRequestError', async () => {
         await expect(
           permissionsComponent.setStreamingPermission('test-world', 'invalid' as PermissionType)
-        ).rejects.toThrow(InvalidRequestError)
+        ).rejects.toThrow(InvalidPermissionRequestError)
       })
     })
   })
@@ -433,7 +468,14 @@ describe('PermissionsComponent', () => {
 
       it('should send a notification', async () => {
         await permissionsComponent.addParcelsToPermission('test-world', 'deployment', '0x1234', ['0,0', '1,0'])
-        expect(snsClient.publishMessage).toHaveBeenCalledTimes(1)
+        expect(snsClient.publishMessages).toHaveBeenCalledTimes(1)
+        expect(snsClient.publishMessages).toHaveBeenCalledWith(
+          expect.arrayContaining([
+            expect.objectContaining({
+              metadata: expect.objectContaining({ address: '0x1234' })
+            })
+          ])
+        )
       })
     })
 
@@ -444,7 +486,7 @@ describe('PermissionsComponent', () => {
 
       it('should not send a notification', async () => {
         await permissionsComponent.addParcelsToPermission('test-world', 'deployment', '0x1234', ['0,0', '1,0'])
-        expect(snsClient.publishMessage).not.toHaveBeenCalled()
+        expect(snsClient.publishMessages).not.toHaveBeenCalled()
       })
     })
   })
@@ -474,10 +516,10 @@ describe('PermissionsComponent', () => {
         permissionsManager.getAddressPermissions.mockResolvedValueOnce(undefined)
       })
 
-      it('should throw InvalidRequestError', async () => {
+      it('should throw InvalidPermissionRequestError', async () => {
         await expect(
           permissionsComponent.removeParcelsFromPermission('test-world', 'deployment', '0x1234', ['0,0'])
-        ).rejects.toThrow(InvalidRequestError)
+        ).rejects.toThrow(InvalidPermissionRequestError)
       })
     })
   })

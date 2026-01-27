@@ -3,7 +3,12 @@ import { HandlerContextWithPath, IWorldNamePermissionChecker } from '../../types
 import { DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
 import { getPaginationParams, InvalidRequestError, NotAuthorizedError, NotFoundError } from '@dcl/http-commons'
 import { EthAddress } from '@dcl/schemas'
-import { AllowListPermission, PermissionNotFoundError, PermissionType } from '../../logic/permissions'
+import {
+  AllowListPermission,
+  InvalidPermissionRequestError,
+  PermissionNotFoundError,
+  PermissionType
+} from '../../logic/permissions'
 import { AccessInput, AccessSetting, AccessType, InvalidAccessTypeError } from '../../logic/access'
 import { PermissionParcelsInput } from '../schemas/permission-parcels-schema'
 
@@ -111,33 +116,40 @@ export async function postPermissionsHandler(
 
   const authMetadata = ctx.verification!.authMetadata
 
-  switch (permissionName) {
-    case 'deployment': {
-      await permissions.setDeploymentPermission(
-        worldName,
-        authMetadata.type as PermissionType,
-        authMetadata.wallets || []
-      )
-      break
-    }
-    case 'streaming': {
-      await permissions.setStreamingPermission(worldName, authMetadata.type as PermissionType, authMetadata.wallets)
-      break
-    }
-    case 'access': {
-      try {
-        await access.setAccess(worldName, authMetadata as AccessInput)
-      } catch (error) {
-        if (error instanceof InvalidAccessTypeError) {
-          throw new InvalidRequestError(error.message)
-        }
-        throw error
+  try {
+    switch (permissionName) {
+      case 'deployment': {
+        await permissions.setDeploymentPermission(
+          worldName,
+          authMetadata.type as PermissionType,
+          authMetadata.wallets || []
+        )
+        break
       }
-      break
+      case 'streaming': {
+        await permissions.setStreamingPermission(worldName, authMetadata.type as PermissionType, authMetadata.wallets)
+        break
+      }
+      case 'access': {
+        try {
+          await access.setAccess(worldName, authMetadata as AccessInput)
+        } catch (error) {
+          if (error instanceof InvalidAccessTypeError) {
+            throw new InvalidRequestError(error.message)
+          }
+          throw error
+        }
+        break
+      }
+      default: {
+        throw new InvalidRequestError(`Invalid permission name: ${permissionName}.`)
+      }
     }
-    default: {
-      throw new InvalidRequestError(`Invalid permission name: ${permissionName}.`)
+  } catch (error) {
+    if (error instanceof InvalidPermissionRequestError) {
+      throw new InvalidRequestError(error.message)
     }
+    throw error
   }
 
   return {
@@ -239,7 +251,14 @@ export async function deletePermissionParcelsHandler(
 
   const { parcels } = (await ctx.request.json()) as PermissionParcelsInput
 
-  await permissions.removeParcelsFromPermission(worldName, permissionName, address, parcels)
+  try {
+    await permissions.removeParcelsFromPermission(worldName, permissionName, address, parcels)
+  } catch (error) {
+    if (error instanceof InvalidPermissionRequestError) {
+      throw new InvalidRequestError(error.message)
+    }
+    throw error
+  }
 
   return { status: 204 }
 }

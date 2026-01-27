@@ -1,9 +1,8 @@
 import { AppComponents } from '../../types'
 import { AllowListPermission, IPermissionsComponent, PermissionType, WorldPermissionsSummary } from './types'
-import { PermissionNotFoundError } from './errors'
+import { InvalidPermissionRequestError, PermissionNotFoundError } from './errors'
 import { EthAddress, Events, WorldsPermissionGrantedEvent, WorldsPermissionRevokedEvent } from '@dcl/schemas'
 import { randomUUID } from 'crypto'
-import { InvalidRequestError } from '@dcl/http-commons'
 
 export async function createPermissionsComponent({
   config,
@@ -11,66 +10,73 @@ export async function createPermissionsComponent({
   snsClient
 }: Pick<AppComponents, 'config' | 'permissionsManager' | 'snsClient'>): Promise<IPermissionsComponent> {
   const builderUrl = await config.requireString('BUILDER_URL')
-  const snsArn = await config.requireString('AWS_SNS_ARN')
 
   /**
-   * Sends a WorldsPermissionGrantedEvent notification.
+   * Sends WorldsPermissionGrantedEvent notifications for multiple addresses.
+   * Uses batched publishing for efficiency.
    */
-  async function sendPermissionGrantedNotification(
+  async function sendPermissionGrantedNotifications(
     worldName: string,
     permission: AllowListPermission,
-    address: string
+    addresses: string[]
   ): Promise<void> {
-    const notificationId = randomUUID()
-    const event: WorldsPermissionGrantedEvent = {
-      type: Events.Type.WORLD,
-      subType: Events.SubType.Worlds.WORLDS_PERMISSION_GRANTED,
-      key: `worlds-permission-granted-${notificationId}`,
-      timestamp: Date.now(),
-      metadata: {
-        title: 'World Permission Granted',
-        description: `You have been granted ${permission} permission for world ${worldName}.`,
-        url: `${builderUrl}/worlds?tab=dcl`,
-        world: worldName,
-        permissions: [permission],
-        address: address.toLowerCase()
-      }
+    if (addresses.length === 0) {
+      return
     }
 
-    await snsClient.publishMessage({
-      Message: JSON.stringify(event),
-      TopicArn: snsArn
+    const events: WorldsPermissionGrantedEvent[] = addresses.map((address) => {
+      const notificationId = randomUUID()
+      return {
+        type: Events.Type.WORLD,
+        subType: Events.SubType.Worlds.WORLDS_PERMISSION_GRANTED,
+        key: `worlds-permission-granted-${notificationId}`,
+        timestamp: Date.now(),
+        metadata: {
+          title: 'World Permission Granted',
+          description: `You have been granted ${permission} permission for world ${worldName}.`,
+          url: `${builderUrl}/worlds?tab=dcl`,
+          world: worldName,
+          permissions: [permission],
+          address: address.toLowerCase()
+        }
+      }
     })
+
+    await snsClient.publishMessages(events)
   }
 
   /**
-   * Sends a WorldsPermissionRevokedEvent notification.
+   * Sends WorldsPermissionRevokedEvent notifications for multiple addresses.
+   * Uses batched publishing for efficiency.
    */
-  async function sendPermissionRevokedNotification(
+  async function sendPermissionRevokedNotifications(
     worldName: string,
     permission: AllowListPermission,
-    address: string
+    addresses: string[]
   ): Promise<void> {
-    const notificationId = randomUUID()
-    const event: WorldsPermissionRevokedEvent = {
-      type: Events.Type.WORLD,
-      subType: Events.SubType.Worlds.WORLDS_PERMISSION_REVOKED,
-      key: `worlds-permission-revoked-${notificationId}`,
-      timestamp: Date.now(),
-      metadata: {
-        title: 'World Permission Revoked',
-        description: `Your ${permission} permission for world ${worldName} has been revoked.`,
-        url: `${builderUrl}/worlds?tab=dcl`,
-        world: worldName,
-        permissions: [permission],
-        address: address.toLowerCase()
-      }
+    if (addresses.length === 0) {
+      return
     }
 
-    await snsClient.publishMessage({
-      Message: JSON.stringify(event),
-      TopicArn: snsArn
+    const events: WorldsPermissionRevokedEvent[] = addresses.map((address) => {
+      const notificationId = randomUUID()
+      return {
+        type: Events.Type.WORLD,
+        subType: Events.SubType.Worlds.WORLDS_PERMISSION_REVOKED,
+        key: `worlds-permission-revoked-${notificationId}`,
+        timestamp: Date.now(),
+        metadata: {
+          title: 'World Permission Revoked',
+          description: `Your ${permission} permission for world ${worldName} has been revoked.`,
+          url: `${builderUrl}/worlds?tab=dcl`,
+          world: worldName,
+          permissions: [permission],
+          address: address.toLowerCase()
+        }
+      }
     })
+
+    await snsClient.publishMessages(events)
   }
 
   /**
@@ -166,9 +172,7 @@ export async function createPermissionsComponent({
     const addedAddresses = await permissionsManager.grantAddressesWorldWidePermission(worldName, permission, wallets)
 
     // Send notifications only to addresses that were actually added
-    for (const address of addedAddresses) {
-      await sendPermissionGrantedNotification(worldName, permission, address)
-    }
+    await sendPermissionGrantedNotifications(worldName, permission, addedAddresses)
   }
 
   /**
@@ -192,9 +196,7 @@ export async function createPermissionsComponent({
     const deletedAddresses = await permissionsManager.removeAddressesPermission(worldName, permission, addresses)
 
     // Send notifications only to addresses that were actually deleted
-    for (const address of deletedAddresses) {
-      await sendPermissionRevokedNotification(worldName, permission, address)
-    }
+    await sendPermissionRevokedNotifications(worldName, permission, deletedAddresses)
   }
 
   /**
@@ -207,7 +209,7 @@ export async function createPermissionsComponent({
    */
   async function setDeploymentPermission(worldName: string, type: PermissionType, wallets: string[]): Promise<void> {
     if (type !== PermissionType.AllowList) {
-      throw new InvalidRequestError(
+      throw new InvalidPermissionRequestError(
         `Invalid payload received. Deployment permission needs to be '${PermissionType.AllowList}'.`
       )
     }
@@ -244,7 +246,7 @@ export async function createPermissionsComponent({
    */
   async function setStreamingPermission(worldName: string, type: PermissionType, wallets?: string[]): Promise<void> {
     if (type !== PermissionType.Unrestricted && type !== PermissionType.AllowList) {
-      throw new InvalidRequestError(
+      throw new InvalidPermissionRequestError(
         `Invalid payload received. Streaming permission needs to be either '${PermissionType.Unrestricted}' or '${PermissionType.AllowList}'.`
       )
     }
@@ -299,7 +301,7 @@ export async function createPermissionsComponent({
 
     // Send notification if permission was newly created
     if (created) {
-      await sendPermissionGrantedNotification(worldName, permission, address)
+      await sendPermissionGrantedNotifications(worldName, permission, [address])
     }
   }
 
@@ -321,7 +323,7 @@ export async function createPermissionsComponent({
     const existingPermission = await permissionsManager.getAddressPermissions(worldName, permission, address)
 
     if (!existingPermission) {
-      throw new InvalidRequestError(
+      throw new InvalidPermissionRequestError(
         `Permission not found. Address ${address} does not have ${permission} permission for world ${worldName}.`
       )
     }
