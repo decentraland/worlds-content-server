@@ -334,11 +334,11 @@ test('WorldsHandler GET /worlds', function ({ components }) {
       })
     })
 
-    describe('and canDeploy filter is provided', function () {
+    describe('and can_deploy filter is provided', function () {
       it('should accept the parameter and return results', async () => {
         const { localFetch } = components
 
-        const response = await localFetch.fetch('/worlds?canDeploy=0x1234567890123456789012345678901234567890')
+        const response = await localFetch.fetch('/worlds?can_deploy=0x1234567890123456789012345678901234567890')
 
         expect(response.status).toBe(200)
         const body = await response.json()

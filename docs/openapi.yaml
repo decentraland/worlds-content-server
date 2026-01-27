@@ -808,7 +808,7 @@ paths:
             enum: [asc, desc]
             default: asc
           description: Sort direction (default "asc")
-        - name: canDeploy
+        - name: can_deploy
           in: query
           required: false
           schema:

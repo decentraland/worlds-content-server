@@ -44,7 +44,7 @@ export async function getWorldsHandler(
   const { limit, offset } = getPaginationParams(ctx.url.searchParams)
 
   // Extract optional query parameters
-  const canDeploy = ctx.url.searchParams.get('canDeploy') ?? undefined
+  const canDeploy = ctx.url.searchParams.get('can_deploy') ?? undefined
   const search = ctx.url.searchParams.get('search') ?? undefined
   const sortParam = ctx.url.searchParams.get('sort') ?? WorldsOrderBy.Name
   const orderParam = ctx.url.searchParams.get('order') ?? OrderDirection.Asc
