@@ -41,6 +41,35 @@ export async function createWorldsManagerComponent({
   const logger = logs.getLogger('worlds-manager')
   const { extractSpawnCoordinates, parseCoordinate, isCoordinateWithinRectangle, getRectangleCenter } = coordinates
 
+  // Cache for pg_trgm extension availability check
+  let trigramExtensionAvailable: boolean | null = null
+
+  async function isTrigramExtensionAvailable(): Promise<boolean> {
+    if (trigramExtensionAvailable !== null) {
+      return trigramExtensionAvailable
+    }
+
+    try {
+      const result = await database.query<{ installed: boolean }>(`
+        SELECT EXISTS (
+          SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm'
+        ) as installed
+      `)
+      trigramExtensionAvailable = result.rows[0]?.installed ?? false
+
+      if (!trigramExtensionAvailable) {
+        logger.warn(
+          'pg_trgm extension is not available. Fuzzy similarity search will be disabled. ' +
+            'Search will still work using full-text search and ILIKE patterns.'
+        )
+      }
+    } catch {
+      trigramExtensionAvailable = false
+    }
+
+    return trigramExtensionAvailable
+  }
+
   async function getRawWorldRecords(): Promise<WorldRecord[]> {
     const result = await database.query<WorldRecord>(
       SQL`SELECT worlds.*, blocked.created_at AS blocked_since
@@ -686,17 +715,28 @@ export async function createWorldsManagerComponent({
     // Apply combined full-text search and trigram search filter to both queries
     // This combines:
     // 1. Full-text search (tsvector) for semantic matching of words
-    // 2. Trigram similarity for fuzzy/partial matching (handles typos, partial words)
+    // 2. ILIKE patterns for substring matching
+    // 3. Trigram similarity for fuzzy/partial matching (if pg_trgm extension is available)
     if (search && search.trim().length > 0) {
-      const searchFilter = SQL` AND (
-        w.search_vector @@ plainto_tsquery('english', ${search})
-        OR w.name ILIKE '%' || ${search} || '%'
-        OR w.title ILIKE '%' || ${search} || '%'
-        OR w.description ILIKE '%' || ${search} || '%'
-        OR similarity(w.name, ${search}) > 0.3
-        OR similarity(COALESCE(w.title, ''), ${search}) > 0.3
-        OR similarity(COALESCE(w.description, ''), ${search}) > 0.3
-      )`
+      const useTrigramSearch = await isTrigramExtensionAvailable()
+
+      const searchFilter = useTrigramSearch
+        ? SQL` AND (
+            w.search_vector @@ plainto_tsquery('english', ${search})
+            OR w.name ILIKE '%' || ${search} || '%'
+            OR w.title ILIKE '%' || ${search} || '%'
+            OR w.description ILIKE '%' || ${search} || '%'
+            OR similarity(w.name, ${search}) > 0.3
+            OR similarity(COALESCE(w.title, ''), ${search}) > 0.3
+            OR similarity(COALESCE(w.description, ''), ${search}) > 0.3
+          )`
+        : SQL` AND (
+            w.search_vector @@ plainto_tsquery('english', ${search})
+            OR w.name ILIKE '%' || ${search} || '%'
+            OR w.title ILIKE '%' || ${search} || '%'
+            OR w.description ILIKE '%' || ${search} || '%'
+          )`
+
       countQuery.append(searchFilter)
       mainQuery.append(searchFilter)
     }
