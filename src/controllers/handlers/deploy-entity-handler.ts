@@ -31,7 +31,7 @@ export async function deployEntity(
   }
 
   const contentHashesInStorage = await ctx.components.storage.existMultiple(
-    Array.from(new Set(entity.content.map(($) => $.hash)))
+    Array.from(new Set((entity.content || []).map(($) => $.hash)))
   )
 
   // run all validations about the deployment
