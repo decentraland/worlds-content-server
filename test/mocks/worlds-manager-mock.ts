@@ -231,10 +231,6 @@ export async function createWorldsManagerMockComponent({
     }
   }
 
-  async function deleteThumbnail(_worldName: string): Promise<void> {
-    // Mock implementation - no-op
-  }
-
   async function getTotalWorldSize(_worldName: string): Promise<bigint> {
     return 0n
   }
@@ -311,6 +307,10 @@ export async function createWorldsManagerMockComponent({
     return { domains, count: domains.length }
   }
 
+  async function getWorlds() {
+    return { worlds: [], total: 0 }
+  }
+
   return {
     getContributableDomains,
     getRawWorldRecords,
@@ -326,6 +326,7 @@ export async function createWorldsManagerMockComponent({
     updateWorldSettings,
     getWorldSettings,
     getTotalWorldSize,
-    getWorldBoundingRectangle
+    getWorldBoundingRectangle,
+    getWorlds
   }
 }

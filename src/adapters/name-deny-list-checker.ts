@@ -38,7 +38,13 @@ export async function createNameDenyListChecker(
     return !isBanned
   }
 
+  const getBannedNames = async (): Promise<string[]> => {
+    const bannedNames = await nameDenyListCache.fetch(NAME_DENY_LIST_ENTRY)
+    return bannedNames?.map((name) => name.replace('.eth', '').replace('.dcl', '')) ?? []
+  }
+
   return {
-    checkNameDenyList
+    checkNameDenyList,
+    getBannedNames
   }
 }
