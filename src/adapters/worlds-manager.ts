@@ -36,42 +36,14 @@ export async function createWorldsManagerComponent({
   logs,
   database,
   nameDenyListChecker,
+  search,
   storage
 }: Pick<
   AppComponents,
-  'coordinates' | 'logs' | 'database' | 'nameDenyListChecker' | 'storage'
+  'coordinates' | 'logs' | 'database' | 'nameDenyListChecker' | 'search' | 'storage'
 >): Promise<IWorldsManager> {
   const logger = logs.getLogger('worlds-manager')
   const { extractSpawnCoordinates, parseCoordinate, isCoordinateWithinRectangle, getRectangleCenter } = coordinates
-
-  // Cache for pg_trgm extension availability check
-  let trigramExtensionAvailable: boolean | null = null
-
-  async function isTrigramExtensionAvailable(): Promise<boolean> {
-    if (trigramExtensionAvailable !== null) {
-      return trigramExtensionAvailable
-    }
-
-    try {
-      const result = await database.query<{ installed: boolean }>(`
-        SELECT EXISTS (
-          SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm'
-        ) as installed
-      `)
-      trigramExtensionAvailable = result.rows[0]?.installed ?? false
-
-      if (!trigramExtensionAvailable) {
-        logger.warn(
-          'pg_trgm extension is not available. Fuzzy similarity search will be disabled. ' +
-            'Search will still work using full-text search and ILIKE patterns.'
-        )
-      }
-    } catch {
-      trigramExtensionAvailable = false
-    }
-
-    return trigramExtensionAvailable
-  }
 
   async function getRawWorldRecords(): Promise<WorldRecord[]> {
     const result = await database.query<WorldRecord>(
@@ -691,7 +663,7 @@ export async function createWorldsManagerComponent({
    * @returns Paginated list of worlds with total count
    */
   async function getWorlds(filters: GetWorldsFilters = {}, options: GetWorldsOptions = {}): Promise<GetWorldsResult> {
-    const { search, canDeploy } = filters
+    const { search: searchTerm, canDeploy } = filters
     const { limit = 100, offset = 0, orderBy = WorldsOrderBy.Name, orderDirection = OrderDirection.Asc } = options
 
     // Log canDeploy parameter - filtering not implemented yet
@@ -755,29 +727,21 @@ export async function createWorldsManagerComponent({
     }
 
     // Apply combined full-text search and trigram search filter to both queries
-    // This combines:
-    // 1. Full-text search (tsvector) for semantic matching of words
-    // 2. ILIKE patterns for substring matching
-    // 3. Trigram similarity for fuzzy/partial matching (if pg_trgm extension is available)
-    if (search && search.trim().length > 0) {
-      const useTrigramSearch = await isTrigramExtensionAvailable()
+    if (searchTerm && searchTerm.trim().length > 0) {
+      // Build the ILIKE and similarity filter
+      const likeFilter = await search.buildLikeSearchFilter(searchTerm, [
+        { column: 'w.name', nullable: false },
+        { column: 'w.title', nullable: true },
+        { column: 'w.description', nullable: true }
+      ])
 
-      const searchFilter = useTrigramSearch
-        ? SQL` AND (
-            w.search_vector @@ plainto_tsquery('english', ${search})
-            OR w.name ILIKE '%' || ${search} || '%'
-            OR w.title ILIKE '%' || ${search} || '%'
-            OR w.description ILIKE '%' || ${search} || '%'
-            OR similarity(w.name, ${search}) > 0.3
-            OR similarity(COALESCE(w.title, ''), ${search}) > 0.3
-            OR similarity(COALESCE(w.description, ''), ${search}) > 0.3
-          )`
-        : SQL` AND (
-            w.search_vector @@ plainto_tsquery('english', ${search})
-            OR w.name ILIKE '%' || ${search} || '%'
-            OR w.title ILIKE '%' || ${search} || '%'
-            OR w.description ILIKE '%' || ${search} || '%'
-          )`
+      // Combine full-text search with ILIKE/similarity filter
+      const searchFilter = SQL` AND (
+            w.search_vector @@ plainto_tsquery('english', ${searchTerm})
+            OR `
+      searchFilter.append(likeFilter)
+      searchFilter.append(SQL`
+          )`)
 
       countQuery.append(searchFilter)
       mainQuery.append(searchFilter)

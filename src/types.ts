@@ -22,6 +22,7 @@ import { IPublisherComponent } from '@dcl/sns-component'
 import { ISettingsComponent } from './logic/settings'
 import { ISchemaValidatorComponent } from '@dcl/schema-validator-component'
 import { ICoordinatesComponent } from './logic/coordinates'
+import { ISearchComponent } from './adapters/search'
 
 export type GlobalContext = {
   components: BaseComponents
@@ -438,6 +439,7 @@ export type BaseComponents = {
   notificationService: INotificationService
   permissionsManager: IPermissionsManager
   peersRegistry: IPeersRegistry
+  search: ISearchComponent
   server: IHttpServerComponent<GlobalContext>
   snsClient: IPublisherComponent
   status: IStatusComponent
