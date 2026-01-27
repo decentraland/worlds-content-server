@@ -231,10 +231,6 @@ export async function createWorldsManagerMockComponent({
     }
   }
 
-  async function deleteThumbnail(_worldName: string): Promise<void> {
-    // Mock implementation - no-op
-  }
-
   async function getTotalWorldSize(_worldName: string): Promise<bigint> {
     return 0n
   }
