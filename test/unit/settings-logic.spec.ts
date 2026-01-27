@@ -132,13 +132,13 @@ describe('SettingsComponent', () => {
             expect.objectContaining({
               type: Events.Type.WORLD,
               subType: Events.SubType.Worlds.WORLD_SETTINGS_CHANGED,
-              key: worldName,
+              key: expect.stringContaining(worldName),
               metadata: expect.objectContaining({})
             }),
             expect.objectContaining({
               type: Events.Type.WORLD,
               subType: Events.SubType.Worlds.WORLD_SPAWN_COORDINATE_SET,
-              key: worldName,
+              key: expect.stringContaining(worldName),
               metadata: expect.objectContaining({
                 name: worldName,
                 oldCoordinate: { x: 0, y: 0 },
@@ -170,7 +170,7 @@ describe('SettingsComponent', () => {
           expect.objectContaining({
             type: Events.Type.WORLD,
             subType: Events.SubType.Worlds.WORLD_SETTINGS_CHANGED,
-            key: worldName,
+            key: expect.stringContaining(worldName),
             metadata: expect.objectContaining({
               title: 'Updated Title'
             })
@@ -203,7 +203,7 @@ describe('SettingsComponent', () => {
             expect.objectContaining({
               type: Events.Type.WORLD,
               subType: Events.SubType.Worlds.WORLD_SPAWN_COORDINATE_SET,
-              key: worldName,
+              key: expect.stringContaining(worldName),
               metadata: expect.objectContaining({
                 name: worldName,
                 oldCoordinate: null,

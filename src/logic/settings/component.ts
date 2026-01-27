@@ -112,7 +112,7 @@ export async function createSettingsComponent(
     const settingsChangedEvent: WorldSettingsChangedEvent = {
       type: Events.Type.WORLD,
       subType: Events.SubType.Worlds.WORLD_SETTINGS_CHANGED,
-      key: worldName,
+      key: `${worldName}-${timestamp}`,
       timestamp,
       metadata: {
         title: settings.title,
@@ -135,7 +135,7 @@ export async function createSettingsComponent(
       const spawnCoordinateSetEvent: WorldSpawnCoordinateSetEvent = {
         type: Events.Type.WORLD,
         subType: Events.SubType.Worlds.WORLD_SPAWN_COORDINATE_SET,
-        key: worldName,
+        key: `${worldName}-${timestamp}`,
         timestamp,
         metadata: {
           name: worldName,
