@@ -835,16 +835,6 @@
     ajv "^8.17.1"
     ajv-formats "^3.0.1"
 
-"@dcl/schemas@22.4.0":
-  version "22.4.0"
-  resolved "https://registry.yarnpkg.com/@dcl/schemas/-/schemas-22.4.0.tgz#36f12a44993c58ec8da979140831128af24aeddb"
-  integrity sha512-uDCTK+Qe5aNLiOk1vs50P41H95gNC/XYSvvl65EWzDBDw1ZWp2+CMpDavuWg1IZiapNbnpgkMSIHYXvJz+WU8Q==
-  dependencies:
-    ajv "^8.11.0"
-    ajv-errors "^3.0.0"
-    ajv-keywords "^5.1.0"
-    mitt "^3.0.1"
-
 "@dcl/schemas@^11.5.0":
   version "11.12.0"
   resolved "https://registry.npmjs.org/@dcl/schemas/-/schemas-11.12.0.tgz"
@@ -859,6 +849,16 @@
   version "18.8.0"
   resolved "https://registry.npmjs.org/@dcl/schemas/-/schemas-18.8.0.tgz"
   integrity sha512-1HxbL0azB7N+kMwYyU4/Uqltc+7F8Lv8UcS3dxDNVTPn71gldIDImj58OM9Y3gIyQG5Tauacrlk5cDkXhjMkOA==
+  dependencies:
+    ajv "^8.11.0"
+    ajv-errors "^3.0.0"
+    ajv-keywords "^5.1.0"
+    mitt "^3.0.1"
+
+"@dcl/schemas@^22.4.0":
+  version "22.4.0"
+  resolved "https://registry.yarnpkg.com/@dcl/schemas/-/schemas-22.4.0.tgz#36f12a44993c58ec8da979140831128af24aeddb"
+  integrity sha512-uDCTK+Qe5aNLiOk1vs50P41H95gNC/XYSvvl65EWzDBDw1ZWp2+CMpDavuWg1IZiapNbnpgkMSIHYXvJz+WU8Q==
   dependencies:
     ajv "^8.11.0"
     ajv-errors "^3.0.0"
@@ -1561,7 +1561,7 @@
   resolved "https://registry.npmjs.org/@redocly/config/-/config-0.22.2.tgz"
   integrity sha512-roRDai8/zr2S9YfmzUfNhKjOF0NdcOIqF7bhf4MVC5UxpjIysDjyudvlAiVbpPHp3eDRWbdzUgtkK1a7YiDNyQ==
 
-"@redocly/openapi-core@1.34.6", "@redocly/openapi-core@^1.34.5", "@redocly/openapi-core@^1.4.0":
+"@redocly/openapi-core@1.34.6", "@redocly/openapi-core@^1.4.0":
   version "1.34.6"
   resolved "https://registry.npmjs.org/@redocly/openapi-core/-/openapi-core-1.34.6.tgz"
   integrity sha512-2+O+riuIUgVSuLl3Lyh5AplWZyVMNuG2F98/o6NrutKJfW4/GTZdPpZlIphS0HGgcOHgmWcCSHj+dWFlZaGSHw==
@@ -3878,18 +3878,7 @@ foreach@^2.0.4:
   resolved "https://registry.npmjs.org/foreach/-/foreach-2.0.6.tgz"
   integrity sha512-k6GAGDyqLe9JaebCsFCoudPPWfihKu8pylYXRlqP1J7ms39iPoTtk2fviNglIeQEwdh0bQeKJ01ZPyuyQvKzwg==
 
-form-data@4.0.5:
-  version "4.0.5"
-  resolved "https://registry.yarnpkg.com/form-data/-/form-data-4.0.5.tgz#b49e48858045ff4cbf6b03e1805cebcad3679053"
-  integrity sha512-8RipRLol37bNs2bhoV67fiTEvdTrbMUYcFTiy3+wuuOnUog2QBHCZWXDRijWQfAkhBj2Uf5UnVaiWwA5vdd82w==
-  dependencies:
-    asynckit "^0.4.0"
-    combined-stream "^1.0.8"
-    es-set-tostringtag "^2.1.0"
-    hasown "^2.0.2"
-    mime-types "^2.1.12"
-
-form-data@^4.0.0, form-data@^4.0.4:
+form-data@4.0.5, form-data@^4.0.0, form-data@^4.0.4:
   version "4.0.5"
   resolved "https://registry.npmjs.org/form-data/-/form-data-4.0.5.tgz"
   integrity sha512-8RipRLol37bNs2bhoV67fiTEvdTrbMUYcFTiy3+wuuOnUog2QBHCZWXDRijWQfAkhBj2Uf5UnVaiWwA5vdd82w==

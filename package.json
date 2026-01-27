@@ -22,7 +22,7 @@
     "@dcl/platform-crypto-middleware": "^1.1.0",
     "@dcl/platform-server-commons": "^1.0.1",
     "@dcl/schema-validator-component": "^0.2.2",
-    "@dcl/schemas": "22.4.0",
+    "@dcl/schemas": "^22.4.0",
     "@dcl/sns-component": "^3.0.0",
     "@ensdomains/eth-ens-namehash": "^2.0.15",
     "@types/busboy": "^1.5.3",
