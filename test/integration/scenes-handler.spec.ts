@@ -23,16 +23,12 @@ function makeSignedRequest(
   })
 }
 
-function buildQuery(coordinates: string[]): string {
-  return coordinates.map((coordinate) => `coordinates=${coordinate}`).join('&')
-}
-
 test('ScenesHandler', function ({ components, stubComponents }) {
   afterEach(() => {
     jest.resetAllMocks()
   })
 
-  describe('GET /world/:world_name/scenes', function () {
+  describe('GET and POST /world/:world_name/scenes', function () {
     describe('when the world has scenes deployed', function () {
       let worldName: string
 
@@ -71,7 +67,11 @@ test('ScenesHandler', function ({ components, stubComponents }) {
           it('should return scenes matching the coordinates', async () => {
             const { localFetch } = components
 
-            const response = await localFetch.fetch(`/world/${worldName}/scenes?${buildQuery(coordinates)}`)
+            const response = await localFetch.fetch(`/world/${worldName}/scenes`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ coordinates })
+            })
 
             expect(response.status).toBe(200)
             const body = await response.json()
@@ -96,12 +96,15 @@ test('ScenesHandler', function ({ components, stubComponents }) {
           it('should respond with 400 and the invalid coordinate', async () => {
             const { localFetch } = components
 
-            const response = await localFetch.fetch(`/world/${worldName}/scenes?${buildQuery(coordinates)}`)
+            const response = await localFetch.fetch(`/world/${worldName}/scenes`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ coordinates })
+            })
 
             expect(response.status).toBe(400)
             expect(await response.json()).toMatchObject({
-              error: 'Bad request',
-              message: 'Invalid coordinate format: invalid. Expected format: x,y (e.g., 0,0 or -1,2)'
+              message: 'Invalid JSON body'
             })
           })
         })
@@ -116,7 +119,11 @@ test('ScenesHandler', function ({ components, stubComponents }) {
           it('should return scenes matching any of the coordinates', async () => {
             const { localFetch } = components
 
-            const response = await localFetch.fetch(`/world/${worldName}/scenes?${buildQuery(coordinates)}`)
+            const response = await localFetch.fetch(`/world/${worldName}/scenes`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ coordinates })
+            })
 
             expect(response.status).toBe(200)
             const body = await response.json()
@@ -134,12 +141,15 @@ test('ScenesHandler', function ({ components, stubComponents }) {
           it('should respond with 400 and the first invalid coordinate', async () => {
             const { localFetch } = components
 
-            const response = await localFetch.fetch(`/world/${worldName}/scenes?${buildQuery(coordinates)}`)
+            const response = await localFetch.fetch(`/world/${worldName}/scenes`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ coordinates })
+            })
 
             expect(response.status).toBe(400)
             expect(await response.json()).toMatchObject({
-              error: 'Bad request',
-              message: 'Invalid coordinate format: bad. Expected format: x,y (e.g., 0,0 or -1,2)'
+              message: 'Invalid JSON body'
             })
           })
         })
@@ -156,6 +166,35 @@ test('ScenesHandler', function ({ components, stubComponents }) {
           expect(body).toMatchObject({
             scenes: expect.any(Array),
             total: expect.any(Number)
+          })
+        })
+      })
+
+      describe('and bounding box filter is provided', function () {
+        describe('and all of x1, x2, y1, y2 are provided', function () {
+          it('should return scenes that have at least one parcel in the bounding box', async () => {
+            const { localFetch } = components
+
+            const response = await localFetch.fetch(`/world/${worldName}/scenes?x1=0&x2=100&y1=0&y2=100`)
+
+            expect(response.status).toBe(200)
+            const body = await response.json()
+            expect(body.total).toBeGreaterThanOrEqual(0)
+            expect(body.scenes).toBeDefined()
+          })
+        })
+
+        describe('and only some of x1, x2, y1, y2 are provided', function () {
+          it('should respond with 400 and require all four', async () => {
+            const { localFetch } = components
+
+            const response = await localFetch.fetch(`/world/${worldName}/scenes?x1=0&x2=10`)
+
+            expect(response.status).toBe(400)
+            expect(await response.json()).toMatchObject({
+              error: 'Bad request',
+              message: expect.stringContaining('Bounding box requires all of x1, x2, y1, y2')
+            })
           })
         })
       })
@@ -195,7 +234,11 @@ test('ScenesHandler', function ({ components, stubComponents }) {
       it('should accept negative coordinate values', async () => {
         const { localFetch } = components
 
-        const response = await localFetch.fetch(`/world/${worldName}/scenes?coordinates=-10,-20`)
+        const response = await localFetch.fetch(`/world/${worldName}/scenes`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ coordinates: ['-10,-20'] })
+        })
 
         expect(response.status).toBe(200)
       })
