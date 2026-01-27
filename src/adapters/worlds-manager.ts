@@ -12,7 +12,10 @@ import {
   GetWorldScenesResult,
   WorldBoundingRectangle,
   SceneOrderBy,
-  OrderDirection
+  OrderDirection,
+  UpdateWorldSettingsResult,
+  SpawnCoordinatesOutOfBoundsError,
+  NoDeployedScenesError
 } from '../types'
 import { streamToBuffer } from '@dcl/catalyst-storage'
 import { Entity, EthAddress } from '@dcl/schemas'
@@ -124,7 +127,7 @@ export async function createWorldsManagerComponent({
     const deployer = deploymentAuthChain[0].payload.toLowerCase()
 
     const fileInfos = await storage.fileInfoMultiple(scene.content?.map((c) => c.hash) || [])
-    const size = scene.content.reduce((acc, c) => acc + (fileInfos.get(c.hash)?.size || 0), 0) || 0
+    const size = scene.content?.reduce((acc, c) => acc + (fileInfos.get(c.hash)?.size || 0), 0) || 0
 
     // Use a transaction to ensure atomicity
     const client = await database.getPool().connect()
@@ -512,45 +515,84 @@ export async function createWorldsManagerComponent({
     worldName: string,
     owner: EthAddress,
     settings: WorldSettings
-  ): Promise<WorldSettings> {
-    const result = await database.query<WorldRecord>(SQL`
-      INSERT INTO worlds (
-        name, owner, permissions,
-        title, description, content_rating, spawn_coordinates, 
-        skybox_time, categories, single_player, show_in_places, thumbnail_hash,
-        created_at, updated_at
-      )
-      VALUES (
-        ${worldName.toLowerCase()},
-        ${owner.toLowerCase()},
-        ${JSON.stringify(defaultPermissions())}::json,
-        ${settings.title ?? null},
-        ${settings.description ?? null},
-        ${settings.contentRating ?? null},
-        ${settings.spawnCoordinates ?? null},
-        ${settings.skyboxTime ?? null},
-        ${settings.categories ?? null}::text[],
-        ${settings.singlePlayer ?? null},
-        ${settings.showInPlaces ?? null},
-        ${settings.thumbnailHash ?? null},
-        ${new Date()},
-        ${new Date()}
-      )
-      ON CONFLICT (name) DO UPDATE SET
-        title = COALESCE(EXCLUDED.title, worlds.title),
-        description = COALESCE(EXCLUDED.description, worlds.description),
-        content_rating = COALESCE(EXCLUDED.content_rating, worlds.content_rating),
-        spawn_coordinates = COALESCE(EXCLUDED.spawn_coordinates, worlds.spawn_coordinates),
-        skybox_time = COALESCE(EXCLUDED.skybox_time, worlds.skybox_time),
-        categories = COALESCE(EXCLUDED.categories, worlds.categories),
-        single_player = COALESCE(EXCLUDED.single_player, worlds.single_player),
-        show_in_places = COALESCE(EXCLUDED.show_in_places, worlds.show_in_places),
-        thumbnail_hash = COALESCE(EXCLUDED.thumbnail_hash, worlds.thumbnail_hash),
-        updated_at = ${new Date()}
-      RETURNING *
-    `)
+  ): Promise<UpdateWorldSettingsResult> {
+    const client = await database.getPool().connect()
 
-    return mapWorldRecordToSettings(result.rows[0])
+    try {
+      await client.query('BEGIN')
+
+      // Get old spawn coordinates atomically
+      const oldSettingsResult = await client.query<{ spawn_coordinates: string | null }>(SQL`
+        SELECT spawn_coordinates FROM worlds WHERE name = ${worldName.toLowerCase()}
+      `)
+      const oldSpawnCoordinates = oldSettingsResult.rows[0]?.spawn_coordinates || null
+
+      // If spawn coordinates are being set, validate against bounding rectangle
+      if (settings.spawnCoordinates) {
+        const boundingRectangle = await getWorldBoundingRectangle(worldName, client)
+
+        if (!boundingRectangle) {
+          throw new NoDeployedScenesError(worldName)
+        }
+
+        const spawnCoord = parseCoordinate(settings.spawnCoordinates)
+        const isWithinBounds = isCoordinateWithinRectangle(spawnCoord, boundingRectangle)
+
+        if (!isWithinBounds) {
+          throw new SpawnCoordinatesOutOfBoundsError(settings.spawnCoordinates, boundingRectangle)
+        }
+      }
+
+      // Perform the upsert
+      const result = await client.query<WorldRecord>(SQL`
+        INSERT INTO worlds (
+          name, owner, permissions,
+          title, description, content_rating, spawn_coordinates, 
+          skybox_time, categories, single_player, show_in_places, thumbnail_hash,
+          created_at, updated_at
+        )
+        VALUES (
+          ${worldName.toLowerCase()},
+          ${owner.toLowerCase()},
+          ${JSON.stringify(defaultPermissions())}::json,
+          ${settings.title ?? null},
+          ${settings.description ?? null},
+          ${settings.contentRating ?? null},
+          ${settings.spawnCoordinates ?? null},
+          ${settings.skyboxTime ?? null},
+          ${settings.categories ?? null}::text[],
+          ${settings.singlePlayer ?? null},
+          ${settings.showInPlaces ?? null},
+          ${settings.thumbnailHash ?? null},
+          ${new Date()},
+          ${new Date()}
+        )
+        ON CONFLICT (name) DO UPDATE SET
+          title = COALESCE(EXCLUDED.title, worlds.title),
+          description = COALESCE(EXCLUDED.description, worlds.description),
+          content_rating = COALESCE(EXCLUDED.content_rating, worlds.content_rating),
+          spawn_coordinates = COALESCE(EXCLUDED.spawn_coordinates, worlds.spawn_coordinates),
+          skybox_time = COALESCE(EXCLUDED.skybox_time, worlds.skybox_time),
+          categories = COALESCE(EXCLUDED.categories, worlds.categories),
+          single_player = COALESCE(EXCLUDED.single_player, worlds.single_player),
+          show_in_places = COALESCE(EXCLUDED.show_in_places, worlds.show_in_places),
+          thumbnail_hash = COALESCE(EXCLUDED.thumbnail_hash, worlds.thumbnail_hash),
+          updated_at = ${new Date()}
+        RETURNING *
+      `)
+
+      await client.query('COMMIT')
+
+      return {
+        settings: mapWorldRecordToSettings(result.rows[0]),
+        oldSpawnCoordinates
+      }
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally {
+      client.release()
+    }
   }
 
   async function getWorldSettings(worldName: string): Promise<WorldSettings | undefined> {

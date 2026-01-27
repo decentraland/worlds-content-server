@@ -2,8 +2,15 @@ import { IConfigComponent } from '@well-known-components/interfaces'
 import { createConfigComponent } from '@well-known-components/env-config-provider'
 import { IContentStorageComponent, createInMemoryStorage } from '@dcl/catalyst-storage'
 import { IPublisherComponent } from '@dcl/sns-component'
+import { Events } from '@dcl/schemas'
 import { createSettingsComponent, ISettingsComponent } from '../../src/logic/settings'
-import { IWorldNamePermissionChecker, IWorldsManager, WorldSettings } from '../../src/types'
+import {
+  IWorldNamePermissionChecker,
+  IWorldsManager,
+  WorldSettings,
+  SpawnCoordinatesOutOfBoundsError,
+  NoDeployedScenesError
+} from '../../src/types'
 import { createMockedNamePermissionChecker } from '../mocks/dcl-name-checker-mock'
 import { createMockedWorldsManager } from '../mocks/world-manager-mock'
 import { createCoordinatesComponent, ICoordinatesComponent } from '../../src/logic/coordinates'
@@ -100,13 +107,11 @@ describe('SettingsComponent', () => {
       beforeEach(() => {
         updatedSettings = { spawnCoordinates: '10,20' }
         namePermissionChecker.checkPermission.mockResolvedValue(true)
-        worldsManager.getWorldSettings.mockResolvedValue({ spawnCoordinates: '0,0' })
-        // Bounding rectangle from (0,0) to (20,30) - input coordinates (10,20) are within this range
-        worldsManager.getWorldBoundingRectangle.mockResolvedValue({
-          min: { x: 0, y: 0 },
-          max: { x: 20, y: 30 }
+        // worldsManager.updateWorldSettings returns the new type with oldSpawnCoordinates
+        worldsManager.updateWorldSettings.mockResolvedValue({
+          settings: updatedSettings,
+          oldSpawnCoordinates: '0,0'
         })
-        worldsManager.updateWorldSettings.mockResolvedValue(updatedSettings)
       })
 
       it('should update the world settings', async () => {
@@ -119,18 +124,93 @@ describe('SettingsComponent', () => {
         })
       })
 
-      it('should emit an SNS notification for settings change', async () => {
+      it('should emit SNS notifications for settings change and spawn coordinate change', async () => {
         await settingsComponent.updateWorldSettings(worldName, signer, input)
 
-        expect(snsClient.publishMessage).toHaveBeenCalledWith(
+        expect(snsClient.publishMessages).toHaveBeenCalledWith(
+          expect.arrayContaining([
+            expect.objectContaining({
+              type: Events.Type.WORLD,
+              subType: Events.SubType.Worlds.WORLD_SETTINGS_CHANGED,
+              key: worldName,
+              metadata: expect.objectContaining({})
+            }),
+            expect.objectContaining({
+              type: Events.Type.WORLD,
+              subType: Events.SubType.Worlds.WORLD_SPAWN_COORDINATE_SET,
+              key: worldName,
+              metadata: expect.objectContaining({
+                name: worldName,
+                oldCoordinate: { x: 0, y: 0 },
+                newCoordinate: { x: 10, y: 20 }
+              })
+            })
+          ])
+        )
+      })
+    })
+
+    describe('when the signer owns the world name and spawn coordinates do not change', () => {
+      let updatedSettings: WorldSettings
+
+      beforeEach(() => {
+        input = { title: 'Updated Title' }
+        updatedSettings = { title: 'Updated Title', spawnCoordinates: '5,5' }
+        namePermissionChecker.checkPermission.mockResolvedValue(true)
+        worldsManager.updateWorldSettings.mockResolvedValue({
+          settings: updatedSettings,
+          oldSpawnCoordinates: '5,5'
+        })
+      })
+
+      it('should emit only the settings changed event without spawn coordinate event', async () => {
+        await settingsComponent.updateWorldSettings(worldName, signer, input)
+
+        expect(snsClient.publishMessages).toHaveBeenCalledWith([
           expect.objectContaining({
-            type: 'worlds',
-            subType: 'worlds-settings-changed',
-            worldName,
-            settings: expect.objectContaining({
-              spawnCoordinates: '10,20'
+            type: Events.Type.WORLD,
+            subType: Events.SubType.Worlds.WORLD_SETTINGS_CHANGED,
+            key: worldName,
+            metadata: expect.objectContaining({
+              title: 'Updated Title'
             })
           })
+        ])
+        // Verify only one event was sent (no spawn coordinate event)
+        const calledWith = (snsClient.publishMessages as jest.Mock).mock.calls[0][0]
+        expect(calledWith).toHaveLength(1)
+      })
+    })
+
+    describe('when the world has no previous spawn coordinates', () => {
+      let updatedSettings: WorldSettings
+
+      beforeEach(() => {
+        input = { spawnCoordinates: '10,20' }
+        updatedSettings = { spawnCoordinates: '10,20' }
+        namePermissionChecker.checkPermission.mockResolvedValue(true)
+        worldsManager.updateWorldSettings.mockResolvedValue({
+          settings: updatedSettings,
+          oldSpawnCoordinates: null
+        })
+      })
+
+      it('should emit spawn coordinate event with null oldCoordinate', async () => {
+        await settingsComponent.updateWorldSettings(worldName, signer, input)
+
+        expect(snsClient.publishMessages).toHaveBeenCalledWith(
+          expect.arrayContaining([
+            expect.objectContaining({
+              type: Events.Type.WORLD,
+              subType: Events.SubType.Worlds.WORLD_SPAWN_COORDINATE_SET,
+              key: worldName,
+              metadata: expect.objectContaining({
+                name: worldName,
+                oldCoordinate: null,
+                newCoordinate: { x: 10, y: 20 }
+              })
+            })
+          ])
         )
       })
     })
@@ -156,12 +236,13 @@ describe('SettingsComponent', () => {
       beforeEach(() => {
         input = { spawnCoordinates: '100,100' }
         namePermissionChecker.checkPermission.mockResolvedValue(true)
-        worldsManager.getWorldSettings.mockResolvedValue({ spawnCoordinates: '0,0' })
-        // Bounding rectangle from (0,0) to (20,30) - input coordinates (100,100) are outside this range
-        worldsManager.getWorldBoundingRectangle.mockResolvedValue({
-          min: { x: 0, y: 0 },
-          max: { x: 20, y: 30 }
-        })
+        // worldsManager.updateWorldSettings throws SpawnCoordinatesOutOfBoundsError
+        worldsManager.updateWorldSettings.mockRejectedValue(
+          new SpawnCoordinatesOutOfBoundsError('100,100', {
+            min: { x: 0, y: 0 },
+            max: { x: 20, y: 30 }
+          })
+        )
       })
 
       it('should throw a ValidationError with a message saying that the spawn coordinates are outside the world shape rectangle', async () => {
@@ -179,8 +260,8 @@ describe('SettingsComponent', () => {
       beforeEach(() => {
         input = { spawnCoordinates: '10,20' }
         namePermissionChecker.checkPermission.mockResolvedValue(true)
-        worldsManager.getWorldSettings.mockResolvedValue({ spawnCoordinates: '0,0' })
-        worldsManager.getWorldBoundingRectangle.mockResolvedValue(undefined)
+        // worldsManager.updateWorldSettings throws NoDeployedScenesError
+        worldsManager.updateWorldSettings.mockRejectedValue(new NoDeployedScenesError(worldName))
       })
 
       it('should throw a ValidationError with the correct message', async () => {
@@ -200,8 +281,10 @@ describe('SettingsComponent', () => {
         input = {}
         updatedSettings = {}
         namePermissionChecker.checkPermission.mockResolvedValue(true)
-        worldsManager.getWorldSettings.mockResolvedValue({ spawnCoordinates: '0,0' })
-        worldsManager.updateWorldSettings.mockResolvedValue(updatedSettings)
+        worldsManager.updateWorldSettings.mockResolvedValue({
+          settings: updatedSettings,
+          oldSpawnCoordinates: '0,0'
+        })
       })
 
       it('should update settings without validating spawnCoordinates', async () => {
@@ -220,8 +303,10 @@ describe('SettingsComponent', () => {
         input = {}
         updatedSettings = {}
         namePermissionChecker.checkPermission.mockResolvedValue(true)
-        worldsManager.getWorldSettings.mockResolvedValue({ spawnCoordinates: '0,0' })
-        worldsManager.updateWorldSettings.mockResolvedValue(updatedSettings)
+        worldsManager.updateWorldSettings.mockResolvedValue({
+          settings: updatedSettings,
+          oldSpawnCoordinates: '0,0'
+        })
       })
 
       it('should normalize the signer address to lowercase', async () => {
@@ -238,7 +323,10 @@ describe('SettingsComponent', () => {
         input = { title: 'My World' }
         updatedSettings = { title: 'My World' }
         namePermissionChecker.checkPermission.mockResolvedValue(true)
-        worldsManager.updateWorldSettings.mockResolvedValue(updatedSettings)
+        worldsManager.updateWorldSettings.mockResolvedValue({
+          settings: updatedSettings,
+          oldSpawnCoordinates: null
+        })
       })
 
       it('should create the world entry via upsert and update settings', async () => {

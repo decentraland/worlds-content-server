@@ -701,4 +701,102 @@ describe('CoordinatesComponent', () => {
       })
     })
   })
+
+  describe('when comparing coordinates for equality', () => {
+    describe('and both coordinates are null', () => {
+      let result: boolean
+
+      beforeEach(() => {
+        result = coordinatesComponent.areCoordinatesEqual(null, null)
+      })
+
+      it('should return true', () => {
+        expect(result).toBe(true)
+      })
+    })
+
+    describe('and the first coordinate is null and the second is not', () => {
+      let result: boolean
+
+      beforeEach(() => {
+        result = coordinatesComponent.areCoordinatesEqual(null, { x: 5, y: 10 })
+      })
+
+      it('should return false', () => {
+        expect(result).toBe(false)
+      })
+    })
+
+    describe('and the first coordinate is not null and the second is null', () => {
+      let result: boolean
+
+      beforeEach(() => {
+        result = coordinatesComponent.areCoordinatesEqual({ x: 5, y: 10 }, null)
+      })
+
+      it('should return false', () => {
+        expect(result).toBe(false)
+      })
+    })
+
+    describe('and both coordinates are equal', () => {
+      let result: boolean
+
+      beforeEach(() => {
+        result = coordinatesComponent.areCoordinatesEqual({ x: 5, y: 10 }, { x: 5, y: 10 })
+      })
+
+      it('should return true', () => {
+        expect(result).toBe(true)
+      })
+    })
+
+    describe('and the x values are different', () => {
+      let result: boolean
+
+      beforeEach(() => {
+        result = coordinatesComponent.areCoordinatesEqual({ x: 5, y: 10 }, { x: 6, y: 10 })
+      })
+
+      it('should return false', () => {
+        expect(result).toBe(false)
+      })
+    })
+
+    describe('and the y values are different', () => {
+      let result: boolean
+
+      beforeEach(() => {
+        result = coordinatesComponent.areCoordinatesEqual({ x: 5, y: 10 }, { x: 5, y: 11 })
+      })
+
+      it('should return false', () => {
+        expect(result).toBe(false)
+      })
+    })
+
+    describe('and both x and y values are different', () => {
+      let result: boolean
+
+      beforeEach(() => {
+        result = coordinatesComponent.areCoordinatesEqual({ x: 5, y: 10 }, { x: 6, y: 11 })
+      })
+
+      it('should return false', () => {
+        expect(result).toBe(false)
+      })
+    })
+
+    describe('and the coordinates have negative values and are equal', () => {
+      let result: boolean
+
+      beforeEach(() => {
+        result = coordinatesComponent.areCoordinatesEqual({ x: -5, y: -10 }, { x: -5, y: -10 })
+      })
+
+      it('should return true', () => {
+        expect(result).toBe(true)
+      })
+    })
+  })
 })

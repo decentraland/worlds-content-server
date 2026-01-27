@@ -221,6 +221,28 @@ export type WorldBoundingRectangle = {
   max: { x: number; y: number }
 }
 
+export type UpdateWorldSettingsResult = {
+  settings: WorldSettings
+  oldSpawnCoordinates: string | null
+}
+
+export class SpawnCoordinatesOutOfBoundsError extends Error {
+  constructor(
+    public readonly spawnCoordinates: string,
+    public readonly boundingRectangle: WorldBoundingRectangle
+  ) {
+    super(`Spawn coordinates "${spawnCoordinates}" are outside the world bounding rectangle`)
+    this.name = 'SpawnCoordinatesOutOfBoundsError'
+  }
+}
+
+export class NoDeployedScenesError extends Error {
+  constructor(public readonly worldName: string) {
+    super(`World "${worldName}" has no deployed scenes`)
+    this.name = 'NoDeployedScenesError'
+  }
+}
+
 export type IWorldsManager = {
   getRawWorldRecords(): Promise<WorldRecord[]>
   getDeployedWorldCount(): Promise<{ ens: number; dcl: number }>
@@ -233,7 +255,7 @@ export type IWorldsManager = {
   undeployWorld(worldName: string): Promise<void>
   getContributableDomains(address: string): Promise<{ domains: ContributorDomain[]; count: number }>
   getWorldScenes(filters?: GetWorldScenesFilters, options?: GetWorldScenesOptions): Promise<GetWorldScenesResult>
-  updateWorldSettings(worldName: string, owner: EthAddress, settings: WorldSettings): Promise<WorldSettings>
+  updateWorldSettings(worldName: string, owner: EthAddress, settings: WorldSettings): Promise<UpdateWorldSettingsResult>
   getWorldSettings(worldName: string): Promise<WorldSettings | undefined>
   getTotalWorldSize(worldName: string): Promise<bigint>
   getWorldBoundingRectangle(worldName: string): Promise<WorldBoundingRectangle | undefined>

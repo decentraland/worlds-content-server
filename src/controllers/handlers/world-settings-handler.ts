@@ -3,6 +3,7 @@ import { IHttpServerComponent } from '@well-known-components/interfaces'
 import { DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
 import { UnauthorizedError, ValidationError, WorldNotFoundError } from '../../logic/settings'
 import { FormDataContext, isDefinedMultipartField } from '../../logic/multipart'
+import { ICoordinatesComponent } from '../../logic/coordinates'
 
 type SnakeCaseWorldSettings = {
   title?: string
@@ -30,7 +31,10 @@ function toSnakeCaseSettings(settings: WorldSettings): SnakeCaseWorldSettings {
   }
 }
 
-function parseMultipartInput(formData: FormDataContext['formData']): WorldSettingsInput {
+function parseMultipartInput(
+  formData: FormDataContext['formData'],
+  coordinates: ICoordinatesComponent
+): WorldSettingsInput {
   const { fields, files } = formData
   const input: WorldSettingsInput = {}
 
@@ -61,8 +65,14 @@ function parseMultipartInput(formData: FormDataContext['formData']): WorldSettin
   }
 
   if (isDefinedMultipartField(fields.spawn_coordinates)) {
-    // Will be validated later
-    input.spawnCoordinates = fields.spawn_coordinates.value[0]
+    const spawnCoordinatesValue = fields.spawn_coordinates.value[0]
+    // Validate format using coordinates component
+    try {
+      coordinates.parseCoordinate(spawnCoordinatesValue)
+    } catch (error) {
+      throw new ValidationError(`Invalid spawnCoordinates format: "${spawnCoordinatesValue}".`)
+    }
+    input.spawnCoordinates = spawnCoordinatesValue
   }
 
   if (isDefinedMultipartField(fields.skybox_time)) {
@@ -134,11 +144,11 @@ export async function updateWorldSettingsHandler(
     FormDataContext
 ): Promise<IHttpServerComponent.IResponse> {
   const { world_name } = ctx.params
-  const { settings } = ctx.components
+  const { coordinates, settings } = ctx.components
   const signer = ctx.verification!.auth
 
   try {
-    const input = parseMultipartInput(ctx.formData)
+    const input = parseMultipartInput(ctx.formData, coordinates)
     const updatedSettings = await settings.updateWorldSettings(world_name, signer, input)
 
     return {

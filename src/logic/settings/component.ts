@@ -1,8 +1,16 @@
 import { createHash } from 'crypto'
-import { AppComponents, WorldSettings, WorldSettingsInput } from '../../types'
+import { Events, WorldSettingsChangedEvent, WorldSpawnCoordinateSetEvent } from '@dcl/schemas'
+import {
+  AppComponents,
+  NoDeployedScenesError,
+  SpawnCoordinatesOutOfBoundsError,
+  WorldSettings,
+  WorldSettingsInput
+} from '../../types'
 import { UnauthorizedError, ValidationError, WorldNotFoundError } from './errors'
 import { ISettingsComponent } from './types'
 import { bufferToStream } from '@dcl/catalyst-storage/dist/content-item'
+import { Coordinate } from '../coordinates'
 
 export async function createSettingsComponent(
   components: Pick<
@@ -13,7 +21,14 @@ export async function createSettingsComponent(
   const { config, coordinates, namePermissionChecker, storage, snsClient, worldsManager } = components
   const baseUrl = await config.requireString('HTTP_BASE_URL')
 
-  const { parseCoordinate, isCoordinateWithinRectangle } = coordinates
+  const { parseCoordinate, areCoordinatesEqual } = coordinates
+
+  function parseSpawnCoordinates(spawnCoordinates: string | null | undefined): Coordinate | null {
+    if (!spawnCoordinates) {
+      return null
+    }
+    return parseCoordinate(spawnCoordinates)
+  }
 
   async function getWorldSettings(worldName: string): Promise<WorldSettings> {
     const settings = await worldsManager.getWorldSettings(worldName)
@@ -39,33 +54,6 @@ export async function createSettingsComponent(
       throw new UnauthorizedError()
     }
 
-    // Validate spawnCoordinates if provided
-    if (settings.spawnCoordinates) {
-      const boundingRectangle = await worldsManager.getWorldBoundingRectangle(worldName)
-
-      if (!boundingRectangle) {
-        throw new ValidationError(
-          `Invalid spawnCoordinates "${settings.spawnCoordinates}". The world has no deployed scenes.`
-        )
-      }
-
-      let spawnCoord: ReturnType<typeof parseCoordinate>
-
-      try {
-        spawnCoord = parseCoordinate(settings.spawnCoordinates)
-      } catch (error) {
-        throw new ValidationError(`Invalid spawnCoordinates format: "${settings.spawnCoordinates}".`)
-      }
-      const isWithinBounds = isCoordinateWithinRectangle(spawnCoord, boundingRectangle)
-
-      if (!isWithinBounds) {
-        const { min, max } = boundingRectangle
-        throw new ValidationError(
-          `Invalid spawnCoordinates "${settings.spawnCoordinates}". It must be within the world shape rectangle: (${min.x},${min.y}) to (${max.x},${max.y}).`
-        )
-      }
-    }
-
     // Handle thumbnail upload
     let thumbnailHash: string | undefined
     if (settings.thumbnail) {
@@ -74,43 +62,91 @@ export async function createSettingsComponent(
       await storage.storeStream(thumbnailHash, bufferToStream(settings.thumbnail))
     }
 
-    const updatedSettings = await worldsManager.updateWorldSettings(worldName, normalizedSigner, {
-      ...settings,
-      thumbnailHash: thumbnailHash ?? undefined
-    })
+    let result: { settings: WorldSettings; oldSpawnCoordinates: string | null }
 
-    // Emit SNS notification for settings change
-    await emitSettingsChangedEvent(worldName, updatedSettings)
+    try {
+      result = await worldsManager.updateWorldSettings(worldName, normalizedSigner, {
+        ...settings,
+        thumbnailHash: thumbnailHash ?? undefined
+      })
+    } catch (error) {
+      // Convert worlds-manager errors to validation errors
+      if (error instanceof NoDeployedScenesError) {
+        throw new ValidationError(
+          `Invalid spawnCoordinates "${settings.spawnCoordinates}". The world has no deployed scenes.`
+        )
+      }
+      if (error instanceof SpawnCoordinatesOutOfBoundsError) {
+        const { min, max } = error.boundingRectangle
+        throw new ValidationError(
+          `Invalid spawnCoordinates "${error.spawnCoordinates}". It must be within the world shape rectangle: (${min.x},${min.y}) to (${max.x},${max.y}).`
+        )
+      }
+      throw error
+    }
 
-    return updatedSettings
+    // Parse old and new spawn coordinates for comparison
+    const oldSpawnCoordinates = parseSpawnCoordinates(result.oldSpawnCoordinates)
+    const newSpawnCoordinates = parseSpawnCoordinates(result.settings.spawnCoordinates)
+
+    // Emit SNS notifications for settings change
+    await emitSettingsChangedEvents(worldName, result.settings, oldSpawnCoordinates, newSpawnCoordinates)
+
+    return result.settings
   }
 
   function getThumbnailUrl(hash: string): string {
     return `${baseUrl}/contents/${hash}`
   }
 
-  async function emitSettingsChangedEvent(worldName: string, settings: WorldSettings): Promise<void> {
-    const settingsChangedEvent = {
-      type: 'worlds' as const,
-      subType: 'worlds-settings-changed' as const,
+  async function emitSettingsChangedEvents(
+    worldName: string,
+    settings: WorldSettings,
+    oldSpawnCoordinates: Coordinate | null,
+    newSpawnCoordinates: Coordinate | null
+  ): Promise<void> {
+    const timestamp = Date.now()
+    const events: (WorldSettingsChangedEvent | WorldSpawnCoordinateSetEvent)[] = []
+
+    // Build the settings changed event (without spawn coordinates)
+    const settingsChangedEvent: WorldSettingsChangedEvent = {
+      type: Events.Type.WORLD,
+      subType: Events.SubType.Worlds.WORLD_SETTINGS_CHANGED,
       key: worldName,
-      timestamp: Date.now(),
-      worldName,
-      settings: {
+      timestamp,
+      metadata: {
         title: settings.title,
         description: settings.description,
         contentRating: settings.contentRating,
-        spawnCoordinates: settings.spawnCoordinates,
         skyboxTime: settings.skyboxTime,
         categories: settings.categories,
         singlePlayer: settings.singlePlayer,
         showInPlaces: settings.showInPlaces,
         thumbnailUrl: settings.thumbnailHash ? getThumbnailUrl(settings.thumbnailHash) : undefined
-      },
-      contentServerUrls: baseUrl ? [baseUrl] : []
+      }
+    }
+    events.push(settingsChangedEvent)
+
+    // Check if spawn coordinates changed using areCoordinatesEqual
+    const spawnCoordinatesChanged =
+      newSpawnCoordinates !== null && !areCoordinatesEqual(oldSpawnCoordinates, newSpawnCoordinates)
+
+    if (spawnCoordinatesChanged) {
+      const spawnCoordinateSetEvent: WorldSpawnCoordinateSetEvent = {
+        type: Events.Type.WORLD,
+        subType: Events.SubType.Worlds.WORLD_SPAWN_COORDINATE_SET,
+        key: worldName,
+        timestamp,
+        metadata: {
+          name: worldName,
+          oldCoordinate: oldSpawnCoordinates,
+          newCoordinate: newSpawnCoordinates
+        }
+      }
+      events.push(spawnCoordinateSetEvent)
     }
 
-    await snsClient.publishMessage(settingsChangedEvent)
+    await snsClient.publishMessages(events)
   }
 
   return {

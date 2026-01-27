@@ -114,11 +114,29 @@ export function createCoordinatesComponent(): ICoordinatesComponent {
     }
   }
 
+  /**
+   * Compares two coordinates for equality
+   *
+   * @param a - First coordinate (can be null)
+   * @param b - Second coordinate (can be null)
+   * @returns true if both coordinates are equal (or both are null), false otherwise
+   */
+  function areCoordinatesEqual(a: Coordinate | null, b: Coordinate | null): boolean {
+    if (a === null && b === null) {
+      return true
+    }
+    if (a === null || b === null) {
+      return false
+    }
+    return a.x === b.x && a.y === b.y
+  }
+
   return {
     parseCoordinate,
     calculateBoundingRectangle,
     isCoordinateWithinRectangle,
     extractSpawnCoordinates,
-    getRectangleCenter
+    getRectangleCenter,
+    areCoordinatesEqual
   }
 }
