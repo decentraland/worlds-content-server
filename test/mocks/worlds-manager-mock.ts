@@ -12,7 +12,8 @@ import {
   WorldScene,
   WorldSettings,
   WorldBoundingRectangle,
-  OrderDirection
+  OrderDirection,
+  UpdateWorldSettingsResult
 } from '../../src/types'
 import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage'
 import { Entity, EthAddress } from '@dcl/schemas'
@@ -205,8 +206,9 @@ export async function createWorldsManagerMockComponent({
     worldName: string,
     _owner: EthAddress,
     settings: WorldSettings
-  ): Promise<WorldSettings> {
+  ): Promise<UpdateWorldSettingsResult> {
     const existingMetadata = await getMetadataForWorld(worldName)
+    const oldSpawnCoordinates = existingMetadata?.spawnCoordinates || null
 
     // Merge new settings with existing settings
     const updatedSettings: WorldSettings = {
@@ -218,7 +220,10 @@ export async function createWorldsManagerMockComponent({
       spawnCoordinates: updatedSettings.spawnCoordinates || null
     })
 
-    return updatedSettings
+    return {
+      settings: updatedSettings,
+      oldSpawnCoordinates
+    }
   }
 
   async function getWorldSettings(worldName: string): Promise<WorldSettings | undefined> {
