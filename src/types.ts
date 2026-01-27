@@ -122,6 +122,52 @@ export type GetWorldScenesResult = {
   total: number
 }
 
+export type WorldShape = {
+  x1: number
+  x2: number
+  y1: number
+  y2: number
+}
+
+export type WorldInfo = {
+  name: string
+  owner: string
+  title: string | null
+  description: string | null
+  shape: WorldShape | null
+  contentRating: string | null
+  spawnCoordinates: string | null
+  skyboxTime: number | null
+  categories: string[] | null
+  singlePlayer: boolean | null
+  showInPlaces: boolean | null
+  thumbnailHash: string | null
+  lastDeployedAt: Date | null
+  blockedSince: Date | null
+}
+
+export type GetWorldsFilters = {
+  canDeploy?: string // address placeholder - filter not implemented yet
+  search?: string
+}
+
+export enum WorldsOrderBy {
+  Name = 'name',
+  LastDeployedAt = 'last_deployed_at'
+}
+
+export type GetWorldsOptions = {
+  limit?: number
+  offset?: number
+  orderBy?: WorldsOrderBy
+  orderDirection?: OrderDirection
+}
+
+export type GetWorldsResult = {
+  worlds: WorldInfo[]
+  total: number
+}
+
 export type WorldMetadata = {
   permissions: Permissions
   spawnCoordinates: string | null
@@ -167,6 +213,7 @@ export type IWorldNamePermissionChecker = {
 }
 
 export type INameDenyListChecker = {
+  getBannedNames(): Promise<string[]>
   checkNameDenyList(worldName: string): Promise<boolean>
 }
 
@@ -259,6 +306,7 @@ export type IWorldsManager = {
   getWorldSettings(worldName: string): Promise<WorldSettings | undefined>
   getTotalWorldSize(worldName: string): Promise<bigint>
   getWorldBoundingRectangle(worldName: string): Promise<WorldBoundingRectangle | undefined>
+  getWorlds(filters?: GetWorldsFilters, options?: GetWorldsOptions): Promise<GetWorldsResult>
 }
 
 export type IPermissionsManager = {

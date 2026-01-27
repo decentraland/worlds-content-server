@@ -15,7 +15,12 @@ import {
   OrderDirection,
   UpdateWorldSettingsResult,
   SpawnCoordinatesOutOfBoundsError,
-  NoDeployedScenesError
+  NoDeployedScenesError,
+  GetWorldsFilters,
+  GetWorldsOptions,
+  GetWorldsResult,
+  WorldInfo,
+  WorldsOrderBy
 } from '../types'
 import { streamToBuffer } from '@dcl/catalyst-storage'
 import { Entity, EthAddress } from '@dcl/schemas'
@@ -38,6 +43,35 @@ export async function createWorldsManagerComponent({
 >): Promise<IWorldsManager> {
   const logger = logs.getLogger('worlds-manager')
   const { extractSpawnCoordinates, parseCoordinate, isCoordinateWithinRectangle, getRectangleCenter } = coordinates
+
+  // Cache for pg_trgm extension availability check
+  let trigramExtensionAvailable: boolean | null = null
+
+  async function isTrigramExtensionAvailable(): Promise<boolean> {
+    if (trigramExtensionAvailable !== null) {
+      return trigramExtensionAvailable
+    }
+
+    try {
+      const result = await database.query<{ installed: boolean }>(`
+        SELECT EXISTS (
+          SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm'
+        ) as installed
+      `)
+      trigramExtensionAvailable = result.rows[0]?.installed ?? false
+
+      if (!trigramExtensionAvailable) {
+        logger.warn(
+          'pg_trgm extension is not available. Fuzzy similarity search will be disabled. ' +
+            'Search will still work using full-text search and ILIKE patterns.'
+        )
+      }
+    } catch {
+      trigramExtensionAvailable = false
+    }
+
+    return trigramExtensionAvailable
+  }
 
   async function getRawWorldRecords(): Promise<WorldRecord[]> {
     const result = await database.query<WorldRecord>(
@@ -389,25 +423,6 @@ export async function createWorldsManagerComponent({
       mainQuery.append(bboxCondition)
     }
 
-    // Apply bounding box filter (scenes that have at least one parcel within the rectangle).
-    // LATERAL parses each "x,y" once; EXISTS short-circuits on first matching parcel.
-    if (filters?.boundingBox) {
-      const { x1, x2, y1, y2 } = filters.boundingBox
-      const xMin = Math.min(x1, x2)
-      const xMax = Math.max(x1, x2)
-      const yMin = Math.min(y1, y2)
-      const yMax = Math.max(y1, y2)
-      const bboxCondition = SQL` AND EXISTS (
-        SELECT 1
-        FROM unnest(parcels) AS coord,
-             LATERAL (SELECT string_to_array(coord, ',') AS arr) a
-        WHERE (a.arr)[1]::int BETWEEN ${xMin} AND ${xMax}
-          AND (a.arr)[2]::int BETWEEN ${yMin} AND ${yMax}
-      )`
-      countQuery.append(bboxCondition)
-      mainQuery.append(bboxCondition)
-    }
-
     // Add ordering (default: created_at ASC)
     const orderBy = options?.orderBy ?? SceneOrderBy.CreatedAt
     const orderDirection = options?.orderDirection ?? OrderDirection.Asc
@@ -668,6 +683,176 @@ export async function createWorldsManagerComponent({
     }
   }
 
+  /**
+   * Gets a paginated list of worlds with optional search and sorting
+   *
+   * @param filters - Optional filters for search and canDeploy address (canDeploy not implemented yet)
+   * @param options - Pagination and sorting options
+   * @returns Paginated list of worlds with total count
+   */
+  async function getWorlds(filters: GetWorldsFilters = {}, options: GetWorldsOptions = {}): Promise<GetWorldsResult> {
+    const { search, canDeploy } = filters
+    const { limit = 100, offset = 0, orderBy = WorldsOrderBy.Name, orderDirection = OrderDirection.Asc } = options
+
+    // Log canDeploy parameter - filtering not implemented yet
+    if (canDeploy) {
+      logger.debug(`canDeploy filter received for address: ${canDeploy} (filter not implemented yet)`)
+    }
+
+    // Get banned names to exclude from query
+    const bannedNames = await nameDenyListChecker.getBannedNames()
+
+    // Build base count query
+    const countQuery = SQL`
+      SELECT COUNT(*) as total
+      FROM worlds w
+      WHERE 1=1
+    `
+
+    // Build the main query
+    // Join with world_scenes to get last deployment time and bounding rectangle
+    const mainQuery = SQL`
+      WITH world_stats AS (
+        SELECT 
+          world_name,
+          MAX(created_at) as last_deployed_at,
+          MIN(SPLIT_PART(parcel, ',', 1)::integer) as min_x,
+          MAX(SPLIT_PART(parcel, ',', 1)::integer) as max_x,
+          MIN(SPLIT_PART(parcel, ',', 2)::integer) as min_y,
+          MAX(SPLIT_PART(parcel, ',', 2)::integer) as max_y
+        FROM world_scenes, UNNEST(parcels) as parcel
+        GROUP BY world_name
+      )
+      SELECT 
+        w.name,
+        w.owner,
+        w.title,
+        w.description,
+        w.content_rating,
+        w.spawn_coordinates,
+        w.skybox_time,
+        w.categories,
+        w.single_player,
+        w.show_in_places,
+        w.thumbnail_hash,
+        ws.last_deployed_at,
+        ws.min_x,
+        ws.max_x,
+        ws.min_y,
+        ws.max_y,
+        b.created_at as blocked_since
+      FROM worlds w
+      LEFT JOIN world_stats ws ON w.name = ws.world_name
+      LEFT JOIN blocked b ON w.owner = b.wallet
+      WHERE 1=1
+    `
+
+    // Exclude banned names from both queries
+    if (bannedNames.length > 0) {
+      const bannedFilter = SQL` AND w.name != ALL(${bannedNames})`
+      countQuery.append(bannedFilter)
+      mainQuery.append(bannedFilter)
+    }
+
+    // Apply combined full-text search and trigram search filter to both queries
+    // This combines:
+    // 1. Full-text search (tsvector) for semantic matching of words
+    // 2. ILIKE patterns for substring matching
+    // 3. Trigram similarity for fuzzy/partial matching (if pg_trgm extension is available)
+    if (search && search.trim().length > 0) {
+      const useTrigramSearch = await isTrigramExtensionAvailable()
+
+      const searchFilter = useTrigramSearch
+        ? SQL` AND (
+            w.search_vector @@ plainto_tsquery('english', ${search})
+            OR w.name ILIKE '%' || ${search} || '%'
+            OR w.title ILIKE '%' || ${search} || '%'
+            OR w.description ILIKE '%' || ${search} || '%'
+            OR similarity(w.name, ${search}) > 0.3
+            OR similarity(COALESCE(w.title, ''), ${search}) > 0.3
+            OR similarity(COALESCE(w.description, ''), ${search}) > 0.3
+          )`
+        : SQL` AND (
+            w.search_vector @@ plainto_tsquery('english', ${search})
+            OR w.name ILIKE '%' || ${search} || '%'
+            OR w.title ILIKE '%' || ${search} || '%'
+            OR w.description ILIKE '%' || ${search} || '%'
+          )`
+
+      countQuery.append(searchFilter)
+      mainQuery.append(searchFilter)
+    }
+
+    // Add ordering
+    // Using safe string interpolation since orderBy and orderDirection are enum values
+    if (orderBy === WorldsOrderBy.LastDeployedAt) {
+      // Put worlds without deployments last when sorting by last_deployed_at
+      mainQuery.append(
+        ` ORDER BY ws.last_deployed_at IS NULL ${orderDirection === OrderDirection.Asc ? 'ASC' : 'DESC'}, ws.last_deployed_at ${orderDirection.toUpperCase()}`
+      )
+    } else {
+      mainQuery.append(` ORDER BY w.name ${orderDirection.toUpperCase()}`)
+    }
+
+    // Apply pagination
+    mainQuery.append(SQL` LIMIT ${limit} OFFSET ${offset}`)
+
+    type WorldRow = {
+      name: string
+      owner: string
+      title: string | null
+      description: string | null
+      content_rating: string | null
+      spawn_coordinates: string | null
+      skybox_time: number | null
+      categories: string[] | null
+      single_player: boolean | null
+      show_in_places: boolean | null
+      thumbnail_hash: string | null
+      last_deployed_at: Date | null
+      min_x: number | null
+      max_x: number | null
+      min_y: number | null
+      max_y: number | null
+      blocked_since: Date | null
+    }
+
+    // Execute both queries concurrently
+    const [countResult, result] = await Promise.all([
+      database.query<{ total: string }>(countQuery),
+      database.query<WorldRow>(mainQuery)
+    ])
+
+    const total = parseInt(countResult.rows[0]?.total || '0', 10)
+
+    const worlds: WorldInfo[] = result.rows.map((row) => ({
+      name: row.name,
+      owner: row.owner,
+      title: row.title,
+      description: row.description,
+      contentRating: row.content_rating,
+      spawnCoordinates: row.spawn_coordinates,
+      skyboxTime: row.skybox_time,
+      categories: row.categories,
+      singlePlayer: row.single_player,
+      showInPlaces: row.show_in_places,
+      thumbnailHash: row.thumbnail_hash,
+      shape:
+        row.min_x !== null && row.max_x !== null && row.min_y !== null && row.max_y !== null
+          ? {
+              x1: row.min_x,
+              x2: row.max_x,
+              y1: row.min_y,
+              y2: row.max_y
+            }
+          : null,
+      lastDeployedAt: row.last_deployed_at,
+      blockedSince: row.blocked_since
+    }))
+
+    return { worlds, total }
+  }
+
   return {
     getRawWorldRecords,
     getDeployedWorldCount,
@@ -683,6 +868,7 @@ export async function createWorldsManagerComponent({
     updateWorldSettings,
     getWorldSettings,
     getTotalWorldSize,
-    getWorldBoundingRectangle
+    getWorldBoundingRectangle,
+    getWorlds
   }
 }
