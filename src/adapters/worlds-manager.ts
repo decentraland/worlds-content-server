@@ -43,6 +43,63 @@ export async function createWorldsManagerComponent({
   const logger = logs.getLogger('worlds-manager')
   const { extractSpawnCoordinates, parseCoordinate, isCoordinateWithinRectangle, getRectangleCenter } = coordinates
 
+  async function getRawWorldRecords(): Promise<WorldRecord[]> {
+    const result = await database.query<WorldRecord>(
+      SQL`SELECT worlds.*, blocked.created_at AS blocked_since
+              FROM worlds
+              LEFT JOIN blocked ON worlds.owner = blocked.wallet`
+    )
+
+    const filtered: WorldRecord[] = []
+    for (const row of result.rows) {
+      if (await nameDenyListChecker.checkNameDenyList(row.name)) {
+        filtered.push(row)
+      }
+    }
+
+    return filtered
+  }
+
+  async function getMetadataForWorld(worldName: string): Promise<WorldMetadata | undefined> {
+    if (!(await nameDenyListChecker.checkNameDenyList(worldName))) {
+      logger.warn(`Attempt to access world ${worldName} which is banned.`)
+      return undefined
+    }
+
+    const result = await database.query<WorldRecord>(
+      SQL`SELECT worlds.*, blocked.created_at AS blocked_since
+              FROM worlds
+              LEFT JOIN blocked ON worlds.owner = blocked.wallet
+              WHERE worlds.name = ${worldName.toLowerCase()}`
+    )
+
+    if (result.rowCount === 0) {
+      return undefined
+    }
+
+    const row = result.rows[0]
+
+    // Get the last deployed scene (most recently deployed)
+    const { scenes } = await getWorldScenes(
+      { worldName },
+      { limit: 1, orderBy: SceneOrderBy.CreatedAt, orderDirection: OrderDirection.Desc }
+    )
+
+    // Build runtime metadata from scenes
+    const runtimeMetadata = buildWorldRuntimeMetadata(worldName, scenes)
+
+    const metadata: WorldMetadata = {
+      access: row.access,
+      spawnCoordinates: row.spawn_coordinates,
+      runtimeMetadata,
+      scenes,
+      owner: row.owner,
+      blockedSince: row.blocked_since ? new Date(row.blocked_since) : undefined
+    }
+
+    return metadata
+  }
+
   /**
    * Deploys a scene to a world
    *
@@ -102,7 +159,12 @@ export async function createWorldsManagerComponent({
       // On first deployment (INSERT), set settings from scene metadata
       // On subsequent deployments (UPDATE), preserve existing settings
       await client.query(SQL`
-        INSERT INTO worlds (name, owner, access, spawn_coordinates, created_at, updated_at)
+        INSERT INTO worlds (
+          name, owner, access, spawn_coordinates, 
+          title, description, content_rating, skybox_time, categories,
+          single_player, show_in_places, thumbnail_hash,
+          created_at, updated_at
+        )
         VALUES (
           ${worldName.toLowerCase()}, 
           ${owner.toLowerCase()}, 
