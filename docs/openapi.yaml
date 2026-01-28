@@ -129,7 +129,7 @@ paths:
           required: false
           schema: { type: integer, minimum: 0 }
           description: 'Number of scenes to skip (default 0)'
-        - name: deployer
+        - name: authorized_deployer
           in: query
           required: false
           schema: { type: string }
@@ -215,7 +215,7 @@ paths:
           required: false
           schema: { type: integer, minimum: 0 }
           description: 'Number of scenes to skip (default 0)'
-        - name: deployer
+        - name: authorized_deployer
           in: query
           required: false
           schema: { type: string }
@@ -775,13 +775,13 @@ paths:
         - Content Server
       summary: GET /worlds
       description: |
-        Retrieve a paginated list of worlds with optional search, sorting, and deployer filtering.
+        Retrieve a paginated list of worlds with optional search, sorting, and authorized deployer filtering.
 
         This endpoint supports:
         - **Pagination**: Use `limit` and `offset` query parameters
         - **Search**: Full-text search across world name, title, and description
         - **Sorting**: Sort by world name or last deployment time
-        - **Deployer filtering**: Filter by worlds where an address can deploy (is owner or has deployment permission)
+        - **Authorized deployer filtering**: Filter by worlds where an address can deploy (is owner or has deployment permission)
       operationId: worldsContentServer_getWorlds
       parameters:
         - name: limit
@@ -824,7 +824,7 @@ paths:
             enum: [asc, desc]
             default: asc
           description: Sort direction (default "asc")
-        - name: deployer
+        - name: authorized_deployer
           in: query
           required: false
           schema:

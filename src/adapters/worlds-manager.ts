@@ -405,10 +405,10 @@ export async function createWorldsManagerComponent({
       mainQuery.append(bboxCondition)
     }
 
-    // Apply deployer filter: filter by scenes in worlds where deployer is owner or has deployment permission
+    // Apply authorized_deployer filter: filter by scenes in worlds where deployer is owner or has deployment permission
     // Note: owner and address columns are already stored in lowercase
-    if (filters?.deployer) {
-      const normalizedDeployer = filters.deployer.toLowerCase()
+    if (filters?.authorized_deployer) {
+      const normalizedDeployer = filters.authorized_deployer.toLowerCase()
       const deployerCondition = SQL` AND EXISTS (
         SELECT 1 FROM worlds w
         WHERE w.name = world_scenes.world_name
@@ -687,14 +687,14 @@ export async function createWorldsManagerComponent({
   }
 
   /**
-   * Gets a paginated list of worlds with optional search, sorting, and deployer filtering
+   * Gets a paginated list of worlds with optional search, sorting, and authorized_deployer filtering
    *
-   * @param filters - Optional filters for search and deployer address
+   * @param filters - Optional filters for search and authorized_deployer address
    * @param options - Pagination and sorting options
    * @returns Paginated list of worlds with total count
    */
   async function getWorlds(filters: GetWorldsFilters = {}, options: GetWorldsOptions = {}): Promise<GetWorldsResult> {
-    const { search: searchTerm, deployer } = filters
+    const { search: searchTerm, authorized_deployer } = filters
     const { limit = 100, offset = 0, orderBy = WorldsOrderBy.Name, orderDirection = OrderDirection.Asc } = options
 
     // Get banned names to exclude from query
@@ -752,10 +752,10 @@ export async function createWorldsManagerComponent({
       mainQuery.append(bannedFilter)
     }
 
-    // Apply deployer filter: filter by worlds where deployer is owner or has deployment permission
+    // Apply authorized_deployer filter: filter by worlds where deployer is owner or has deployment permission
     // Note: owner and address columns are already stored in lowercase
-    if (deployer) {
-      const normalizedDeployer = deployer.toLowerCase()
+    if (authorized_deployer) {
+      const normalizedDeployer = authorized_deployer.toLowerCase()
       const deployerFilter = SQL` AND (
         w.owner = ${normalizedDeployer}
         OR EXISTS (

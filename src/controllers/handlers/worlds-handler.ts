@@ -45,12 +45,12 @@ export async function getWorldsHandler(
   const { limit, offset } = getPaginationParams(ctx.url.searchParams)
 
   // Extract optional query parameters
-  const deployer = ctx.url.searchParams.get('deployer') ?? undefined
+  const deployer = ctx.url.searchParams.get('authorized_deployer') ?? undefined
   const search = ctx.url.searchParams.get('search') ?? undefined
 
-  // Validate deployer is a valid Ethereum address if provided
+  // Validate authorized_deployer is a valid Ethereum address if provided
   if (deployer && !EthAddress.validate(deployer)) {
-    throw new InvalidRequestError(`Invalid deployer address: ${deployer}. Must be a valid Ethereum address.`)
+    throw new InvalidRequestError(`Invalid authorized_deployer address: ${deployer}. Must be a valid Ethereum address.`)
   }
   const sortParam = ctx.url.searchParams.get('sort') ?? WorldsOrderBy.Name
   const orderParam = ctx.url.searchParams.get('order') ?? OrderDirection.Asc
@@ -75,7 +75,7 @@ export async function getWorldsHandler(
   const orderDirection = orderParam as OrderDirection
 
   const { worlds, total } = await ctx.components.worldsManager.getWorlds(
-    { deployer, search },
+    { authorized_deployer: deployer, search },
     { limit, offset, orderBy, orderDirection }
   )
 

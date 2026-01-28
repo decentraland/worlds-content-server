@@ -49,19 +49,19 @@ export async function getScenesHandler(
 
   const { limit, offset } = getPaginationParams(ctx.url.searchParams)
 
-  // Extract deployer filter
-  const deployer = ctx.url.searchParams.get('deployer') ?? undefined
+  // Extract authorized_deployer filter
+  const deployer = ctx.url.searchParams.get('authorized_deployer') ?? undefined
 
-  // Validate deployer is a valid Ethereum address if provided
+  // Validate authorized_deployer is a valid Ethereum address if provided
   if (deployer && !EthAddress.validate(deployer)) {
-    throw new InvalidRequestError(`Invalid deployer address: ${deployer}. Must be a valid Ethereum address.`)
+    throw new InvalidRequestError(`Invalid authorized_deployer address: ${deployer}. Must be a valid Ethereum address.`)
   }
 
   const filters: GetWorldScenesFilters = {
     worldName: world_name,
     ...(coordinates.length > 0 && { coordinates }),
     ...(boundingBox && { boundingBox }),
-    ...(deployer && { deployer })
+    ...(deployer && { authorized_deployer: deployer })
   }
 
   const { scenes, total } = await ctx.components.worldsManager.getWorldScenes(filters, { limit, offset })
