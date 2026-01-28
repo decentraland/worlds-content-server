@@ -63,4 +63,13 @@ export type ICoordinatesComponent = {
    * @returns The center coordinate (floored to integers)
    */
   getRectangleCenter(rectangle: BoundingRectangle): Coordinate
+
+  /**
+   * Compares two coordinates for equality
+   *
+   * @param a - First coordinate (can be null)
+   * @param b - Second coordinate (can be null)
+   * @returns true if both coordinates are equal (or both are null), false otherwise
+   */
+  areCoordinatesEqual(a: Coordinate | null, b: Coordinate | null): boolean
 }

@@ -1,10 +1,10 @@
 import { Migration, MigratorComponents } from '../types'
 
 export const migration: Migration = {
-  id: '0019_migrate_permissions_to_world_permissions',
+  id: '0021_migrate_permissions_to_world_permissions',
   async run(components: MigratorComponents) {
     const { database, logs } = components
-    const logger = logs.getLogger('migration-0019')
+    const logger = logs.getLogger('migration-0021')
 
     logger.info('Migrating existing permissions to world_permissions table')
 

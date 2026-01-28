@@ -10,7 +10,8 @@ import {
   WorldScene,
   WorldSettings,
   WorldBoundingRectangle,
-  OrderDirection
+  OrderDirection,
+  UpdateWorldSettingsResult
 } from '../../src/types'
 import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage'
 import { Entity, EthAddress } from '@dcl/schemas'
@@ -44,7 +45,15 @@ export async function createWorldsManagerMockComponent({
           spawn_coordinates: spawnCoordinates,
           created_at: new Date(1706019701900),
           updated_at: new Date(1706019701900),
-          blocked_since: null
+          blocked_since: null,
+          title: '',
+          description: '',
+          content_rating: '',
+          skybox_time: 0,
+          categories: [],
+          single_player: false,
+          show_in_places: false,
+          thumbnail_hash: ''
         })
       }
     }
@@ -191,12 +200,38 @@ export async function createWorldsManagerMockComponent({
     }
   }
 
-  async function updateWorldSettings(_worldName: string, _settings: WorldSettings): Promise<void> {
-    // Mock implementation - no-op
+  async function updateWorldSettings(
+    worldName: string,
+    _owner: EthAddress,
+    settings: WorldSettings
+  ): Promise<UpdateWorldSettingsResult> {
+    const existingMetadata = await getMetadataForWorld(worldName)
+    const oldSpawnCoordinates = existingMetadata?.spawnCoordinates || null
+
+    // Merge new settings with existing settings
+    const updatedSettings: WorldSettings = {
+      ...existingMetadata,
+      ...settings
+    }
+
+    await storeWorldMetadata(worldName, {
+      spawnCoordinates: updatedSettings.spawnCoordinates || null
+    })
+
+    return {
+      settings: updatedSettings,
+      oldSpawnCoordinates
+    }
   }
 
-  async function getWorldSettings(_worldName: string): Promise<WorldSettings | undefined> {
-    return undefined
+  async function getWorldSettings(worldName: string): Promise<WorldSettings | undefined> {
+    const metadata = await getMetadataForWorld(worldName)
+    if (!metadata) {
+      return undefined
+    }
+    return {
+      spawnCoordinates: metadata.spawnCoordinates || undefined
+    }
   }
 
   async function getTotalWorldSize(_worldName: string): Promise<bigint> {
@@ -250,6 +285,10 @@ export async function createWorldsManagerMockComponent({
     return { domains: [], count: 0 }
   }
 
+  async function getWorlds() {
+    return { worlds: [], total: 0 }
+  }
+
   return {
     getContributableDomains,
     getRawWorldRecords,
@@ -264,7 +303,8 @@ export async function createWorldsManagerMockComponent({
     updateWorldSettings,
     getWorldSettings,
     getTotalWorldSize,
-    getWorldBoundingRectangle
+    getWorldBoundingRectangle,
+    getWorlds
   }
 }
 

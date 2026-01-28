@@ -23,10 +23,11 @@ export function createEntityDeployer(
     authChain: AuthLink[]
   ): Promise<DeploymentResult> {
     // store all files
-    logger.info(`Storing ${entity.content.length} files`, { entityId: entity.id })
-    for (const file of entity.content) {
+    const content = entity.content || []
+    logger.info(`Storing ${content.length} files`, { entityId: entity.id })
+    for (const file of content) {
       if (!allContentHashesInStorage.get(file.hash)) {
-        const filename = entity.content.find(($) => $.hash === file.hash)
+        const filename = content.find(($) => $.hash === file.hash)
         logger.info(`Storing file`, { cid: file.hash, filename: filename?.file || 'unknown' })
         await storage.storeStream(file.hash, bufferToStream(files.get(file.hash)!))
         allContentHashesInStorage.set(file.hash, true)

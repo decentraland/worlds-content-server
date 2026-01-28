@@ -1,8 +1,14 @@
 import { test } from '../components'
 import { stringToUtf8Bytes } from 'eth-connect'
+import { cleanup } from '../utils'
 
 test('index handler GET /index', function ({ components }) {
-  it('returns an error when world does not exist', async () => {
+  afterEach(async () => {
+    const { storage, database } = components
+    await cleanup(storage, database)
+  })
+
+  it('returns the index with deployed worlds', async () => {
     const { localFetch, worldCreator } = components
 
     const worldName1 = worldCreator.randomWorldName()
@@ -48,35 +54,35 @@ test('index handler GET /index', function ({ components }) {
     const r = await localFetch.fetch('/index')
 
     expect(r.status).toBe(200)
-    expect(await r.json()).toEqual({
-      data: expect.arrayContaining([
-        {
-          name: w1.worldName,
-          scenes: [
-            {
-              id: w1.entityId,
-              title: w1.entity.metadata.display.title,
-              description: w1.entity.metadata.display.description,
-              thumbnail: `http://0.0.0.0:3000/contents/${w1.entity.content[0].hash}`,
-              pointers: w1.entity.pointers,
-              timestamp: w1.entity.timestamp
-            }
-          ]
-        },
-        {
-          name: w2.worldName,
-          scenes: [
-            {
-              id: w2.entityId,
-              title: w2.entity.metadata.display.title,
-              description: w2.entity.metadata.display.description,
-              pointers: w2.entity.pointers,
-              timestamp: w2.entity.timestamp
-            }
-          ]
-        }
-      ]),
-      lastUpdated: expect.any(String)
+    const body = await r.json()
+
+    expect(body.lastUpdated).toEqual(expect.any(String))
+    expect(body.data.length).toBeGreaterThanOrEqual(2)
+
+    // Find the worlds by name
+    const world1Data = body.data.find((w: { name: string }) => w.name === w1.worldName)
+    const world2Data = body.data.find((w: { name: string }) => w.name === w2.worldName)
+
+    expect(world1Data).toBeDefined()
+    expect(world1Data.scenes).toHaveLength(1)
+    expect(world1Data.scenes[0]).toMatchObject({
+      id: w1.entityId,
+      title: w1.entity.metadata.display.title,
+      description: w1.entity.metadata.display.description,
+      pointers: w1.entity.pointers,
+      timestamp: w1.entity.timestamp
     })
+    expect(world1Data.scenes[0].thumbnail).toContain(`/contents/${w1.entity.content[0].hash}`)
+
+    expect(world2Data).toBeDefined()
+    expect(world2Data.scenes).toHaveLength(1)
+    expect(world2Data.scenes[0]).toMatchObject({
+      id: w2.entityId,
+      title: w2.entity.metadata.display.title,
+      description: w2.entity.metadata.display.description,
+      pointers: w2.entity.pointers,
+      timestamp: w2.entity.timestamp
+    })
+    expect(world2Data.scenes[0].thumbnail).toBeUndefined()
   })
 })

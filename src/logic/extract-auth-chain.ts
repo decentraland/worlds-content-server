@@ -19,9 +19,9 @@ export function extractAuthChain(ctx: FormDataContext): AuthChain {
   // fill all the authChain
   for (let i = 0; i <= biggestIndex; i++) {
     ret.push({
-      payload: requireString(ctx.formData.fields[`authChain[${i}][payload]`].value),
-      signature: requireString(ctx.formData.fields[`authChain[${i}][signature]`].value),
-      type: requireString(ctx.formData.fields[`authChain[${i}][type]`].value) as any
+      payload: requireString(ctx.formData.fields[`authChain[${i}][payload]`]?.value[0]),
+      signature: requireString(ctx.formData.fields[`authChain[${i}][signature]`]?.value[0]),
+      type: requireString(ctx.formData.fields[`authChain[${i}][type]`]?.value[0]) as any
     })
   }
 

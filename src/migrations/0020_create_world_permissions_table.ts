@@ -1,10 +1,10 @@
 import { Migration, MigratorComponents } from '../types'
 
 export const migration: Migration = {
-  id: '0018_create_world_permissions_table',
+  id: '0020_create_world_permissions_table',
   async run(components: MigratorComponents) {
     const { database, logs } = components
-    const logger = logs.getLogger('migration-0018')
+    const logger = logs.getLogger('migration-0020')
 
     logger.info('Creating world_permissions table for granular permissions')
 

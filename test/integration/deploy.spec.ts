@@ -15,7 +15,7 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
     await cleanup(storage, database)
   })
 
-  describe('when the user owns the world name', function () {
+  describe('when the user owns the world name', () => {
     let contentClient: ContentClient
     let identity: Identity
     let worldName: string
@@ -43,7 +43,7 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
       })
     })
 
-    describe('and the entity has minimap and skybox configuration', function () {
+    describe('and the entity has minimap and skybox configuration', () => {
       let entityFiles: Map<string, Uint8Array>
       let entityId: string
       let fileHash: string
@@ -88,9 +88,10 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
         const response = (await contentClient.deploy({ files, entityId, authChain })) as Response
         const responseBody = await response.json()
 
-        expect(responseBody).toMatchObject({
-          message: `Your scene was deployed to World "${worldName}" at parcels: 20,24!\nAccess world: https://play.decentraland.org/?realm=https%3A%2F%2F0.0.0.0%3A3000%2Fworld%2F${worldName}&position=20%2C24`
-        })
+        expect(responseBody.message).toContain(`Your scene was deployed to World "${worldName}" at parcels: 20,24!`)
+        expect(responseBody.message).toContain('Access world: https://play.decentraland.org/?realm=')
+        expect(responseBody.message).toContain(encodeURIComponent(`/world/${worldName}`))
+        expect(responseBody.message).toContain('position=20%2C24')
       })
 
       it('should store the entity and file content in storage', async () => {
@@ -192,7 +193,7 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
       })
     })
 
-    describe('and the entity has multiplayerId', function () {
+    describe('and the entity has multiplayerId', () => {
       let entityId: string
       let files: Map<string, Uint8Array>
 
@@ -233,7 +234,7 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
       })
     })
 
-    describe('and the world name has uppercase letters', function () {
+    describe('and the world name has uppercase letters', () => {
       let uppercaseWorldName: string
       let entityId: string
       let files: Map<string, Uint8Array>
@@ -301,7 +302,7 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
     })
   })
 
-  describe('when the user has deployment permission through allow list', function () {
+  describe('when the user has deployment permission through allow list', () => {
     let contentClient: ContentClient
     let identity: Identity
     let delegatedIdentity: Identity
@@ -341,7 +342,7 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
       })
     })
 
-    describe('and the delegated user deploys a scene', function () {
+    describe('and the delegated user deploys a scene', () => {
       let entityFiles: Map<string, Uint8Array>
       let entityId: string
       let fileHash: string
@@ -428,7 +429,7 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
     })
   })
 
-  describe('when a scene is deployed over an existing scene at the same coordinates', function () {
+  describe('when a scene is deployed over an existing scene at the same coordinates', () => {
     let contentClient: ContentClient
     let identity: Identity
     let worldName: string
@@ -555,7 +556,7 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
     })
   })
 
-  describe('when deploying multiple scenes to the same world at different coordinates', function () {
+  describe('when deploying multiple scenes to the same world at different coordinates', () => {
     let contentClient: ContentClient
     let identity: Identity
     let worldName: string
@@ -698,7 +699,262 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
     })
   })
 
-  describe('when the user does not own the requested world name', function () {
+  describe('when deploying a scene for the first time', () => {
+    let contentClient: ContentClient
+    let identity: Identity
+    let worldName: string
+
+    beforeEach(async () => {
+      const { config, fetch, worldCreator, nameOwnership } = components
+      const { namePermissionChecker, snsClient } = stubComponents
+
+      identity = await getIdentity()
+      worldName = worldCreator.randomWorldName()
+
+      contentClient = createContentClient({
+        url: `http://${await config.requireString('HTTP_SERVER_HOST')}:${await config.requireNumber('HTTP_SERVER_PORT')}`,
+        fetcher: fetch
+      })
+
+      namePermissionChecker.checkPermission.withArgs(identity.authChain.authChain[0].payload, worldName).resolves(true)
+      nameOwnership.findOwners.mockResolvedValue(new Map([[worldName, identity.authChain.authChain[0].payload]]))
+      snsClient.publishMessage.resolves({
+        MessageId: 'mocked-message-id',
+        SequenceNumber: 'mocked-sequence-number',
+        $metadata: {}
+      })
+    })
+
+    describe('and the scene has full metadata including thumbnail', () => {
+      let entityId: string
+      let files: Map<string, Uint8Array>
+      let thumbnailHash: string
+
+      beforeEach(async () => {
+        const entityFiles = new Map<string, Uint8Array>()
+        entityFiles.set('abc.txt', stringToUtf8Bytes(makeid(100)))
+        entityFiles.set('thumbnail.png', stringToUtf8Bytes(makeid(500)))
+        thumbnailHash = await hashV1(entityFiles.get('thumbnail.png')!)
+
+        const result = await DeploymentBuilder.buildEntity({
+          type: EntityType.SCENE as any,
+          pointers: ['0,0'],
+          files: entityFiles,
+          metadata: {
+            main: 'abc.txt',
+            display: {
+              title: 'My Amazing World',
+              description: 'A wonderful place to explore',
+              navmapThumbnail: 'thumbnail.png'
+            },
+            tags: ['adventure', 'exploration', 'fantasy'],
+            rating: 'T',
+            scene: {
+              base: '10,20',
+              parcels: ['10,20']
+            },
+            worldConfiguration: {
+              name: worldName,
+              skyboxConfig: {
+                fixedTime: 3600
+              },
+              fixedAdapter: 'offline:offline',
+              placesConfig: {
+                optOut: true
+              }
+            }
+          }
+        })
+
+        entityId = result.entityId
+        files = result.files
+      })
+
+      it('should extract and store all settings from the scene metadata', async () => {
+        const { worldsManager } = components
+        const authChain = Authenticator.signPayload(identity.authChain, entityId)
+
+        await contentClient.deploy({ files, entityId, authChain })
+
+        const settings = await worldsManager.getWorldSettings(worldName)
+        expect(settings).toMatchObject({
+          title: 'My Amazing World',
+          description: 'A wonderful place to explore',
+          contentRating: 'T',
+          spawnCoordinates: '10,20',
+          skyboxTime: 3600,
+          categories: ['adventure', 'exploration', 'fantasy'],
+          singlePlayer: true,
+          showInPlaces: true,
+          thumbnailHash: thumbnailHash
+        })
+      })
+
+      it('should return the settings via the settings endpoint', async () => {
+        const { localFetch } = components
+        const authChain = Authenticator.signPayload(identity.authChain, entityId)
+
+        await contentClient.deploy({ files, entityId, authChain })
+
+        const settingsResponse = await localFetch.fetch(`/world/${worldName}/settings`)
+
+        expect(settingsResponse.status).toBe(200)
+        const settingsBody = await settingsResponse.json()
+        expect(settingsBody).toMatchObject({
+          title: 'My Amazing World',
+          description: 'A wonderful place to explore',
+          content_rating: 'T',
+          spawn_coordinates: '10,20',
+          skybox_time: 3600,
+          categories: ['adventure', 'exploration', 'fantasy'],
+          single_player: true,
+          show_in_places: true,
+          thumbnail_hash: thumbnailHash
+        })
+      })
+    })
+
+    describe('and the scene has minimal metadata', () => {
+      let entityId: string
+      let files: Map<string, Uint8Array>
+
+      beforeEach(async () => {
+        const entityFiles = new Map<string, Uint8Array>()
+        entityFiles.set('abc.txt', stringToUtf8Bytes(makeid(100)))
+
+        const result = await DeploymentBuilder.buildEntity({
+          type: EntityType.SCENE as any,
+          pointers: ['0,0'],
+          files: entityFiles,
+          metadata: {
+            main: 'abc.txt',
+            scene: {
+              base: '5,10',
+              parcels: ['5,10']
+            },
+            worldConfiguration: {
+              name: worldName
+            }
+          }
+        })
+
+        entityId = result.entityId
+        files = result.files
+      })
+
+      it('should store null/undefined for missing optional settings', async () => {
+        const { worldsManager } = components
+        const authChain = Authenticator.signPayload(identity.authChain, entityId)
+
+        await contentClient.deploy({ files, entityId, authChain })
+
+        const settings = await worldsManager.getWorldSettings(worldName)
+        expect(settings).toMatchObject({
+          spawnCoordinates: '5,10'
+        })
+        expect(settings?.title).toBeUndefined()
+        expect(settings?.description).toBeUndefined()
+        expect(settings?.contentRating).toBeUndefined()
+        expect(settings?.skyboxTime).toBeUndefined()
+        expect(settings?.categories).toBeUndefined()
+        expect(settings?.singlePlayer).toBe(false)
+        expect(settings?.showInPlaces).toBe(false)
+        expect(settings?.thumbnailHash).toBeUndefined()
+      })
+    })
+
+    describe('and a second deployment is made to the same world', () => {
+      let firstEntityId: string
+      let secondEntityId: string
+      let secondFiles: Map<string, Uint8Array>
+
+      beforeEach(async () => {
+        // First deployment with full settings
+        const firstEntityFiles = new Map<string, Uint8Array>()
+        firstEntityFiles.set('first.txt', stringToUtf8Bytes(makeid(100)))
+        firstEntityFiles.set('thumbnail.png', stringToUtf8Bytes(makeid(500)))
+
+        const firstResult = await DeploymentBuilder.buildEntity({
+          type: EntityType.SCENE as any,
+          pointers: ['0,0'],
+          files: firstEntityFiles,
+          metadata: {
+            main: 'first.txt',
+            display: {
+              title: 'Original Title',
+              description: 'Original description',
+              navmapThumbnail: 'thumbnail.png'
+            },
+            tags: ['original'],
+            scene: {
+              base: '0,0',
+              parcels: ['0,0']
+            },
+            worldConfiguration: {
+              name: worldName,
+              skyboxConfig: {
+                fixedTime: 1200
+              }
+            }
+          }
+        })
+
+        firstEntityId = firstResult.entityId
+        const firstAuthChain = Authenticator.signPayload(identity.authChain, firstEntityId)
+        await contentClient.deploy({ files: firstResult.files, entityId: firstEntityId, authChain: firstAuthChain })
+
+        // Second deployment with different settings
+        const secondEntityFiles = new Map<string, Uint8Array>()
+        secondEntityFiles.set('second.txt', stringToUtf8Bytes(makeid(100)))
+
+        const secondResult = await DeploymentBuilder.buildEntity({
+          type: EntityType.SCENE as any,
+          pointers: ['0,0'],
+          files: secondEntityFiles,
+          metadata: {
+            main: 'second.txt',
+            display: {
+              title: 'New Title',
+              description: 'New description'
+            },
+            tags: ['updated'],
+            scene: {
+              base: '0,0',
+              parcels: ['0,0']
+            },
+            worldConfiguration: {
+              name: worldName,
+              skyboxConfig: {
+                fixedTime: 2400
+              }
+            }
+          }
+        })
+
+        secondEntityId = secondResult.entityId
+        secondFiles = secondResult.files
+      })
+
+      it('should preserve the original settings and not overwrite them', async () => {
+        const { worldsManager } = components
+        const authChain = Authenticator.signPayload(identity.authChain, secondEntityId)
+
+        await contentClient.deploy({ files: secondFiles, entityId: secondEntityId, authChain })
+
+        const settings = await worldsManager.getWorldSettings(worldName)
+        // Settings should remain from the first deployment
+        expect(settings).toMatchObject({
+          title: 'Original Title',
+          description: 'Original description',
+          spawnCoordinates: '0,0',
+          skyboxTime: 1200,
+          categories: ['original']
+        })
+      })
+    })
+  })
+
+  describe('when the user does not own the requested world name', () => {
     let contentClient: ContentClient
     let identity: Identity
     let worldName: string
@@ -809,7 +1065,7 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
     })
   })
 
-  describe('when the entity does not have worldConfiguration', function () {
+  describe('when the entity does not have worldConfiguration', () => {
     let contentClient: ContentClient
     let identity: Identity
     let entityId: string
@@ -896,7 +1152,7 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
     })
   })
 
-  describe('when a scene with multiple parcels is deployed over existing scenes', function () {
+  describe('when a scene with multiple parcels is deployed over existing scenes', () => {
     let contentClient: ContentClient
     let identity: Identity
     let worldName: string

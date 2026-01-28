@@ -193,7 +193,8 @@ export const validateMiniMapImages: Validation = async (
 export const validateThumbnail: Validation = async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
   const sceneThumbnail = deployment.entity.metadata?.display?.navmapThumbnail
   if (sceneThumbnail) {
-    const isFilePresent = deployment.entity.content.some((content: ContentMapping) => content.file === sceneThumbnail)
+    const content = deployment.entity.content || []
+    const isFilePresent = content.some((content: ContentMapping) => content.file === sceneThumbnail)
     if (!isFilePresent) {
       return createValidationResult([`Scene thumbnail '${sceneThumbnail}' must be a file included in the deployment.`])
     }

@@ -44,6 +44,7 @@ import { createSettingsComponent } from './logic/settings'
 import { createCoordinatesComponent } from './logic/coordinates'
 import { createPermissionsComponent } from './logic/permissions'
 import { createAccessComponent } from './logic/access'
+import { createSearchComponent } from './adapters/search'
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
@@ -115,11 +116,14 @@ export async function initComponents(): Promise<AppComponents> {
 
   const coordinates = createCoordinatesComponent()
 
+  const search = await createSearchComponent({ database, logs })
+
   const worldsManager = await createWorldsManagerComponent({
     coordinates,
     logs,
     database,
     nameDenyListChecker,
+    search,
     storage
   })
 
@@ -166,7 +170,14 @@ export async function initComponents(): Promise<AppComponents> {
 
   const peersRegistry = await createPeersRegistry({ config })
   const livekitClient = await createLivekitClient({ config })
-  const settings = createSettingsComponent({ coordinates, namePermissionChecker, worldsManager })
+  const settings = await createSettingsComponent({
+    config,
+    coordinates,
+    namePermissionChecker,
+    storage,
+    snsClient,
+    worldsManager
+  })
   const schemaValidator = createSchemaValidatorComponent()
 
   return {
@@ -195,6 +206,7 @@ export async function initComponents(): Promise<AppComponents> {
     permissions,
     permissionsManager,
     peersRegistry,
+    search,
     server,
     snsClient,
     status,

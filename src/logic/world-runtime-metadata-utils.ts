@@ -34,10 +34,11 @@ export function migrateConfiguration(worldName: string, worldConfiguration: Worl
 
 export function extractWorldRuntimeMetadata(worldName: string, entity: Entity): WorldRuntimeMetadata {
   const migratedWorldConfiguration = migrateConfiguration(worldName, entity.metadata?.worldConfiguration)
+  const content = entity.content || []
 
   function resolveFilename(filename: string | undefined): string | undefined {
     if (filename) {
-      const file = entity.content.find((content: ContentMapping) => content.file === filename)
+      const file = content.find((c: ContentMapping) => c.file === filename)
       if (file) {
         return file.hash
       }

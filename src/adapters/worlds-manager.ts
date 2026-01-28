@@ -10,7 +10,15 @@ import {
   GetWorldScenesResult,
   WorldBoundingRectangle,
   SceneOrderBy,
-  OrderDirection
+  OrderDirection,
+  UpdateWorldSettingsResult,
+  SpawnCoordinatesOutOfBoundsError,
+  NoDeployedScenesError,
+  GetWorldsFilters,
+  GetWorldsOptions,
+  GetWorldsResult,
+  WorldInfo,
+  WorldsOrderBy
 } from '../types'
 import { streamToBuffer } from '@dcl/catalyst-storage'
 import { Entity, EthAddress } from '@dcl/schemas'
@@ -21,18 +29,115 @@ import { AccessSetting, defaultAccess } from '../logic/access'
 
 type BoundingRow = { min_x: number; max_x: number; min_y: number; max_y: number }
 
+/**
+ * Options for upserting a world record
+ * All fields are optional - only provided fields will be updated on conflict
+ */
+interface UpsertWorldOptions {
+  owner?: EthAddress
+  access?: AccessSetting
+  spawnCoordinates?: string | null
+  title?: string | null
+  description?: string | null
+  contentRating?: string | null
+  skyboxTime?: number | null
+  categories?: string[] | null
+  singlePlayer?: boolean | null
+  showInPlaces?: boolean | null
+  thumbnailHash?: string | null
+}
+
+// Column mapping for _upsertWorld - defines how each option maps to a database column
+type ColumnMapping = {
+  optionKey: keyof UpsertWorldOptions
+  column: string
+  typeCast?: string
+  transformValue?: (value: unknown) => unknown
+}
+
 export async function createWorldsManagerComponent({
   coordinates,
   logs,
   database,
   nameDenyListChecker,
+  search,
   storage
 }: Pick<
   AppComponents,
-  'coordinates' | 'logs' | 'database' | 'nameDenyListChecker' | 'storage'
+  'coordinates' | 'logs' | 'database' | 'nameDenyListChecker' | 'search' | 'storage'
 >): Promise<IWorldsManager> {
   const logger = logs.getLogger('worlds-manager')
   const { extractSpawnCoordinates, parseCoordinate, isCoordinateWithinRectangle, getRectangleCenter } = coordinates
+
+  // Column mapping for _upsertWorld - defines how each option maps to a database column
+  const UPSERT_WORLD_COLUMNS: ColumnMapping[] = [
+    { optionKey: 'owner', column: 'owner', transformValue: (v) => (v as string).toLowerCase() },
+    { optionKey: 'access', column: 'access', typeCast: '::jsonb', transformValue: (v) => JSON.stringify(v) },
+    { optionKey: 'spawnCoordinates', column: 'spawn_coordinates' },
+    { optionKey: 'title', column: 'title' },
+    { optionKey: 'description', column: 'description' },
+    { optionKey: 'contentRating', column: 'content_rating' },
+    { optionKey: 'skyboxTime', column: 'skybox_time' },
+    { optionKey: 'categories', column: 'categories', typeCast: '::text[]' },
+    { optionKey: 'singlePlayer', column: 'single_player' },
+    { optionKey: 'showInPlaces', column: 'show_in_places' },
+    { optionKey: 'thumbnailHash', column: 'thumbnail_hash' }
+  ]
+
+  /**
+   * Upserts a world record with the given settings
+   * On conflict (existing world), uses COALESCE to merge new values with existing ones
+   * - Only columns with defined values (not undefined) are included in the insert
+   * - If a value is provided, it will be used (including null to explicitly clear)
+   * - If a value is not provided (undefined), the existing value will be preserved
+   *
+   * @param worldName - The name of the world
+   * @param options - Optional settings to upsert
+   * @param client - Optional database client for transaction support. If not provided, uses database.query
+   */
+  async function _upsertWorld(
+    worldName: string,
+    options: UpsertWorldOptions = {},
+    client?: PoolClient
+  ): Promise<WorldRecord> {
+    const now = new Date()
+
+    // Filter to only columns that have defined values
+    const activeColumns = UPSERT_WORLD_COLUMNS.filter((col) => options[col.optionKey] !== undefined)
+
+    // Build column list (static strings, no SQL needed)
+    const optionalColumns = activeColumns.map((col) => col.column).join(', ')
+    const columnList = optionalColumns
+      ? `name, created_at, updated_at, ${optionalColumns}`
+      : 'name, created_at, updated_at'
+
+    // Build dynamic query
+    const query = SQL`INSERT INTO worlds (`
+    query.append(columnList)
+    query.append(SQL`) VALUES (${worldName.toLowerCase()}, ${now}, ${now}`)
+
+    // Append values for included columns
+    for (const col of activeColumns) {
+      const value = col.transformValue ? col.transformValue(options[col.optionKey]) : options[col.optionKey]
+      query.append(SQL`, ${value}`)
+      if (col.typeCast) {
+        query.append(col.typeCast)
+      }
+    }
+
+    query.append(SQL`) ON CONFLICT (name) DO UPDATE SET updated_at = ${now}`)
+
+    // Append SET clauses for included columns using COALESCE
+    for (const col of activeColumns) {
+      query.append(`, ${col.column} = COALESCE(EXCLUDED.${col.column}, worlds.${col.column})`)
+    }
+
+    query.append(SQL` RETURNING *`)
+
+    // Use client if provided, otherwise use database.query
+    const result = client ? await client.query<WorldRecord>(query) : await database.query<WorldRecord>(query)
+    return result.rows[0]
+  }
 
   async function getRawWorldRecords(): Promise<WorldRecord[]> {
     const result = await database.query<WorldRecord>(
@@ -122,31 +227,50 @@ export async function createWorldsManagerComponent({
     const deployer = deploymentAuthChain[0].payload.toLowerCase()
 
     const fileInfos = await storage.fileInfoMultiple(scene.content?.map((c) => c.hash) || [])
-    const size = scene.content.reduce((acc, c) => acc + (fileInfos.get(c.hash)?.size || 0), 0) || 0
+    const size = scene.content?.reduce((acc, c) => acc + (fileInfos.get(c.hash)?.size || 0), 0) || 0
 
     // Use a transaction to ensure atomicity
     const client = await database.getPool().connect()
     const spawnCoordinates = extractSpawnCoordinates(scene)
 
+    // Extract settings from scene metadata for first deployment
+    const sceneMetadata = scene.metadata || {}
+    const title = sceneMetadata.display?.title?.trim() || undefined
+    const description = sceneMetadata.display?.description?.trim() || undefined
+    const skyboxTime = sceneMetadata.worldConfiguration?.skyboxConfig?.fixedTime ?? undefined
+    const categories: string[] | undefined = sceneMetadata.tags?.length > 0 ? sceneMetadata.tags : undefined
+    const rating = sceneMetadata?.rating?.trim() || undefined
+    const singlePlayer = sceneMetadata.worldConfiguration?.fixedAdapter === 'offline:offline'
+    const showInPlaces = !!sceneMetadata.worldConfiguration?.placesConfig?.optOut
+
+    // Extract thumbnail hash from scene content
+    const navmapThumbnail = sceneMetadata.display?.navmapThumbnail
+    const thumbnailContent = navmapThumbnail ? scene.content?.find((c) => c.file === navmapThumbnail) : undefined
+    const thumbnailHash = thumbnailContent?.hash || undefined
+
     try {
       await client.query('BEGIN')
 
       // Ensure world record exists, update if it does
-      await client.query(SQL`
-        INSERT INTO worlds (name, owner, access, spawn_coordinates, created_at, updated_at)
-        VALUES (
-          ${worldName.toLowerCase()}, 
-          ${owner.toLowerCase()}, 
-          ${JSON.stringify(defaultAccess())}::jsonb,
-          ${spawnCoordinates},
-          ${new Date()}, 
-          ${new Date()}
-        )
-        ON CONFLICT (name) DO UPDATE SET
-          owner = ${owner.toLowerCase()},
-          spawn_coordinates = COALESCE(worlds.spawn_coordinates, EXCLUDED.spawn_coordinates),
-          updated_at = ${new Date()}
-      `)
+      // On first deployment (INSERT), set settings from scene metadata
+      // On subsequent deployments (UPDATE), settings are merged with existing values
+      await _upsertWorld(
+        worldName,
+        {
+          owner,
+          access: defaultAccess(),
+          spawnCoordinates,
+          title,
+          description,
+          contentRating: rating,
+          skyboxTime,
+          categories,
+          singlePlayer,
+          showInPlaces,
+          thumbnailHash
+        },
+        client
+      )
 
       // Delete any existing scenes on these parcels
       await client.query(SQL`
@@ -182,15 +306,7 @@ export async function createWorldsManagerComponent({
   }
 
   async function storeAccess(worldName: string, access: AccessSetting): Promise<void> {
-    const sql = SQL`
-              INSERT INTO worlds (name, access, created_at, updated_at)
-              VALUES (${worldName.toLowerCase()}, ${JSON.stringify(access)}::jsonb,
-                      ${new Date()}, ${new Date()})
-              ON CONFLICT (name) 
-                  DO UPDATE SET access = ${JSON.stringify(access)}::jsonb,
-                                updated_at = ${new Date()}
-    `
-    await database.query(sql)
+    await _upsertWorld(worldName, { access })
   }
 
   async function getDeployedWorldCount(): Promise<{ ens: number; dcl: number }> {
@@ -335,14 +451,16 @@ export async function createWorldsManagerComponent({
 
     // Apply worldName filter
     if (filters?.worldName) {
-      countQuery.append(SQL` AND world_name = ${filters.worldName.toLowerCase()}`)
-      mainQuery.append(SQL` AND world_name = ${filters.worldName.toLowerCase()}`)
+      const worldNameFilter = SQL` AND world_name = ${filters.worldName.toLowerCase()}`
+      countQuery.append(worldNameFilter)
+      mainQuery.append(worldNameFilter)
     }
 
     // Apply coordinates filter (scenes that contain any of the specified coordinates)
     if (filters?.coordinates && filters.coordinates.length > 0) {
-      countQuery.append(SQL` AND parcels && ${filters.coordinates}::text[]`)
-      mainQuery.append(SQL` AND parcels && ${filters.coordinates}::text[]`)
+      const coordinatesFilter = SQL` AND parcels && ${filters.coordinates}::text[]`
+      countQuery.append(coordinatesFilter)
+      mainQuery.append(coordinatesFilter)
     }
 
     // Apply bounding box filter (scenes that have at least one parcel within the rectangle).
@@ -467,26 +585,96 @@ export async function createWorldsManagerComponent({
     }
   }
 
-  async function updateWorldSettings(worldName: string, settings: WorldSettings): Promise<void> {
-    await database.query(SQL`
-      UPDATE worlds 
-      SET spawn_coordinates = ${settings.spawnCoordinates || null},
-          updated_at = ${new Date()}
-      WHERE name = ${worldName.toLowerCase()}
-    `)
+  async function updateWorldSettings(
+    worldName: string,
+    owner: EthAddress,
+    settings: WorldSettings
+  ): Promise<UpdateWorldSettingsResult> {
+    const client = await database.getPool().connect()
+
+    try {
+      await client.query('BEGIN')
+
+      // Get old spawn coordinates atomically
+      const oldSettingsResult = await client.query<{ spawn_coordinates: string | null }>(SQL`
+        SELECT spawn_coordinates FROM worlds WHERE name = ${worldName.toLowerCase()}
+      `)
+      const oldSpawnCoordinates = oldSettingsResult.rows[0]?.spawn_coordinates || null
+
+      // If spawn coordinates are being set, validate against bounding rectangle
+      if (settings.spawnCoordinates) {
+        const boundingRectangle = await getWorldBoundingRectangle(worldName, client)
+
+        if (!boundingRectangle) {
+          throw new NoDeployedScenesError(worldName)
+        }
+
+        const spawnCoord = parseCoordinate(settings.spawnCoordinates)
+        const isWithinBounds = isCoordinateWithinRectangle(spawnCoord, boundingRectangle)
+
+        if (!isWithinBounds) {
+          throw new SpawnCoordinatesOutOfBoundsError(settings.spawnCoordinates, boundingRectangle)
+        }
+      }
+
+      // Perform the upsert
+      const result = await _upsertWorld(
+        worldName,
+        {
+          owner,
+          access: defaultAccess(),
+          spawnCoordinates: settings.spawnCoordinates,
+          title: settings.title,
+          description: settings.description,
+          contentRating: settings.contentRating,
+          skyboxTime: settings.skyboxTime,
+          categories: settings.categories,
+          singlePlayer: settings.singlePlayer,
+          showInPlaces: settings.showInPlaces,
+          thumbnailHash: settings.thumbnailHash
+        },
+        client
+      )
+
+      await client.query('COMMIT')
+
+      return {
+        settings: mapWorldRecordToSettings(result),
+        oldSpawnCoordinates
+      }
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally {
+      client.release()
+    }
   }
 
   async function getWorldSettings(worldName: string): Promise<WorldSettings | undefined> {
-    const result = await database.query<{ spawn_coordinates: string | null }>(SQL`
-      SELECT spawn_coordinates FROM worlds WHERE name = ${worldName.toLowerCase()}
+    const result = await database.query<WorldRecord>(SQL`
+      SELECT title, description, content_rating, spawn_coordinates, skybox_time, 
+             categories, single_player, show_in_places, thumbnail_hash 
+      FROM worlds WHERE name = ${worldName.toLowerCase()}
     `)
 
     if (result.rowCount === 0) {
       return undefined
     }
 
+    return mapWorldRecordToSettings(result.rows[0])
+  }
+
+  function mapWorldRecordToSettings(row: Partial<WorldRecord>): WorldSettings {
     return {
-      spawnCoordinates: result.rows[0].spawn_coordinates || undefined
+      title: row.title || undefined,
+      description: row.description || undefined,
+      contentRating: row.content_rating || undefined,
+      spawnCoordinates: row.spawn_coordinates || undefined,
+      skyboxTime: row.skybox_time ?? undefined,
+      categories: row.categories || undefined,
+      singlePlayer: row.single_player ?? undefined,
+      showInPlaces: row.show_in_places ?? undefined,
+      thumbnailHash: row.thumbnail_hash || undefined
     }
   }
 
@@ -535,6 +723,168 @@ export async function createWorldsManagerComponent({
     }
   }
 
+  /**
+   * Gets a paginated list of worlds with optional search and sorting
+   *
+   * @param filters - Optional filters for search and canDeploy address (canDeploy not implemented yet)
+   * @param options - Pagination and sorting options
+   * @returns Paginated list of worlds with total count
+   */
+  async function getWorlds(filters: GetWorldsFilters = {}, options: GetWorldsOptions = {}): Promise<GetWorldsResult> {
+    const { search: searchTerm, canDeploy } = filters
+    const { limit = 100, offset = 0, orderBy = WorldsOrderBy.Name, orderDirection = OrderDirection.Asc } = options
+
+    // Log canDeploy parameter - filtering not implemented yet
+    if (canDeploy) {
+      logger.debug(`canDeploy filter received for address: ${canDeploy} (filter not implemented yet)`)
+    }
+
+    // Get banned names to exclude from query
+    const bannedNames = await nameDenyListChecker.getBannedNames()
+
+    // Build base count query
+    const countQuery = SQL`
+      SELECT COUNT(*) as total
+      FROM worlds w
+      WHERE 1=1
+    `
+
+    // Build the main query
+    // Join with world_scenes to get last deployment time and bounding rectangle
+    const mainQuery = SQL`
+      WITH world_stats AS (
+        SELECT 
+          world_name,
+          MAX(created_at) as last_deployed_at,
+          MIN(SPLIT_PART(parcel, ',', 1)::integer) as min_x,
+          MAX(SPLIT_PART(parcel, ',', 1)::integer) as max_x,
+          MIN(SPLIT_PART(parcel, ',', 2)::integer) as min_y,
+          MAX(SPLIT_PART(parcel, ',', 2)::integer) as max_y
+        FROM world_scenes, UNNEST(parcels) as parcel
+        GROUP BY world_name
+      )
+      SELECT 
+        w.name,
+        w.owner,
+        w.title,
+        w.description,
+        w.content_rating,
+        w.spawn_coordinates,
+        w.skybox_time,
+        w.categories,
+        w.single_player,
+        w.show_in_places,
+        w.thumbnail_hash,
+        ws.last_deployed_at,
+        ws.min_x,
+        ws.max_x,
+        ws.min_y,
+        ws.max_y,
+        b.created_at as blocked_since
+      FROM worlds w
+      LEFT JOIN world_stats ws ON w.name = ws.world_name
+      LEFT JOIN blocked b ON w.owner = b.wallet
+      WHERE 1=1
+    `
+
+    // Exclude banned names from both queries
+    if (bannedNames.length > 0) {
+      const bannedFilter = SQL` AND w.name != ALL(${bannedNames})`
+      countQuery.append(bannedFilter)
+      mainQuery.append(bannedFilter)
+    }
+
+    // Apply combined full-text search and trigram search filter to both queries
+    if (searchTerm && searchTerm.trim().length > 0) {
+      // Build the ILIKE and similarity filter
+      const likeFilter = await search.buildLikeSearchFilter(searchTerm, [
+        { column: 'w.name', nullable: false },
+        { column: 'w.title', nullable: true },
+        { column: 'w.description', nullable: true }
+      ])
+
+      // Combine full-text search with ILIKE/similarity filter
+      const searchFilter = SQL` AND (
+            w.search_vector @@ plainto_tsquery('english', ${searchTerm})
+            OR `
+      searchFilter.append(likeFilter)
+      searchFilter.append(SQL`
+          )`)
+
+      countQuery.append(searchFilter)
+      mainQuery.append(searchFilter)
+    }
+
+    // Add ordering
+    // Using safe string interpolation since orderBy and orderDirection are enum values
+    if (orderBy === WorldsOrderBy.LastDeployedAt) {
+      // Put worlds without deployments last when sorting by last_deployed_at
+      mainQuery.append(
+        ` ORDER BY ws.last_deployed_at IS NULL ${orderDirection === OrderDirection.Asc ? 'ASC' : 'DESC'}, ws.last_deployed_at ${orderDirection.toUpperCase()}`
+      )
+    } else {
+      mainQuery.append(` ORDER BY w.name ${orderDirection.toUpperCase()}`)
+    }
+
+    // Apply pagination
+    mainQuery.append(SQL` LIMIT ${limit} OFFSET ${offset}`)
+
+    type WorldRow = {
+      name: string
+      owner: string
+      title: string | null
+      description: string | null
+      content_rating: string | null
+      spawn_coordinates: string | null
+      skybox_time: number | null
+      categories: string[] | null
+      single_player: boolean | null
+      show_in_places: boolean | null
+      thumbnail_hash: string | null
+      last_deployed_at: Date | null
+      min_x: number | null
+      max_x: number | null
+      min_y: number | null
+      max_y: number | null
+      blocked_since: Date | null
+    }
+
+    // Execute both queries concurrently
+    const [countResult, result] = await Promise.all([
+      database.query<{ total: string }>(countQuery),
+      database.query<WorldRow>(mainQuery)
+    ])
+
+    const total = parseInt(countResult.rows[0]?.total || '0', 10)
+
+    const worlds: WorldInfo[] = result.rows.map((row) => ({
+      name: row.name,
+      owner: row.owner,
+      title: row.title,
+      description: row.description,
+      contentRating: row.content_rating,
+      spawnCoordinates: row.spawn_coordinates,
+      skyboxTime: row.skybox_time,
+      categories: row.categories,
+      singlePlayer: row.single_player,
+      showInPlaces: row.show_in_places,
+      thumbnailHash: row.thumbnail_hash,
+      shape:
+        row.min_x !== null && row.max_x !== null && row.min_y !== null && row.max_y !== null
+          ? {
+              x1: row.min_x,
+              x2: row.max_x,
+              y1: row.min_y,
+              y2: row.max_y
+            }
+          : null,
+      lastDeployedAt: row.last_deployed_at,
+      blockedSince: row.blocked_since
+    }))
+
+    return { worlds, total }
+  }
+
   return {
     getRawWorldRecords,
     getDeployedWorldCount,
@@ -549,6 +899,7 @@ export async function createWorldsManagerComponent({
     updateWorldSettings,
     getWorldSettings,
     getTotalWorldSize,
-    getWorldBoundingRectangle
+    getWorldBoundingRectangle,
+    getWorlds
   }
 }
