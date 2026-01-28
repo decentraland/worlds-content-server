@@ -705,8 +705,8 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
     let worldName: string
 
     beforeEach(async () => {
-      const { config, fetch, worldCreator, nameOwnership } = components
-      const { namePermissionChecker, snsClient } = stubComponents
+      const { config, fetch, worldCreator } = components
+      const { namePermissionChecker, nameOwnership, snsClient } = stubComponents
 
       identity = await getIdentity()
       worldName = worldCreator.randomWorldName()
@@ -717,7 +717,9 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
       })
 
       namePermissionChecker.checkPermission.withArgs(identity.authChain.authChain[0].payload, worldName).resolves(true)
-      nameOwnership.findOwners.mockResolvedValue(new Map([[worldName, identity.authChain.authChain[0].payload]]))
+      nameOwnership.findOwners
+        .withArgs([worldName])
+        .resolves(new Map([[worldName, identity.authChain.authChain[0].payload]]))
       snsClient.publishMessage.resolves({
         MessageId: 'mocked-message-id',
         SequenceNumber: 'mocked-sequence-number',

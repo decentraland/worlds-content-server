@@ -1,5 +1,5 @@
 import { IHttpServerComponent } from '@well-known-components/interfaces'
-import { InvalidRequestError, getPaginationParams } from '@dcl/platform-server-commons'
+import { InvalidRequestError, getPaginationParams } from '@dcl/http-commons'
 import { HandlerContextWithPath, WorldInfo, WorldsOrderBy, OrderDirection } from '../../types'
 
 type SnakeCaseWorldInfo = {
