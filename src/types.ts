@@ -122,6 +122,7 @@ export type GetWorldScenesFilters = {
   worldName?: string
   coordinates?: string[]
   boundingBox?: BoundingBox
+  authorized_deployer?: string // address to filter scenes by (world owner or has deployment permission)
 }
 
 export enum SceneOrderBy {
@@ -168,7 +169,7 @@ export type WorldInfo = {
 }
 
 export type GetWorldsFilters = {
-  canDeploy?: string // address placeholder - filter not implemented yet
+  authorized_deployer?: string // address to filter worlds by (owner or has deployment permission)
   search?: string
 }
 

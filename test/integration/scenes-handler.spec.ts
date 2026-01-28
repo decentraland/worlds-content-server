@@ -198,6 +198,128 @@ test('ScenesHandler', function ({ components, stubComponents }) {
           })
         })
       })
+
+      describe('and authorized_deployer filter is provided', function () {
+        describe('and the authorized_deployer is not a valid Ethereum address', function () {
+          it('should respond with 400', async () => {
+            const { localFetch } = components
+
+            const response = await localFetch.fetch(
+              `/world/${worldName}/scenes?authorized_deployer=not-a-valid-address`
+            )
+
+            expect(response.status).toBe(400)
+            expect(await response.json()).toMatchObject({
+              error: 'Bad request',
+              message: expect.stringContaining('Invalid authorized_deployer address')
+            })
+          })
+        })
+
+        describe('and the authorized_deployer is the owner of the world', function () {
+          let ownerAddress: string
+          let expectedEntityId: string
+
+          beforeEach(async () => {
+            const { worldsManager } = components
+
+            const metadata = await worldsManager.getMetadataForWorld(worldName)
+            ownerAddress = metadata!.owner!
+            expectedEntityId = metadata!.scenes[0].entityId
+          })
+
+          it('should return the scene from the world where the authorized_deployer is owner', async () => {
+            const { localFetch } = components
+
+            const response = await localFetch.fetch(`/world/${worldName}/scenes?authorized_deployer=${ownerAddress}`)
+
+            expect(response.status).toBe(200)
+            const body = await response.json()
+            expect(body.scenes).toHaveLength(1)
+            expect(body.total).toBe(1)
+            expect(body.scenes[0].entityId).toBe(expectedEntityId)
+            expect(body.scenes[0].worldName).toBe(worldName)
+          })
+        })
+
+        describe('and the authorized_deployer has world-wide deployment permission', function () {
+          let deployerAddress: string
+          let expectedEntityId: string
+
+          beforeEach(async () => {
+            const { permissions, worldsManager } = components
+
+            deployerAddress = '0x1234567890123456789012345678901234567890'
+            await permissions.grantWorldWidePermission(worldName, 'deployment', [deployerAddress])
+
+            const metadata = await worldsManager.getMetadataForWorld(worldName)
+            expectedEntityId = metadata!.scenes[0].entityId
+          })
+
+          it('should return the scene from the world where the authorized_deployer has deployment permission', async () => {
+            const { localFetch } = components
+
+            const response = await localFetch.fetch(`/world/${worldName}/scenes?authorized_deployer=${deployerAddress}`)
+
+            expect(response.status).toBe(200)
+            const body = await response.json()
+            expect(body.scenes).toHaveLength(1)
+            expect(body.total).toBe(1)
+            expect(body.scenes[0].entityId).toBe(expectedEntityId)
+            expect(body.scenes[0].worldName).toBe(worldName)
+          })
+        })
+
+        describe('and the authorized_deployer has parcel-specific deployment permission', function () {
+          let deployerAddress: string
+          let expectedEntityId: string
+
+          beforeEach(async () => {
+            const { permissions, worldsManager } = components
+
+            deployerAddress = '0x2345678901234567890123456789012345678901'
+
+            const metadata = await worldsManager.getMetadataForWorld(worldName)
+            expectedEntityId = metadata!.scenes[0].entityId
+            const sceneParcels = metadata!.scenes[0].parcels
+
+            // Grant parcel-specific deployment permission (not world-wide)
+            await permissions.addParcelsToPermission(worldName, 'deployment', deployerAddress, sceneParcels)
+          })
+
+          it('should return the scene from the world where the authorized_deployer has parcel permission', async () => {
+            const { localFetch } = components
+
+            const response = await localFetch.fetch(`/world/${worldName}/scenes?authorized_deployer=${deployerAddress}`)
+
+            expect(response.status).toBe(200)
+            const body = await response.json()
+            expect(body.scenes).toHaveLength(1)
+            expect(body.total).toBe(1)
+            expect(body.scenes[0].entityId).toBe(expectedEntityId)
+            expect(body.scenes[0].worldName).toBe(worldName)
+          })
+        })
+
+        describe('and the authorized_deployer is neither owner nor has permission', function () {
+          let unknownAddress: string
+
+          beforeEach(() => {
+            unknownAddress = '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd'
+          })
+
+          it('should return an empty scenes array', async () => {
+            const { localFetch } = components
+
+            const response = await localFetch.fetch(`/world/${worldName}/scenes?authorized_deployer=${unknownAddress}`)
+
+            expect(response.status).toBe(200)
+            const body = await response.json()
+            expect(body.scenes).toHaveLength(0)
+            expect(body.total).toBe(0)
+          })
+        })
+      })
     })
 
     describe('when the world does not exist', function () {
