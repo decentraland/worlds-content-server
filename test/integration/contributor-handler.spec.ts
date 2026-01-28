@@ -1,5 +1,5 @@
 import { test } from '../components'
-import { IAuthenticatedFetchComponent, IWorldCreator, IWorldsManager } from '../../src/types'
+import { IAuthenticatedFetchComponent, IWorldCreator } from '../../src/types'
 import { IPermissionsComponent } from '../../src/logic/permissions'
 import { Identity, getIdentity } from '../utils'
 
@@ -13,7 +13,6 @@ const EXPLORER_METADATA = {
 test('ContributorHandler', function ({ components }) {
   let localFetch: IAuthenticatedFetchComponent
   let worldCreator: IWorldCreator
-  let worldsManager: IWorldsManager
   let permissions: IPermissionsComponent
   let identity: Identity
   let worldName: string
