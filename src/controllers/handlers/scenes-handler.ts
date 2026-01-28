@@ -1,5 +1,5 @@
 import { IHttpServerComponent } from '@well-known-components/interfaces'
-import { InvalidRequestError, NotAuthorizedError, getPaginationParams } from '@dcl/platform-server-commons'
+import { InvalidRequestError, NotAuthorizedError, getPaginationParams } from '@dcl/http-commons'
 import { DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
 import { HandlerContextWithPath } from '../../types'
 import type { GetWorldScenesRequestBody } from '../schemas/scenes-query-schemas'
@@ -69,7 +69,10 @@ export async function getScenesHandler(
 }
 
 export async function undeploySceneHandler(
-  ctx: HandlerContextWithPath<'namePermissionChecker' | 'worldsManager', '/world/:world_name/scenes/:coordinate'> &
+  ctx: HandlerContextWithPath<
+    'namePermissionChecker' | 'permissions' | 'worldsManager',
+    '/world/:world_name/scenes/:coordinate'
+  > &
     DecentralandSignatureContext<any>
 ): Promise<IHttpServerComponent.IResponse> {
   const { world_name, coordinate } = ctx.params
@@ -81,9 +84,14 @@ export async function undeploySceneHandler(
   const hasNamePermission = await ctx.components.namePermissionChecker.checkPermission(signer, world_name)
 
   if (!hasNamePermission) {
-    // Check if user has deployment permissions
-    const permissionChecker = await ctx.components.worldsManager.permissionCheckerForWorld(world_name)
-    const hasDeploymentPermission = await permissionChecker.checkPermission('deployment', signer)
+    // Check if user has deployment permissions for the specific parcel
+    // This verifies world-wide permissions OR parcel-specific permissions
+    const hasDeploymentPermission = await ctx.components.permissions.hasPermissionForParcels(
+      world_name,
+      'deployment',
+      signer,
+      [coordinate]
+    )
 
     if (!hasDeploymentPermission) {
       throw new NotAuthorizedError('Unauthorized. You do not have permission to undeploy scenes in this world.')

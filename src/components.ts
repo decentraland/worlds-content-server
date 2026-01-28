@@ -42,6 +42,8 @@ import { createLivekitClient } from './adapters/livekit-client'
 import { createPeersRegistry } from './adapters/peers-registry'
 import { createSettingsComponent } from './logic/settings'
 import { createCoordinatesComponent } from './logic/coordinates'
+import { createPermissionsComponent } from './logic/permissions'
+import { createAccessComponent } from './logic/access'
 import { createSearchComponent } from './adapters/search'
 
 // Initialize all the components of the app
@@ -129,7 +131,9 @@ export async function initComponents(): Promise<AppComponents> {
 
   const limitsManager = await createLimitsManagerComponent({ config, fetch, logs, nameOwnership, walletStats })
   const worldsIndexer = await createWorldsIndexerComponent({ worldsManager })
-  const permissionsManager = await createPermissionsManagerComponent({ worldsManager })
+  const permissionsManager = await createPermissionsManagerComponent({ database, worldsManager })
+  const permissions = await createPermissionsComponent({ config, permissionsManager, snsClient })
+  const access = createAccessComponent({ worldsManager })
 
   const entityDeployer = createEntityDeployer({
     config,
@@ -145,6 +149,7 @@ export async function initComponents(): Promise<AppComponents> {
     nameDenyListChecker,
     namePermissionChecker,
     limitsManager,
+    permissions,
     storage,
     worldsManager
   })
@@ -176,6 +181,7 @@ export async function initComponents(): Promise<AppComponents> {
   const schemaValidator = createSchemaValidatorComponent()
 
   return {
+    access,
     awsConfig,
     schemaValidator,
     settings,
@@ -197,6 +203,7 @@ export async function initComponents(): Promise<AppComponents> {
     nameOwnership,
     namePermissionChecker,
     notificationService,
+    permissions,
     permissionsManager,
     peersRegistry,
     search,

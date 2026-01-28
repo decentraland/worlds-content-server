@@ -1,5 +1,5 @@
 import { TWO_DAYS_IN_MS, WorldMetadata } from '../types'
-import { NotAuthorizedError } from '@dcl/platform-server-commons'
+import { NotAuthorizedError } from '@dcl/http-commons'
 
 export function assertNotBlockedOrWithinInGracePeriod(worldMetadata: WorldMetadata) {
   if (worldMetadata.blockedSince) {

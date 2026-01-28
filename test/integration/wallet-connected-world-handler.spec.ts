@@ -1,15 +1,12 @@
 import { test } from '../components'
+import { IAuthenticatedFetchComponent } from '../../src/types'
 
 test('WalletConnectedWorldHandler', function ({ components, stubComponents }) {
-  async function makeRequest(wallet: string) {
-    const { localFetch } = components
-
-    return localFetch.fetch(`/wallet/${wallet}/connected-world`, {
-      method: 'GET'
-    })
-  }
+  let localFetch: IAuthenticatedFetchComponent
 
   beforeEach(async () => {
+    localFetch = components.localFetch
+
     const { config } = stubComponents
     config.requireString.withArgs('COMMS_ROOM_PREFIX').resolves('world-test-')
   })
@@ -22,7 +19,7 @@ test('WalletConnectedWorldHandler', function ({ components, stubComponents }) {
 
       peersRegistry.getPeerWorld.withArgs(wallet).returns(world)
 
-      const response = await makeRequest(wallet)
+      const response = await localFetch.fetch(`/wallet/${wallet}/connected-world`, { method: 'GET' })
       expect(response.status).toBe(200)
       expect(await response.json()).toEqual({
         wallet,
@@ -37,7 +34,7 @@ test('WalletConnectedWorldHandler', function ({ components, stubComponents }) {
 
       peersRegistry.getPeerWorld.withArgs(wallet).returns(world)
 
-      const response = await makeRequest(wallet)
+      const response = await localFetch.fetch(`/wallet/${wallet}/connected-world`, { method: 'GET' })
       expect(response.status).toBe(200)
       expect(await response.json()).toEqual({
         wallet,
@@ -52,7 +49,7 @@ test('WalletConnectedWorldHandler', function ({ components, stubComponents }) {
 
       peersRegistry.getPeerWorld.withArgs(wallet).returns(world)
 
-      const response = await makeRequest(wallet)
+      const response = await localFetch.fetch(`/wallet/${wallet}/connected-world`, { method: 'GET' })
       expect(response.status).toBe(200)
       expect(await response.json()).toEqual({
         wallet,
@@ -63,7 +60,7 @@ test('WalletConnectedWorldHandler', function ({ components, stubComponents }) {
 
   describe('when wallet is not connected', () => {
     it('should return 404 when wallet is not connected', async () => {
-      const response = await makeRequest('0xnonexistent')
+      const response = await localFetch.fetch('/wallet/0xnonexistent/connected-world', { method: 'GET' })
       expect(response.status).toBe(404)
       expect(await response.json()).toMatchObject({
         message: 'Wallet 0xnonexistent is not connected to any world'
@@ -71,7 +68,7 @@ test('WalletConnectedWorldHandler', function ({ components, stubComponents }) {
     })
 
     it('should return 404 for empty wallet address', async () => {
-      const response = await makeRequest('')
+      const response = await localFetch.fetch('/wallet//connected-world', { method: 'GET' })
       expect(response.status).toBe(404)
     })
   })
@@ -83,7 +80,7 @@ test('WalletConnectedWorldHandler', function ({ components, stubComponents }) {
 
       peersRegistry.getPeerWorld.withArgs(wallet).returns(undefined)
 
-      const response = await makeRequest(wallet)
+      const response = await localFetch.fetch(`/wallet/${wallet}/connected-world`, { method: 'GET' })
       expect(response.status).toBe(404)
       expect(await response.json()).toMatchObject({
         message: `Wallet ${wallet} is not connected to any world`

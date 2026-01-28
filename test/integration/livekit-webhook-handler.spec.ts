@@ -1,6 +1,5 @@
 import { test } from '../components'
 import { WebhookReceiver } from 'livekit-server-sdk'
-import { Response } from '@well-known-components/interfaces'
 
 jest.mock('livekit-server-sdk')
 
@@ -108,7 +107,7 @@ test('LivekitWebhookHandler', function ({ components, stubComponents }) {
         room: { name: 'test-room.dcl.eth' },
         participant: { identity: 'test-user' }
       }
-      let response: Response
+      let response: Awaited<ReturnType<typeof makeWebhookRequest>>
 
       beforeEach(async () => {
         response = await makeWebhookRequest(event)
@@ -136,7 +135,7 @@ test('LivekitWebhookHandler', function ({ components, stubComponents }) {
         participant: { identity: 'test-user' }
       }
 
-      let response: Response
+      let response: Awaited<ReturnType<typeof makeWebhookRequest>>
 
       beforeEach(async () => {
         response = await makeWebhookRequest(event)

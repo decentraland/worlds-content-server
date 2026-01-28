@@ -2,7 +2,7 @@ import { HandlerContextWithPath } from '../../types'
 import { IHttpServerComponent } from '@well-known-components/interfaces'
 import { DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
 import { assertNotBlockedOrWithinInGracePeriod } from '../../logic/blocked'
-import { InvalidRequestError, NotAuthorizedError, NotFoundError } from '@dcl/platform-server-commons'
+import { InvalidRequestError, NotAuthorizedError, NotFoundError } from '@dcl/http-commons'
 
 type CommsMetadata = {
   secret?: string
@@ -10,13 +10,13 @@ type CommsMetadata = {
 
 export async function commsAdapterHandler(
   context: HandlerContextWithPath<
-    'commsAdapter' | 'config' | 'nameDenyListChecker' | 'namePermissionChecker' | 'worldsManager',
+    'access' | 'commsAdapter' | 'config' | 'nameDenyListChecker' | 'namePermissionChecker' | 'worldsManager',
     '/get-comms-adapter/:roomId'
   > &
     DecentralandSignatureContext<CommsMetadata>
 ): Promise<IHttpServerComponent.IResponse> {
   const {
-    components: { commsAdapter, config, nameDenyListChecker, namePermissionChecker, worldsManager }
+    components: { access, commsAdapter, config, nameDenyListChecker, namePermissionChecker, worldsManager }
   } = context
 
   const authMetadata = context.verification!.authMetadata
@@ -44,12 +44,11 @@ export async function commsAdapterHandler(
   assertNotBlockedOrWithinInGracePeriod(worldMetadata)
 
   const identity = context.verification!.auth
-  const permissionChecker = await worldsManager.permissionCheckerForWorld(worldName)
-  const hasPermission =
+  const hasAccess =
     // TODO See if we can avoid the first check
     (await namePermissionChecker.checkPermission(identity, worldName)) ||
-    (await permissionChecker.checkPermission('access', identity, authMetadata.secret))
-  if (!hasPermission) {
+    (await access.checkAccess(worldName, identity, authMetadata.secret))
+  if (!hasAccess) {
     throw new NotAuthorizedError(`You are not allowed to access world "${worldName}".`)
   }
 

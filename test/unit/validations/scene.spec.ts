@@ -30,6 +30,8 @@ import {
 } from '../../../src/logic/validations/scene'
 import { createSceneDeployment } from './shared'
 import { createMockNameDenyListChecker } from '../../mocks/name-deny-list-checker-mock'
+import { createMockedPermissionsComponent } from '../../mocks/permissions-component-mock'
+import { IPermissionsComponent } from '../../../src/logic/permissions'
 
 describe('scene validations', function () {
   let config: IConfigComponent
@@ -38,6 +40,7 @@ describe('scene validations', function () {
   let nameDenyListChecker: INameDenyListChecker
   let worldNamePermissionChecker: IWorldNamePermissionChecker
   let worldsManager: IWorldsManager
+  let permissions: jest.Mocked<IPermissionsComponent>
   let identity: Identity
   let components: ValidatorComponents
 
@@ -51,6 +54,7 @@ describe('scene validations', function () {
     worldNamePermissionChecker = createMockNamePermissionChecker(['whatever.dcl.eth'])
     const coordinates = createCoordinatesComponent()
     worldsManager = await createWorldsManagerMockComponent({ coordinates, storage })
+    permissions = createMockedPermissionsComponent()
 
     identity = await getIdentity()
     components = {
@@ -59,7 +63,8 @@ describe('scene validations', function () {
       limitsManager,
       nameDenyListChecker,
       namePermissionChecker: worldNamePermissionChecker,
-      worldsManager
+      worldsManager,
+      permissions
     }
   })
 

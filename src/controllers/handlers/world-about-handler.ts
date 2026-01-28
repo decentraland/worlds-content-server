@@ -7,7 +7,7 @@ import {
 } from '@dcl/catalyst-api-specs/lib/client'
 import { l1Contracts, L1Network } from '@dcl/catalyst-contracts'
 import { assertNotBlockedOrWithinInGracePeriod } from '../../logic/blocked'
-import { NotFoundError } from '@dcl/platform-server-commons'
+import { NotFoundError } from '@dcl/http-commons'
 
 export async function worldAboutHandler({
   params,

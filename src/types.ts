@@ -14,9 +14,20 @@ import { IStatusComponent } from './adapters/status'
 import { AuthChain, AuthLink, Entity, EthAddress, IPFSv2 } from '@dcl/schemas'
 import { MigrationExecutor } from './adapters/migration-executor'
 import { IPgComponent } from '@well-known-components/pg-component'
-import { AuthIdentity } from '@dcl/crypto'
+import { AuthIdentity, IdentityType } from '@dcl/crypto'
 import { IFetchComponent } from '@well-known-components/interfaces'
 import { INatsComponent } from '@well-known-components/nats-component/dist/types'
+
+// Type for authenticated test fetch component
+export type TestIdentity = { authChain: AuthIdentity; realAccount: IdentityType; ephemeralIdentity: IdentityType }
+export type AuthenticatedRequestInit = Omit<RequestInit, 'body'> & {
+  identity?: TestIdentity
+  metadata?: Record<string, any>
+  body?: any
+}
+export type IAuthenticatedFetchComponent = {
+  fetch(path: string, init?: AuthenticatedRequestInit): Promise<Response>
+}
 import { WebhookEvent } from 'livekit-server-sdk'
 import { IPublisherComponent } from '@dcl/sns-component'
 import { ISettingsComponent } from './logic/settings'
@@ -24,12 +35,21 @@ import { ISchemaValidatorComponent } from '@dcl/schema-validator-component'
 import { ICoordinatesComponent } from './logic/coordinates'
 import { ISearchComponent } from './adapters/search'
 
+import {
+  IPermissionsComponent,
+  AllowListPermission,
+  WorldPermissionRecord,
+  WorldPermissionRecordForChecking
+} from './logic/permissions'
+import { AccessSetting, IAccessComponent } from './logic/access'
+
 export type GlobalContext = {
   components: BaseComponents
 }
 
 export const MB = 1024 * 1024
 export const MB_BigInt = 1024n * 1024n
+export const MAX_PARCELS_PER_PERMISSION = 500
 
 export type Migration = {
   id: string
@@ -170,7 +190,7 @@ export type GetWorldsResult = {
 }
 
 export type WorldMetadata = {
-  permissions: Permissions
+  access: AccessSetting
   spawnCoordinates: string | null
   runtimeMetadata: WorldRuntimeMetadata
   scenes: WorldScene[]
@@ -195,7 +215,13 @@ export type ValidationResult = {
 
 export type ValidatorComponents = Pick<
   AppComponents,
-  'config' | 'limitsManager' | 'nameDenyListChecker' | 'namePermissionChecker' | 'storage' | 'worldsManager'
+  | 'config'
+  | 'limitsManager'
+  | 'nameDenyListChecker'
+  | 'namePermissionChecker'
+  | 'permissions'
+  | 'storage'
+  | 'worldsManager'
 >
 
 export type MigratorComponents = Pick<
@@ -298,8 +324,7 @@ export type IWorldsManager = {
   getEntityForWorlds(worldNames: string[]): Promise<Entity[]>
   deployScene(worldName: string, scene: Entity, owner: EthAddress): Promise<void>
   undeployScene(worldName: string, parcels: string[]): Promise<void>
-  storePermissions(worldName: string, permissions: Permissions): Promise<void>
-  permissionCheckerForWorld(worldName: string): Promise<IPermissionChecker>
+  storeAccess(worldName: string, access: AccessSetting): Promise<void>
   undeployWorld(worldName: string): Promise<void>
   getContributableDomains(address: string): Promise<{ domains: ContributorDomain[]; count: number }>
   getWorldScenes(filters?: GetWorldScenesFilters, options?: GetWorldScenesOptions): Promise<GetWorldScenesResult>
@@ -311,11 +336,34 @@ export type IWorldsManager = {
 }
 
 export type IPermissionsManager = {
-  getPermissions(worldName: string): Promise<Permissions>
   getOwner(worldName: string): Promise<EthAddress | undefined>
-  storePermissions(worldName: string, permissions: Permissions): Promise<void>
-  addAddressToAllowList(worldName: string, permission: Permission, address: string): Promise<void>
-  deleteAddressFromAllowList(worldName: string, permission: Permission, address: string): Promise<void>
+  grantAddressesWorldWidePermission(
+    worldName: string,
+    permission: AllowListPermission,
+    addresses: string[]
+  ): Promise<string[]>
+  removeAddressesPermission(worldName: string, permission: AllowListPermission, addresses: string[]): Promise<string[]>
+  getAddressPermissions(
+    worldName: string,
+    permission: AllowListPermission,
+    address: string
+  ): Promise<WorldPermissionRecord | undefined>
+  getParcelsForPermission(
+    permissionId: number,
+    limit?: number,
+    offset?: number,
+    boundingBox?: { x1: number; y1: number; x2: number; y2: number }
+  ): Promise<ParcelsResult>
+  getWorldPermissionRecords(worldName: string): Promise<WorldPermissionRecordForChecking[]>
+  checkParcelsAllowed(permissionId: number, parcels: string[]): Promise<boolean>
+  hasPermissionEntries(worldName: string, permission: AllowListPermission): Promise<boolean>
+  addParcelsToPermission(
+    worldName: string,
+    permission: AllowListPermission,
+    address: string,
+    parcels: string[]
+  ): Promise<{ created: boolean }>
+  removeParcelsFromPermission(permissionId: number, parcels: string[]): Promise<void>
 }
 
 export type INotificationService = {
@@ -328,50 +376,6 @@ export type Notification = {
   address?: string
   metadata: object
   timestamp: number
-}
-
-export enum PermissionType {
-  Unrestricted = 'unrestricted',
-  SharedSecret = 'shared-secret',
-  NFTOwnership = 'nft-ownership',
-  AllowList = 'allow-list'
-}
-
-export type UnrestrictedPermissionSetting = {
-  type: PermissionType.Unrestricted
-}
-
-export type SharedSecretPermissionSetting = {
-  type: PermissionType.SharedSecret
-  secret: string
-}
-
-export type NftOwnershipPermissionSetting = {
-  type: PermissionType.NFTOwnership
-  nft: string
-}
-
-export type AllowListPermissionSetting = {
-  type: PermissionType.AllowList
-  wallets: string[]
-}
-
-export type AccessPermissionSetting =
-  | UnrestrictedPermissionSetting
-  | SharedSecretPermissionSetting
-  | NftOwnershipPermissionSetting
-  | AllowListPermissionSetting
-
-export type Permissions = {
-  deployment: AllowListPermissionSetting
-  access: AccessPermissionSetting
-  streaming: UnrestrictedPermissionSetting | AllowListPermissionSetting
-}
-
-export type Permission = keyof Permissions
-
-export type IPermissionChecker = {
-  checkPermission(permission: Permission, ethAddress: EthAddress, extras?: any): Promise<boolean>
 }
 
 export type WorldsIndex = {
@@ -418,6 +422,7 @@ export type IPeersRegistry = {
 
 // components used in every environment
 export type BaseComponents = {
+  access: IAccessComponent
   awsConfig: AwsConfig
   commsAdapter: ICommsAdapter
   config: IConfigComponent
@@ -437,6 +442,7 @@ export type BaseComponents = {
   nameOwnership: INameOwnership
   namePermissionChecker: IWorldNamePermissionChecker
   notificationService: INotificationService
+  permissions: IPermissionsComponent
   permissionsManager: IPermissionsManager
   peersRegistry: IPeersRegistry
   search: ISearchComponent
@@ -458,7 +464,6 @@ export type IWorldCreator = {
     worldName?: string
     metadata?: any
     files?: Map<string, Uint8Array>
-    permissions?: Permissions
     owner?: AuthIdentity
   }): Promise<{ worldName: string; entityId: IPFSv2; entity: Entity; owner: AuthIdentity }>
   randomWorldName(): string
@@ -470,9 +475,9 @@ export type AppComponents = BaseComponents & {
 }
 
 // components used in tests
-export type TestComponents = Omit<BaseComponents, 'nameOwnership'> & {
-  // A fetch component that only hits the test server
-  localFetch: IFetchComponent
+export type TestComponents = BaseComponents & {
+  // A fetch component that only hits the test server with optional authentication support
+  localFetch: IAuthenticatedFetchComponent
   worldCreator: IWorldCreator
   // Mocked version of nameOwnership for testing
   nameOwnership: jest.Mocked<INameOwnership>
@@ -520,7 +525,7 @@ export type IWalletStats = {
 export type WorldRecord = {
   name: string
   owner: string
-  permissions: Permissions
+  access: AccessSetting
   title: string | null
   description: string | null
   content_rating: string | null
@@ -544,4 +549,12 @@ export type ContributorDomain = {
   user_permissions: string[]
   owner: string
   size: string
+  parcelCount: number // 0 = world-wide, number = specific parcels count
 }
+
+export type PaginatedResult<T> = {
+  total: number
+  results: T[]
+}
+
+export type ParcelsResult = PaginatedResult<string>

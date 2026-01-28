@@ -1,10 +1,9 @@
-import { AppComponents, IWorldCreator, Permissions } from '../../src/types'
+import { AppComponents, IWorldCreator } from '../../src/types'
 import { Entity, EntityType, IPFSv2 } from '@dcl/schemas'
 import { DeploymentBuilder } from 'dcl-catalyst-client'
 import { TextDecoder } from 'util'
 import { getIdentity, makeid, storeJson } from '../utils'
 import { Authenticator, AuthIdentity } from '@dcl/crypto'
-import { defaultPermissions } from '../../src/logic/permissions-checker'
 import { bufferToStream } from '@dcl/catalyst-storage'
 
 export function createWorldCreator({
@@ -15,7 +14,6 @@ export function createWorldCreator({
     worldName?: string
     metadata?: any
     files?: Map<string, Uint8Array>
-    permissions?: Permissions
     owner?: AuthIdentity
   }): Promise<{ worldName: string; entityId: IPFSv2; entity: Entity; owner: AuthIdentity }> {
     const worldName: string = data?.worldName || `${randomWorldName()}`
@@ -37,7 +35,6 @@ export function createWorldCreator({
       files: data?.files || new Map(),
       metadata
     })
-    const permissions = data?.permissions || defaultPermissions()
 
     const entityWithoutId = JSON.parse(new TextDecoder().decode(files.get(entityId)))
     await storeJson(storage, entityId, entityWithoutId)
@@ -52,7 +49,6 @@ export function createWorldCreator({
     const entity = { id: entityId, ...entityWithoutId }
 
     await worldsManager.deployScene(worldName, entity, signer.authChain[0].payload)
-    await worldsManager.storePermissions(worldName, permissions)
 
     return {
       worldName,

@@ -1,7 +1,7 @@
 import { DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
 import { HandlerContextWithPath } from '../../types'
 import { IHttpServerComponent } from '@well-known-components/interfaces'
-import { NotFoundError } from '@dcl/platform-server-commons'
+import { NotFoundError } from '@dcl/http-commons'
 
 export async function walletConnectedWorldHandler(
   ctx: HandlerContextWithPath<'peersRegistry', '/wallet/:wallet/connected-world'> & DecentralandSignatureContext<any>

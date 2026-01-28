@@ -1,4 +1,5 @@
-import { Migration, MigratorComponents, PermissionType } from '../types'
+import { Migration, MigratorComponents } from '../types'
+import { PermissionType } from '../logic/permissions'
 import SQL from 'sql-template-strings'
 
 export const migration: Migration = {

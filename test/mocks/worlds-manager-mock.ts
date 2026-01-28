@@ -4,9 +4,7 @@ import {
   GetWorldScenesFilters,
   GetWorldScenesOptions,
   GetWorldScenesResult,
-  IPermissionChecker,
   IWorldsManager,
-  Permissions,
   WorldMetadata,
   WorldRecord,
   WorldScene,
@@ -19,7 +17,7 @@ import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage'
 import { Entity, EthAddress } from '@dcl/schemas'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { buildWorldRuntimeMetadata } from '../../src/logic/world-runtime-metadata-utils'
-import { createPermissionChecker, defaultPermissions } from '../../src/logic/permissions-checker'
+import { AccessSetting, defaultAccess } from '../../src/logic/access'
 
 export async function createWorldsManagerMockComponent({
   coordinates,
@@ -43,7 +41,7 @@ export async function createWorldsManagerMockComponent({
         worlds.push({
           name: entity.metadata.worldConfiguration.name,
           owner,
-          permissions: { ...defaultPermissions() },
+          access: defaultAccess(),
           spawn_coordinates: spawnCoordinates,
           created_at: new Date(1706019701900),
           updated_at: new Date(1706019701900),
@@ -249,8 +247,8 @@ export async function createWorldsManagerMockComponent({
     return calculateBoundingRectangle(allParcels)
   }
 
-  async function storePermissions(worldName: string, permissions: Permissions): Promise<void> {
-    await storeWorldMetadata(worldName, { permissions })
+  async function storeAccess(worldName: string, access: AccessSetting): Promise<void> {
+    await storeWorldMetadata(worldName, { access })
   }
 
   async function getDeployedWorldCount(): Promise<{ ens: number; dcl: number }> {
@@ -263,11 +261,6 @@ export async function createWorldsManagerMockComponent({
       }
     }
     return acc
-  }
-
-  async function permissionCheckerForWorld(worldName: string): Promise<IPermissionChecker> {
-    const metadata = await getMetadataForWorld(worldName)
-    return createPermissionChecker(metadata?.permissions || defaultPermissions())
   }
 
   async function undeployWorld(worldName: string): Promise<void> {
@@ -285,31 +278,11 @@ export async function createWorldsManagerMockComponent({
     return entities
   }
 
-  async function getContributableDomains(address: string): Promise<{ domains: ContributorDomain[]; count: number }> {
-    const domains: ContributorDomain[] = []
-    for await (const name of storage.allFileIds('name-')) {
-      const metadata = await getMetadataForWorld(name)
-      const entity = await getEntityForWorld(name)
-      if (entity) {
-        const content = await storage.retrieve(`${entity.id}.auth`)
-        const authChain = JSON.parse((await streamToBuffer(await content?.asStream())).toString())
-        const hasDeploymentPermission = metadata.permissions.deployment.wallets.includes(address)
-        const hasStreamingPermission =
-          'wallets' in metadata.permissions.streaming && metadata.permissions.streaming.wallets.includes(address)
-        if (hasStreamingPermission || hasStreamingPermission) {
-          domains.push({
-            name,
-            user_permissions: [
-              ...(hasDeploymentPermission ? ['deployment'] : []),
-              ...(hasStreamingPermission ? ['streaming'] : [])
-            ],
-            size: '0',
-            owner: authChain[0].payload
-          })
-        }
-      }
-    }
-    return { domains, count: domains.length }
+  async function getContributableDomains(_address: string): Promise<{ domains: ContributorDomain[]; count: number }> {
+    // Permissions are now stored in the database (world_permissions table), not in WorldMetadata.
+    // This mock cannot access the database, so it returns an empty result.
+    // Integration tests should use the real permissionsManager component instead.
+    return { domains: [], count: 0 }
   }
 
   async function getWorlds() {
@@ -324,8 +297,7 @@ export async function createWorldsManagerMockComponent({
     getEntityForWorlds,
     deployScene,
     undeployScene,
-    storePermissions,
-    permissionCheckerForWorld,
+    storeAccess,
     undeployWorld,
     getWorldScenes,
     updateWorldSettings,
@@ -334,4 +306,26 @@ export async function createWorldsManagerMockComponent({
     getWorldBoundingRectangle,
     getWorlds
   }
+}
+
+export function createMockedWorldsManager(
+  overrides?: Partial<jest.Mocked<IWorldsManager>>
+): jest.Mocked<IWorldsManager> {
+  return {
+    getWorldSettings: jest.fn(),
+    updateWorldSettings: jest.fn(),
+    getRawWorldRecords: jest.fn(),
+    getDeployedWorldCount: jest.fn(),
+    getMetadataForWorld: jest.fn(),
+    getEntityForWorlds: jest.fn(),
+    deployScene: jest.fn(),
+    undeployScene: jest.fn(),
+    storeAccess: jest.fn(),
+    undeployWorld: jest.fn(),
+    getContributableDomains: jest.fn(),
+    getWorldScenes: jest.fn(),
+    getTotalWorldSize: jest.fn(),
+    getWorldBoundingRectangle: jest.fn(),
+    ...overrides
+  } as jest.Mocked<IWorldsManager>
 }

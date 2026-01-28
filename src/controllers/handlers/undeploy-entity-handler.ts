@@ -1,13 +1,13 @@
 import { IHttpServerComponent } from '@well-known-components/interfaces'
 import { HandlerContextWithPath } from '../../types'
-import { InvalidRequestError } from '@dcl/platform-server-commons'
+import { InvalidRequestError } from '@dcl/http-commons'
 import { DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
 
 export async function undeployEntity({
   params,
-  components: { logs, namePermissionChecker, worldsManager },
+  components: { logs, namePermissionChecker, permissions, worldsManager },
   verification
-}: HandlerContextWithPath<'logs' | 'namePermissionChecker' | 'worldsManager', '/entities/:world_name'> &
+}: HandlerContextWithPath<'logs' | 'namePermissionChecker' | 'permissions' | 'worldsManager', '/entities/:world_name'> &
   DecentralandSignatureContext<any>): Promise<IHttpServerComponent.IResponse> {
   const logger = logs.getLogger('worlds-manager')
 
@@ -15,10 +15,16 @@ export async function undeployEntity({
 
   const isOwner = await namePermissionChecker.checkPermission(identity, params.world_name)
   if (!isOwner) {
-    const checkerForWorld = await worldsManager.permissionCheckerForWorld(params.world_name)
-    const hasPermission = await checkerForWorld.checkPermission('deployment', verification!.auth!)
-    if (!hasPermission) {
-      throw new InvalidRequestError('Invalid request. You have no permission to undeploy the scene.')
+    // Only users with world-wide deployment permissions can undeploy a whole world
+    const hasWorldWidePermission = await permissions.hasWorldWidePermission(
+      params.world_name,
+      'deployment',
+      verification!.auth!
+    )
+    if (!hasWorldWidePermission) {
+      throw new InvalidRequestError(
+        'Invalid request. You must have world-wide deployment permission to undeploy the entire world.'
+      )
     }
   }
 

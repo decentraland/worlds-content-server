@@ -20,3 +20,13 @@ export function createSnsClientMock(): IPublisherComponent {
     publishMessages
   }
 }
+
+export function createMockedSnsClient(
+  overrides?: jest.Mocked<Partial<IPublisherComponent>>
+): jest.Mocked<IPublisherComponent> {
+  return {
+    publishMessage: jest.fn(),
+    publishMessages: jest.fn(),
+    ...overrides
+  }
+}
