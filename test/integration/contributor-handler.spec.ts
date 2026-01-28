@@ -21,7 +21,6 @@ test('ContributorHandler', function ({ components }) {
   beforeEach(async () => {
     localFetch = components.localFetch
     worldCreator = components.worldCreator
-    worldsManager = components.worldsManager
     permissions = components.permissions
 
     identity = await getIdentity()
