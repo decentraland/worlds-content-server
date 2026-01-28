@@ -334,16 +334,86 @@ test('WorldsHandler GET /worlds', function ({ components }) {
       })
     })
 
-    describe('and can_deploy filter is provided', function () {
-      it('should accept the parameter and return results', async () => {
-        const { localFetch } = components
+    describe('and deployer filter is provided', function () {
+      describe('and the deployer is not a valid Ethereum address', function () {
+        it('should respond with 400', async () => {
+          const { localFetch } = components
 
-        const response = await localFetch.fetch('/worlds?can_deploy=0x1234567890123456789012345678901234567890')
+          const response = await localFetch.fetch('/worlds?deployer=not-a-valid-address')
 
-        expect(response.status).toBe(200)
-        const body = await response.json()
-        expect(body.worlds).toBeDefined()
-        expect(body.total).toBeDefined()
+          expect(response.status).toBe(400)
+          expect(await response.json()).toMatchObject({
+            error: 'Bad request',
+            message: expect.stringContaining('Invalid deployer address')
+          })
+        })
+      })
+
+      describe('and the deployer is the owner of some worlds', function () {
+        let ownerAddress: string
+
+        beforeEach(async () => {
+          const { worldsManager } = components
+
+          const metadata = await worldsManager.getMetadataForWorld(worldName1)
+          ownerAddress = metadata!.owner!
+        })
+
+        it('should return only worlds where the deployer is owner', async () => {
+          const { localFetch } = components
+
+          const response = await localFetch.fetch(`/worlds?deployer=${ownerAddress}`)
+
+          expect(response.status).toBe(200)
+          const body = await response.json()
+          // Each world has a different owner (random identity), so only 1 world should be returned
+          expect(body.worlds).toHaveLength(1)
+          expect(body.total).toBe(1)
+          expect(body.worlds[0].name).toBe(worldName1)
+          expect(body.worlds[0].owner.toLowerCase()).toBe(ownerAddress.toLowerCase())
+        })
+      })
+
+      describe('and the deployer has deployment permission', function () {
+        let deployerAddress: string
+
+        beforeEach(async () => {
+          const { permissions } = components
+
+          deployerAddress = '0x1234567890123456789012345678901234567890'
+
+          await permissions.grantWorldWidePermission(worldName2, 'deployment', [deployerAddress])
+        })
+
+        it('should return worlds where the deployer has deployment permission', async () => {
+          const { localFetch } = components
+
+          const response = await localFetch.fetch(`/worlds?deployer=${deployerAddress}`)
+
+          expect(response.status).toBe(200)
+          const body = await response.json()
+          expect(body.worlds.length).toBe(1)
+          expect(body.worlds[0].name).toBe(worldName2)
+        })
+      })
+
+      describe('and the deployer is neither owner nor has permission', function () {
+        let unknownAddress: string
+
+        beforeEach(() => {
+          unknownAddress = '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd'
+        })
+
+        it('should return an empty list', async () => {
+          const { localFetch } = components
+
+          const response = await localFetch.fetch(`/worlds?deployer=${unknownAddress}`)
+
+          expect(response.status).toBe(200)
+          const body = await response.json()
+          expect(body.worlds).toHaveLength(0)
+          expect(body.total).toBe(0)
+        })
       })
     })
   })

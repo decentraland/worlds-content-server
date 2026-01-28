@@ -405,6 +405,27 @@ export async function createWorldsManagerComponent({
       mainQuery.append(bboxCondition)
     }
 
+    // Apply deployer filter: filter by scenes in worlds where deployer is owner or has deployment permission
+    // Note: owner and address columns are already stored in lowercase
+    if (filters?.deployer) {
+      const normalizedDeployer = filters.deployer.toLowerCase()
+      const deployerCondition = SQL` AND EXISTS (
+        SELECT 1 FROM worlds w
+        WHERE w.name = world_scenes.world_name
+        AND (
+          w.owner = ${normalizedDeployer}
+          OR EXISTS (
+            SELECT 1 FROM world_permissions wp
+            WHERE wp.world_name = w.name
+            AND wp.address = ${normalizedDeployer}
+            AND wp.permission_type = 'deployment'
+          )
+        )
+      )`
+      countQuery.append(deployerCondition)
+      mainQuery.append(deployerCondition)
+    }
+
     // Add ordering (default: created_at ASC)
     const orderBy = options?.orderBy ?? SceneOrderBy.CreatedAt
     const orderDirection = options?.orderDirection ?? OrderDirection.Asc
@@ -666,20 +687,15 @@ export async function createWorldsManagerComponent({
   }
 
   /**
-   * Gets a paginated list of worlds with optional search and sorting
+   * Gets a paginated list of worlds with optional search, sorting, and deployer filtering
    *
-   * @param filters - Optional filters for search and canDeploy address (canDeploy not implemented yet)
+   * @param filters - Optional filters for search and deployer address
    * @param options - Pagination and sorting options
    * @returns Paginated list of worlds with total count
    */
   async function getWorlds(filters: GetWorldsFilters = {}, options: GetWorldsOptions = {}): Promise<GetWorldsResult> {
-    const { search: searchTerm, canDeploy } = filters
+    const { search: searchTerm, deployer } = filters
     const { limit = 100, offset = 0, orderBy = WorldsOrderBy.Name, orderDirection = OrderDirection.Asc } = options
-
-    // Log canDeploy parameter - filtering not implemented yet
-    if (canDeploy) {
-      logger.debug(`canDeploy filter received for address: ${canDeploy} (filter not implemented yet)`)
-    }
 
     // Get banned names to exclude from query
     const bannedNames = await nameDenyListChecker.getBannedNames()
@@ -734,6 +750,23 @@ export async function createWorldsManagerComponent({
       const bannedFilter = SQL` AND w.name != ALL(${bannedNames})`
       countQuery.append(bannedFilter)
       mainQuery.append(bannedFilter)
+    }
+
+    // Apply deployer filter: filter by worlds where deployer is owner or has deployment permission
+    // Note: owner and address columns are already stored in lowercase
+    if (deployer) {
+      const normalizedDeployer = deployer.toLowerCase()
+      const deployerFilter = SQL` AND (
+        w.owner = ${normalizedDeployer}
+        OR EXISTS (
+          SELECT 1 FROM world_permissions wp
+          WHERE wp.world_name = w.name
+          AND wp.address = ${normalizedDeployer}
+          AND wp.permission_type = 'deployment'
+        )
+      )`
+      countQuery.append(deployerFilter)
+      mainQuery.append(deployerFilter)
     }
 
     // Apply combined full-text search and trigram search filter to both queries

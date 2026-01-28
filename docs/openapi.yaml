@@ -129,6 +129,14 @@ paths:
           required: false
           schema: { type: integer, minimum: 0 }
           description: 'Number of scenes to skip (default 0)'
+        - name: deployer
+          in: query
+          required: false
+          schema: { type: string }
+          description: |
+            Ethereum address to filter scenes by deployment capabilities.
+            Returns scenes from worlds where the specified address is either the owner
+            or has been granted deployment permission.
       responses:
         '200':
           description: Scenes and total count
@@ -207,6 +215,14 @@ paths:
           required: false
           schema: { type: integer, minimum: 0 }
           description: 'Number of scenes to skip (default 0)'
+        - name: deployer
+          in: query
+          required: false
+          schema: { type: string }
+          description: |
+            Ethereum address to filter scenes by deployment capabilities.
+            Returns scenes from worlds where the specified address is either the owner
+            or has been granted deployment permission.
       requestBody:
         required: true
         content:
@@ -759,13 +775,13 @@ paths:
         - Content Server
       summary: GET /worlds
       description: |
-        Retrieve a paginated list of worlds with optional search and sorting.
-        
+        Retrieve a paginated list of worlds with optional search, sorting, and deployer filtering.
+
         This endpoint supports:
         - **Pagination**: Use `limit` and `offset` query parameters
         - **Search**: Full-text search across world name, title, and description
         - **Sorting**: Sort by world name or last deployment time
-        - **Filtering**: Filter by deployment permissions (placeholder, not implemented yet)
+        - **Deployer filtering**: Filter by worlds where an address can deploy (is owner or has deployment permission)
       operationId: worldsContentServer_getWorlds
       parameters:
         - name: limit
@@ -808,15 +824,15 @@ paths:
             enum: [asc, desc]
             default: asc
           description: Sort direction (default "asc")
-        - name: can_deploy
+        - name: deployer
           in: query
           required: false
           schema:
             type: string
           description: |
-            Ethereum address to filter worlds by deployment permissions.
-            **Note**: This filter is not yet implemented. The parameter is accepted 
-            but filtering is not applied.
+            Ethereum address to filter worlds by deployment capabilities.
+            Returns worlds where the specified address is either the owner
+            or has been granted deployment permission.
       responses:
         '200':
           description: Paginated list of worlds
