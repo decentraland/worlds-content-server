@@ -22,7 +22,7 @@
     "@dcl/platform-crypto-middleware": "^1.1.0",
     "@dcl/platform-server-commons": "^1.0.1",
     "@dcl/schema-validator-component": "^0.2.2",
-    "@dcl/schemas": "^20.4.1",
+    "@dcl/schemas": "^22.4.0",
     "@dcl/sns-component": "^3.0.0",
     "@ensdomains/eth-ens-namehash": "^2.0.15",
     "@types/busboy": "^1.5.3",
@@ -50,8 +50,8 @@
     "@types/node": "^20.11.10",
     "@well-known-components/test-helpers": "^1.5.8",
     "dcl-catalyst-client": "^21.8.0",
+    "form-data": "4.0.5",
     "nodemon": "^3.1.9",
-    "openapi-typescript": "^7.4.4",
     "ts-node": "^10.9.2",
     "typescript": "^5.3.3"
   },

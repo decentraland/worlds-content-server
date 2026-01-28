@@ -10,7 +10,7 @@ export type FormDataContext = IHttpServerComponent.DefaultContext & {
       string,
       FieldInfo & {
         fieldname: string
-        value: string
+        value: string[]
       }
     >
     files: Record<
@@ -43,12 +43,19 @@ export function multipartParserWrapper<Ctx extends FormDataContext, T extends IH
 
     /**
      * Emitted for each new non-file field found.
+     * All field values are stored as arrays to support multiple values with the same name.
      */
     formDataParser.on('field', function (name: string, value: string, info: FieldInfo): void {
-      fields[name] = {
-        fieldname: name,
-        value,
-        ...info
+      if (fields[name]) {
+        // Field already exists, append to array
+        fields[name].value.push(value)
+      } else {
+        // First occurrence, create array with single value
+        fields[name] = {
+          fieldname: name,
+          value: [value],
+          ...info
+        }
       }
     })
     formDataParser.on('file', function (name: string, stream: Readable, info: FileInfo) {
@@ -73,4 +80,15 @@ export function multipartParserWrapper<Ctx extends FormDataContext, T extends IH
 
     return handler(newContext)
   }
+}
+
+export function isDefinedMultipartField(
+  field: (FieldInfo & { value?: string[] }) | undefined
+): field is FieldInfo & { value: string[] } {
+  return (
+    !!field &&
+    !!field.value &&
+    field.value.length > 0 &&
+    field.value.every((v) => v !== '' && v !== null && v !== undefined)
+  )
 }

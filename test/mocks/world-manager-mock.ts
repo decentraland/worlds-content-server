@@ -19,6 +19,7 @@ export function createMockedWorldsManager(
     getWorldScenes: jest.fn(),
     getTotalWorldSize: jest.fn(),
     getWorldBoundingRectangle: jest.fn(),
+    getWorlds: jest.fn(),
     ...overrides
   }
 }

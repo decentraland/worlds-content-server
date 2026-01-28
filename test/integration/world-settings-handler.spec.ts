@@ -4,14 +4,28 @@ import { Authenticator } from '@dcl/crypto'
 import { IFetchComponent } from '@well-known-components/interfaces'
 import { PermissionType } from '../../src/types'
 import { defaultPermissions } from '../../src/logic/permissions-checker'
+import FormData from 'form-data'
 
-const makeSignedRequest = (
+const makeSignedMultipartRequest = (
   localFetch: IFetchComponent,
   path: string,
   identity: Identity,
-  body: Record<string, any>,
+  fields: Record<string, string>,
+  files?: Record<string, { buffer: Buffer; filename: string }>,
   method: string = 'PUT'
 ) => {
+  const form = new FormData()
+
+  for (const [key, value] of Object.entries(fields)) {
+    form.append(key, value)
+  }
+
+  if (files) {
+    for (const [key, file] of Object.entries(files)) {
+      form.append(key, file.buffer, { filename: file.filename })
+    }
+  }
+
   return localFetch.fetch(path, {
     method,
     headers: {
@@ -34,9 +48,9 @@ const makeSignedRequest = (
             payload
           )
       ),
-      'Content-Type': 'application/json'
+      ...form.getHeaders()
     },
-    body: JSON.stringify(body)
+    body: form
   })
 }
 
@@ -54,8 +68,9 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
 
         const created = await worldCreator.createWorldWithScene()
         worldName = created.worldName
+        const owner = created.owner.authChain[0].payload
 
-        await worldsManager.updateWorldSettings(worldName, { spawnCoordinates: '20,24' })
+        await worldsManager.updateWorldSettings(worldName, owner, { spawnCoordinates: '20,24' })
       })
 
       it('should return the world settings', async () => {
@@ -65,7 +80,7 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
 
         expect(response.status).toBe(200)
         expect(await response.json()).toMatchObject({
-          spawnCoordinates: '20,24'
+          spawn_coordinates: '20,24'
         })
       })
     })
@@ -87,7 +102,7 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
 
         expect(response.status).toBe(200)
         expect(await response.json()).toMatchObject({
-          spawnCoordinates: '20,24'
+          spawn_coordinates: '20,24'
         })
       })
     })
@@ -155,7 +170,7 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
       it('should update the world settings successfully', async () => {
         const { localFetch, worldsManager } = components
 
-        const response = await makeSignedRequest(localFetch, `/world/${worldName}/settings`, identity, {
+        const response = await makeSignedMultipartRequest(localFetch, `/world/${worldName}/settings`, identity, {
           spawn_coordinates: '20,24'
         })
 
@@ -163,7 +178,7 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
         expect(await response.json()).toMatchObject({
           message: 'World settings updated successfully',
           settings: {
-            spawnCoordinates: '20,24'
+            spawn_coordinates: '20,24'
           }
         })
 
@@ -198,7 +213,7 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
       it('should respond with 403 unauthorized', async () => {
         const { localFetch } = components
 
-        const response = await makeSignedRequest(localFetch, `/world/${worldName}/settings`, deployer, {
+        const response = await makeSignedMultipartRequest(localFetch, `/world/${worldName}/settings`, deployer, {
           spawn_coordinates: '20,24'
         })
 
@@ -224,7 +239,7 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
       it('should respond with 403 unauthorized', async () => {
         const { localFetch } = components
 
-        const response = await makeSignedRequest(localFetch, `/world/${worldName}/settings`, identity, {
+        const response = await makeSignedMultipartRequest(localFetch, `/world/${worldName}/settings`, identity, {
           spawn_coordinates: '20,24'
         })
 
@@ -255,7 +270,7 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
       it('should respond with 400 validation error', async () => {
         const { localFetch } = components
 
-        const response = await makeSignedRequest(localFetch, `/world/${worldName}/settings`, identity, {
+        const response = await makeSignedMultipartRequest(localFetch, `/world/${worldName}/settings`, identity, {
           spawn_coordinates: '99,99'
         })
 
@@ -297,7 +312,7 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
       it('should successfully update spawn coordinates to a scene parcel', async () => {
         const { localFetch, worldsManager } = components
 
-        const response = await makeSignedRequest(localFetch, `/world/${worldName}/settings`, identity, {
+        const response = await makeSignedMultipartRequest(localFetch, `/world/${worldName}/settings`, identity, {
           spawn_coordinates: '21,24'
         })
 
@@ -305,7 +320,7 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
         expect(await response.json()).toMatchObject({
           message: 'World settings updated successfully',
           settings: {
-            spawnCoordinates: '21,24'
+            spawn_coordinates: '21,24'
           }
         })
 
@@ -349,7 +364,7 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
         const { localFetch, worldsManager } = components
 
         // Coordinate (21,25) is within the rectangle but not on an actual parcel
-        const response = await makeSignedRequest(localFetch, `/world/${worldName}/settings`, identity, {
+        const response = await makeSignedMultipartRequest(localFetch, `/world/${worldName}/settings`, identity, {
           spawn_coordinates: '21,25'
         })
 
@@ -357,7 +372,7 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
         expect(await response.json()).toMatchObject({
           message: 'World settings updated successfully',
           settings: {
-            spawnCoordinates: '21,25'
+            spawn_coordinates: '21,25'
           }
         })
 
@@ -380,11 +395,13 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
 
       it('should respond with 400 and require signed fetch', async () => {
         const { localFetch } = components
+        const form = new FormData()
+        form.append('spawn_coordinates', '20,24')
 
         const response = await localFetch.fetch(`/world/${worldName}/settings`, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ spawn_coordinates: '20,24' })
+          headers: form.getHeaders(),
+          body: form
         })
 
         expect(response.status).toBe(400)
@@ -411,30 +428,137 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
           .resolves(true)
       })
 
-      describe('and spawn_coordinates is missing', () => {
-        it('should respond with 400', async () => {
+      describe('and at least one field is provided', () => {
+        it('should succeed with 200 and only update the provided field', async () => {
+          const { localFetch, worldsManager } = components
+
+          const response = await makeSignedMultipartRequest(localFetch, `/world/${worldName}/settings`, identity, {
+            title: 'My World'
+          })
+
+          expect(response.status).toBe(200)
+          expect(await response.json()).toMatchObject({
+            message: 'World settings updated successfully',
+            settings: {
+              title: 'My World'
+            }
+          })
+
+          const settings = await worldsManager.getWorldSettings(worldName)
+          expect(settings?.title).toBe('My World')
+        })
+      })
+
+      describe('and title is too short', () => {
+        it('should respond with 400 validation error', async () => {
           const { localFetch } = components
 
-          const response = await makeSignedRequest(localFetch, `/world/${worldName}/settings`, identity, {})
+          const response = await makeSignedMultipartRequest(localFetch, `/world/${worldName}/settings`, identity, {
+            title: 'ab'
+          })
 
           expect(response.status).toBe(400)
           expect(await response.json()).toMatchObject({
-            message: 'Invalid JSON body'
+            error: 'Invalid title: ab. Expected between 3 and 100 characters.'
+          })
+        })
+      })
+
+      describe('and title is too long', () => {
+        it('should respond with 400 validation error', async () => {
+          const { localFetch } = components
+          const longTitle = 'a'.repeat(101)
+
+          const response = await makeSignedMultipartRequest(localFetch, `/world/${worldName}/settings`, identity, {
+            title: longTitle
+          })
+
+          expect(response.status).toBe(400)
+          expect(await response.json()).toMatchObject({
+            error: `Invalid title: ${longTitle}. Expected between 3 and 100 characters.`
+          })
+        })
+      })
+
+      describe('and description is too short', () => {
+        it('should respond with 400 validation error', async () => {
+          const { localFetch } = components
+
+          const response = await makeSignedMultipartRequest(localFetch, `/world/${worldName}/settings`, identity, {
+            description: 'ab'
+          })
+
+          expect(response.status).toBe(400)
+          expect(await response.json()).toMatchObject({
+            error: 'Invalid description: ab. Expected between 3 and 1000 characters.'
+          })
+        })
+      })
+
+      describe('and description is too long', () => {
+        it('should respond with 400 validation error', async () => {
+          const { localFetch } = components
+          const longDescription = 'a'.repeat(1001)
+
+          const response = await makeSignedMultipartRequest(localFetch, `/world/${worldName}/settings`, identity, {
+            description: longDescription
+          })
+
+          expect(response.status).toBe(400)
+          expect(await response.json()).toMatchObject({
+            error: `Invalid description: ${longDescription}. Expected between 3 and 1000 characters.`
+          })
+        })
+      })
+
+      describe('and content_rating is invalid', () => {
+        it('should respond with 400 validation error', async () => {
+          const { localFetch } = components
+
+          const response = await makeSignedMultipartRequest(localFetch, `/world/${worldName}/settings`, identity, {
+            content_rating: 'INVALID'
+          })
+
+          expect(response.status).toBe(400)
+          expect(await response.json()).toMatchObject({
+            error: 'Invalid content rating: INVALID. Expected one of: RP, E, T, A, R'
+          })
+        })
+      })
+
+      describe('and thumbnail exceeds maximum size', () => {
+        it('should respond with 400 validation error', async () => {
+          const { localFetch } = components
+
+          // Create a buffer larger than 1MB
+          const largeBuffer = Buffer.alloc(1024 * 1024 + 1) // 1MB + 1 byte
+
+          const response = await makeSignedMultipartRequest(
+            localFetch,
+            `/world/${worldName}/settings`,
+            identity,
+            {},
+            { thumbnail: { buffer: largeBuffer, filename: 'thumbnail.png' } }
+          )
+
+          expect(response.status).toBe(400)
+          expect(await response.json()).toMatchObject({
+            error: `Invalid thumbnail: size ${largeBuffer.length} bytes exceeds maximum of 1048576 bytes (1MB).`
           })
         })
       })
 
       describe('and spawn_coordinates has invalid format', () => {
-        it('should respond with 400', async () => {
+        it('should respond with 400 validation error', async () => {
           const { localFetch } = components
 
-          const response = await makeSignedRequest(localFetch, `/world/${worldName}/settings`, identity, {
+          const response = await makeSignedMultipartRequest(localFetch, `/world/${worldName}/settings`, identity, {
             spawn_coordinates: 'invalid'
           })
 
           expect(response.status).toBe(400)
           expect(await response.json()).toMatchObject({
-            message: 'Invalid JSON body'
+            error: 'Invalid spawnCoordinates format: "invalid".'
           })
         })
       })
@@ -443,7 +567,7 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
         it('should respond with 400 validation error since coordinates are outside the world shape rectangle', async () => {
           const { localFetch } = components
 
-          const response = await makeSignedRequest(localFetch, `/world/${worldName}/settings`, identity, {
+          const response = await makeSignedMultipartRequest(localFetch, `/world/${worldName}/settings`, identity, {
             spawn_coordinates: '-5,-10'
           })
 
@@ -455,16 +579,17 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
       })
 
       describe('and spawn_coordinates is an empty string', () => {
-        it('should respond with 400', async () => {
+        it('should succeed with 200 since empty string is treated as no update', async () => {
           const { localFetch } = components
 
-          const response = await makeSignedRequest(localFetch, `/world/${worldName}/settings`, identity, {
+          const response = await makeSignedMultipartRequest(localFetch, `/world/${worldName}/settings`, identity, {
             spawn_coordinates: ''
           })
 
-          expect(response.status).toBe(400)
+          // Empty string is treated as "no change" since all fields are optional
+          expect(response.status).toBe(200)
           expect(await response.json()).toMatchObject({
-            message: 'Invalid JSON body'
+            message: 'World settings updated successfully'
           })
         })
       })
@@ -490,7 +615,7 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
       it('should respond with 400 validation error since there are no scenes deployed', async () => {
         const { localFetch } = components
 
-        const response = await makeSignedRequest(localFetch, `/world/${worldName}/settings`, identity, {
+        const response = await makeSignedMultipartRequest(localFetch, `/world/${worldName}/settings`, identity, {
           spawn_coordinates: '10,20'
         })
 

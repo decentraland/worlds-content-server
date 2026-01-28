@@ -22,6 +22,7 @@ import { IPublisherComponent } from '@dcl/sns-component'
 import { ISettingsComponent } from './logic/settings'
 import { ISchemaValidatorComponent } from '@dcl/schema-validator-component'
 import { ICoordinatesComponent } from './logic/coordinates'
+import { ISearchComponent } from './adapters/search'
 
 export type GlobalContext = {
   components: BaseComponents
@@ -56,7 +57,27 @@ export type WorldRuntimeMetadata = {
 }
 
 export type WorldSettings = {
+  title?: string
+  description?: string
+  contentRating?: string
   spawnCoordinates?: string
+  skyboxTime?: number | null
+  categories?: string[]
+  singlePlayer?: boolean
+  showInPlaces?: boolean
+  thumbnailHash?: string
+}
+
+export type WorldSettingsInput = {
+  title?: string
+  description?: string
+  contentRating?: string
+  spawnCoordinates?: string
+  skyboxTime?: number | null
+  categories?: string[]
+  singlePlayer?: boolean
+  showInPlaces?: boolean
+  thumbnail?: Buffer
 }
 
 export type WorldScene = {
@@ -99,6 +120,52 @@ export type GetWorldScenesOptions = PaginatedParameters & {
 
 export type GetWorldScenesResult = {
   scenes: WorldScene[]
+  total: number
+}
+
+export type WorldShape = {
+  x1: number
+  x2: number
+  y1: number
+  y2: number
+}
+
+export type WorldInfo = {
+  name: string
+  owner: string
+  title: string | null
+  description: string | null
+  shape: WorldShape | null
+  contentRating: string | null
+  spawnCoordinates: string | null
+  skyboxTime: number | null
+  categories: string[] | null
+  singlePlayer: boolean | null
+  showInPlaces: boolean | null
+  thumbnailHash: string | null
+  lastDeployedAt: Date | null
+  blockedSince: Date | null
+}
+
+export type GetWorldsFilters = {
+  canDeploy?: string // address placeholder - filter not implemented yet
+  search?: string
+}
+
+export enum WorldsOrderBy {
+  Name = 'name',
+  LastDeployedAt = 'last_deployed_at'
+}
+
+export type GetWorldsOptions = {
+  limit?: number
+  offset?: number
+  orderBy?: WorldsOrderBy
+  orderDirection?: OrderDirection
+}
+
+export type GetWorldsResult = {
+  worlds: WorldInfo[]
   total: number
 }
 
@@ -147,6 +214,7 @@ export type IWorldNamePermissionChecker = {
 }
 
 export type INameDenyListChecker = {
+  getBannedNames(): Promise<string[]>
   checkNameDenyList(worldName: string): Promise<boolean>
 }
 
@@ -201,6 +269,28 @@ export type WorldBoundingRectangle = {
   max: { x: number; y: number }
 }
 
+export type UpdateWorldSettingsResult = {
+  settings: WorldSettings
+  oldSpawnCoordinates: string | null
+}
+
+export class SpawnCoordinatesOutOfBoundsError extends Error {
+  constructor(
+    public readonly spawnCoordinates: string,
+    public readonly boundingRectangle: WorldBoundingRectangle
+  ) {
+    super(`Spawn coordinates "${spawnCoordinates}" are outside the world bounding rectangle`)
+    this.name = 'SpawnCoordinatesOutOfBoundsError'
+  }
+}
+
+export class NoDeployedScenesError extends Error {
+  constructor(public readonly worldName: string) {
+    super(`World "${worldName}" has no deployed scenes`)
+    this.name = 'NoDeployedScenesError'
+  }
+}
+
 export type IWorldsManager = {
   getRawWorldRecords(): Promise<WorldRecord[]>
   getDeployedWorldCount(): Promise<{ ens: number; dcl: number }>
@@ -213,10 +303,11 @@ export type IWorldsManager = {
   undeployWorld(worldName: string): Promise<void>
   getContributableDomains(address: string): Promise<{ domains: ContributorDomain[]; count: number }>
   getWorldScenes(filters?: GetWorldScenesFilters, options?: GetWorldScenesOptions): Promise<GetWorldScenesResult>
-  updateWorldSettings(worldName: string, settings: WorldSettings): Promise<void>
+  updateWorldSettings(worldName: string, owner: EthAddress, settings: WorldSettings): Promise<UpdateWorldSettingsResult>
   getWorldSettings(worldName: string): Promise<WorldSettings | undefined>
   getTotalWorldSize(worldName: string): Promise<bigint>
   getWorldBoundingRectangle(worldName: string): Promise<WorldBoundingRectangle | undefined>
+  getWorlds(filters?: GetWorldsFilters, options?: GetWorldsOptions): Promise<GetWorldsResult>
 }
 
 export type IPermissionsManager = {
@@ -348,6 +439,7 @@ export type BaseComponents = {
   notificationService: INotificationService
   permissionsManager: IPermissionsManager
   peersRegistry: IPeersRegistry
+  search: ISearchComponent
   server: IHttpServerComponent<GlobalContext>
   snsClient: IPublisherComponent
   status: IStatusComponent
@@ -429,7 +521,15 @@ export type WorldRecord = {
   name: string
   owner: string
   permissions: Permissions
+  title: string | null
+  description: string | null
+  content_rating: string | null
   spawn_coordinates: string | null
+  skybox_time: number | null
+  categories: string[] | null
+  single_player: boolean | null
+  show_in_places: boolean | null
+  thumbnail_hash: string | null
   created_at: Date
   updated_at: Date
   blocked_since: Date | null

@@ -16,14 +16,15 @@ export async function garbageCollectionHandler(
     logger.info('Getting all keys active in the database...')
 
     const activeKeys = new Set<string>()
+
     // Get all scenes from world_scenes table
-    const result = await database.query<{
+    const scenesResult = await database.query<{
       entity_id: string
       entity: {
         content?: Array<{ hash: string }>
       }
     }>('SELECT entity_id, entity FROM world_scenes WHERE entity IS NOT NULL')
-    result.rows.forEach((row) => {
+    scenesResult.rows.forEach((row) => {
       // Add entity file and deployment auth-chain
       activeKeys.add(row.entity_id)
       activeKeys.add(`${row.entity_id}.auth`)
@@ -34,6 +35,14 @@ export async function garbageCollectionHandler(
           activeKeys.add(file.hash)
         }
       }
+    })
+
+    // Get all world thumbnail hashes and add them as active keys
+    const thumbnailsResult = await database.query<{ thumbnail_hash: string }>(
+      'SELECT thumbnail_hash FROM worlds WHERE thumbnail_hash IS NOT NULL'
+    )
+    thumbnailsResult.rows.forEach((row) => {
+      activeKeys.add(row.thumbnail_hash)
     })
 
     logger.info(`Done in ${formatSecs(Date.now() - start)}. Database contains ${activeKeys.size} active keys.`)
