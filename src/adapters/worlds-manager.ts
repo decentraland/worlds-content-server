@@ -29,32 +29,6 @@ import { AccessSetting, defaultAccess } from '../logic/access'
 
 type BoundingRow = { min_x: number; max_x: number; min_y: number; max_y: number }
 
-/**
- * Options for upserting a world record
- * All fields are optional - only provided fields will be updated on conflict
- */
-interface UpsertWorldOptions {
-  owner?: EthAddress
-  access?: AccessSetting
-  spawnCoordinates?: string | null
-  title?: string | null
-  description?: string | null
-  contentRating?: string | null
-  skyboxTime?: number | null
-  categories?: string[] | null
-  singlePlayer?: boolean | null
-  showInPlaces?: boolean | null
-  thumbnailHash?: string | null
-}
-
-// Column mapping for _upsertWorld - defines how each option maps to a database column
-type ColumnMapping = {
-  optionKey: keyof UpsertWorldOptions
-  column: string
-  typeCast?: string
-  transformValue?: (value: unknown) => unknown
-}
-
 export async function createWorldsManagerComponent({
   coordinates,
   logs,
@@ -68,133 +42,6 @@ export async function createWorldsManagerComponent({
 >): Promise<IWorldsManager> {
   const logger = logs.getLogger('worlds-manager')
   const { extractSpawnCoordinates, parseCoordinate, isCoordinateWithinRectangle, getRectangleCenter } = coordinates
-
-  // Column mapping for _upsertWorld - defines how each option maps to a database column
-  const UPSERT_WORLD_COLUMNS: ColumnMapping[] = [
-    { optionKey: 'owner', column: 'owner', transformValue: (v) => (v as string).toLowerCase() },
-    { optionKey: 'access', column: 'access', typeCast: '::jsonb', transformValue: (v) => JSON.stringify(v) },
-    { optionKey: 'spawnCoordinates', column: 'spawn_coordinates' },
-    { optionKey: 'title', column: 'title' },
-    { optionKey: 'description', column: 'description' },
-    { optionKey: 'contentRating', column: 'content_rating' },
-    { optionKey: 'skyboxTime', column: 'skybox_time' },
-    { optionKey: 'categories', column: 'categories', typeCast: '::text[]' },
-    { optionKey: 'singlePlayer', column: 'single_player' },
-    { optionKey: 'showInPlaces', column: 'show_in_places' },
-    { optionKey: 'thumbnailHash', column: 'thumbnail_hash' }
-  ]
-
-  /**
-   * Upserts a world record with the given settings
-   * On conflict (existing world), uses COALESCE to merge new values with existing ones
-   * - Only columns with defined values (not undefined) are included in the insert
-   * - If a value is provided, it will be used (including null to explicitly clear)
-   * - If a value is not provided (undefined), the existing value will be preserved
-   *
-   * @param worldName - The name of the world
-   * @param options - Optional settings to upsert
-   * @param client - Optional database client for transaction support. If not provided, uses database.query
-   */
-  async function _upsertWorld(
-    worldName: string,
-    options: UpsertWorldOptions = {},
-    client?: PoolClient
-  ): Promise<WorldRecord> {
-    const now = new Date()
-
-    // Filter to only columns that have defined values
-    const activeColumns = UPSERT_WORLD_COLUMNS.filter((col) => options[col.optionKey] !== undefined)
-
-    // Build column list (static strings, no SQL needed)
-    const optionalColumns = activeColumns.map((col) => col.column).join(', ')
-    const columnList = optionalColumns
-      ? `name, created_at, updated_at, ${optionalColumns}`
-      : 'name, created_at, updated_at'
-
-    // Build dynamic query
-    const query = SQL`INSERT INTO worlds (`
-    query.append(columnList)
-    query.append(SQL`) VALUES (${worldName.toLowerCase()}, ${now}, ${now}`)
-
-    // Append values for included columns
-    for (const col of activeColumns) {
-      const value = col.transformValue ? col.transformValue(options[col.optionKey]) : options[col.optionKey]
-      query.append(SQL`, ${value}`)
-      if (col.typeCast) {
-        query.append(col.typeCast)
-      }
-    }
-
-    query.append(SQL`) ON CONFLICT (name) DO UPDATE SET updated_at = ${now}`)
-
-    // Append SET clauses for included columns using COALESCE
-    for (const col of activeColumns) {
-      query.append(`, ${col.column} = COALESCE(EXCLUDED.${col.column}, worlds.${col.column})`)
-    }
-
-    query.append(SQL` RETURNING *`)
-
-    // Use client if provided, otherwise use database.query
-    const result = client ? await client.query<WorldRecord>(query) : await database.query<WorldRecord>(query)
-    return result.rows[0]
-  }
-
-  async function getRawWorldRecords(): Promise<WorldRecord[]> {
-    const result = await database.query<WorldRecord>(
-      SQL`SELECT worlds.*, blocked.created_at AS blocked_since
-              FROM worlds
-              LEFT JOIN blocked ON worlds.owner = blocked.wallet`
-    )
-
-    const filtered: WorldRecord[] = []
-    for (const row of result.rows) {
-      if (await nameDenyListChecker.checkNameDenyList(row.name)) {
-        filtered.push(row)
-      }
-    }
-
-    return filtered
-  }
-
-  async function getMetadataForWorld(worldName: string): Promise<WorldMetadata | undefined> {
-    if (!(await nameDenyListChecker.checkNameDenyList(worldName))) {
-      logger.warn(`Attempt to access world ${worldName} which is banned.`)
-      return undefined
-    }
-
-    const result = await database.query<WorldRecord>(
-      SQL`SELECT worlds.*, blocked.created_at AS blocked_since
-              FROM worlds
-              LEFT JOIN blocked ON worlds.owner = blocked.wallet
-              WHERE worlds.name = ${worldName.toLowerCase()}`
-    )
-
-    if (result.rowCount === 0) {
-      return undefined
-    }
-
-    const row = result.rows[0]
-
-    // Get the last deployed scene (most recently deployed)
-    const { scenes } = await getWorldScenes(
-      { worldName },
-      { limit: 1, orderBy: SceneOrderBy.CreatedAt, orderDirection: OrderDirection.Desc }
-    )
-
-    // Build runtime metadata from scenes
-    const runtimeMetadata = buildWorldRuntimeMetadata(worldName, scenes)
-
-    const metadata: WorldMetadata = {
-      access: row.access || defaultAccess(),
-      spawnCoordinates: row.spawn_coordinates,
-      runtimeMetadata,
-      scenes,
-      owner: row.owner,
-      blockedSince: row.blocked_since ? new Date(row.blocked_since) : undefined
-    }
-
-    return metadata
-  }
 
   /**
    * Deploys a scene to a world
@@ -235,42 +82,48 @@ export async function createWorldsManagerComponent({
 
     // Extract settings from scene metadata for first deployment
     const sceneMetadata = scene.metadata || {}
-    const title = sceneMetadata.display?.title?.trim() || undefined
-    const description = sceneMetadata.display?.description?.trim() || undefined
-    const skyboxTime = sceneMetadata.worldConfiguration?.skyboxConfig?.fixedTime ?? undefined
-    const categories: string[] | undefined = sceneMetadata.tags?.length > 0 ? sceneMetadata.tags : undefined
-    const rating = sceneMetadata?.rating?.trim() || undefined
+    const title = sceneMetadata.display?.title || null
+    const description = sceneMetadata.display?.description || null
+    const skyboxTime = sceneMetadata.worldConfiguration?.skyboxConfig?.fixedTime ?? null
+    const categories: string[] | null = sceneMetadata.tags?.length > 0 ? sceneMetadata.tags : null
+    const rating = sceneMetadata?.rating ?? null
     const singlePlayer = sceneMetadata.worldConfiguration?.fixedAdapter === 'offline:offline'
     const showInPlaces = !!sceneMetadata.worldConfiguration?.placesConfig?.optOut
 
     // Extract thumbnail hash from scene content
     const navmapThumbnail = sceneMetadata.display?.navmapThumbnail
-    const thumbnailContent = navmapThumbnail ? scene.content?.find((c) => c.file === navmapThumbnail) : undefined
-    const thumbnailHash = thumbnailContent?.hash || undefined
+    const thumbnailContent = navmapThumbnail ? scene.content?.find((c) => c.file === navmapThumbnail) : null
+    const thumbnailHash = thumbnailContent?.hash || null
 
     try {
       await client.query('BEGIN')
 
       // Ensure world record exists, update if it does
       // On first deployment (INSERT), set settings from scene metadata
-      // On subsequent deployments (UPDATE), settings are merged with existing values
-      await _upsertWorld(
-        worldName,
-        {
-          owner,
-          access: defaultAccess(),
-          spawnCoordinates,
-          title,
-          description,
-          contentRating: rating,
-          skyboxTime,
-          categories,
-          singlePlayer,
-          showInPlaces,
-          thumbnailHash
-        },
-        client
-      )
+      // On subsequent deployments (UPDATE), preserve existing settings
+      await client.query(SQL`
+        INSERT INTO worlds (name, owner, access, spawn_coordinates, created_at, updated_at)
+        VALUES (
+          ${worldName.toLowerCase()}, 
+          ${owner.toLowerCase()}, 
+          ${JSON.stringify(defaultAccess())}::jsonb,
+          ${spawnCoordinates},
+          ${title},
+          ${description},
+          ${rating},
+          ${skyboxTime},
+          ${categories}::text[],
+          ${singlePlayer},
+          ${showInPlaces},
+          ${thumbnailHash},
+          ${new Date()}, 
+          ${new Date()}
+        )
+        ON CONFLICT (name) DO UPDATE SET
+          owner = ${owner.toLowerCase()},
+          spawn_coordinates = COALESCE(worlds.spawn_coordinates, EXCLUDED.spawn_coordinates),
+          updated_at = ${new Date()}
+      `)
 
       // Delete any existing scenes on these parcels
       await client.query(SQL`
@@ -306,7 +159,15 @@ export async function createWorldsManagerComponent({
   }
 
   async function storeAccess(worldName: string, access: AccessSetting): Promise<void> {
-    await _upsertWorld(worldName, { access })
+    const sql = SQL`
+              INSERT INTO worlds (name, access, created_at, updated_at)
+              VALUES (${worldName.toLowerCase()}, ${JSON.stringify(access)}::jsonb,
+                      ${new Date()}, ${new Date()})
+              ON CONFLICT (name) 
+                  DO UPDATE SET access = ${JSON.stringify(access)}::jsonb,
+                                updated_at = ${new Date()}
+    `
+    await database.query(sql)
   }
 
   async function getDeployedWorldCount(): Promise<{ ens: number; dcl: number }> {
@@ -618,28 +479,47 @@ export async function createWorldsManagerComponent({
       }
 
       // Perform the upsert
-      const result = await _upsertWorld(
-        worldName,
-        {
-          owner,
-          access: defaultAccess(),
-          spawnCoordinates: settings.spawnCoordinates,
-          title: settings.title,
-          description: settings.description,
-          contentRating: settings.contentRating,
-          skyboxTime: settings.skyboxTime,
-          categories: settings.categories,
-          singlePlayer: settings.singlePlayer,
-          showInPlaces: settings.showInPlaces,
-          thumbnailHash: settings.thumbnailHash
-        },
-        client
-      )
+      const result = await client.query<WorldRecord>(SQL`
+        INSERT INTO worlds (
+          name, owner, access,
+          title, description, content_rating, spawn_coordinates, 
+          skybox_time, categories, single_player, show_in_places, thumbnail_hash,
+          created_at, updated_at
+        )
+        VALUES (
+          ${worldName.toLowerCase()},
+          ${owner.toLowerCase()},
+          ${JSON.stringify(defaultAccess())}::json,
+          ${settings.title ?? null},
+          ${settings.description ?? null},
+          ${settings.contentRating ?? null},
+          ${settings.spawnCoordinates ?? null},
+          ${settings.skyboxTime ?? null},
+          ${settings.categories ?? null}::text[],
+          ${settings.singlePlayer ?? null},
+          ${settings.showInPlaces ?? null},
+          ${settings.thumbnailHash ?? null},
+          ${new Date()},
+          ${new Date()}
+        )
+        ON CONFLICT (name) DO UPDATE SET
+          title = COALESCE(EXCLUDED.title, worlds.title),
+          description = COALESCE(EXCLUDED.description, worlds.description),
+          content_rating = COALESCE(EXCLUDED.content_rating, worlds.content_rating),
+          spawn_coordinates = COALESCE(EXCLUDED.spawn_coordinates, worlds.spawn_coordinates),
+          skybox_time = COALESCE(EXCLUDED.skybox_time, worlds.skybox_time),
+          categories = COALESCE(EXCLUDED.categories, worlds.categories),
+          single_player = COALESCE(EXCLUDED.single_player, worlds.single_player),
+          show_in_places = COALESCE(EXCLUDED.show_in_places, worlds.show_in_places),
+          thumbnail_hash = COALESCE(EXCLUDED.thumbnail_hash, worlds.thumbnail_hash),
+          updated_at = ${new Date()}
+        RETURNING *
+      `)
 
       await client.query('COMMIT')
 
       return {
-        settings: mapWorldRecordToSettings(result),
+        settings: mapWorldRecordToSettings(result.rows[0]),
         oldSpawnCoordinates
       }
     } catch (error) {
