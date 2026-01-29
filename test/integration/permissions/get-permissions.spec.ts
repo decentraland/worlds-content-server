@@ -99,7 +99,28 @@ test('GET /world/:world_name/permissions', ({ components, stubComponents }) => {
     })
   })
 
-  describe('when the world exists with deployment permissions', () => {
+  describe('when the world exists with a world-wide deployer', () => {
+    let worldWideWallet: string
+
+    beforeEach(async () => {
+      worldWideWallet = '0xD9370c94253f080272BA1c28E216146ecE806d33'
+
+      await permissions.grantWorldWidePermission(worldName, 'deployment', [worldWideWallet])
+    })
+
+    it('should respond with 200 and include the world-wide deployer', async () => {
+      const response = await localFetch.fetch(`/world/${worldName}/permissions`)
+
+      expect(response.status).toBe(200)
+      const body = await response.json()
+      expect(body.permissions.deployment).toMatchObject({
+        type: PermissionType.AllowList,
+        wallets: [worldWideWallet.toLowerCase()]
+      })
+    })
+  })
+
+  describe('when the world exists with both world-wide and parcel-based deployers', () => {
     let worldWideWallet: string
     let parcelWallet: string
     let parcels: string[]
