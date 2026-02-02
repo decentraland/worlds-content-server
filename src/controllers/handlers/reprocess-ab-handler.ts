@@ -42,7 +42,7 @@ export async function reprocessABHandler(
   })
 
   // Also check the world is not in deny list
-  const allowedWorlds = await worldsManager.getRawWorldRecords()
+  const { records: allowedWorlds } = await worldsManager.getRawWorldRecords()
   const allowedWorldNames = new Set(allowedWorlds.map((w) => w.name))
   const validScenes = filteredScenes.filter((scene) => allowedWorldNames.has(scene.worldName))
 

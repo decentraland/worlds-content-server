@@ -45,6 +45,8 @@ import { createCoordinatesComponent } from './logic/coordinates'
 import { createPermissionsComponent } from './logic/permissions'
 import { createAccessComponent } from './logic/access'
 import { createSearchComponent } from './adapters/search'
+import { createCommsComponent } from './logic/comms'
+import { createWorldsComponent } from './logic/worlds'
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
@@ -180,7 +182,18 @@ export async function initComponents(): Promise<AppComponents> {
   })
   const schemaValidator = createSchemaValidatorComponent()
 
+  const worlds = createWorldsComponent({ worldsManager })
+
+  const comms = createCommsComponent({
+    namePermissionChecker,
+    access,
+    commsAdapter,
+    worlds
+  })
+
   return {
+    worlds,
+    comms,
     access,
     awsConfig,
     schemaValidator,

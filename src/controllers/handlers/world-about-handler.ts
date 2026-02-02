@@ -6,15 +6,18 @@ import {
   AboutConfigurationsSkybox
 } from '@dcl/catalyst-api-specs/lib/client'
 import { l1Contracts, L1Network } from '@dcl/catalyst-contracts'
-import { assertNotBlockedOrWithinInGracePeriod } from '../../logic/blocked'
 import { NotFoundError } from '@dcl/http-commons'
+import { WorldBlockedError } from '../../logic/worlds'
 
 export async function worldAboutHandler({
   params,
   url,
-  components: { config, nameDenyListChecker, status, worldsManager }
+  components: { config, nameDenyListChecker, status, worldsManager, worlds }
 }: Pick<
-  HandlerContextWithPath<'config' | 'nameDenyListChecker' | 'status' | 'worldsManager', '/world/:world_name/about'>,
+  HandlerContextWithPath<
+    'config' | 'nameDenyListChecker' | 'status' | 'worldsManager' | 'worlds',
+    '/world/:world_name/about'
+  >,
   'components' | 'params' | 'url'
 >) {
   if (!(await nameDenyListChecker.checkNameDenyList(params.world_name))) {
@@ -26,7 +29,9 @@ export async function worldAboutHandler({
     throw new NotFoundError(`World "${params.world_name}" has no scenes deployed.`)
   }
 
-  assertNotBlockedOrWithinInGracePeriod(worldMetadata)
+  if (worlds.isWorldBlocked(worldMetadata.blockedSince)) {
+    throw new WorldBlockedError(params.world_name, worldMetadata.blockedSince!)
+  }
 
   const runtimeMetadata = worldMetadata.runtimeMetadata
 
