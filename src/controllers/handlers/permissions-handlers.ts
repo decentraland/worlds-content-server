@@ -391,7 +391,7 @@ export async function getPermissionHandler(
     '/world/:world_name/permissions/:permission_name'
   >
 ): Promise<IHttpServerComponent.IResponse> {
-  const { access, permissions, permissionsManager, worldsManager } = ctx.components
+  const { permissions, worldsManager } = ctx.components
   const worldName = ctx.params.world_name
   const permissionName = ctx.params.permission_name
 
@@ -452,7 +452,7 @@ export async function checkAddressPermissionHandler(
     '/world/:world_name/permissions/:permission_name/:address'
   >
 ): Promise<IHttpServerComponent.IResponse> {
-  const { access, permissions, permissionsManager, worldsManager } = ctx.components
+  const { access, permissions, permissionsManager } = ctx.components
   const worldName = ctx.params.world_name
   const permissionName = ctx.params.permission_name
   const address = ctx.params.address
