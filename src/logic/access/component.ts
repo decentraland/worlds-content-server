@@ -2,7 +2,7 @@ import { AppComponents } from '../../types'
 import { AccessInput, AccessSetting, AccessType, AddressAccessInfo, IAccessComponent } from './types'
 import { EthAddress } from '@dcl/schemas'
 import bcrypt from 'bcrypt'
-import { defaultAccess } from './constants'
+import { defaultAccess, MAX_COMMUNITIES } from './constants'
 import { InvalidAccessTypeError } from './errors'
 
 const saltRounds = 10
@@ -64,12 +64,21 @@ export function createAccessComponent({ worldsManager }: Pick<AppComponents, 'wo
    * Validates the access type and constructs the appropriate AccessSetting.
    */
   async function setAccess(worldName: string, input: AccessInput): Promise<void> {
-    const { type, wallets, nft, secret } = input
+    const { type, wallets, communities, nft, secret } = input
     let accessSetting: AccessSetting
 
     switch (type) {
       case AccessType.AllowList: {
-        accessSetting = { type: AccessType.AllowList, wallets: wallets || [] }
+        if (communities && communities.length > MAX_COMMUNITIES) {
+          throw new InvalidAccessTypeError(
+            `Too many communities. Maximum allowed is ${MAX_COMMUNITIES}, but ${communities.length} were provided.`
+          )
+        }
+        accessSetting = {
+          type: AccessType.AllowList,
+          wallets: wallets || [],
+          ...(communities?.length ? { communities } : {})
+        }
         break
       }
       case AccessType.Unrestricted: {

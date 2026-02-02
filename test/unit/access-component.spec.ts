@@ -1,6 +1,7 @@
 import { createAccessComponent } from '../../src/logic/access/component'
 import { AccessType, IAccessComponent } from '../../src/logic/access/types'
 import { InvalidAccessTypeError } from '../../src/logic/access/errors'
+import { MAX_COMMUNITIES } from '../../src/logic/access/constants'
 import { IWorldsManager, WorldMetadata } from '../../src/types'
 import bcrypt from 'bcrypt'
 
@@ -168,6 +169,87 @@ describe('AccessComponent', () => {
           expect(worldsManager.storeAccess).toHaveBeenCalledWith('test-world', {
             type: AccessType.AllowList,
             wallets: []
+          })
+        })
+      })
+
+      describe('and communities are provided', () => {
+        it('should store allow-list access setting with communities', async () => {
+          await accessComponent.setAccess('test-world', {
+            type: AccessType.AllowList,
+            wallets: ['0x1234'],
+            communities: ['community-1', 'community-2']
+          })
+
+          expect(worldsManager.storeAccess).toHaveBeenCalledWith('test-world', {
+            type: AccessType.AllowList,
+            wallets: ['0x1234'],
+            communities: ['community-1', 'community-2']
+          })
+        })
+      })
+
+      describe('and communities array is empty', () => {
+        it('should store allow-list access setting without communities field', async () => {
+          await accessComponent.setAccess('test-world', {
+            type: AccessType.AllowList,
+            wallets: ['0x1234'],
+            communities: []
+          })
+
+          expect(worldsManager.storeAccess).toHaveBeenCalledWith('test-world', {
+            type: AccessType.AllowList,
+            wallets: ['0x1234']
+          })
+        })
+      })
+
+      describe('and communities exceed the maximum limit', () => {
+        let tooManyCommunities: string[]
+
+        beforeEach(() => {
+          tooManyCommunities = Array.from({ length: MAX_COMMUNITIES + 1 }, (_, i) => `community-${i}`)
+        })
+
+        it('should throw InvalidAccessTypeError', async () => {
+          await expect(
+            accessComponent.setAccess('test-world', {
+              type: AccessType.AllowList,
+              wallets: ['0x1234'],
+              communities: tooManyCommunities
+            })
+          ).rejects.toThrow(InvalidAccessTypeError)
+        })
+
+        it('should include the limit in the error message', async () => {
+          await expect(
+            accessComponent.setAccess('test-world', {
+              type: AccessType.AllowList,
+              wallets: ['0x1234'],
+              communities: tooManyCommunities
+            })
+          ).rejects.toThrow(`Maximum allowed is ${MAX_COMMUNITIES}`)
+        })
+      })
+
+      describe('and communities are at the maximum limit', () => {
+        let maxCommunities: string[]
+
+        beforeEach(() => {
+          maxCommunities = Array.from({ length: MAX_COMMUNITIES }, (_, i) => `community-${i}`)
+        })
+
+        it('should store allow-list access setting with communities', async () => {
+          await accessComponent.setAccess('test-world', {
+            type: AccessType.AllowList,
+            wallets: ['0x1234'],
+            communities: maxCommunities
+          })
+
+          expect(worldsManager.storeAccess).toHaveBeenCalledWith('test-world', {
+            type: AccessType.AllowList,
+            wallets: ['0x1234'],
+            communities: maxCommunities
           })
         })
       })
