@@ -115,7 +115,11 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   )
 
   // GET: Check if address has permission
-  router.get('/world/:world_name/permissions/:permission_name/:address', signedFetchMiddleware, checkAddressPermissionHandler)
+  router.get(
+    '/world/:world_name/permissions/:permission_name/:address',
+    signedFetchMiddleware,
+    checkAddressPermissionHandler
+  )
 
   // PUT: Set permission (create or replace) - grants world-wide permission
   router.put(
