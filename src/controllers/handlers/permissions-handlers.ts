@@ -7,7 +7,8 @@ import {
   AllowListPermission,
   InvalidPermissionRequestError,
   PermissionNotFoundError,
-  PermissionType
+  PermissionType,
+  PermissionTypeName
 } from '../../logic/permissions'
 import { AccessInput, AccessSetting, AccessType, InvalidAccessTypeError } from '../../logic/access'
 import { PermissionParcelsInput } from '../schemas/permission-parcels-schema'
@@ -15,8 +16,6 @@ import { PermissionParcelsInput } from '../schemas/permission-parcels-schema'
 function isAllowListPermission(permission: string): permission is AllowListPermission {
   return permission === 'deployment' || permission === 'streaming'
 }
-
-type PermissionTypeName = 'access' | 'deployment' | 'streaming'
 
 function isValidPermissionType(permission: string): permission is PermissionTypeName {
   return permission === 'access' || permission === 'deployment' || permission === 'streaming'
