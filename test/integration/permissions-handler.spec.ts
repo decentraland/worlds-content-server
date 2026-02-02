@@ -3,14 +3,12 @@ import { IAuthenticatedFetchComponent, IWorldCreator } from '../../src/types'
 import { IPermissionsComponent, PermissionType } from '../../src/logic/permissions'
 import { IAccessComponent, AccessType } from '../../src/logic/access'
 import { Identity, getIdentity } from '../utils'
-import { IWorldsManager } from '../../src/types'
 
 test('PermissionsHandler', function ({ components }) {
   let localFetch: IAuthenticatedFetchComponent
   let worldCreator: IWorldCreator
   let permissions: IPermissionsComponent
   let access: IAccessComponent
-  let worldsManager: IWorldsManager
   let identity: Identity
   let ownerIdentity: Identity
   let worldName: string
@@ -21,7 +19,6 @@ test('PermissionsHandler', function ({ components }) {
     worldCreator = components.worldCreator
     permissions = components.permissions
     access = components.access
-    worldsManager = components.worldsManager
 
     ownerIdentity = await getIdentity()
     identity = await getIdentity()

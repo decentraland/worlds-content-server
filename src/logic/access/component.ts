@@ -4,6 +4,7 @@ import { EthAddress } from '@dcl/schemas'
 import bcrypt from 'bcrypt'
 import { defaultAccess, MAX_COMMUNITIES } from './constants'
 import { InvalidAccessTypeError } from './errors'
+import { ISocialServiceAdapter } from '../../adapters/social-service'
 
 const saltRounds = 10
 
@@ -28,14 +29,33 @@ function createNftOwnershipChecker(_requiredNft: string): CheckingFunction {
   }
 }
 
-function createAllowListChecker(allowList: string[]): CheckingFunction {
+function createAllowListChecker(
+  allowList: string[],
+  communities: string[] | undefined,
+  socialService: ISocialServiceAdapter
+): CheckingFunction {
   const lowerCasedAllowList = allowList.map((ethAddress) => ethAddress.toLowerCase())
-  return (ethAddress: EthAddress, _extras?: any): Promise<boolean> => {
-    return Promise.resolve(lowerCasedAllowList.includes(ethAddress.toLowerCase()))
+
+  return async (ethAddress: EthAddress, _extras?: any): Promise<boolean> => {
+    // Check wallets first (faster, local)
+    if (lowerCasedAllowList.includes(ethAddress.toLowerCase())) {
+      return true
+    }
+
+    // Check communities if defined (returns early on first match)
+    if (communities?.length) {
+      for (const communityId of communities) {
+        if (await socialService.isMemberFromCommunity(ethAddress, communityId)) {
+          return true
+        }
+      }
+    }
+
+    return false
   }
 }
 
-function createAccessCheckerFrom(accessSetting: AccessSetting): CheckingFunction {
+function createAccessCheckerFrom(accessSetting: AccessSetting, socialService: ISocialServiceAdapter): CheckingFunction {
   switch (accessSetting.type) {
     case AccessType.Unrestricted:
       return createUnrestrictedChecker()
@@ -44,18 +64,21 @@ function createAccessCheckerFrom(accessSetting: AccessSetting): CheckingFunction
     case AccessType.NFTOwnership:
       return createNftOwnershipChecker(accessSetting.nft)
     case AccessType.AllowList:
-      return createAllowListChecker(accessSetting.wallets)
+      return createAllowListChecker(accessSetting.wallets, accessSetting.communities, socialService)
     default:
       throw new Error(`Invalid access type.`)
   }
 }
 
-export function createAccessComponent({ worldsManager }: Pick<AppComponents, 'worldsManager'>): IAccessComponent {
+export function createAccessComponent({
+  socialService,
+  worldsManager
+}: Pick<AppComponents, 'socialService' | 'worldsManager'>): IAccessComponent {
   async function checkAccess(worldName: string, ethAddress: EthAddress, extras?: any): Promise<boolean> {
     const metadata = await worldsManager.getMetadataForWorld(worldName)
     const access = metadata?.access || defaultAccess()
 
-    const accessChecker = createAccessCheckerFrom(access)
+    const accessChecker = createAccessCheckerFrom(access, socialService)
     return accessChecker(ethAddress, extras)
   }
 
