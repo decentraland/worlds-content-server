@@ -11,13 +11,6 @@ export interface ISocialServiceAdapter {
    * Validates which communities from the provided list the user is a member of.
    */
   getMemberCommunities(address: EthAddress, communityIds: string[]): Promise<MemberCommunitiesResponse>
-
-  /**
-   * GET /v1/communities/:id/members/:address
-   * Checks if the address is a member of the community.
-   * Returns true if 204, false if 404.
-   */
-  isMemberFromCommunity(address: EthAddress, communityId: string): Promise<boolean>
 }
 
 export async function createSocialServiceAdapter(
@@ -62,33 +55,6 @@ export async function createSocialServiceAdapter(
           communityIds: JSON.stringify(communityIds)
         })
         return { communities: [] }
-      }
-    },
-
-    async isMemberFromCommunity(address: EthAddress, communityId: string): Promise<boolean> {
-      try {
-        const response = await fetch.fetch(
-          `${socialServiceUrl}/v1/communities/${communityId}/members/${address.toLowerCase()}`,
-          {
-            method: 'GET'
-          }
-        )
-
-        if (response.status !== 404) {
-          logger.error(`Unexpected response when checking if address is member of community: ${response.status}`, {
-            address,
-            communityId
-          })
-        }
-
-        return response.status === 204
-      } catch (error) {
-        logger.error('Error checking if address is member of community', {
-          error: error instanceof Error ? error.message : String(error),
-          address,
-          communityId
-        })
-        return false
       }
     }
   }

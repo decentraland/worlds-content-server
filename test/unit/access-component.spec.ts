@@ -18,8 +18,7 @@ describe('AccessComponent', () => {
     } as unknown as jest.Mocked<IWorldsManager>
 
     socialService = {
-      getMemberCommunities: jest.fn().mockResolvedValue({ communities: [] }),
-      isMemberFromCommunity: jest.fn().mockResolvedValue(false)
+      getMemberCommunities: jest.fn().mockResolvedValue({ communities: [] })
     } as unknown as jest.Mocked<ISocialServiceAdapter>
 
     accessComponent = createAccessComponent({ socialService, worldsManager })
@@ -134,7 +133,7 @@ describe('AccessComponent', () => {
             worldsManager.getMetadataForWorld.mockResolvedValueOnce({
               access: { type: AccessType.AllowList, wallets: ['0x1234'], communities: ['community-1', 'community-2'] }
             } as WorldMetadata)
-            socialService.isMemberFromCommunity.mockResolvedValueOnce(true)
+            socialService.getMemberCommunities.mockResolvedValueOnce({ communities: [{ id: 'community-1' }] })
           })
 
           it('should return true', async () => {
@@ -142,9 +141,9 @@ describe('AccessComponent', () => {
             expect(result).toBe(true)
           })
 
-          it('should check the first community for membership', async () => {
+          it('should check communities using the batch endpoint', async () => {
             await accessComponent.checkAccess('test-world', '0x5678')
-            expect(socialService.isMemberFromCommunity).toHaveBeenCalledWith('0x5678', 'community-1')
+            expect(socialService.getMemberCommunities).toHaveBeenCalledWith('0x5678', ['community-1', 'community-2'])
           })
         })
 
@@ -159,28 +158,29 @@ describe('AccessComponent', () => {
             const result = await accessComponent.checkAccess('test-world', '0x1234')
 
             expect(result).toBe(true)
-            expect(socialService.isMemberFromCommunity).not.toHaveBeenCalled()
+            expect(socialService.getMemberCommunities).not.toHaveBeenCalled()
           })
         })
 
-        describe('and the address is a member of the second community', () => {
+        describe('and the address is a member of multiple communities', () => {
           beforeEach(() => {
             worldsManager.getMetadataForWorld.mockResolvedValueOnce({
               access: { type: AccessType.AllowList, wallets: [], communities: ['community-1', 'community-2'] }
             } as WorldMetadata)
-            socialService.isMemberFromCommunity
-              .mockResolvedValueOnce(false) // Not a member of community-1
-              .mockResolvedValueOnce(true) // Member of community-2
+            socialService.getMemberCommunities.mockResolvedValueOnce({
+              communities: [{ id: 'community-2' }]
+            })
           })
 
-          it('should return true after finding membership in second community', async () => {
+          it('should return true when member of any community', async () => {
             const result = await accessComponent.checkAccess('test-world', '0x5678')
             expect(result).toBe(true)
           })
 
-          it('should stop checking after finding first match', async () => {
+          it('should check all communities in a single batch request', async () => {
             await accessComponent.checkAccess('test-world', '0x5678')
-            expect(socialService.isMemberFromCommunity).toHaveBeenCalledTimes(2)
+            expect(socialService.getMemberCommunities).toHaveBeenCalledTimes(1)
+            expect(socialService.getMemberCommunities).toHaveBeenCalledWith('0x5678', ['community-1', 'community-2'])
           })
         })
 
@@ -189,19 +189,12 @@ describe('AccessComponent', () => {
             worldsManager.getMetadataForWorld.mockResolvedValueOnce({
               access: { type: AccessType.AllowList, wallets: [], communities: ['community-1', 'community-2'] }
             } as WorldMetadata)
-            socialService.isMemberFromCommunity.mockResolvedValueOnce(false).mockResolvedValueOnce(false)
+            socialService.getMemberCommunities.mockResolvedValueOnce({ communities: [] })
           })
 
-          it('should return false after checking all communities', async () => {
+          it('should return false when not a member of any community', async () => {
             const result = await accessComponent.checkAccess('test-world', '0x5678')
             expect(result).toBe(false)
-          })
-
-          it('should check all communities', async () => {
-            await accessComponent.checkAccess('test-world', '0x5678')
-            expect(socialService.isMemberFromCommunity).toHaveBeenCalledTimes(2)
-            expect(socialService.isMemberFromCommunity).toHaveBeenCalledWith('0x5678', 'community-1')
-            expect(socialService.isMemberFromCommunity).toHaveBeenCalledWith('0x5678', 'community-2')
           })
         })
 
@@ -210,8 +203,8 @@ describe('AccessComponent', () => {
             worldsManager.getMetadataForWorld.mockResolvedValueOnce({
               access: { type: AccessType.AllowList, wallets: [], communities: ['community-1'] }
             } as WorldMetadata)
-            // Social service adapter already fails closed by returning false on error
-            socialService.isMemberFromCommunity.mockResolvedValueOnce(false)
+            // Social service adapter already fails closed by returning empty communities on error
+            socialService.getMemberCommunities.mockResolvedValueOnce({ communities: [] })
           })
 
           it('should return false (deny access)', async () => {

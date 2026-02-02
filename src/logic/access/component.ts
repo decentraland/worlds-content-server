@@ -29,44 +29,28 @@ function createNftOwnershipChecker(_requiredNft: string): CheckingFunction {
   }
 }
 
-function createAllowListChecker(
-  allowList: string[],
-  communities: string[] | undefined,
-  socialService: ISocialServiceAdapter
-): CheckingFunction {
-  const lowerCasedAllowList = allowList.map((ethAddress) => ethAddress.toLowerCase())
+/**
+ * Creates an allow-list checker factory that captures the socialService dependency.
+ * This avoids passing socialService through multiple layers.
+ */
+function createAllowListCheckerFactory(socialService: ISocialServiceAdapter) {
+  return (allowList: string[], communities: string[]): CheckingFunction => {
+    const lowerCasedAllowList = allowList.map((ethAddress) => ethAddress.toLowerCase())
 
-  return async (ethAddress: EthAddress, _extras?: any): Promise<boolean> => {
-    // Check wallets first (faster, local)
-    if (lowerCasedAllowList.includes(ethAddress.toLowerCase())) {
-      return true
-    }
-
-    // Check communities if defined (returns early on first match)
-    if (communities?.length) {
-      for (const communityId of communities) {
-        if (await socialService.isMemberFromCommunity(ethAddress, communityId)) {
-          return true
-        }
+    return async (ethAddress: EthAddress, _extras?: any): Promise<boolean> => {
+      // Check wallets first (faster, local)
+      if (lowerCasedAllowList.includes(ethAddress.toLowerCase())) {
+        return true
       }
+
+      // Check communities if defined (batch check)
+      if (communities.length > 0) {
+        const { communities: memberCommunities } = await socialService.getMemberCommunities(ethAddress, communities)
+        return memberCommunities.length > 0
+      }
+
+      return false
     }
-
-    return false
-  }
-}
-
-function createAccessCheckerFrom(accessSetting: AccessSetting, socialService: ISocialServiceAdapter): CheckingFunction {
-  switch (accessSetting.type) {
-    case AccessType.Unrestricted:
-      return createUnrestrictedChecker()
-    case AccessType.SharedSecret:
-      return createSharedSecretChecker(accessSetting.secret)
-    case AccessType.NFTOwnership:
-      return createNftOwnershipChecker(accessSetting.nft)
-    case AccessType.AllowList:
-      return createAllowListChecker(accessSetting.wallets, accessSetting.communities, socialService)
-    default:
-      throw new Error(`Invalid access type.`)
   }
 }
 
@@ -74,11 +58,28 @@ export function createAccessComponent({
   socialService,
   worldsManager
 }: Pick<AppComponents, 'socialService' | 'worldsManager'>): IAccessComponent {
+  const createAllowListChecker = createAllowListCheckerFactory(socialService)
+
+  function createAccessCheckerFrom(accessSetting: AccessSetting): CheckingFunction {
+    switch (accessSetting.type) {
+      case AccessType.Unrestricted:
+        return createUnrestrictedChecker()
+      case AccessType.SharedSecret:
+        return createSharedSecretChecker(accessSetting.secret)
+      case AccessType.NFTOwnership:
+        return createNftOwnershipChecker(accessSetting.nft)
+      case AccessType.AllowList:
+        return createAllowListChecker(accessSetting.wallets, accessSetting.communities)
+      default:
+        throw new Error(`Invalid access type.`)
+    }
+  }
+
   async function checkAccess(worldName: string, ethAddress: EthAddress, extras?: any): Promise<boolean> {
     const metadata = await worldsManager.getMetadataForWorld(worldName)
     const access = metadata?.access || defaultAccess()
 
-    const accessChecker = createAccessCheckerFrom(access, socialService)
+    const accessChecker = createAccessCheckerFrom(access)
     return accessChecker(ethAddress, extras)
   }
 
@@ -100,7 +101,7 @@ export function createAccessComponent({
         accessSetting = {
           type: AccessType.AllowList,
           wallets: wallets || [],
-          ...(communities?.length ? { communities } : {})
+          communities: communities || []
         }
         break
       }

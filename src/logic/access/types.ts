@@ -24,7 +24,7 @@ export type NftOwnershipAccessSetting = {
 export type AllowListAccessSetting = {
   type: AccessType.AllowList
   wallets: string[]
-  communities?: string[]
+  communities: string[]
 }
 
 export type AccessSetting =

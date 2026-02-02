@@ -2,7 +2,6 @@ import { ISocialServiceAdapter, MemberCommunitiesResponse } from '../../src/adap
 
 export function createMockSocialService(): jest.Mocked<ISocialServiceAdapter> {
   return {
-    getMemberCommunities: jest.fn().mockResolvedValue({ communities: [] } as MemberCommunitiesResponse),
-    isMemberFromCommunity: jest.fn().mockResolvedValue(false)
+    getMemberCommunities: jest.fn().mockResolvedValue({ communities: [] } as MemberCommunitiesResponse)
   }
 }
