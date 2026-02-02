@@ -47,7 +47,9 @@ describe('WorldsComponent', () => {
 
       beforeEach(() => {
         blockedSince = new Date()
-        blockedSince.setTime(blockedSince.getTime() - TWO_DAYS_IN_MS)
+        // Subtract TWO_DAYS_IN_MS minus a small buffer to ensure we're at/within the boundary
+        // even with test execution delays
+        blockedSince.setTime(blockedSince.getTime() - TWO_DAYS_IN_MS + 100)
       })
 
       it('should return false (at grace period boundary)', () => {

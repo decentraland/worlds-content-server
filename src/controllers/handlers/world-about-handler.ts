@@ -6,8 +6,7 @@ import {
   AboutConfigurationsSkybox
 } from '@dcl/catalyst-api-specs/lib/client'
 import { l1Contracts, L1Network } from '@dcl/catalyst-contracts'
-import { NotFoundError } from '@dcl/http-commons'
-import { WorldBlockedError } from '../../logic/worlds'
+import { NotFoundError, NotAuthorizedError } from '@dcl/http-commons'
 
 export async function worldAboutHandler({
   params,
@@ -30,7 +29,9 @@ export async function worldAboutHandler({
   }
 
   if (worlds.isWorldBlocked(worldMetadata.blockedSince)) {
-    throw new WorldBlockedError(params.world_name, worldMetadata.blockedSince!)
+    throw new NotAuthorizedError(
+      `World "${params.world_name}" has been blocked since ${worldMetadata.blockedSince} as it exceeded its allowed storage space.`
+    )
   }
 
   const runtimeMetadata = worldMetadata.runtimeMetadata
