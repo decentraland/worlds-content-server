@@ -1,5 +1,4 @@
 import { EthAddress } from '@dcl/schemas'
-import { IFetchComponent, ILoggerComponent, IConfigComponent } from '@well-known-components/interfaces'
 import { AppComponents } from '../types'
 
 export type MemberCommunitiesResponse = {
