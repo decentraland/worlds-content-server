@@ -55,7 +55,7 @@ test('cast adapter handler /cast-adapter/:roomId', function ({ components, stubC
     })
 
     expect(r.status).toEqual(404)
-    expect(await r.json()).toMatchObject({ message: `World "${worldName}" does not exist.` })
+    expect(await r.json()).toMatchObject({ message: `World "${worldName}" was not found.` })
   })
 
   it('fails when signed-fetch request metadata is correct but name is deny listed', async () => {
@@ -72,7 +72,7 @@ test('cast adapter handler /cast-adapter/:roomId', function ({ components, stubC
     })
 
     expect(r.status).toEqual(404)
-    expect(await r.json()).toMatchObject({ message: `World "${worldName}" does not exist.` })
+    expect(await r.json()).toMatchObject({ message: `World "${worldName}" was not found.` })
   })
 
   it('fails when signed-fetch request metadata is correct but room id is invalid', async () => {

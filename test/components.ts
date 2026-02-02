@@ -28,6 +28,8 @@ import { createPermissionsComponent } from '../src/logic/permissions'
 import { createAccessComponent } from '../src/logic/access'
 import { createSearchComponent } from '../src/adapters/search'
 import { createSettingsComponent } from '../src/logic/settings'
+import { createWorldsComponent } from '../src/logic/worlds'
+import { createCommsComponent } from '../src/logic/comms'
 import { createMockedNameOwnership } from './mocks/name-ownership-mock'
 import { createMockUpdateOwnerJob } from './mocks/update-owner-job-mock'
 import { createSnsClientMock } from './mocks/sns-client-mock'
@@ -144,9 +146,19 @@ async function initComponents(): Promise<TestComponents> {
     worldsManager
   })
 
+  const worlds = createWorldsComponent({ worldsManager })
+
+  const comms = createCommsComponent({
+    namePermissionChecker,
+    access,
+    worlds,
+    commsAdapter
+  })
+
   return {
     ...components,
     access,
+    comms,
     config,
     commsAdapter,
     coordinates,
@@ -170,6 +182,7 @@ async function initComponents(): Promise<TestComponents> {
     updateOwnerJob,
     validator,
     worldCreator,
+    worlds,
     worldsIndexer,
     worldsManager
   }

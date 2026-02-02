@@ -11,7 +11,8 @@ describe('comms-adapter', function () {
       const config: IConfigComponent = await createConfigComponent({
         COMMS_ADAPTER: 'ws-room',
         COMMS_FIXED_ADAPTER: 'ws-room:ws-room-service.decentraland.org/rooms/test-scene',
-        COMMS_ROOM_PREFIX: 'world-prd-'
+        COMMS_ROOM_PREFIX: 'world-prd-',
+        SCENE_ROOM_PREFIX: 'scene-prd-'
       })
       const logs = await createLogComponent({ config })
 
@@ -21,8 +22,8 @@ describe('comms-adapter', function () {
 
       const commsAdapter = await createCommsAdapterComponent({ config, fetch, logs })
 
-      expect(await commsAdapter.connectionString('0xA', 'my-room')).toBe(
-        'ws-room:ws-room-service.decentraland.org/rooms/my-room'
+      expect(await commsAdapter.getWorldRoomConnectionString('0xA', 'my-room')).toBe(
+        'ws-room:ws-room-service.decentraland.org/rooms/world-prd-my-room'
       )
     })
 
@@ -30,7 +31,8 @@ describe('comms-adapter', function () {
       const config: IConfigComponent = await createConfigComponent({
         COMMS_ADAPTER: 'ws-room',
         COMMS_FIXED_ADAPTER: 'ws-room:ws-room-service.decentraland.org/rooms/test-scene',
-        COMMS_ROOM_PREFIX: 'world-prd-'
+        COMMS_ROOM_PREFIX: 'world-prd-',
+        SCENE_ROOM_PREFIX: 'scene-prd-'
       })
       const logs = await createLogComponent({ config })
 
@@ -72,7 +74,8 @@ describe('comms-adapter', function () {
     it('refuses to initialize when misconfigured', async () => {
       const config: IConfigComponent = await createConfigComponent({
         COMMS_ADAPTER: 'ws-room',
-        COMMS_ROOM_PREFIX: 'world-prd-'
+        COMMS_ROOM_PREFIX: 'world-prd-',
+        SCENE_ROOM_PREFIX: 'scene-prd-'
       })
       const logs = await createLogComponent({ config })
 
@@ -91,6 +94,7 @@ describe('comms-adapter', function () {
       const config: IConfigComponent = await createConfigComponent({
         COMMS_ADAPTER: 'livekit',
         COMMS_ROOM_PREFIX: 'world-',
+        SCENE_ROOM_PREFIX: 'scene-',
         LIVEKIT_HOST: 'livekit.dcl.org',
         LIVEKIT_API_KEY: 'myApiKey',
         LIVEKIT_API_SECRET: 'myApiSecret'
@@ -103,7 +107,7 @@ describe('comms-adapter', function () {
 
       const commsAdapter = await createCommsAdapterComponent({ config, fetch, logs })
 
-      const adapter = await commsAdapter.connectionString('0xA', 'my-room')
+      const adapter = await commsAdapter.getWorldRoomConnectionString('0xA', 'my-room')
       expect(adapter).toContain('livekit:wss://livekit.dcl.org?access_token=')
     })
 
@@ -111,6 +115,7 @@ describe('comms-adapter', function () {
       const config: IConfigComponent = await createConfigComponent({
         COMMS_ADAPTER: 'livekit',
         COMMS_ROOM_PREFIX: 'world-',
+        SCENE_ROOM_PREFIX: 'scene-',
         LIVEKIT_HOST: 'livekit.dcl.org',
         LIVEKIT_API_KEY: 'myApiKey',
         LIVEKIT_API_SECRET: 'myApiSecret'
@@ -174,7 +179,8 @@ describe('comms-adapter', function () {
     it('refuses to initialize when misconfigured', async () => {
       const config: IConfigComponent = await createConfigComponent({
         COMMS_ADAPTER: 'livekit',
-        COMMS_ROOM_PREFIX: 'world-'
+        COMMS_ROOM_PREFIX: 'world-',
+        SCENE_ROOM_PREFIX: 'scene-'
       })
       const logs = await createLogComponent({ config })
 
@@ -191,6 +197,7 @@ describe('comms-adapter', function () {
       const config: IConfigComponent = await createConfigComponent({
         COMMS_ADAPTER: 'livekit',
         COMMS_ROOM_PREFIX: 'world-',
+        SCENE_ROOM_PREFIX: 'scene-',
         LIVEKIT_HOST: 'livekit.dcl.org',
         LIVEKIT_API_KEY: 'myApiKey',
         LIVEKIT_API_SECRET: 'myApiSecret'
@@ -212,7 +219,8 @@ describe('comms-adapter', function () {
     it('refuses to initialize when misconfigured', async () => {
       const config: IConfigComponent = await createConfigComponent({
         COMMS_ADAPTER: 'other',
-        COMMS_ROOM_PREFIX: 'world-'
+        COMMS_ROOM_PREFIX: 'world-',
+        SCENE_ROOM_PREFIX: 'scene-'
       })
       const logs = await createLogComponent({ config })
 

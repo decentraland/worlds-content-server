@@ -3,8 +3,11 @@ import { CommsStatus, ICommsAdapter } from '../../src/types'
 
 export function createMockCommsAdapterComponent(): ICommsAdapter {
   return {
-    connectionString(ethAddress: EthAddress, roomId: string): Promise<string> {
-      return Promise.resolve(`ws-room:ws-room-service.decentraland.org/rooms/${roomId}`)
+    getWorldRoomConnectionString(_userId: EthAddress, worldName: string): Promise<string> {
+      return Promise.resolve(`ws-room:ws-room-service.decentraland.org/rooms/world-${worldName}`)
+    },
+    getSceneRoomConnectionString(_userId: EthAddress, worldName: string, sceneId: string): Promise<string> {
+      return Promise.resolve(`ws-room:ws-room-service.decentraland.org/rooms/scene-${worldName}-${sceneId}`)
     },
     status(): Promise<CommsStatus> {
       return Promise.resolve({
