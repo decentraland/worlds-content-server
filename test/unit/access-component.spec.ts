@@ -117,7 +117,7 @@ describe('AccessComponent', () => {
       describe('and the address is not in the allow list', () => {
         beforeEach(() => {
           worldsManager.getMetadataForWorld.mockResolvedValueOnce({
-            access: { type: AccessType.AllowList, wallets: ['0x1234', '0xABCD'] }
+            access: { type: AccessType.AllowList, wallets: ['0x1234', '0xABCD'], communities: [] }
           } as WorldMetadata)
         })
 
@@ -250,7 +250,8 @@ describe('AccessComponent', () => {
 
           expect(worldsManager.storeAccess).toHaveBeenCalledWith('test-world', {
             type: AccessType.AllowList,
-            wallets: ['0x1234', '0x5678']
+            wallets: ['0x1234', '0x5678'],
+            communities: []
           })
         })
       })
@@ -261,7 +262,8 @@ describe('AccessComponent', () => {
 
           expect(worldsManager.storeAccess).toHaveBeenCalledWith('test-world', {
             type: AccessType.AllowList,
-            wallets: []
+            wallets: [],
+            communities: []
           })
         })
       })
@@ -292,7 +294,8 @@ describe('AccessComponent', () => {
 
           expect(worldsManager.storeAccess).toHaveBeenCalledWith('test-world', {
             type: AccessType.AllowList,
-            wallets: ['0x1234']
+            wallets: ['0x1234'],
+            communities: []
           })
         })
       })

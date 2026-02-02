@@ -55,7 +55,8 @@ test('PermissionsHandler', function ({ components }) {
           const body = await response.json()
           expect(body).toEqual({
             type: AccessType.AllowList,
-            wallets: ['0x1234567890123456789012345678901234567890']
+            wallets: ['0x1234567890123456789012345678901234567890'],
+            communities: []
           })
         })
       })
