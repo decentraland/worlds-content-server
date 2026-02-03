@@ -39,11 +39,7 @@ export async function createSocialServiceComponent({
       })
 
       if (!response.ok) {
-        logger.error(`Failed to get member communities: ${response.status} ${response.statusText}`, {
-          address,
-          communityIds: JSON.stringify(communityIds)
-        })
-        return { communities: [] }
+        throw new Error(`Failed to get member communities: ${response.status} ${response.statusText}`)
       }
 
       const data = (await response.json()) as MemberCommunitiesResponse
@@ -54,6 +50,7 @@ export async function createSocialServiceComponent({
         address,
         communityIds: JSON.stringify(communityIds)
       })
+
       return { communities: [] }
     }
   }
