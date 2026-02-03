@@ -14,27 +14,15 @@ import { IStatusComponent } from './adapters/status'
 import { AuthChain, AuthLink, Entity, EthAddress, IPFSv2 } from '@dcl/schemas'
 import { MigrationExecutor } from './adapters/migration-executor'
 import { IPgComponent } from '@well-known-components/pg-component'
-import { AuthIdentity, IdentityType } from '@dcl/crypto'
+import { AuthIdentity } from '@dcl/crypto'
 import { IFetchComponent } from '@well-known-components/interfaces'
 import { INatsComponent } from '@well-known-components/nats-component/dist/types'
-
-// Type for authenticated test fetch component
-export type TestIdentity = { authChain: AuthIdentity; realAccount: IdentityType; ephemeralIdentity: IdentityType }
-export type AuthenticatedRequestInit = Omit<RequestInit, 'body'> & {
-  identity?: TestIdentity
-  metadata?: Record<string, any>
-  body?: any
-}
-export type IAuthenticatedFetchComponent = {
-  fetch(path: string, init?: AuthenticatedRequestInit): Promise<Response>
-}
 import { WebhookEvent } from 'livekit-server-sdk'
 import { IPublisherComponent } from '@dcl/sns-component'
 import { ISettingsComponent } from './logic/settings'
 import { ISchemaValidatorComponent } from '@dcl/schema-validator-component'
 import { ICoordinatesComponent } from './logic/coordinates'
 import { ISearchComponent } from './adapters/search'
-
 import {
   IPermissionsComponent,
   AllowListPermission,
@@ -43,6 +31,9 @@ import {
 } from './logic/permissions'
 import { AccessSetting, IAccessComponent } from './logic/access'
 import { ISocialServiceComponent } from './adapters/social-service'
+import { ICommsComponent } from './logic/comms'
+import { IWorldsComponent } from './logic/worlds'
+import type { IAuthenticatedFetchComponent } from '../test/components/local-auth-fetch'
 
 export type GlobalContext = {
   components: BaseComponents
@@ -121,6 +112,7 @@ export type BoundingBox = {
 
 export type GetWorldScenesFilters = {
   worldName?: string
+  entityId?: string
   coordinates?: string[]
   boundingBox?: BoundingBox
   authorized_deployer?: string // address to filter scenes by (world owner or has deployment permission)
@@ -188,6 +180,20 @@ export type GetWorldsOptions = {
 
 export type GetWorldsResult = {
   worlds: WorldInfo[]
+  total: number
+}
+
+export type GetRawWorldRecordsFilters = {
+  worldName?: string
+}
+
+export type GetRawWorldRecordsOptions = {
+  limit?: number
+  offset?: number
+}
+
+export type GetRawWorldRecordsResult = {
+  records: WorldRecord[]
   total: number
 }
 
@@ -282,7 +288,8 @@ export type CommsStatus = {
 }
 
 export type ICommsAdapter = {
-  connectionString(ethAddress: EthAddress, roomId: string, name?: string): Promise<string>
+  getWorldRoomConnectionString(userId: EthAddress, worldName: string): Promise<string>
+  getSceneRoomConnectionString(userId: EthAddress, worldName: string, sceneId: string): Promise<string>
   status(): Promise<CommsStatus>
 }
 
@@ -320,7 +327,10 @@ export class NoDeployedScenesError extends Error {
 }
 
 export type IWorldsManager = {
-  getRawWorldRecords(): Promise<WorldRecord[]>
+  getRawWorldRecords(
+    filters?: GetRawWorldRecordsFilters,
+    options?: GetRawWorldRecordsOptions
+  ): Promise<GetRawWorldRecordsResult>
   getDeployedWorldCount(): Promise<{ ens: number; dcl: number }>
   getMetadataForWorld(worldName: string): Promise<WorldMetadata | undefined>
   getEntityForWorlds(worldNames: string[]): Promise<Entity[]>
@@ -460,6 +470,8 @@ export type BaseComponents = {
   worldsManager: IWorldsManager
   settings: ISettingsComponent
   schemaValidator: ISchemaValidatorComponent<GlobalContext>
+  comms: ICommsComponent
+  worlds: IWorldsComponent
 }
 
 export type IWorldCreator = {

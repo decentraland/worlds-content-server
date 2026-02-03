@@ -1,7 +1,7 @@
 import { test } from '../components'
 import FormData from 'form-data'
 import { getIdentity, Identity } from '../utils'
-import { IAuthenticatedFetchComponent } from '../../src/types'
+import { IAuthenticatedFetchComponent } from '../components/local-auth-fetch'
 import { IPermissionsComponent } from '../../src/logic/permissions'
 import { defaultAccess } from '../../src/logic/access'
 

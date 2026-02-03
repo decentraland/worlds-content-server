@@ -1,6 +1,7 @@
 import { test } from '../../components'
 import { getIdentity, Identity } from '../../utils'
-import { IAuthenticatedFetchComponent, IPermissionsManager, IWorldCreator } from '../../../src/types'
+import { IAuthenticatedFetchComponent } from '../../components/local-auth-fetch'
+import { IPermissionsManager, IWorldCreator } from '../../../src/types'
 
 const BUILDER_METADATA = {
   origin: 'https://builder.decentraland.org',

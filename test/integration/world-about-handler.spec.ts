@@ -136,7 +136,7 @@ test('world about handler /world/:world_name/about', function ({ components, stu
           comms: {
             healthy: true,
             protocol: 'v3',
-            adapter: `fixed-adapter:signed-login:http://0.0.0.0:3000/get-comms-adapter/world-${worldName}`
+            adapter: `fixed-adapter:signed-login:http://0.0.0.0:3000/worlds/${worldName.toLowerCase()}/comms`
           }
         })
       })

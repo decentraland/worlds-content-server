@@ -34,6 +34,7 @@ import { permissionParcelsSchema } from './schemas/permission-parcels-schema'
 import { getWorldsHandler } from './handlers/worlds-handler'
 import { reprocessABSchema } from './schemas/reprocess-ab-schemas'
 import { getWorldScenesSchema } from './schemas/scenes-query-schemas'
+import { worldCommsHandler } from './handlers/world-comms-handler'
 
 export async function setupRouter(globalContext: GlobalContext): Promise<Router<GlobalContext>> {
   const { fetch, schemaValidator, config } = globalContext.components
@@ -134,6 +135,10 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   router.get('/live-data', getLiveDataHandler)
 
   router.post('/livekit-webhook', livekitWebhookHandler)
+
+  // Comms endpoints
+  router.post('/worlds/:worldName/comms', signedFetchMiddleware, worldCommsHandler)
+  router.post('/worlds/:worldName/scenes/:sceneId/comms', signedFetchMiddleware, worldCommsHandler)
 
   router.post('/get-comms-adapter/:roomId', signedFetchMiddleware, commsAdapterHandler)
   router.post('/cast-adapter/:roomId', signedFetchMiddleware, castAdapterHandler)

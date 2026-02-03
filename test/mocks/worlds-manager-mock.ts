@@ -25,7 +25,7 @@ export async function createWorldsManagerMockComponent({
 }: Pick<AppComponents, 'coordinates' | 'storage'>): Promise<IWorldsManager> {
   const { extractSpawnCoordinates, calculateBoundingRectangle } = coordinates
 
-  async function getRawWorldRecords(): Promise<WorldRecord[]> {
+  async function getRawWorldRecords(): Promise<{ records: WorldRecord[]; total: number }> {
     const worlds: WorldRecord[] = []
     for await (const key of storage.allFileIds('name-')) {
       const entity = await getEntityForWorld(key.substring(5))
@@ -57,7 +57,7 @@ export async function createWorldsManagerMockComponent({
         })
       }
     }
-    return worlds
+    return { records: worlds, total: worlds.length }
   }
 
   async function getEntityForWorld(worldName: string): Promise<Entity | undefined> {

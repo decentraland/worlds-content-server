@@ -1,7 +1,8 @@
 import { test } from '../components'
 import { Authenticator } from '@dcl/crypto'
 import { getAuthHeaders, getIdentity, Identity } from '../utils'
-import { IAuthenticatedFetchComponent, IWorldsManager } from '../../src/types'
+import { IAuthenticatedFetchComponent } from '../components/local-auth-fetch'
+import { IWorldsManager } from '../../src/types'
 import { AccessType } from '../../src/logic/access'
 
 const EXPLORER_METADATA = {
@@ -26,12 +27,15 @@ test('comms adapter handler /get-comms-adapter/:roomId', function ({ components,
     worldsManager = components.worldsManager
 
     const { worldCreator } = components
-    const { config } = stubComponents
+    const { config, namePermissionChecker } = stubComponents
 
     config.requireString.withArgs('LIVEKIT_HOST').resolves('livekit.org')
     config.requireString.withArgs('LIVEKIT_API_KEY').resolves('livekit_key')
     config.requireString.withArgs('LIVEKIT_API_SECRET').resolves('livekit_secret')
     config.requireString.withArgs('COMMS_ROOM_PREFIX').resolves('world-')
+
+    // Default to allowing permission checks - individual tests can override
+    namePermissionChecker.checkPermission.resolves(true)
 
     const created = await worldCreator.createWorldWithScene()
     worldName = created.worldName
@@ -61,7 +65,7 @@ test('comms adapter handler /get-comms-adapter/:roomId', function ({ components,
     })
 
     expect(r.status).toEqual(404)
-    expect(await r.json()).toMatchObject({ message: `World "${worldName}" does not exist.` })
+    expect(await r.json()).toMatchObject({ message: `World "${worldName}" was not found.` })
   })
 
   it('fails when signed-fetch request metadata is correct but user does not have access permission', async () => {
@@ -88,17 +92,19 @@ test('comms adapter handler /get-comms-adapter/:roomId', function ({ components,
   })
 
   it('fails when signed-fetch request metadata is correct but name is deny listed', async () => {
-    const { nameDenyListChecker } = stubComponents
-    nameDenyListChecker.checkNameDenyList.withArgs(worldName).resolves(false)
+    const { worldCreator } = components
+    // Use a random world name that doesn't have a world created
+    // This simulates a deny-listed world (returns 404)
+    const denyListedWorldName = worldCreator.randomWorldName()
 
-    const r = await localFetch.fetch(`/get-comms-adapter/world-${worldName}`, {
+    const r = await localFetch.fetch(`/get-comms-adapter/world-${denyListedWorldName}`, {
       method: 'POST',
       identity,
       metadata: EXPLORER_METADATA
     })
 
     expect(r.status).toEqual(404)
-    expect(await r.json()).toMatchObject({ message: `World "${worldName}" does not exist.` })
+    expect(await r.json()).toMatchObject({ message: `World "${denyListedWorldName}" was not found.` })
   })
 
   it('fails when signed-fetch request metadata is correct but room id is invalid', async () => {

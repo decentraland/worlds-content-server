@@ -13,7 +13,7 @@ export async function createWorldsIndexerComponent({
   worldsManager
 }: Pick<AppComponents, 'worldsManager'>): Promise<IWorldsIndexer> {
   async function getIndex(): Promise<WorldsIndex> {
-    const worlds = await worldsManager.getRawWorldRecords()
+    const { records: worlds } = await worldsManager.getRawWorldRecords()
     const index: WorldData[] = []
 
     for (const world of worlds) {

@@ -1,6 +1,6 @@
 import { test } from '../components'
 import { getIdentity, Identity } from '../utils'
-import { IAuthenticatedFetchComponent } from '../../src/types'
+import { IAuthenticatedFetchComponent } from '../components/local-auth-fetch'
 import { IPermissionsComponent } from '../../src/logic/permissions'
 
 const UNDEPLOY_METADATA = {

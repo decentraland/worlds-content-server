@@ -2,18 +2,17 @@ import { HandlerContextWithPath } from '../../types'
 import { IHttpServerComponent } from '@well-known-components/interfaces'
 import { DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
 import { AccessToken } from 'livekit-server-sdk'
-import { assertNotBlockedOrWithinInGracePeriod } from '../../logic/blocked'
 import { InvalidRequestError, NotFoundError } from '@dcl/http-commons'
 
 export async function castAdapterHandler(
   context: HandlerContextWithPath<
-    'config' | 'nameDenyListChecker' | 'namePermissionChecker' | 'permissions' | 'storage' | 'worldsManager',
+    'config' | 'namePermissionChecker' | 'permissions' | 'worlds',
     '/meet-adapter/:roomId'
   > &
     DecentralandSignatureContext<any>
 ): Promise<IHttpServerComponent.IResponse> {
   const {
-    components: { config, nameDenyListChecker, namePermissionChecker, permissions, worldsManager }
+    components: { config, namePermissionChecker, permissions, worlds }
   } = context
 
   const [host, apiKey, apiSecret] = await Promise.all([
@@ -33,16 +32,9 @@ export async function castAdapterHandler(
 
   const worldName = context.params.roomId.substring(roomPrefix.length)
 
-  if (!(await nameDenyListChecker.checkNameDenyList(worldName))) {
-    throw new NotFoundError(`World "${worldName}" does not exist.`)
+  if (!(await worlds.isWorldValid(worldName))) {
+    throw new NotFoundError(`World "${worldName}" was not found.`)
   }
-
-  const worldMetadata = await worldsManager.getMetadataForWorld(worldName)
-  if (!worldMetadata) {
-    throw new NotFoundError(`World "${worldName}" does not exist.`)
-  }
-
-  assertNotBlockedOrWithinInGracePeriod(worldMetadata)
 
   const identity = context.verification!.auth
   const hasPermission =

@@ -6,15 +6,17 @@ import {
   AboutConfigurationsSkybox
 } from '@dcl/catalyst-api-specs/lib/client'
 import { l1Contracts, L1Network } from '@dcl/catalyst-contracts'
-import { assertNotBlockedOrWithinInGracePeriod } from '../../logic/blocked'
-import { NotFoundError } from '@dcl/http-commons'
+import { NotFoundError, NotAuthorizedError } from '@dcl/http-commons'
 
 export async function worldAboutHandler({
   params,
   url,
-  components: { config, nameDenyListChecker, status, worldsManager }
+  components: { config, nameDenyListChecker, status, worldsManager, worlds }
 }: Pick<
-  HandlerContextWithPath<'config' | 'nameDenyListChecker' | 'status' | 'worldsManager', '/world/:world_name/about'>,
+  HandlerContextWithPath<
+    'config' | 'nameDenyListChecker' | 'status' | 'worldsManager' | 'worlds',
+    '/world/:world_name/about'
+  >,
   'components' | 'params' | 'url'
 >) {
   if (!(await nameDenyListChecker.checkNameDenyList(params.world_name))) {
@@ -26,7 +28,11 @@ export async function worldAboutHandler({
     throw new NotFoundError(`World "${params.world_name}" has no scenes deployed.`)
   }
 
-  assertNotBlockedOrWithinInGracePeriod(worldMetadata)
+  if (worlds.isWorldBlocked(worldMetadata.blockedSince)) {
+    throw new NotAuthorizedError(
+      `World "${params.world_name}" has been blocked since ${worldMetadata.blockedSince} as it exceeded its allowed storage space.`
+    )
+  }
 
   const runtimeMetadata = worldMetadata.runtimeMetadata
 
@@ -43,8 +49,7 @@ export async function worldAboutHandler({
     throw new Error(`Invalid ETH_NETWORK: ${ethNetwork}`)
   }
 
-  const roomPrefix = await config.requireString('COMMS_ROOM_PREFIX')
-  const adapter = resolveFixedAdapter(params.world_name, runtimeMetadata.fixedAdapter, baseUrl, roomPrefix)
+  const adapter = resolveFixedAdapter(params.world_name, runtimeMetadata.fixedAdapter, baseUrl)
 
   const globalScenesURN = await config.getString('GLOBAL_SCENES_URN')
 
@@ -119,10 +124,10 @@ export async function worldAboutHandler({
   }
 }
 
-function resolveFixedAdapter(worldName: string, fixedAdapter: string | undefined, baseUrl: string, roomPrefix: string) {
+function resolveFixedAdapter(worldName: string, fixedAdapter: string | undefined, baseUrl: string) {
   if (fixedAdapter === 'offline:offline') {
     return 'fixed-adapter:offline:offline'
   }
 
-  return `fixed-adapter:signed-login:${baseUrl}/get-comms-adapter/${roomPrefix}${worldName.toLowerCase()}`
+  return `fixed-adapter:signed-login:${baseUrl}/worlds/${worldName.toLowerCase()}/comms`
 }

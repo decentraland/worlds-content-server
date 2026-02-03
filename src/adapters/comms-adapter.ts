@@ -19,20 +19,24 @@ export async function createCommsAdapterComponent({
 }: Pick<AppComponents, 'config' | 'fetch' | 'logs'>): Promise<ICommsAdapter> {
   const logger = logs.getLogger('comms-adapter')
 
-  const roomPrefix = await config.requireString('COMMS_ROOM_PREFIX')
+  const worldRoomPrefix = await config.requireString('COMMS_ROOM_PREFIX')
+  const sceneRoomPrefix = await config.requireString('SCENE_ROOM_PREFIX')
   const adapterType = await config.requireString('COMMS_ADAPTER')
   switch (adapterType) {
     case 'ws-room':
       const fixedAdapter = await config.requireString('COMMS_FIXED_ADAPTER')
       logger.info(`Using ws-room-service adapter with template baseUrl: ${fixedAdapter}`)
-      return cachingAdapter({ logs }, createWsRoomAdapter({ fetch }, roomPrefix, fixedAdapter))
+      return cachingAdapter({ logs }, createWsRoomAdapter({ fetch }, worldRoomPrefix, sceneRoomPrefix, fixedAdapter))
 
     case 'livekit':
       const host = await config.requireString('LIVEKIT_HOST')
       logger.info(`Using livekit adapter with host: ${host}`)
       const apiKey = await config.requireString('LIVEKIT_API_KEY')
       const apiSecret = await config.requireString('LIVEKIT_API_SECRET')
-      return cachingAdapter({ logs }, createLiveKitAdapter({ fetch }, roomPrefix, host, apiKey, apiSecret))
+      return cachingAdapter(
+        { logs },
+        createLiveKitAdapter({ fetch, logs }, worldRoomPrefix, sceneRoomPrefix, host, apiKey, apiSecret)
+      )
 
     default:
       throw Error(`Invalid comms adapter: ${adapterType}`)
@@ -41,7 +45,8 @@ export async function createCommsAdapterComponent({
 
 function createWsRoomAdapter(
   { fetch }: Pick<AppComponents, 'fetch'>,
-  roomPrefix: string,
+  worldRoomPrefix: string,
+  sceneRoomPrefix: string,
   fixedAdapter: string
 ): ICommsAdapter {
   return {
@@ -67,29 +72,56 @@ function createWsRoomAdapter(
             rooms: res.rooms,
             users: res.users,
             details: res.details
-              .filter((room: any) => room.roomName.startsWith(roomPrefix) && room.count > 0)
+              .filter((room: any) => room.roomName.startsWith(worldRoomPrefix) && room.count > 0)
               .map((room: { roomName: string; count: number }): WorldStatus => {
                 const { roomName, count } = room
-                return { worldName: roomName.substring(roomPrefix.length), users: count }
+                return { worldName: roomName.substring(worldRoomPrefix.length), users: count }
               }),
             timestamp: Date.now()
           })
         )
     },
-    connectionString: async function (userId: EthAddress, roomId: string): Promise<string> {
+    async getWorldRoomConnectionString(_userId: EthAddress, worldName: string): Promise<string> {
       const roomsUrl = fixedAdapter.replace(/rooms\/.*/, 'rooms')
+      const roomId = `${worldRoomPrefix}${worldName.toLowerCase()}`
+      return `${roomsUrl}/${roomId}`
+    },
+    async getSceneRoomConnectionString(_userId: EthAddress, worldName: string, sceneId: string): Promise<string> {
+      const roomsUrl = fixedAdapter.replace(/rooms\/.*/, 'rooms')
+      const roomId = `${sceneRoomPrefix}${worldName.toLowerCase()}-${sceneId.toLowerCase()}`
       return `${roomsUrl}/${roomId}`
     }
   }
 }
 
 function createLiveKitAdapter(
-  { fetch }: Pick<AppComponents, 'fetch'>,
-  roomPrefix: string,
+  { fetch, logs }: Pick<AppComponents, 'fetch' | 'logs'>,
+  worldRoomPrefix: string,
+  sceneRoomPrefix: string,
   host: string,
   apiKey: string,
   apiSecret: string
 ): ICommsAdapter {
+  const logger = logs.getLogger('livekit-adapter')
+
+  async function getRoomConnectionString(userAddress: EthAddress, roomId: string): Promise<string> {
+    const token = new AccessToken(apiKey, apiSecret, {
+      identity: userAddress.toLowerCase(),
+      ttl: 5 * 60 // 5 minutes
+    })
+    token.addGrant({
+      roomJoin: true,
+      room: roomId,
+      roomList: false,
+      canPublish: true,
+      canSubscribe: true,
+      canPublishData: true,
+      canUpdateOwnMetadata: true,
+      canPublishSources: [TrackSource.MICROPHONE]
+    })
+    return `livekit:wss://${host}?access_token=${await token.toJwt()}`
+  }
+
   return {
     async status(): Promise<CommsStatus> {
       const token = new AccessToken(apiKey, apiSecret, {
@@ -111,7 +143,9 @@ function createLiveKitAdapter(
         })
         .then((response) => response.json())
         .then((res: any) =>
-          res.rooms.filter((room: any) => room.name.startsWith(roomPrefix)).map((room: { name: string }) => room.name)
+          res.rooms
+            .filter((room: { name: string }) => room.name.startsWith(worldRoomPrefix))
+            .map((room: { name: string }) => room.name)
         )
 
       // We need to chunk the room names because the ListRooms endpoint
@@ -132,16 +166,16 @@ function createLiveKitAdapter(
               .then((res: any) => {
                 return res.rooms.map(
                   (room: { name: string; num_participants: number }): WorldStatus => ({
-                    worldName: room.name.substring(roomPrefix.length),
+                    worldName: room.name.substring(worldRoomPrefix.length),
                     users: room.num_participants
                   })
                 )
               })
               .catch((error) => {
-                console.log(error)
+                logger.error(`Error retrieving comms status: ${error.message}`)
                 return chunkedRoomNames.map(
                   (worldRoomName: string): WorldStatus => ({
-                    worldName: worldRoomName.substring(roomPrefix.length),
+                    worldName: worldRoomName.substring(worldRoomPrefix.length),
                     users: 0
                   })
                 )
@@ -162,23 +196,14 @@ function createLiveKitAdapter(
       }
     },
 
-    async connectionString(userId: string, roomId: string, name: string | undefined = undefined): Promise<string> {
-      const token = new AccessToken(apiKey, apiSecret, {
-        identity: userId,
-        name,
-        ttl: 5 * 60 // 5 minutes
-      })
-      token.addGrant({
-        roomJoin: true,
-        room: roomId,
-        roomList: false,
-        canPublish: true,
-        canSubscribe: true,
-        canPublishData: true,
-        canUpdateOwnMetadata: true,
-        canPublishSources: [TrackSource.MICROPHONE]
-      })
-      return `livekit:wss://${host}?access_token=${await token.toJwt()}`
+    async getWorldRoomConnectionString(userId: EthAddress, worldName: string): Promise<string> {
+      const roomId = `${worldRoomPrefix}${worldName.toLowerCase()}`
+      return getRoomConnectionString(userId, roomId)
+    },
+
+    async getSceneRoomConnectionString(userId: EthAddress, worldName: string, sceneId: string): Promise<string> {
+      const roomId = `${sceneRoomPrefix}${worldName.toLowerCase()}-${sceneId.toLowerCase()}`
+      return getRoomConnectionString(userId, roomId)
     }
   }
 }
@@ -205,8 +230,12 @@ function cachingAdapter({ logs }: Pick<AppComponents, 'logs'>, wrappedAdapter: I
       return (await cache.fetch(CACHE_KEY))!
     },
 
-    async connectionString(userId: EthAddress, roomId: string): Promise<string> {
-      return wrappedAdapter.connectionString(userId, roomId)
+    getWorldRoomConnectionString(userId: EthAddress, worldName: string): Promise<string> {
+      return wrappedAdapter.getWorldRoomConnectionString(userId, worldName)
+    },
+
+    getSceneRoomConnectionString(userId: EthAddress, worldName: string, sceneId: string): Promise<string> {
+      return wrappedAdapter.getSceneRoomConnectionString(userId, worldName, sceneId)
     }
   }
 }

@@ -18,7 +18,10 @@ import {
   GetWorldsOptions,
   GetWorldsResult,
   WorldInfo,
-  WorldsOrderBy
+  WorldsOrderBy,
+  GetRawWorldRecordsFilters,
+  GetRawWorldRecordsOptions,
+  GetRawWorldRecordsResult
 } from '../types'
 import { streamToBuffer } from '@dcl/catalyst-storage'
 import { Entity, EthAddress } from '@dcl/schemas'
@@ -43,21 +46,80 @@ export async function createWorldsManagerComponent({
   const logger = logs.getLogger('worlds-manager')
   const { extractSpawnCoordinates, parseCoordinate, isCoordinateWithinRectangle, getRectangleCenter } = coordinates
 
-  async function getRawWorldRecords(): Promise<WorldRecord[]> {
-    const result = await database.query<WorldRecord>(
-      SQL`SELECT worlds.*, blocked.created_at AS blocked_since
-              FROM worlds
-              LEFT JOIN blocked ON worlds.owner = blocked.wallet`
-    )
+  /**
+   * Gets a paginated list of raw world records with optional filtering
+   *
+   * @param filters - Optional filters for worldName
+   * @param options - Pagination options (limit, offset)
+   * @returns Paginated list of world records with total count
+   */
+  /**
+   * Gets a paginated list of raw world records with optional filtering
+   *
+   * @param filters - Optional filters for worldName
+   * @param options - Pagination options (limit, offset)
+   * @returns Paginated list of world records with total count
+   */
+  async function getRawWorldRecords(
+    filters: GetRawWorldRecordsFilters = {},
+    options: GetRawWorldRecordsOptions = {}
+  ): Promise<GetRawWorldRecordsResult> {
+    // Get banned names to exclude from query
+    const bannedNames = await nameDenyListChecker.getBannedNames()
 
-    const filtered: WorldRecord[] = []
-    for (const row of result.rows) {
-      if (await nameDenyListChecker.checkNameDenyList(row.name)) {
-        filtered.push(row)
-      }
+    // Build base count query
+    const countQuery = SQL`
+      SELECT COUNT(*) as total
+      FROM worlds
+      WHERE 1=1
+    `
+
+    // Build main query
+    const mainQuery = SQL`
+      SELECT worlds.*, blocked.created_at AS blocked_since
+      FROM worlds
+      LEFT JOIN blocked ON worlds.owner = blocked.wallet
+      WHERE 1=1
+    `
+
+    // Exclude banned names from both queries
+    if (bannedNames.length > 0) {
+      const bannedFilter = SQL` AND worlds.name != ALL(${bannedNames})`
+      countQuery.append(bannedFilter)
+      mainQuery.append(bannedFilter)
     }
 
-    return filtered
+    // Apply worldName filter
+    if (filters.worldName) {
+      const worldNameFilter = SQL` AND worlds.name = ${filters.worldName.toLowerCase()}`
+      countQuery.append(worldNameFilter)
+      mainQuery.append(worldNameFilter)
+    }
+
+    // Add ordering
+    mainQuery.append(` ORDER BY worlds.name ASC`)
+
+    // Apply pagination
+    if (options.limit !== undefined) {
+      mainQuery.append(SQL` LIMIT ${options.limit}`)
+    }
+
+    if (options.offset !== undefined) {
+      mainQuery.append(SQL` OFFSET ${options.offset}`)
+    }
+
+    // Execute both queries concurrently
+    const [countResult, result] = await Promise.all([
+      database.query<{ total: string }>(countQuery),
+      database.query<WorldRecord>(mainQuery)
+    ])
+
+    const total = parseInt(countResult.rows[0]?.total || '0', 10)
+
+    return {
+      records: result.rows,
+      total
+    }
   }
 
   async function getMetadataForWorld(worldName: string): Promise<WorldMetadata | undefined> {
@@ -377,6 +439,13 @@ export async function createWorldsManagerComponent({
       const worldNameFilter = SQL` AND world_name = ${filters.worldName.toLowerCase()}`
       countQuery.append(worldNameFilter)
       mainQuery.append(worldNameFilter)
+    }
+
+    // Apply entityId filter
+    if (filters?.entityId) {
+      const entityIdFilter = SQL` AND entity_id = ${filters.entityId}`
+      countQuery.append(entityIdFilter)
+      mainQuery.append(entityIdFilter)
     }
 
     // Apply coordinates filter (scenes that contain any of the specified coordinates)
