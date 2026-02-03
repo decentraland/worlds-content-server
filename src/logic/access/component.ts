@@ -103,7 +103,7 @@ export function createAccessComponent({
         // Validate that the signer is a member of all communities they're trying to set
         if (communities && communities.length > 0) {
           const { communities: memberCommunities } = await socialService.getMemberCommunities(signer, communities)
-          const memberCommunityIds = new Set(memberCommunities.map((c) => c.id))
+          const memberCommunityIds = new Set(memberCommunities.map((c: { id: string }) => c.id))
           const unauthorizedCommunities = communities.filter((id) => !memberCommunityIds.has(id))
 
           if (unauthorizedCommunities.length > 0) {
