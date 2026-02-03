@@ -95,13 +95,15 @@ function createWsRoomAdapter(
 }
 
 function createLiveKitAdapter(
-  { fetch }: Pick<AppComponents, 'fetch'>,
+  { fetch, logs }: Pick<AppComponents, 'fetch' | 'logs'>,
   worldRoomPrefix: string,
   sceneRoomPrefix: string,
   host: string,
   apiKey: string,
   apiSecret: string
 ): ICommsAdapter {
+  const logger = logs.getLogger('livekit-adapter')
+
   return {
     async status(): Promise<CommsStatus> {
       const token = new AccessToken(apiKey, apiSecret, {
@@ -152,7 +154,7 @@ function createLiveKitAdapter(
                 )
               })
               .catch((error) => {
-                console.log(error)
+                logger.error(`Error retrieving comms status: ${error.message}`)
                 return chunkedRoomNames.map(
                   (worldRoomName: string): WorldStatus => ({
                     worldName: worldRoomName.substring(worldRoomPrefix.length),
