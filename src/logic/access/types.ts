@@ -41,13 +41,10 @@ export type AccessInput = {
   secret?: string
 }
 
-export type AddressAccessInfo = {
-  worldName: string
-  address: string
-}
-
 export type IAccessComponent = {
   checkAccess(worldName: string, ethAddress: EthAddress, extras?: any): Promise<boolean>
   setAccess(worldName: string, signer: EthAddress, input: AccessInput): Promise<void>
-  getAddressAccessPermission(worldName: string, address: EthAddress): Promise<AddressAccessInfo | null>
+  addWalletToAccessAllowList(worldName: string, wallet: EthAddress): Promise<void>
+  removeWalletFromAccessAllowList(worldName: string, wallet: EthAddress): Promise<void>
+  getAccessForWorld(worldName: string): Promise<AccessSetting>
 }

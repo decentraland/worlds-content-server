@@ -11,3 +11,10 @@ export class UnauthorizedCommunityError extends Error {
     this.name = 'UnauthorizedCommunityError'
   }
 }
+
+export class NotAllowListAccessError extends Error {
+  constructor(worldName: string) {
+    super(`World "${worldName}" does not have allow-list access type. Cannot add or remove wallets.`)
+    this.name = 'NotAllowListAccessError'
+  }
+}

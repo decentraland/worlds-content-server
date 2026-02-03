@@ -1,9 +1,9 @@
 import { AppComponents } from '../../types'
-import { AccessInput, AccessSetting, AccessType, AddressAccessInfo, IAccessComponent } from './types'
+import { AccessInput, AccessSetting, AccessType, IAccessComponent } from './types'
 import { EthAddress } from '@dcl/schemas'
 import bcrypt from 'bcrypt'
 import { defaultAccess, MAX_COMMUNITIES } from './constants'
-import { InvalidAccessTypeError, UnauthorizedCommunityError } from './errors'
+import { InvalidAccessTypeError, NotAllowListAccessError, UnauthorizedCommunityError } from './errors'
 import { ISocialServiceComponent } from '../../adapters/social-service'
 
 const saltRounds = 10
@@ -75,9 +75,23 @@ export function createAccessComponent({
     }
   }
 
+  /**
+   * Gets the access setting for a world using the faster getRawWorldRecords method.
+   * Returns the default access (unrestricted) if the world doesn't exist or has no access defined.
+   *
+   * @param worldName - The name of the world
+   * @returns The access setting for the world, or defaultAccess() if the world doesn't exist
+   */
+  async function getAccessForWorld(worldName: string): Promise<AccessSetting> {
+    const { records } = await worldsManager.getRawWorldRecords({ worldName })
+    if (records.length === 0) {
+      return defaultAccess()
+    }
+    return records[0].access || defaultAccess()
+  }
+
   async function checkAccess(worldName: string, ethAddress: EthAddress, extras?: any): Promise<boolean> {
-    const metadata = await worldsManager.getMetadataForWorld(worldName)
-    const access = metadata?.access || defaultAccess()
+    const access = await getAccessForWorld(worldName)
 
     const accessChecker = createAccessCheckerFrom(access)
     return accessChecker(ethAddress, extras)
@@ -148,34 +162,70 @@ export function createAccessComponent({
   }
 
   /**
-   * Get access permission info for a specific address.
-   * Returns the address info if the world has allow-list access and the address is in the list.
-   * Returns null if access is not allow-list type or the address is not in the list.
+   * Adds a wallet to the access allow-list for a world.
+   * The world must have allow-list access type for this operation to succeed.
+   *
+   * @param worldName - The name of the world
+   * @param wallet - The wallet address to add to the allow-list
+   * @throws {NotAllowListAccessError} If the world does not have allow-list access type
    */
-  async function getAddressAccessPermission(worldName: string, address: EthAddress): Promise<AddressAccessInfo | null> {
-    const metadata = await worldsManager.getMetadataForWorld(worldName)
-    const access = metadata?.access
+  async function addWalletToAccessAllowList(worldName: string, wallet: EthAddress): Promise<void> {
+    const access = await getAccessForWorld(worldName)
 
-    if (!access || access.type !== AccessType.AllowList) {
-      return null
+    if (access.type !== AccessType.AllowList) {
+      throw new NotAllowListAccessError(worldName)
     }
 
-    const lowerAddress = address.toLowerCase()
-    const isInAllowList = access.wallets?.some((w) => w.toLowerCase() === lowerAddress)
+    const lowerWallet = wallet.toLowerCase()
+    const existingWallets = access.wallets || []
 
-    if (!isInAllowList) {
-      return null
+    // Check if wallet is already in the list (case-insensitive)
+    if (existingWallets.some((w) => w.toLowerCase() === lowerWallet)) {
+      return // Already in the list, idempotent operation
     }
 
-    return {
-      worldName,
-      address: lowerAddress
+    const updatedAccess: AccessSetting = {
+      ...access,
+      wallets: [...existingWallets, lowerWallet]
     }
+
+    await worldsManager.storeAccess(worldName, updatedAccess)
+  }
+
+  /**
+   * Removes a wallet from the access allow-list for a world.
+   * The world must have allow-list access type for this operation to succeed.
+   *
+   * @param worldName - The name of the world
+   * @param wallet - The wallet address to remove from the allow-list
+   * @throws {NotAllowListAccessError} If the world does not have allow-list access type
+   */
+  async function removeWalletFromAccessAllowList(worldName: string, wallet: EthAddress): Promise<void> {
+    const access = await getAccessForWorld(worldName)
+
+    if (access.type !== AccessType.AllowList) {
+      throw new NotAllowListAccessError(worldName)
+    }
+
+    const lowerWallet = wallet.toLowerCase()
+    const existingWallets = access.wallets || []
+
+    // Filter out the wallet (case-insensitive)
+    const updatedWallets = existingWallets.filter((w) => w.toLowerCase() !== lowerWallet)
+
+    const updatedAccess: AccessSetting = {
+      ...access,
+      wallets: updatedWallets
+    }
+
+    await worldsManager.storeAccess(worldName, updatedAccess)
   }
 
   return {
     checkAccess,
     setAccess,
-    getAddressAccessPermission
+    addWalletToAccessAllowList,
+    removeWalletFromAccessAllowList,
+    getAccessForWorld
   }
 }

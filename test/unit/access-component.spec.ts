@@ -1,12 +1,29 @@
 import { createAccessComponent } from '../../src/logic/access/component'
-import { AccessType, IAccessComponent } from '../../src/logic/access/types'
-import { InvalidAccessTypeError, UnauthorizedCommunityError } from '../../src/logic/access/errors'
+import { AccessSetting, AccessType, IAccessComponent } from '../../src/logic/access/types'
+import {
+  InvalidAccessTypeError,
+  NotAllowListAccessError,
+  UnauthorizedCommunityError
+} from '../../src/logic/access/errors'
 import { MAX_COMMUNITIES } from '../../src/logic/access/constants'
-import { IWorldsManager, WorldMetadata } from '../../src/types'
+import { GetRawWorldRecordsResult, IWorldsManager, WorldRecord } from '../../src/types'
 import { ISocialServiceComponent } from '../../src/adapters/social-service'
 import bcrypt from 'bcrypt'
 
 const TEST_SIGNER = '0xSigner'
+
+/**
+ * Helper to create a mock response for getRawWorldRecords
+ */
+function mockRawWorldRecords(access?: AccessSetting): GetRawWorldRecordsResult {
+  if (!access) {
+    return { records: [], total: 0 }
+  }
+  return {
+    records: [{ access } as WorldRecord],
+    total: 1
+  }
+}
 
 describe('AccessComponent', () => {
   let accessComponent: IAccessComponent
@@ -15,7 +32,7 @@ describe('AccessComponent', () => {
 
   beforeEach(() => {
     worldsManager = {
-      getMetadataForWorld: jest.fn(),
+      getRawWorldRecords: jest.fn(),
       storeAccess: jest.fn()
     } as unknown as jest.Mocked<IWorldsManager>
 
@@ -33,9 +50,7 @@ describe('AccessComponent', () => {
   describe('when checking access', () => {
     describe('and the world has unrestricted access', () => {
       beforeEach(() => {
-        worldsManager.getMetadataForWorld.mockResolvedValueOnce({
-          access: { type: AccessType.Unrestricted }
-        } as WorldMetadata)
+        worldsManager.getRawWorldRecords.mockResolvedValueOnce(mockRawWorldRecords({ type: AccessType.Unrestricted }))
       })
 
       it('should return true for any address', async () => {
@@ -46,7 +61,7 @@ describe('AccessComponent', () => {
 
     describe('and the world has no metadata', () => {
       beforeEach(() => {
-        worldsManager.getMetadataForWorld.mockResolvedValueOnce(undefined)
+        worldsManager.getRawWorldRecords.mockResolvedValueOnce(mockRawWorldRecords())
       })
 
       it('should return true (default unrestricted)', async () => {
@@ -64,9 +79,9 @@ describe('AccessComponent', () => {
 
       describe('and the correct secret is provided', () => {
         beforeEach(() => {
-          worldsManager.getMetadataForWorld.mockResolvedValueOnce({
-            access: { type: AccessType.SharedSecret, secret: hashedSecret }
-          } as WorldMetadata)
+          worldsManager.getRawWorldRecords.mockResolvedValueOnce(
+            mockRawWorldRecords({ type: AccessType.SharedSecret, secret: hashedSecret })
+          )
         })
 
         it('should return true', async () => {
@@ -77,9 +92,9 @@ describe('AccessComponent', () => {
 
       describe('and an incorrect secret is provided', () => {
         beforeEach(() => {
-          worldsManager.getMetadataForWorld.mockResolvedValueOnce({
-            access: { type: AccessType.SharedSecret, secret: hashedSecret }
-          } as WorldMetadata)
+          worldsManager.getRawWorldRecords.mockResolvedValueOnce(
+            mockRawWorldRecords({ type: AccessType.SharedSecret, secret: hashedSecret })
+          )
         })
 
         it('should return false', async () => {
@@ -92,9 +107,9 @@ describe('AccessComponent', () => {
     describe('and the world has allow-list access', () => {
       describe('and the address is in the allow list', () => {
         beforeEach(() => {
-          worldsManager.getMetadataForWorld.mockResolvedValueOnce({
-            access: { type: AccessType.AllowList, wallets: ['0x1234', '0xABCD'] }
-          } as WorldMetadata)
+          worldsManager.getRawWorldRecords.mockResolvedValueOnce(
+            mockRawWorldRecords({ type: AccessType.AllowList, wallets: ['0x1234', '0xABCD'], communities: [] })
+          )
         })
 
         it('should return true', async () => {
@@ -105,9 +120,9 @@ describe('AccessComponent', () => {
 
       describe('and the address is in the allow list with different case', () => {
         beforeEach(() => {
-          worldsManager.getMetadataForWorld.mockResolvedValueOnce({
-            access: { type: AccessType.AllowList, wallets: ['0x1234', '0xABCD'] }
-          } as WorldMetadata)
+          worldsManager.getRawWorldRecords.mockResolvedValueOnce(
+            mockRawWorldRecords({ type: AccessType.AllowList, wallets: ['0x1234', '0xABCD'], communities: [] })
+          )
         })
 
         it('should return true (case insensitive)', async () => {
@@ -118,9 +133,9 @@ describe('AccessComponent', () => {
 
       describe('and the address is not in the allow list', () => {
         beforeEach(() => {
-          worldsManager.getMetadataForWorld.mockResolvedValueOnce({
-            access: { type: AccessType.AllowList, wallets: ['0x1234', '0xABCD'], communities: [] }
-          } as WorldMetadata)
+          worldsManager.getRawWorldRecords.mockResolvedValueOnce(
+            mockRawWorldRecords({ type: AccessType.AllowList, wallets: ['0x1234', '0xABCD'], communities: [] })
+          )
         })
 
         it('should return false', async () => {
@@ -132,9 +147,13 @@ describe('AccessComponent', () => {
       describe('and the world has communities configured', () => {
         describe('and the address is not in the wallet allow list but is a community member', () => {
           beforeEach(() => {
-            worldsManager.getMetadataForWorld.mockResolvedValueOnce({
-              access: { type: AccessType.AllowList, wallets: ['0x1234'], communities: ['community-1', 'community-2'] }
-            } as WorldMetadata)
+            worldsManager.getRawWorldRecords.mockResolvedValueOnce(
+              mockRawWorldRecords({
+                type: AccessType.AllowList,
+                wallets: ['0x1234'],
+                communities: ['community-1', 'community-2']
+              })
+            )
             socialService.getMemberCommunities.mockResolvedValueOnce({ communities: [{ id: 'community-1' }] })
           })
 
@@ -151,9 +170,9 @@ describe('AccessComponent', () => {
 
         describe('and the address is in the wallet allow list', () => {
           beforeEach(() => {
-            worldsManager.getMetadataForWorld.mockResolvedValueOnce({
-              access: { type: AccessType.AllowList, wallets: ['0x1234'], communities: ['community-1'] }
-            } as WorldMetadata)
+            worldsManager.getRawWorldRecords.mockResolvedValueOnce(
+              mockRawWorldRecords({ type: AccessType.AllowList, wallets: ['0x1234'], communities: ['community-1'] })
+            )
           })
 
           it('should return true without checking communities (wallet check is faster)', async () => {
@@ -166,9 +185,13 @@ describe('AccessComponent', () => {
 
         describe('and the address is a member of multiple communities', () => {
           beforeEach(() => {
-            worldsManager.getMetadataForWorld.mockResolvedValueOnce({
-              access: { type: AccessType.AllowList, wallets: [], communities: ['community-1', 'community-2'] }
-            } as WorldMetadata)
+            worldsManager.getRawWorldRecords.mockResolvedValueOnce(
+              mockRawWorldRecords({
+                type: AccessType.AllowList,
+                wallets: [],
+                communities: ['community-1', 'community-2']
+              })
+            )
             socialService.getMemberCommunities.mockResolvedValueOnce({
               communities: [{ id: 'community-2' }]
             })
@@ -188,9 +211,13 @@ describe('AccessComponent', () => {
 
         describe('and the address is not a member of any community', () => {
           beforeEach(() => {
-            worldsManager.getMetadataForWorld.mockResolvedValueOnce({
-              access: { type: AccessType.AllowList, wallets: [], communities: ['community-1', 'community-2'] }
-            } as WorldMetadata)
+            worldsManager.getRawWorldRecords.mockResolvedValueOnce(
+              mockRawWorldRecords({
+                type: AccessType.AllowList,
+                wallets: [],
+                communities: ['community-1', 'community-2']
+              })
+            )
             socialService.getMemberCommunities.mockResolvedValueOnce({ communities: [] })
           })
 
@@ -202,9 +229,9 @@ describe('AccessComponent', () => {
 
         describe('and the social service returns an error (fail closed)', () => {
           beforeEach(() => {
-            worldsManager.getMetadataForWorld.mockResolvedValueOnce({
-              access: { type: AccessType.AllowList, wallets: [], communities: ['community-1'] }
-            } as WorldMetadata)
+            worldsManager.getRawWorldRecords.mockResolvedValueOnce(
+              mockRawWorldRecords({ type: AccessType.AllowList, wallets: [], communities: ['community-1'] })
+            )
             // Social service adapter already fails closed by returning empty communities on error
             socialService.getMemberCommunities.mockResolvedValueOnce({ communities: [] })
           })
@@ -219,9 +246,9 @@ describe('AccessComponent', () => {
 
     describe('and the world has nft-ownership access', () => {
       beforeEach(() => {
-        worldsManager.getMetadataForWorld.mockResolvedValueOnce({
-          access: { type: AccessType.NFTOwnership, nft: 'some-nft' }
-        } as WorldMetadata)
+        worldsManager.getRawWorldRecords.mockResolvedValueOnce(
+          mockRawWorldRecords({ type: AccessType.NFTOwnership, nft: 'some-nft' })
+        )
       })
 
       it('should return false (not yet implemented)', async () => {
@@ -491,78 +518,381 @@ describe('AccessComponent', () => {
     })
   })
 
-  describe('when getting address access permission', () => {
+  describe('when adding a wallet to access allow list', () => {
     describe('and the world has allow-list access', () => {
-      describe('and the address is in the list', () => {
+      describe('and the wallet is not in the list', () => {
         beforeEach(() => {
-          worldsManager.getMetadataForWorld.mockResolvedValueOnce({
-            access: { type: AccessType.AllowList, wallets: ['0x1234', '0xABCD'] }
-          } as WorldMetadata)
+          worldsManager.getRawWorldRecords.mockResolvedValueOnce(
+            mockRawWorldRecords({ type: AccessType.AllowList, wallets: ['0x1234'], communities: ['community-1'] })
+          )
         })
 
-        it('should return the address info', async () => {
-          const result = await accessComponent.getAddressAccessPermission('test-world', '0x1234')
+        it('should add the wallet to the list', async () => {
+          await accessComponent.addWalletToAccessAllowList('test-world', '0x5678')
 
-          expect(result).toEqual({
-            worldName: 'test-world',
-            address: '0x1234'
+          expect(worldsManager.storeAccess).toHaveBeenCalledWith('test-world', {
+            type: AccessType.AllowList,
+            wallets: ['0x1234', '0x5678'],
+            communities: ['community-1']
           })
         })
       })
 
-      describe('and the address is in the list with different case', () => {
+      describe('and the wallet is already in the list', () => {
         beforeEach(() => {
-          worldsManager.getMetadataForWorld.mockResolvedValueOnce({
-            access: { type: AccessType.AllowList, wallets: ['0x1234', '0xABCD'] }
-          } as WorldMetadata)
+          worldsManager.getRawWorldRecords.mockResolvedValueOnce(
+            mockRawWorldRecords({ type: AccessType.AllowList, wallets: ['0x1234', '0x5678'], communities: [] })
+          )
         })
 
-        it('should return the address info with lowercase address', async () => {
-          const result = await accessComponent.getAddressAccessPermission('test-world', '0xAbCd')
+        it('should not add the wallet again (idempotent)', async () => {
+          await accessComponent.addWalletToAccessAllowList('test-world', '0x5678')
 
-          expect(result).toEqual({
-            worldName: 'test-world',
-            address: '0xabcd'
-          })
+          expect(worldsManager.storeAccess).not.toHaveBeenCalled()
         })
       })
 
-      describe('and the address is not in the list', () => {
+      describe('and the wallet is already in the list with different case', () => {
         beforeEach(() => {
-          worldsManager.getMetadataForWorld.mockResolvedValueOnce({
-            access: { type: AccessType.AllowList, wallets: ['0x1234'] }
-          } as WorldMetadata)
+          worldsManager.getRawWorldRecords.mockResolvedValueOnce(
+            mockRawWorldRecords({ type: AccessType.AllowList, wallets: ['0x1234', '0xABCD'], communities: [] })
+          )
         })
 
-        it('should return null', async () => {
-          const result = await accessComponent.getAddressAccessPermission('test-world', '0x5678')
-          expect(result).toBeNull()
+        it('should not add the wallet again (case insensitive)', async () => {
+          await accessComponent.addWalletToAccessAllowList('test-world', '0xabcd')
+
+          expect(worldsManager.storeAccess).not.toHaveBeenCalled()
+        })
+      })
+
+      describe('and the wallets array is empty', () => {
+        beforeEach(() => {
+          worldsManager.getRawWorldRecords.mockResolvedValueOnce(
+            mockRawWorldRecords({ type: AccessType.AllowList, wallets: [], communities: [] })
+          )
+        })
+
+        it('should add the wallet to the empty list', async () => {
+          await accessComponent.addWalletToAccessAllowList('test-world', '0x5678')
+
+          expect(worldsManager.storeAccess).toHaveBeenCalledWith('test-world', {
+            type: AccessType.AllowList,
+            wallets: ['0x5678'],
+            communities: []
+          })
         })
       })
     })
 
     describe('and the world has unrestricted access', () => {
       beforeEach(() => {
-        worldsManager.getMetadataForWorld.mockResolvedValueOnce({
-          access: { type: AccessType.Unrestricted }
-        } as WorldMetadata)
+        worldsManager.getRawWorldRecords.mockResolvedValueOnce(mockRawWorldRecords({ type: AccessType.Unrestricted }))
       })
 
-      it('should return null', async () => {
-        const result = await accessComponent.getAddressAccessPermission('test-world', '0x1234')
-        expect(result).toBeNull()
+      it('should throw NotAllowListAccessError', async () => {
+        await expect(accessComponent.addWalletToAccessAllowList('test-world', '0x1234')).rejects.toThrow(
+          NotAllowListAccessError
+        )
+      })
+
+      it('should include the world name in the error message', async () => {
+        await expect(accessComponent.addWalletToAccessAllowList('test-world', '0x1234')).rejects.toThrow('test-world')
       })
     })
 
-    describe('and the world has no metadata', () => {
+    describe('and the world has shared-secret access', () => {
       beforeEach(() => {
-        worldsManager.getMetadataForWorld.mockResolvedValueOnce(undefined)
+        worldsManager.getRawWorldRecords.mockResolvedValueOnce(
+          mockRawWorldRecords({ type: AccessType.SharedSecret, secret: 'hashed-secret' })
+        )
       })
 
-      it('should return null', async () => {
-        const result = await accessComponent.getAddressAccessPermission('test-world', '0x1234')
-        expect(result).toBeNull()
+      it('should throw NotAllowListAccessError', async () => {
+        await expect(accessComponent.addWalletToAccessAllowList('test-world', '0x1234')).rejects.toThrow(
+          NotAllowListAccessError
+        )
       })
+    })
+
+    describe('and the world has nft-ownership access', () => {
+      beforeEach(() => {
+        worldsManager.getRawWorldRecords.mockResolvedValueOnce(
+          mockRawWorldRecords({ type: AccessType.NFTOwnership, nft: 'some-nft' })
+        )
+      })
+
+      it('should throw NotAllowListAccessError', async () => {
+        await expect(accessComponent.addWalletToAccessAllowList('test-world', '0x1234')).rejects.toThrow(
+          NotAllowListAccessError
+        )
+      })
+    })
+
+    describe('and the world has no metadata (no access record)', () => {
+      beforeEach(() => {
+        worldsManager.getRawWorldRecords.mockResolvedValueOnce(mockRawWorldRecords())
+      })
+
+      it('should throw NotAllowListAccessError', async () => {
+        await expect(accessComponent.addWalletToAccessAllowList('test-world', '0x1234')).rejects.toThrow(
+          NotAllowListAccessError
+        )
+      })
+    })
+  })
+
+  describe('when removing a wallet from access allow list', () => {
+    describe('and the world has allow-list access', () => {
+      describe('and the wallet is in the list', () => {
+        beforeEach(() => {
+          worldsManager.getRawWorldRecords.mockResolvedValueOnce(
+            mockRawWorldRecords({
+              type: AccessType.AllowList,
+              wallets: ['0x1234', '0x5678'],
+              communities: ['community-1']
+            })
+          )
+        })
+
+        it('should remove the wallet from the list', async () => {
+          await accessComponent.removeWalletFromAccessAllowList('test-world', '0x5678')
+
+          expect(worldsManager.storeAccess).toHaveBeenCalledWith('test-world', {
+            type: AccessType.AllowList,
+            wallets: ['0x1234'],
+            communities: ['community-1']
+          })
+        })
+      })
+
+      describe('and the wallet is in the list with different case', () => {
+        beforeEach(() => {
+          worldsManager.getRawWorldRecords.mockResolvedValueOnce(
+            mockRawWorldRecords({ type: AccessType.AllowList, wallets: ['0x1234', '0xABCD'], communities: [] })
+          )
+        })
+
+        it('should remove the wallet (case insensitive)', async () => {
+          await accessComponent.removeWalletFromAccessAllowList('test-world', '0xabcd')
+
+          expect(worldsManager.storeAccess).toHaveBeenCalledWith('test-world', {
+            type: AccessType.AllowList,
+            wallets: ['0x1234'],
+            communities: []
+          })
+        })
+      })
+
+      describe('and the wallet is not in the list', () => {
+        beforeEach(() => {
+          worldsManager.getRawWorldRecords.mockResolvedValueOnce(
+            mockRawWorldRecords({ type: AccessType.AllowList, wallets: ['0x1234'], communities: [] })
+          )
+        })
+
+        it('should update the access with the same list (idempotent)', async () => {
+          await accessComponent.removeWalletFromAccessAllowList('test-world', '0x5678')
+
+          expect(worldsManager.storeAccess).toHaveBeenCalledWith('test-world', {
+            type: AccessType.AllowList,
+            wallets: ['0x1234'],
+            communities: []
+          })
+        })
+      })
+
+      describe('and it is the last wallet in the list', () => {
+        beforeEach(() => {
+          worldsManager.getRawWorldRecords.mockResolvedValueOnce(
+            mockRawWorldRecords({ type: AccessType.AllowList, wallets: ['0x1234'], communities: [] })
+          )
+        })
+
+        it('should leave an empty wallets list', async () => {
+          await accessComponent.removeWalletFromAccessAllowList('test-world', '0x1234')
+
+          expect(worldsManager.storeAccess).toHaveBeenCalledWith('test-world', {
+            type: AccessType.AllowList,
+            wallets: [],
+            communities: []
+          })
+        })
+      })
+    })
+
+    describe('and the world has unrestricted access', () => {
+      beforeEach(() => {
+        worldsManager.getRawWorldRecords.mockResolvedValueOnce(mockRawWorldRecords({ type: AccessType.Unrestricted }))
+      })
+
+      it('should throw NotAllowListAccessError', async () => {
+        await expect(accessComponent.removeWalletFromAccessAllowList('test-world', '0x1234')).rejects.toThrow(
+          NotAllowListAccessError
+        )
+      })
+
+      it('should include the world name in the error message', async () => {
+        await expect(accessComponent.removeWalletFromAccessAllowList('test-world', '0x1234')).rejects.toThrow(
+          'test-world'
+        )
+      })
+    })
+
+    describe('and the world has shared-secret access', () => {
+      beforeEach(() => {
+        worldsManager.getRawWorldRecords.mockResolvedValueOnce(
+          mockRawWorldRecords({ type: AccessType.SharedSecret, secret: 'hashed-secret' })
+        )
+      })
+
+      it('should throw NotAllowListAccessError', async () => {
+        await expect(accessComponent.removeWalletFromAccessAllowList('test-world', '0x1234')).rejects.toThrow(
+          NotAllowListAccessError
+        )
+      })
+    })
+
+    describe('and the world has nft-ownership access', () => {
+      beforeEach(() => {
+        worldsManager.getRawWorldRecords.mockResolvedValueOnce(
+          mockRawWorldRecords({ type: AccessType.NFTOwnership, nft: 'some-nft' })
+        )
+      })
+
+      it('should throw NotAllowListAccessError', async () => {
+        await expect(accessComponent.removeWalletFromAccessAllowList('test-world', '0x1234')).rejects.toThrow(
+          NotAllowListAccessError
+        )
+      })
+    })
+
+    describe('and the world has no metadata (no access record)', () => {
+      beforeEach(() => {
+        worldsManager.getRawWorldRecords.mockResolvedValueOnce(mockRawWorldRecords())
+      })
+
+      it('should throw NotAllowListAccessError', async () => {
+        await expect(accessComponent.removeWalletFromAccessAllowList('test-world', '0x1234')).rejects.toThrow(
+          NotAllowListAccessError
+        )
+      })
+    })
+  })
+
+  describe('when getting access for world', () => {
+    describe('and the world exists with access defined', () => {
+      describe('and the access is unrestricted', () => {
+        beforeEach(() => {
+          worldsManager.getRawWorldRecords.mockResolvedValueOnce(mockRawWorldRecords({ type: AccessType.Unrestricted }))
+        })
+
+        it('should return the unrestricted access setting', async () => {
+          const result = await accessComponent.getAccessForWorld('test-world')
+
+          expect(result).toEqual({ type: AccessType.Unrestricted })
+        })
+      })
+
+      describe('and the access is allow-list', () => {
+        beforeEach(() => {
+          worldsManager.getRawWorldRecords.mockResolvedValueOnce(
+            mockRawWorldRecords({
+              type: AccessType.AllowList,
+              wallets: ['0x1234', '0x5678'],
+              communities: ['community-1']
+            })
+          )
+        })
+
+        it('should return the allow-list access setting', async () => {
+          const result = await accessComponent.getAccessForWorld('test-world')
+
+          expect(result).toEqual({
+            type: AccessType.AllowList,
+            wallets: ['0x1234', '0x5678'],
+            communities: ['community-1']
+          })
+        })
+      })
+
+      describe('and the access is shared-secret', () => {
+        beforeEach(() => {
+          worldsManager.getRawWorldRecords.mockResolvedValueOnce(
+            mockRawWorldRecords({ type: AccessType.SharedSecret, secret: 'hashed-secret' })
+          )
+        })
+
+        it('should return the shared-secret access setting', async () => {
+          const result = await accessComponent.getAccessForWorld('test-world')
+
+          expect(result).toEqual({ type: AccessType.SharedSecret, secret: 'hashed-secret' })
+        })
+      })
+
+      describe('and the access is nft-ownership', () => {
+        beforeEach(() => {
+          worldsManager.getRawWorldRecords.mockResolvedValueOnce(
+            mockRawWorldRecords({ type: AccessType.NFTOwnership, nft: 'some-nft' })
+          )
+        })
+
+        it('should return the nft-ownership access setting', async () => {
+          const result = await accessComponent.getAccessForWorld('test-world')
+
+          expect(result).toEqual({ type: AccessType.NFTOwnership, nft: 'some-nft' })
+        })
+      })
+    })
+
+    describe('and the world does not exist', () => {
+      beforeEach(() => {
+        worldsManager.getRawWorldRecords.mockResolvedValueOnce(mockRawWorldRecords())
+      })
+
+      it('should return the default unrestricted access', async () => {
+        const result = await accessComponent.getAccessForWorld('non-existent-world')
+
+        expect(result).toEqual({ type: AccessType.Unrestricted })
+      })
+    })
+
+    describe('and the world exists but has no access defined', () => {
+      beforeEach(() => {
+        worldsManager.getRawWorldRecords.mockResolvedValueOnce({
+          records: [{ access: undefined } as WorldRecord],
+          total: 1
+        })
+      })
+
+      it('should return the default unrestricted access', async () => {
+        const result = await accessComponent.getAccessForWorld('test-world')
+
+        expect(result).toEqual({ type: AccessType.Unrestricted })
+      })
+    })
+
+    describe('and the world exists but access is null', () => {
+      beforeEach(() => {
+        worldsManager.getRawWorldRecords.mockResolvedValueOnce({
+          records: [{ access: null } as unknown as WorldRecord],
+          total: 1
+        })
+      })
+
+      it('should return the default unrestricted access', async () => {
+        const result = await accessComponent.getAccessForWorld('test-world')
+
+        expect(result).toEqual({ type: AccessType.Unrestricted })
+      })
+    })
+
+    it('should call getRawWorldRecords with the correct world name', async () => {
+      worldsManager.getRawWorldRecords.mockResolvedValueOnce(mockRawWorldRecords({ type: AccessType.Unrestricted }))
+
+      await accessComponent.getAccessForWorld('my-world.dcl.eth')
+
+      expect(worldsManager.getRawWorldRecords).toHaveBeenCalledWith({ worldName: 'my-world.dcl.eth' })
     })
   })
 })
