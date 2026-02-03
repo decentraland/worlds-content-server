@@ -206,17 +206,17 @@ describe('CommsComponent', () => {
           })
 
           it('should return the connection string', async () => {
-            const result = await commsComponent.getSceneRoomConnectionString(userAddress, worldName, sceneId)
+            const result = await commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, sceneId)
             expect(result).toBe(connectionString)
           })
 
           it('should check if the scene exists', async () => {
-            await commsComponent.getSceneRoomConnectionString(userAddress, worldName, sceneId)
+            await commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, sceneId)
             expect(worlds.hasWorldScene).toHaveBeenCalledWith(worldName, sceneId)
           })
 
           it('should call the adapter with correct parameters', async () => {
-            await commsComponent.getSceneRoomConnectionString(userAddress, worldName, sceneId)
+            await commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, sceneId)
             expect(commsAdapter.getSceneRoomConnectionString).toHaveBeenCalledWith(userAddress, worldName, sceneId)
           })
         })
@@ -227,14 +227,14 @@ describe('CommsComponent', () => {
           })
 
           it('should throw SceneNotFoundError', async () => {
-            await expect(commsComponent.getSceneRoomConnectionString(userAddress, worldName, sceneId)).rejects.toThrow(
+            await expect(commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, sceneId)).rejects.toThrow(
               SceneNotFoundError
             )
           })
 
           it('should not call the adapter', async () => {
             try {
-              await commsComponent.getSceneRoomConnectionString(userAddress, worldName, sceneId)
+              await commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, sceneId)
             } catch {
               // Expected to throw
             }
@@ -252,7 +252,7 @@ describe('CommsComponent', () => {
         })
 
         it('should check access with the provided secret', async () => {
-          await commsComponent.getSceneRoomConnectionString(userAddress, worldName, sceneId, { secret: 'my-secret' })
+          await commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, sceneId, { secret: 'my-secret' })
           expect(access.checkAccess).toHaveBeenCalledWith(worldName, userAddress, 'my-secret')
         })
       })
@@ -264,14 +264,14 @@ describe('CommsComponent', () => {
         })
 
         it('should throw InvalidAccessError', async () => {
-          await expect(commsComponent.getSceneRoomConnectionString(userAddress, worldName, sceneId)).rejects.toThrow(
+          await expect(commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, sceneId)).rejects.toThrow(
             InvalidAccessError
           )
         })
 
         it('should not check if scene exists', async () => {
           try {
-            await commsComponent.getSceneRoomConnectionString(userAddress, worldName, sceneId)
+            await commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, sceneId)
           } catch {
             // Expected to throw
           }
@@ -286,7 +286,7 @@ describe('CommsComponent', () => {
         })
 
         it('should throw InvalidAccessError', async () => {
-          await expect(commsComponent.getSceneRoomConnectionString(userAddress, worldName, sceneId)).rejects.toThrow(
+          await expect(commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, sceneId)).rejects.toThrow(
             InvalidAccessError
           )
         })
@@ -299,14 +299,14 @@ describe('CommsComponent', () => {
       })
 
       it('should throw InvalidWorldError', async () => {
-        await expect(commsComponent.getSceneRoomConnectionString(userAddress, worldName, sceneId)).rejects.toThrow(
+        await expect(commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, sceneId)).rejects.toThrow(
           InvalidWorldError
         )
       })
 
       it('should not check permissions', async () => {
         try {
-          await commsComponent.getSceneRoomConnectionString(userAddress, worldName, sceneId)
+          await commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, sceneId)
         } catch {
           // Expected to throw
         }
@@ -316,7 +316,7 @@ describe('CommsComponent', () => {
 
       it('should not check if scene exists', async () => {
         try {
-          await commsComponent.getSceneRoomConnectionString(userAddress, worldName, sceneId)
+          await commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, sceneId)
         } catch {
           // Expected to throw
         }
@@ -325,7 +325,7 @@ describe('CommsComponent', () => {
 
       it('should not call the adapter', async () => {
         try {
-          await commsComponent.getSceneRoomConnectionString(userAddress, worldName, sceneId)
+          await commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, sceneId)
         } catch {
           // Expected to throw
         }

@@ -30,7 +30,7 @@ export async function worldCommsHandler(
   try {
     let fixedAdapter: string
     if (sceneId) {
-      fixedAdapter = await comms.getSceneRoomConnectionString(identity, worldName, sceneId, accessOptions)
+      fixedAdapter = await comms.getWorldSceneRoomConnectionString(identity, worldName, sceneId, accessOptions)
     } else {
       fixedAdapter = await comms.getWorldRoomConnectionString(identity, worldName, accessOptions)
     }

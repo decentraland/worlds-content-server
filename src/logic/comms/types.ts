@@ -5,7 +5,7 @@ export type AccessOptions = {
 }
 
 export type ICommsComponent = {
-  getSceneRoomConnectionString(
+  getWorldSceneRoomConnectionString(
     userId: EthAddress,
     worldName: string,
     sceneId: string,

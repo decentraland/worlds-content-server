@@ -8,7 +8,7 @@ export const createCommsComponent = (
 ): ICommsComponent => {
   const { namePermissionChecker, access, worlds, commsAdapter } = components
 
-  async function assetWorldAccess(
+  async function assertWorldAccess(
     userAddress: EthAddress,
     worldName: string,
     accessOptions?: { secret?: string }
@@ -33,7 +33,7 @@ export const createCommsComponent = (
     sceneId: string,
     accessOptions?: { secret?: string }
   ): Promise<string> {
-    await assetWorldAccess(userAddress, worldName, accessOptions)
+    await assertWorldAccess(userAddress, worldName, accessOptions)
 
     if (!(await worlds.hasWorldScene(worldName, sceneId))) {
       throw new SceneNotFoundError(worldName, sceneId)
@@ -47,13 +47,13 @@ export const createCommsComponent = (
     worldName: string,
     accessOptions?: { secret?: string }
   ): Promise<string> {
-    await assetWorldAccess(userAddress, worldName, accessOptions)
+    await assertWorldAccess(userAddress, worldName, accessOptions)
 
     return commsAdapter.getWorldRoomConnectionString(userAddress, worldName)
   }
 
   return {
-    getSceneRoomConnectionString: getWorldSceneRoomConnectionString,
+    getWorldSceneRoomConnectionString,
     getWorldRoomConnectionString
   }
 }

@@ -21,7 +21,7 @@ describe('worldCommsHandler', () => {
   beforeEach(() => {
     comms = {
       getWorldRoomConnectionString: jest.fn(),
-      getSceneRoomConnectionString: jest.fn()
+      getWorldSceneRoomConnectionString: jest.fn()
     } as jest.Mocked<ICommsComponent>
   })
 
@@ -158,7 +158,7 @@ describe('worldCommsHandler', () => {
 
     describe('and the comms component returns a connection string', () => {
       beforeEach(() => {
-        comms.getSceneRoomConnectionString.mockResolvedValueOnce(connectionString)
+        comms.getWorldSceneRoomConnectionString.mockResolvedValueOnce(connectionString)
       })
 
       it('should return 200 with the fixedAdapter', async () => {
@@ -171,7 +171,7 @@ describe('worldCommsHandler', () => {
       it('should call getSceneRoomConnectionString with correct parameters', async () => {
         await worldCommsHandler(context)
 
-        expect(comms.getSceneRoomConnectionString).toHaveBeenCalledWith(identity, worldName, sceneId, {
+        expect(comms.getWorldSceneRoomConnectionString).toHaveBeenCalledWith(identity, worldName, sceneId, {
           secret: undefined
         })
       })
@@ -194,13 +194,13 @@ describe('worldCommsHandler', () => {
           }
         } as unknown as HandlerContext
 
-        comms.getSceneRoomConnectionString.mockResolvedValueOnce(connectionString)
+        comms.getWorldSceneRoomConnectionString.mockResolvedValueOnce(connectionString)
       })
 
       it('should pass the secret to getSceneRoomConnectionString', async () => {
         await worldCommsHandler(context)
 
-        expect(comms.getSceneRoomConnectionString).toHaveBeenCalledWith(identity, worldName, sceneId, {
+        expect(comms.getWorldSceneRoomConnectionString).toHaveBeenCalledWith(identity, worldName, sceneId, {
           secret: 'my-secret'
         })
       })
@@ -208,7 +208,7 @@ describe('worldCommsHandler', () => {
 
     describe('and the comms component throws InvalidAccessError', () => {
       beforeEach(() => {
-        comms.getSceneRoomConnectionString.mockRejectedValueOnce(new InvalidAccessError(worldName))
+        comms.getWorldSceneRoomConnectionString.mockRejectedValueOnce(new InvalidAccessError(worldName))
       })
 
       it('should return 403 with the error message', async () => {
@@ -221,7 +221,7 @@ describe('worldCommsHandler', () => {
 
     describe('and the comms component throws InvalidWorldError', () => {
       beforeEach(() => {
-        comms.getSceneRoomConnectionString.mockRejectedValueOnce(new InvalidWorldError(worldName))
+        comms.getWorldSceneRoomConnectionString.mockRejectedValueOnce(new InvalidWorldError(worldName))
       })
 
       it('should return 404 with the error message', async () => {
@@ -234,7 +234,7 @@ describe('worldCommsHandler', () => {
 
     describe('and the comms component throws SceneNotFoundError', () => {
       beforeEach(() => {
-        comms.getSceneRoomConnectionString.mockRejectedValueOnce(new SceneNotFoundError(worldName, sceneId))
+        comms.getWorldSceneRoomConnectionString.mockRejectedValueOnce(new SceneNotFoundError(worldName, sceneId))
       })
 
       it('should return 404 with the error message', async () => {
@@ -247,7 +247,7 @@ describe('worldCommsHandler', () => {
 
     describe('and the comms component throws an unexpected error', () => {
       beforeEach(() => {
-        comms.getSceneRoomConnectionString.mockRejectedValueOnce(new Error('Unexpected error'))
+        comms.getWorldSceneRoomConnectionString.mockRejectedValueOnce(new Error('Unexpected error'))
       })
 
       it('should re-throw the error', async () => {
