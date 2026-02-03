@@ -38,6 +38,7 @@ import { createMockNatsComponent } from './mocks/nats-mock'
 import { createMockPeersRegistry } from './mocks/peers-registry-mock'
 import { IPublisherComponent } from '@dcl/sns-component'
 import { createAuthenticatedLocalFetchComponent } from './utils'
+import { createMockSocialService } from './mocks/social-service-mock'
 
 /**
  * Behaves like Jest "describe" function, used to describe a test for a
@@ -110,7 +111,8 @@ async function initComponents(): Promise<TestComponents> {
   const snsClient: IPublisherComponent = createSnsClientMock()
 
   const permissions = await createPermissionsComponent({ config, permissionsManager, snsClient })
-  const access = createAccessComponent({ worldsManager })
+  const socialService = createMockSocialService()
+  const access = createAccessComponent({ socialService, worldsManager })
 
   const entityDeployer = createEntityDeployer({
     config,
@@ -177,6 +179,7 @@ async function initComponents(): Promise<TestComponents> {
     search,
     settings,
     snsClient,
+    socialService,
     status,
     storage,
     updateOwnerJob,

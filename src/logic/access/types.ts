@@ -24,6 +24,7 @@ export type NftOwnershipAccessSetting = {
 export type AllowListAccessSetting = {
   type: AccessType.AllowList
   wallets: string[]
+  communities: string[]
 }
 
 export type AccessSetting =
@@ -35,6 +36,7 @@ export type AccessSetting =
 export type AccessInput = {
   type: string
   wallets?: string[]
+  communities?: string[]
   nft?: string
   secret?: string
 }
@@ -46,6 +48,6 @@ export type AddressAccessInfo = {
 
 export type IAccessComponent = {
   checkAccess(worldName: string, ethAddress: EthAddress, extras?: any): Promise<boolean>
-  setAccess(worldName: string, input: AccessInput): Promise<void>
+  setAccess(worldName: string, signer: EthAddress, input: AccessInput): Promise<void>
   getAddressAccessPermission(worldName: string, address: EthAddress): Promise<AddressAccessInfo | null>
 }

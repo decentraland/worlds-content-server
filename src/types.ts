@@ -30,6 +30,7 @@ import {
   WorldPermissionRecordForChecking
 } from './logic/permissions'
 import { AccessSetting, IAccessComponent } from './logic/access'
+import { ISocialServiceComponent } from './adapters/social-service'
 import { ICommsComponent } from './logic/comms'
 import { IWorldsComponent } from './logic/worlds'
 
@@ -469,6 +470,7 @@ export type BaseComponents = {
   search: ISearchComponent
   server: IHttpServerComponent<GlobalContext>
   snsClient: IPublisherComponent
+  socialService: ISocialServiceComponent
   status: IStatusComponent
   storage: IContentStorageComponent
   updateOwnerJob: IRunnable<void>

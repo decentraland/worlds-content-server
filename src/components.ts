@@ -47,6 +47,7 @@ import { createAccessComponent } from './logic/access'
 import { createSearchComponent } from './adapters/search'
 import { createCommsComponent } from './logic/comms'
 import { createWorldsComponent } from './logic/worlds'
+import { createSocialServiceComponent } from './adapters/social-service'
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
@@ -135,7 +136,8 @@ export async function initComponents(): Promise<AppComponents> {
   const worldsIndexer = await createWorldsIndexerComponent({ worldsManager })
   const permissionsManager = await createPermissionsManagerComponent({ database, worldsManager })
   const permissions = await createPermissionsComponent({ config, permissionsManager, snsClient })
-  const access = createAccessComponent({ worldsManager })
+  const socialService = await createSocialServiceComponent({ config, fetch, logs })
+  const access = createAccessComponent({ socialService, worldsManager })
 
   const entityDeployer = createEntityDeployer({
     config,
@@ -222,6 +224,7 @@ export async function initComponents(): Promise<AppComponents> {
     search,
     server,
     snsClient,
+    socialService,
     status,
     statusChecks,
     storage,
