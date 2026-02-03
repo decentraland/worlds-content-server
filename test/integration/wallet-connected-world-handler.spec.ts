@@ -1,5 +1,5 @@
 import { test } from '../components'
-import { IAuthenticatedFetchComponent } from '../../src/types'
+import { IAuthenticatedFetchComponent } from '../components/local-auth-fetch'
 
 test('WalletConnectedWorldHandler', function ({ components, stubComponents }) {
   let localFetch: IAuthenticatedFetchComponent

@@ -1,6 +1,6 @@
 import { test } from '../components'
 import { getIdentity } from '../utils'
-import { IAuthenticatedFetchComponent } from '../../src/types'
+import { IAuthenticatedFetchComponent } from '../components/local-auth-fetch'
 
 const BUILDER_METADATA = {
   origin: 'https://builder.decentraland.org',

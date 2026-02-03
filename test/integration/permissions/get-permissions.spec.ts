@@ -1,6 +1,7 @@
 import { test } from '../../components'
 import { getIdentity, Identity } from '../../utils'
-import { IAuthenticatedFetchComponent, IPermissionsManager, IWorldCreator, IWorldsManager } from '../../../src/types'
+import { IAuthenticatedFetchComponent } from '../../components/local-auth-fetch'
+import { IPermissionsManager, IWorldCreator, IWorldsManager } from '../../../src/types'
 import bcrypt from 'bcrypt'
 import { defaultPermissions, IPermissionsComponent, PermissionType } from '../../../src/logic/permissions'
 import { AccessType } from '../../../src/logic/access'

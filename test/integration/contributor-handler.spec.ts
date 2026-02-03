@@ -1,5 +1,6 @@
 import { test } from '../components'
-import { IAuthenticatedFetchComponent, IWorldCreator } from '../../src/types'
+import { IAuthenticatedFetchComponent } from '../components/local-auth-fetch'
+import { IWorldCreator } from '../../src/types'
 import { IPermissionsComponent } from '../../src/logic/permissions'
 import { Identity, getIdentity } from '../utils'
 

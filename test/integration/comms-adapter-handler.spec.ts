@@ -1,7 +1,8 @@
 import { test } from '../components'
 import { Authenticator } from '@dcl/crypto'
 import { getAuthHeaders, getIdentity, Identity } from '../utils'
-import { IAuthenticatedFetchComponent, IWorldsManager } from '../../src/types'
+import { IAuthenticatedFetchComponent } from '../components/local-auth-fetch'
+import { IWorldsManager } from '../../src/types'
 import { AccessType } from '../../src/logic/access'
 
 const EXPLORER_METADATA = {

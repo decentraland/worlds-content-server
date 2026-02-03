@@ -37,7 +37,7 @@ import { createDotEnvConfigComponent } from '@well-known-components/env-config-p
 import { createMockNatsComponent } from './mocks/nats-mock'
 import { createMockPeersRegistry } from './mocks/peers-registry-mock'
 import { IPublisherComponent } from '@dcl/sns-component'
-import { createAuthenticatedLocalFetchComponent } from './utils'
+import { createAuthenticatedLocalFetchComponent } from './components/local-auth-fetch'
 import { createMockSocialService } from './mocks/social-service-mock'
 
 /**

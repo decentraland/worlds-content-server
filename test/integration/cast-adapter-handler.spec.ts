@@ -1,7 +1,7 @@
 import { test } from '../components'
 import { Authenticator } from '@dcl/crypto'
 import { getAuthHeaders, getIdentity, Identity } from '../utils'
-import { IAuthenticatedFetchComponent } from '../../src/types'
+import { IAuthenticatedFetchComponent } from '../components/local-auth-fetch'
 
 const EXPLORER_METADATA = {
   origin: 'https://play.decentraland.org',
