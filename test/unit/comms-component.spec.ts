@@ -227,9 +227,9 @@ describe('CommsComponent', () => {
           })
 
           it('should throw SceneNotFoundError', async () => {
-            await expect(commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, sceneId)).rejects.toThrow(
-              SceneNotFoundError
-            )
+            await expect(
+              commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, sceneId)
+            ).rejects.toThrow(SceneNotFoundError)
           })
 
           it('should not call the adapter', async () => {
@@ -252,7 +252,9 @@ describe('CommsComponent', () => {
         })
 
         it('should check access with the provided secret', async () => {
-          await commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, sceneId, { secret: 'my-secret' })
+          await commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, sceneId, {
+            secret: 'my-secret'
+          })
           expect(access.checkAccess).toHaveBeenCalledWith(worldName, userAddress, 'my-secret')
         })
       })
@@ -264,9 +266,9 @@ describe('CommsComponent', () => {
         })
 
         it('should throw InvalidAccessError', async () => {
-          await expect(commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, sceneId)).rejects.toThrow(
-            InvalidAccessError
-          )
+          await expect(
+            commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, sceneId)
+          ).rejects.toThrow(InvalidAccessError)
         })
 
         it('should not check if scene exists', async () => {
@@ -286,9 +288,9 @@ describe('CommsComponent', () => {
         })
 
         it('should throw InvalidAccessError', async () => {
-          await expect(commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, sceneId)).rejects.toThrow(
-            InvalidAccessError
-          )
+          await expect(
+            commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, sceneId)
+          ).rejects.toThrow(InvalidAccessError)
         })
       })
     })
