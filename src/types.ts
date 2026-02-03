@@ -14,7 +14,7 @@ import { IStatusComponent } from './adapters/status'
 import { AuthChain, AuthLink, Entity, EthAddress, IPFSv2 } from '@dcl/schemas'
 import { MigrationExecutor } from './adapters/migration-executor'
 import { IPgComponent } from '@well-known-components/pg-component'
-import { AuthIdentity, IdentityType } from '@dcl/crypto'
+import { AuthIdentity } from '@dcl/crypto'
 import { IFetchComponent } from '@well-known-components/interfaces'
 import { INatsComponent } from '@well-known-components/nats-component/dist/types'
 import { WebhookEvent } from 'livekit-server-sdk'
@@ -33,17 +33,7 @@ import { AccessSetting, IAccessComponent } from './logic/access'
 import { ISocialServiceComponent } from './adapters/social-service'
 import { ICommsComponent } from './logic/comms'
 import { IWorldsComponent } from './logic/worlds'
-
-// Type for authenticated test fetch component
-export type TestIdentity = { authChain: AuthIdentity; realAccount: IdentityType; ephemeralIdentity: IdentityType }
-export type AuthenticatedRequestInit = Omit<RequestInit, 'body'> & {
-  identity?: TestIdentity
-  metadata?: Record<string, any>
-  body?: any
-}
-export type IAuthenticatedFetchComponent = {
-  fetch(path: string, init?: AuthenticatedRequestInit): Promise<Response>
-}
+import type { IAuthenticatedFetchComponent } from '../test/components/local-auth-fetch'
 
 export type GlobalContext = {
   components: BaseComponents
