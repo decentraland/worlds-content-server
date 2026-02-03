@@ -3,7 +3,7 @@ import { AccessType, IAccessComponent } from '../../src/logic/access/types'
 import { InvalidAccessTypeError, UnauthorizedCommunityError } from '../../src/logic/access/errors'
 import { MAX_COMMUNITIES } from '../../src/logic/access/constants'
 import { IWorldsManager, WorldMetadata } from '../../src/types'
-import { ISocialServiceAdapter } from '../../src/adapters/social-service'
+import { ISocialServiceComponent } from '../../src/adapters/social-service'
 import bcrypt from 'bcrypt'
 
 const TEST_SIGNER = '0xSigner'
@@ -11,7 +11,7 @@ const TEST_SIGNER = '0xSigner'
 describe('AccessComponent', () => {
   let accessComponent: IAccessComponent
   let worldsManager: jest.Mocked<IWorldsManager>
-  let socialService: jest.Mocked<ISocialServiceAdapter>
+  let socialService: jest.Mocked<ISocialServiceComponent>
 
   beforeEach(() => {
     worldsManager = {
@@ -21,7 +21,7 @@ describe('AccessComponent', () => {
 
     socialService = {
       getMemberCommunities: jest.fn().mockResolvedValue({ communities: [] })
-    } as unknown as jest.Mocked<ISocialServiceAdapter>
+    } as unknown as jest.Mocked<ISocialServiceComponent>
 
     accessComponent = createAccessComponent({ socialService, worldsManager })
   })

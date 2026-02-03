@@ -1,6 +1,6 @@
-import { ISocialServiceAdapter, MemberCommunitiesResponse } from '../../src/adapters/social-service'
+import { ISocialServiceComponent, MemberCommunitiesResponse } from '../../src/adapters/social-service'
 
-export function createMockSocialService(): jest.Mocked<ISocialServiceAdapter> {
+export function createMockSocialService(): jest.Mocked<ISocialServiceComponent> {
   return {
     getMemberCommunities: jest.fn().mockResolvedValue({ communities: [] } as MemberCommunitiesResponse)
   }
