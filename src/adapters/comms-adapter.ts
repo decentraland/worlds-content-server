@@ -104,6 +104,24 @@ function createLiveKitAdapter(
 ): ICommsAdapter {
   const logger = logs.getLogger('livekit-adapter')
 
+  async function getRoomConnectionString(userAddress: EthAddress, roomId: string): Promise<string> {
+    const token = new AccessToken(apiKey, apiSecret, {
+      identity: userAddress.toLowerCase(),
+      ttl: 5 * 60 // 5 minutes
+    })
+    token.addGrant({
+      roomJoin: true,
+      room: roomId,
+      roomList: false,
+      canPublish: true,
+      canSubscribe: true,
+      canPublishData: true,
+      canUpdateOwnMetadata: true,
+      canPublishSources: [TrackSource.MICROPHONE]
+    })
+    return `livekit:wss://${host}?access_token=${await token.toJwt()}`
+  }
+
   return {
     async status(): Promise<CommsStatus> {
       const token = new AccessToken(apiKey, apiSecret, {
@@ -180,40 +198,12 @@ function createLiveKitAdapter(
 
     async getWorldRoomConnectionString(userId: EthAddress, worldName: string): Promise<string> {
       const roomId = `${worldRoomPrefix}${worldName.toLowerCase()}`
-      const token = new AccessToken(apiKey, apiSecret, {
-        identity: userId.toLowerCase(),
-        ttl: 5 * 60 // 5 minutes
-      })
-      token.addGrant({
-        roomJoin: true,
-        room: roomId,
-        roomList: false,
-        canPublish: true,
-        canSubscribe: true,
-        canPublishData: true,
-        canUpdateOwnMetadata: true,
-        canPublishSources: [TrackSource.MICROPHONE]
-      })
-      return `livekit:wss://${host}?access_token=${await token.toJwt()}`
+      return getRoomConnectionString(userId, roomId)
     },
 
     async getSceneRoomConnectionString(userId: EthAddress, worldName: string, sceneId: string): Promise<string> {
       const roomId = `${sceneRoomPrefix}${worldName.toLowerCase()}-${sceneId.toLowerCase()}`
-      const token = new AccessToken(apiKey, apiSecret, {
-        identity: userId.toLowerCase(),
-        ttl: 5 * 60 // 5 minutes
-      })
-      token.addGrant({
-        roomJoin: true,
-        room: roomId,
-        roomList: false,
-        canPublish: true,
-        canSubscribe: true,
-        canPublishData: true,
-        canUpdateOwnMetadata: false,
-        canPublishSources: []
-      })
-      return `livekit:wss://${host}?access_token=${await token.toJwt()}`
+      return getRoomConnectionString(userId, roomId)
     }
   }
 }
