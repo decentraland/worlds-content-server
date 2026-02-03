@@ -126,7 +126,7 @@ function createLiveKitAdapter(
         .then((response) => response.json())
         .then((res: any) =>
           res.rooms
-            .filter((room: any) => room.name.startsWith(worldRoomPrefix))
+            .filter((room: { name: string }) => room.name.startsWith(worldRoomPrefix))
             .map((room: { name: string }) => room.name)
         )
 
