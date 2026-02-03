@@ -189,7 +189,7 @@ function createLiveKitAdapter(
         canPublish: true,
         canSubscribe: true,
         canPublishData: true,
-        canUpdateOwnMetadata: false,
+        canUpdateOwnMetadata: true,
         canPublishSources: [TrackSource.MICROPHONE]
       })
       return `livekit:wss://${host}?access_token=${await token.toJwt()}`
