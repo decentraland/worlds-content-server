@@ -47,20 +47,13 @@ export const createWorldsComponent = (components: Pick<AppComponents, 'worldsMan
     const worldRecord = records[0]
 
     // Check if world is blocked and beyond the grace period
-    if (isWorldBlocked(worldRecord.blocked_since ? new Date(worldRecord.blocked_since) : undefined)) {
-      return false
-    }
-
-    return true
+    const blockedSince = worldRecord.blocked_since ? new Date(worldRecord.blocked_since) : undefined
+    return !isWorldBlocked(blockedSince)
   }
 
   async function hasWorldScene(worldName: string, sceneId: string): Promise<boolean> {
     const { scenes } = await worldsManager.getWorldScenes({ worldName, entityId: sceneId }, { limit: 1 })
-    if (scenes.length === 0) {
-      return false
-    }
-
-    return true
+    return scenes.length > 0
   }
 
   return {
