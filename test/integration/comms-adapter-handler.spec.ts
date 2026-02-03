@@ -67,7 +67,8 @@ test('comms adapter handler /get-comms-adapter/:roomId', function ({ components,
   it('fails when signed-fetch request metadata is correct but user does not have access permission', async () => {
     await worldsManager.storeAccess(worldName, {
       type: AccessType.AllowList,
-      wallets: []
+      wallets: [],
+      communities: []
     })
 
     const path = `/get-comms-adapter/world-${worldName}`

@@ -5,6 +5,8 @@ export enum PermissionType {
   AllowList = 'allow-list'
 }
 
+export type PermissionTypeName = 'access' | 'deployment' | 'streaming'
+
 export type UnrestrictedPermissionSetting = {
   type: PermissionType.Unrestricted
 }

@@ -1,13 +1,17 @@
 import { createAccessComponent } from '../../src/logic/access/component'
 import { AccessType, IAccessComponent } from '../../src/logic/access/types'
-import { InvalidAccessTypeError } from '../../src/logic/access/errors'
+import { InvalidAccessTypeError, UnauthorizedCommunityError } from '../../src/logic/access/errors'
 import { MAX_COMMUNITIES } from '../../src/logic/access/constants'
 import { IWorldsManager, WorldMetadata } from '../../src/types'
+import { ISocialServiceComponent } from '../../src/adapters/social-service'
 import bcrypt from 'bcrypt'
+
+const TEST_SIGNER = '0xSigner'
 
 describe('AccessComponent', () => {
   let accessComponent: IAccessComponent
   let worldsManager: jest.Mocked<IWorldsManager>
+  let socialService: jest.Mocked<ISocialServiceComponent>
 
   beforeEach(() => {
     worldsManager = {
@@ -15,7 +19,11 @@ describe('AccessComponent', () => {
       storeAccess: jest.fn()
     } as unknown as jest.Mocked<IWorldsManager>
 
-    accessComponent = createAccessComponent({ worldsManager })
+    socialService = {
+      getMemberCommunities: jest.fn().mockResolvedValue({ communities: [] })
+    } as unknown as jest.Mocked<ISocialServiceComponent>
+
+    accessComponent = createAccessComponent({ socialService, worldsManager })
   })
 
   afterEach(() => {
@@ -111,13 +119,100 @@ describe('AccessComponent', () => {
       describe('and the address is not in the allow list', () => {
         beforeEach(() => {
           worldsManager.getMetadataForWorld.mockResolvedValueOnce({
-            access: { type: AccessType.AllowList, wallets: ['0x1234', '0xABCD'] }
+            access: { type: AccessType.AllowList, wallets: ['0x1234', '0xABCD'], communities: [] }
           } as WorldMetadata)
         })
 
         it('should return false', async () => {
           const result = await accessComponent.checkAccess('test-world', '0x5678')
           expect(result).toBe(false)
+        })
+      })
+
+      describe('and the world has communities configured', () => {
+        describe('and the address is not in the wallet allow list but is a community member', () => {
+          beforeEach(() => {
+            worldsManager.getMetadataForWorld.mockResolvedValueOnce({
+              access: { type: AccessType.AllowList, wallets: ['0x1234'], communities: ['community-1', 'community-2'] }
+            } as WorldMetadata)
+            socialService.getMemberCommunities.mockResolvedValueOnce({ communities: [{ id: 'community-1' }] })
+          })
+
+          it('should return true', async () => {
+            const result = await accessComponent.checkAccess('test-world', '0x5678')
+            expect(result).toBe(true)
+          })
+
+          it('should check communities using the batch endpoint', async () => {
+            await accessComponent.checkAccess('test-world', '0x5678')
+            expect(socialService.getMemberCommunities).toHaveBeenCalledWith('0x5678', ['community-1', 'community-2'])
+          })
+        })
+
+        describe('and the address is in the wallet allow list', () => {
+          beforeEach(() => {
+            worldsManager.getMetadataForWorld.mockResolvedValueOnce({
+              access: { type: AccessType.AllowList, wallets: ['0x1234'], communities: ['community-1'] }
+            } as WorldMetadata)
+          })
+
+          it('should return true without checking communities (wallet check is faster)', async () => {
+            const result = await accessComponent.checkAccess('test-world', '0x1234')
+
+            expect(result).toBe(true)
+            expect(socialService.getMemberCommunities).not.toHaveBeenCalled()
+          })
+        })
+
+        describe('and the address is a member of multiple communities', () => {
+          beforeEach(() => {
+            worldsManager.getMetadataForWorld.mockResolvedValueOnce({
+              access: { type: AccessType.AllowList, wallets: [], communities: ['community-1', 'community-2'] }
+            } as WorldMetadata)
+            socialService.getMemberCommunities.mockResolvedValueOnce({
+              communities: [{ id: 'community-2' }]
+            })
+          })
+
+          it('should return true when member of any community', async () => {
+            const result = await accessComponent.checkAccess('test-world', '0x5678')
+            expect(result).toBe(true)
+          })
+
+          it('should check all communities in a single batch request', async () => {
+            await accessComponent.checkAccess('test-world', '0x5678')
+            expect(socialService.getMemberCommunities).toHaveBeenCalledTimes(1)
+            expect(socialService.getMemberCommunities).toHaveBeenCalledWith('0x5678', ['community-1', 'community-2'])
+          })
+        })
+
+        describe('and the address is not a member of any community', () => {
+          beforeEach(() => {
+            worldsManager.getMetadataForWorld.mockResolvedValueOnce({
+              access: { type: AccessType.AllowList, wallets: [], communities: ['community-1', 'community-2'] }
+            } as WorldMetadata)
+            socialService.getMemberCommunities.mockResolvedValueOnce({ communities: [] })
+          })
+
+          it('should return false when not a member of any community', async () => {
+            const result = await accessComponent.checkAccess('test-world', '0x5678')
+            expect(result).toBe(false)
+          })
+        })
+
+        describe('and the social service returns an error (fail closed)', () => {
+          beforeEach(() => {
+            worldsManager.getMetadataForWorld.mockResolvedValueOnce({
+              access: { type: AccessType.AllowList, wallets: [], communities: ['community-1'] }
+            } as WorldMetadata)
+            // Social service adapter already fails closed by returning empty communities on error
+            socialService.getMemberCommunities.mockResolvedValueOnce({ communities: [] })
+          })
+
+          it('should return false (deny access)', async () => {
+            const result = await accessComponent.checkAccess('test-world', '0x5678')
+            expect(result).toBe(false)
+          })
         })
       })
     })
@@ -139,7 +234,7 @@ describe('AccessComponent', () => {
   describe('when setting access', () => {
     describe('and setting unrestricted access', () => {
       it('should store unrestricted access setting', async () => {
-        await accessComponent.setAccess('test-world', { type: AccessType.Unrestricted })
+        await accessComponent.setAccess('test-world', TEST_SIGNER, { type: AccessType.Unrestricted })
 
         expect(worldsManager.storeAccess).toHaveBeenCalledWith('test-world', {
           type: AccessType.Unrestricted
@@ -150,48 +245,112 @@ describe('AccessComponent', () => {
     describe('and setting allow-list access', () => {
       describe('and wallets are provided', () => {
         it('should store allow-list access setting with wallets', async () => {
-          await accessComponent.setAccess('test-world', {
+          await accessComponent.setAccess('test-world', TEST_SIGNER, {
             type: AccessType.AllowList,
             wallets: ['0x1234', '0x5678']
           })
 
           expect(worldsManager.storeAccess).toHaveBeenCalledWith('test-world', {
             type: AccessType.AllowList,
-            wallets: ['0x1234', '0x5678']
+            wallets: ['0x1234', '0x5678'],
+            communities: []
           })
         })
       })
 
       describe('and wallets are not provided', () => {
         it('should store allow-list access setting with empty wallets', async () => {
-          await accessComponent.setAccess('test-world', { type: AccessType.AllowList })
+          await accessComponent.setAccess('test-world', TEST_SIGNER, { type: AccessType.AllowList })
 
           expect(worldsManager.storeAccess).toHaveBeenCalledWith('test-world', {
             type: AccessType.AllowList,
-            wallets: []
+            wallets: [],
+            communities: []
           })
         })
       })
 
       describe('and communities are provided', () => {
-        it('should store allow-list access setting with communities', async () => {
-          await accessComponent.setAccess('test-world', {
-            type: AccessType.AllowList,
-            wallets: ['0x1234'],
-            communities: ['community-1', 'community-2']
+        describe('and the signer is a member of all communities', () => {
+          beforeEach(() => {
+            socialService.getMemberCommunities.mockResolvedValueOnce({
+              communities: [{ id: 'community-1' }, { id: 'community-2' }]
+            })
           })
 
-          expect(worldsManager.storeAccess).toHaveBeenCalledWith('test-world', {
-            type: AccessType.AllowList,
-            wallets: ['0x1234'],
-            communities: ['community-1', 'community-2']
+          it('should store allow-list access setting with communities', async () => {
+            await accessComponent.setAccess('test-world', TEST_SIGNER, {
+              type: AccessType.AllowList,
+              wallets: ['0x1234'],
+              communities: ['community-1', 'community-2']
+            })
+
+            expect(worldsManager.storeAccess).toHaveBeenCalledWith('test-world', {
+              type: AccessType.AllowList,
+              wallets: ['0x1234'],
+              communities: ['community-1', 'community-2']
+            })
+          })
+
+          it('should validate community membership with the signer address', async () => {
+            await accessComponent.setAccess('test-world', TEST_SIGNER, {
+              type: AccessType.AllowList,
+              wallets: ['0x1234'],
+              communities: ['community-1', 'community-2']
+            })
+
+            expect(socialService.getMemberCommunities).toHaveBeenCalledWith(TEST_SIGNER, ['community-1', 'community-2'])
+          })
+        })
+
+        describe('and the signer is not a member of some communities', () => {
+          beforeEach(() => {
+            socialService.getMemberCommunities.mockResolvedValueOnce({
+              communities: [{ id: 'community-1' }]
+            })
+          })
+
+          it('should throw UnauthorizedCommunityError', async () => {
+            await expect(
+              accessComponent.setAccess('test-world', TEST_SIGNER, {
+                type: AccessType.AllowList,
+                wallets: ['0x1234'],
+                communities: ['community-1', 'community-2']
+              })
+            ).rejects.toThrow(UnauthorizedCommunityError)
+          })
+
+          it('should include the unauthorized communities in the error message', async () => {
+            await expect(
+              accessComponent.setAccess('test-world', TEST_SIGNER, {
+                type: AccessType.AllowList,
+                wallets: ['0x1234'],
+                communities: ['community-1', 'community-2']
+              })
+            ).rejects.toThrow('community-2')
+          })
+        })
+
+        describe('and the signer is not a member of any community', () => {
+          beforeEach(() => {
+            socialService.getMemberCommunities.mockResolvedValueOnce({ communities: [] })
+          })
+
+          it('should throw UnauthorizedCommunityError with all communities', async () => {
+            await expect(
+              accessComponent.setAccess('test-world', TEST_SIGNER, {
+                type: AccessType.AllowList,
+                wallets: ['0x1234'],
+                communities: ['community-1', 'community-2']
+              })
+            ).rejects.toThrow('community-1, community-2')
           })
         })
       })
 
       describe('and communities array is empty', () => {
         it('should store allow-list access setting without communities field', async () => {
-          await accessComponent.setAccess('test-world', {
+          await accessComponent.setAccess('test-world', TEST_SIGNER, {
             type: AccessType.AllowList,
             wallets: ['0x1234'],
             communities: []
@@ -199,8 +358,19 @@ describe('AccessComponent', () => {
 
           expect(worldsManager.storeAccess).toHaveBeenCalledWith('test-world', {
             type: AccessType.AllowList,
-            wallets: ['0x1234']
+            wallets: ['0x1234'],
+            communities: []
           })
+        })
+
+        it('should not call socialService to validate communities', async () => {
+          await accessComponent.setAccess('test-world', TEST_SIGNER, {
+            type: AccessType.AllowList,
+            wallets: ['0x1234'],
+            communities: []
+          })
+
+          expect(socialService.getMemberCommunities).not.toHaveBeenCalled()
         })
       })
 
@@ -213,7 +383,7 @@ describe('AccessComponent', () => {
 
         it('should throw InvalidAccessTypeError', async () => {
           await expect(
-            accessComponent.setAccess('test-world', {
+            accessComponent.setAccess('test-world', TEST_SIGNER, {
               type: AccessType.AllowList,
               wallets: ['0x1234'],
               communities: tooManyCommunities
@@ -223,7 +393,7 @@ describe('AccessComponent', () => {
 
         it('should include the limit in the error message', async () => {
           await expect(
-            accessComponent.setAccess('test-world', {
+            accessComponent.setAccess('test-world', TEST_SIGNER, {
               type: AccessType.AllowList,
               wallets: ['0x1234'],
               communities: tooManyCommunities
@@ -237,10 +407,13 @@ describe('AccessComponent', () => {
 
         beforeEach(() => {
           maxCommunities = Array.from({ length: MAX_COMMUNITIES }, (_, i) => `community-${i}`)
+          socialService.getMemberCommunities.mockResolvedValueOnce({
+            communities: maxCommunities.map((id) => ({ id }))
+          })
         })
 
         it('should store allow-list access setting with communities', async () => {
-          await accessComponent.setAccess('test-world', {
+          await accessComponent.setAccess('test-world', TEST_SIGNER, {
             type: AccessType.AllowList,
             wallets: ['0x1234'],
             communities: maxCommunities
@@ -260,7 +433,7 @@ describe('AccessComponent', () => {
         let storedAccess: any
 
         beforeEach(async () => {
-          await accessComponent.setAccess('test-world', {
+          await accessComponent.setAccess('test-world', TEST_SIGNER, {
             type: AccessType.SharedSecret,
             secret: 'my-secret'
           })
@@ -278,9 +451,9 @@ describe('AccessComponent', () => {
 
       describe('and a secret is not provided', () => {
         it('should throw InvalidAccessTypeError', async () => {
-          await expect(accessComponent.setAccess('test-world', { type: AccessType.SharedSecret })).rejects.toThrow(
-            InvalidAccessTypeError
-          )
+          await expect(
+            accessComponent.setAccess('test-world', TEST_SIGNER, { type: AccessType.SharedSecret })
+          ).rejects.toThrow(InvalidAccessTypeError)
         })
       })
     })
@@ -288,7 +461,7 @@ describe('AccessComponent', () => {
     describe('and setting nft-ownership access', () => {
       describe('and an nft is provided', () => {
         it('should store nft access setting', async () => {
-          await accessComponent.setAccess('test-world', {
+          await accessComponent.setAccess('test-world', TEST_SIGNER, {
             type: AccessType.NFTOwnership,
             nft: 'some-nft-address'
           })
@@ -302,16 +475,16 @@ describe('AccessComponent', () => {
 
       describe('and an nft is not provided', () => {
         it('should throw InvalidAccessTypeError', async () => {
-          await expect(accessComponent.setAccess('test-world', { type: AccessType.NFTOwnership })).rejects.toThrow(
-            InvalidAccessTypeError
-          )
+          await expect(
+            accessComponent.setAccess('test-world', TEST_SIGNER, { type: AccessType.NFTOwnership })
+          ).rejects.toThrow(InvalidAccessTypeError)
         })
       })
     })
 
     describe('and setting an invalid access type', () => {
       it('should throw InvalidAccessTypeError', async () => {
-        await expect(accessComponent.setAccess('test-world', { type: 'invalid-type' })).rejects.toThrow(
+        await expect(accessComponent.setAccess('test-world', TEST_SIGNER, { type: 'invalid-type' })).rejects.toThrow(
           InvalidAccessTypeError
         )
       })
