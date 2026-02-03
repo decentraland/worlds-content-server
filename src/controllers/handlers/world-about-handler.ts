@@ -49,8 +49,7 @@ export async function worldAboutHandler({
     throw new Error(`Invalid ETH_NETWORK: ${ethNetwork}`)
   }
 
-  const roomPrefix = await config.requireString('COMMS_ROOM_PREFIX')
-  const adapter = resolveFixedAdapter(params.world_name, runtimeMetadata.fixedAdapter, baseUrl, roomPrefix)
+  const adapter = resolveFixedAdapter(params.world_name, runtimeMetadata.fixedAdapter, baseUrl)
 
   const globalScenesURN = await config.getString('GLOBAL_SCENES_URN')
 
@@ -125,10 +124,10 @@ export async function worldAboutHandler({
   }
 }
 
-function resolveFixedAdapter(worldName: string, fixedAdapter: string | undefined, baseUrl: string, roomPrefix: string) {
+function resolveFixedAdapter(worldName: string, fixedAdapter: string | undefined, baseUrl: string) {
   if (fixedAdapter === 'offline:offline') {
     return 'fixed-adapter:offline:offline'
   }
 
-  return `fixed-adapter:signed-login:${baseUrl}/get-comms-adapter/${roomPrefix}${worldName.toLowerCase()}`
+  return `fixed-adapter:signed-login:${baseUrl}/worlds/${worldName.toLowerCase()}/comms`
 }
