@@ -33,7 +33,6 @@ import { AccessSetting, IAccessComponent } from './logic/access'
 import { ISocialServiceComponent } from './adapters/social-service'
 import { ICommsComponent } from './logic/comms'
 import { IWorldsComponent } from './logic/worlds'
-import type { IAuthenticatedFetchComponent } from '../test/components/local-auth-fetch'
 
 export type GlobalContext = {
   components: BaseComponents
@@ -487,15 +486,6 @@ export type IWorldCreator = {
 // components used in runtime
 export type AppComponents = BaseComponents & {
   statusChecks: IBaseComponent
-}
-
-// components used in tests
-export type TestComponents = BaseComponents & {
-  // A fetch component that only hits the test server with optional authentication support
-  localFetch: IAuthenticatedFetchComponent
-  worldCreator: IWorldCreator
-  // Mocked version of nameOwnership for testing
-  nameOwnership: jest.Mocked<INameOwnership>
 }
 
 // this type simplifies the typings of http handlers

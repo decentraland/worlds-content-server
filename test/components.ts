@@ -4,7 +4,7 @@
 import { createRunner } from '@well-known-components/test-helpers'
 
 import { main } from '../src/service'
-import { TestComponents } from '../src/types'
+import { TestComponents } from './types'
 import { initComponents as originalInitComponents } from '../src/components'
 import { createMockNameSubGraph } from './mocks/name-subgraph-mock'
 import { createMockNamePermissionChecker } from './mocks/dcl-name-checker-mock'
@@ -48,7 +48,12 @@ import { createMockSocialService } from './mocks/social-service-mock'
  * State is persistent within the steps of the test.
  */
 export const test = createRunner<TestComponents>({
-  main,
+  // Cast main since TestComponents extends AppComponents but TypeScript's
+  // contravariance rules for function parameters require an explicit cast
+  main: main as unknown as (program: {
+    components: TestComponents
+    startComponents: () => Promise<void>
+  }) => Promise<void>,
   initComponents
 })
 
