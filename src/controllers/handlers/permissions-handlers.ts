@@ -7,8 +7,7 @@ import {
   AllowListPermission,
   InvalidPermissionRequestError,
   PermissionNotFoundError,
-  PermissionType,
-  PermissionTypeName
+  PermissionType
 } from '../../logic/permissions'
 import { AccessInput, AccessSetting, AccessType, InvalidAccessTypeError } from '../../logic/access'
 import { PermissionParcelsInput } from '../schemas/permission-parcels-schema'
@@ -17,9 +16,6 @@ function isAllowListPermission(permission: string): permission is AllowListPermi
   return permission === 'deployment' || permission === 'streaming'
 }
 
-function isValidPermissionType(permission: string): permission is PermissionTypeName {
-  return permission === 'access' || permission === 'deployment' || permission === 'streaming'
-}
 
 function removeSecrets(access: AccessSetting): AccessSetting {
   const noSecrets = JSON.parse(JSON.stringify(access)) as AccessSetting
@@ -380,137 +376,3 @@ export async function deletePermissionsAddressHandler(
   return { status: 204 }
 }
 
-/**
- * Get a specific permission for a world.
- * Authorization: owner or manager for 'access', public for 'deployment' and 'streaming'.
- */
-export async function getPermissionHandler(
-  ctx: HandlerContextWithPath<
-    'access' | 'permissions' | 'permissionsManager' | 'worldsManager',
-    '/world/:world_name/permissions/:permission_name'
-  >
-): Promise<IHttpServerComponent.IResponse> {
-  const { permissions, worldsManager } = ctx.components
-  const worldName = ctx.params.world_name
-  const permissionName = ctx.params.permission_name
-
-  if (!isValidPermissionType(permissionName)) {
-    throw new InvalidRequestError(
-      `Invalid permission name: ${permissionName}. Valid names are: access, deployment, streaming.`
-    )
-  }
-
-  if (permissionName === 'access') {
-    const metadata = await worldsManager.getMetadataForWorld(worldName)
-    const accessSetting = metadata?.access || { type: AccessType.Unrestricted }
-    const accessWithoutSecrets = removeSecrets(accessSetting)
-
-    return {
-      status: 200,
-      body: accessWithoutSecrets
-    }
-  }
-
-  // For deployment and streaming, get from the summary
-  const summary = await permissions.getPermissionsSummary(worldName)
-  const wallets: string[] = []
-
-  for (const [address, addressPermissions] of Object.entries(summary)) {
-    for (const perm of addressPermissions) {
-      if (perm.permission === permissionName) {
-        wallets.push(address)
-      }
-    }
-  }
-
-  // Streaming is unrestricted if no entries, deployment is always allow-list
-  if (permissionName === 'streaming' && wallets.length === 0) {
-    return {
-      status: 200,
-      body: { type: PermissionType.Unrestricted }
-    }
-  }
-
-  return {
-    status: 200,
-    body: {
-      type: PermissionType.AllowList,
-      wallets
-    }
-  }
-}
-
-/**
- * Check if an address has a specific permission for a world.
- * Returns 204 if the address has the permission, 403 if not.
- * This endpoint is public to allow access checks.
- */
-export async function checkAddressPermissionHandler(
-  ctx: HandlerContextWithPath<
-    'access' | 'permissions' | 'permissionsManager' | 'worldsManager',
-    '/world/:world_name/permissions/:permission_name/:address'
-  >
-): Promise<IHttpServerComponent.IResponse> {
-  const { access, permissions, permissionsManager } = ctx.components
-  const worldName = ctx.params.world_name
-  const permissionName = ctx.params.permission_name
-  const address = ctx.params.address
-
-  if (!isValidPermissionType(permissionName)) {
-    throw new InvalidRequestError(
-      `Invalid permission name: ${permissionName}. Valid names are: access, deployment, streaming.`
-    )
-  }
-
-  if (!EthAddress.validate(address)) {
-    throw new InvalidRequestError(`Invalid address: ${address}.`)
-  }
-
-  const lowerAddress = address.toLowerCase()
-
-  // Check if address is owner - owners have all permissions
-  const owner = await permissionsManager.getOwner(worldName)
-  if (owner && owner.toLowerCase() === lowerAddress) {
-    return { status: 204 }
-  }
-
-  if (permissionName === 'access') {
-    // Check access permission
-    const hasAccess = await access.checkAccess(worldName, lowerAddress)
-    if (hasAccess) {
-      return { status: 204 }
-    }
-    return {
-      status: 403,
-      body: {
-        error: 'Forbidden',
-        message: `Address ${address} does not have access permission for world ${worldName}.`
-      }
-    }
-  }
-
-  // For deployment and streaming, check if the address has world-wide permission
-  // (for parcel-specific permissions, use the parcels endpoint)
-  const hasWorldWide = await permissions.hasWorldWidePermission(worldName, permissionName, lowerAddress)
-  if (hasWorldWide) {
-    return { status: 204 }
-  }
-
-  // Also check if they have any parcel-specific permission (they still have "some" permission)
-  const summary = await permissions.getPermissionsSummary(worldName)
-  const addressPermissions = summary[lowerAddress]
-  if (addressPermissions) {
-    const hasPermission = addressPermissions.some((p) => p.permission === permissionName)
-    if (hasPermission) {
-      return { status: 204 }
-    }
-  }
-
-  return {
-    status: 403,
-    body: {
-      error: 'Forbidden',
-      message: `Address ${address} does not have ${permissionName} permission for world ${worldName}.`
-    }
-  }
-}

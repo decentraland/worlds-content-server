@@ -12,12 +12,10 @@ import { getLiveDataHandler } from './handlers/live-data-handler'
 import { castAdapterHandler } from './handlers/cast-adapter-handler'
 import { wellKnownComponents } from '@dcl/platform-crypto-middleware'
 import {
-  checkAddressPermissionHandler,
   deletePermissionsAddressHandler,
   deletePermissionParcelsHandler,
   getAllowedParcelsForPermissionHandler,
   getPermissionsHandler,
-  getPermissionHandler,
   postPermissionsHandler,
   postPermissionParcelsHandler,
   putPermissionsAddressHandler
@@ -90,7 +88,6 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
 
   // Permissions endpoints
   router.get('/world/:world_name/permissions', getPermissionsHandler)
-  router.get('/world/:world_name/permissions/:permission_name', getPermissionHandler)
   router.post('/world/:world_name/permissions/:permission_name', signedFetchMiddleware, postPermissionsHandler)
 
   // Address-specific permission endpoints
@@ -112,13 +109,6 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
     signedFetchMiddleware,
     schemaValidator.withSchemaValidatorMiddleware(permissionParcelsSchema),
     deletePermissionParcelsHandler
-  )
-
-  // GET: Check if address has permission
-  router.get(
-    '/world/:world_name/permissions/:permission_name/:address',
-    signedFetchMiddleware,
-    checkAddressPermissionHandler
   )
 
   // PUT: Set permission (create or replace) - grants world-wide permission

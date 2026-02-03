@@ -507,73 +507,11 @@ paths:
                     description: Ethereum address of the world owner
                     example: '0x1234567890123456789012345678901234567890'
 
-  /world/{world_name}/permissions/{permission_type}:
-    get:
-      tags:
-        - Content Server
-      summary: GET /world/{world_name}/permissions/{permission_type}
-      description: |
-        Retrieve a specific permission type configuration for a world.
-        
-        This endpoint returns the permission setting for access, deployment, or streaming.
-        For access permissions with SharedSecret type, the secret hash is excluded from the response.
-      operationId: worldsContentServer_getPermissionType
-      parameters:
-        - name: world_name
-          in: path
-          required: true
-          description: The name of the world
-          schema:
-            type: string
-            example: my-name.dcl.eth
-        - name: permission_type
-          in: path
-          required: true
-          description: The permission type to retrieve
-          schema:
-            type: string
-            enum: [access, deployment, streaming]
-      responses:
-        '200':
-          description: Permission type retrieved successfully
-          content:
-            application/json:
-              schema:
-                oneOf:
-                  - $ref: '#/components/schemas/UnrestrictedPermissionSetting'
-                  - $ref: '#/components/schemas/AllowListPermissionSetting'
-                  - $ref: '#/components/schemas/SharedSecretPermissionSetting'
-                  - $ref: '#/components/schemas/NFTOwnershipPermissionSetting'
-              examples:
-                unrestricted:
-                  summary: Unrestricted access
-                  value:
-                    type: unrestricted
-                allowList:
-                  summary: Allow list with wallets
-                  value:
-                    type: allow-list
-                    wallets: ['0x1234567890123456789012345678901234567890']
-                allowListWithCommunities:
-                  summary: Allow list with wallets and communities
-                  value:
-                    type: allow-list
-                    wallets: ['0x1234567890123456789012345678901234567890']
-                    communities: ['community-id-1', 'community-id-2']
-                sharedSecret:
-                  summary: Shared secret (secret not included)
-                  value:
-                    type: shared-secret
-        '400':
-          description: Invalid permission type
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+  /world/{world_name}/permissions/{permission_name}:
     post:
       tags:
         - Content Server
-      summary: POST /world/{world_name}/permissions/{permission_type}
+      summary: /world/{world_name}/permissions/{permission_name}
       description: Set the permission type for a specific permission (deployment, access, or streaming). Requires signed fetch and world ownership.
       operationId: worldsContentServer_postPermission
       security:
@@ -586,7 +524,7 @@ paths:
           schema:
             type: string
             example: my-name.dcl.eth
-        - name: permission_type
+        - name: permission_name
           in: path
           required: true
           description: The permission to configure
@@ -619,63 +557,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /world/{world_name}/permissions/{permission_type}/{address}:
-    get:
-      tags:
-        - Content Server
-      summary: GET /world/{world_name}/permissions/{permission_type}/{address}
-      description: |
-        Check if an Ethereum address has a specific permission for a world.
-        
-        This endpoint is public and can be used to verify access before attempting to connect.
-        Returns 204 if the address has the permission, 403 if not.
-        
-        For access permission: checks if the address can access the world (owner, in allow-list, or unrestricted access).
-        For deployment permission: checks if the address can deploy to the world (owner or has deployment permission).
-        For streaming permission: checks if the address can stream in the world (owner or has streaming permission).
-      operationId: worldsContentServer_checkAddressPermission
-      parameters:
-        - name: world_name
-          in: path
-          required: true
-          description: The name of the world
-          schema:
-            type: string
-            example: my-name.dcl.eth
-        - name: permission_type
-          in: path
-          required: true
-          description: The permission type to check
-          schema:
-            type: string
-            enum: [access, deployment, streaming]
-        - name: address
-          in: path
-          required: true
-          description: Ethereum address to check
-          schema:
-            type: string
-            example: '0x1234567890123456789012345678901234567890'
-      responses:
-        '204':
-          description: Address has the permission
-        '400':
-          description: Invalid permission type or address
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '403':
-          description: Address does not have the permission
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+  /world/{world_name}/permissions/{permission_name}/{address}:
     put:
       tags:
         - Content Server
-      summary: PUT /world/{world_name}/permissions/{permission_type}/{address}
-      description: Add an Ethereum address to the allow list for a specific permission. Requires signed fetch and world ownership. Only applicable to deployment and streaming permissions.
+      summary: /world/{world_name}/permissions/{permission_name}/{address}
+      description: Add an Ethereum address to the allow list for a specific permission. Requires signed fetch and world ownership.
       operationId: worldsContentServer_putPermissionAddress
       security:
         - SignedFetch: []
@@ -687,13 +574,13 @@ paths:
           schema:
             type: string
             example: my-name.dcl.eth
-        - name: permission_type
+        - name: permission_name
           in: path
           required: true
-          description: The permission to modify (only deployment and streaming support allow-list)
+          description: The permission to modify
           schema:
             type: string
-            enum: [deployment, streaming]
+            enum: [deployment, access, streaming]
         - name: address
           in: path
           required: true
@@ -719,8 +606,8 @@ paths:
     delete:
       tags:
         - Content Server
-      summary: DELETE /world/{world_name}/permissions/{permission_type}/{address}
-      description: Remove an Ethereum address from the allow list for a specific permission. Requires signed fetch and world ownership. Only applicable to deployment and streaming permissions.
+      summary: /world/{world_name}/permissions/{permission_name}/{address}
+      description: Remove an Ethereum address from the allow list for a specific permission. Requires signed fetch and world ownership.
       operationId: worldsContentServer_deletePermissionAddress
       security:
         - SignedFetch: []
@@ -732,13 +619,13 @@ paths:
           schema:
             type: string
             example: my-name.dcl.eth
-        - name: permission_type
+        - name: permission_name
           in: path
           required: true
-          description: The permission to modify (only deployment and streaming support allow-list)
+          description: The permission to modify
           schema:
             type: string
-            enum: [deployment, streaming]
+            enum: [deployment, access, streaming]
         - name: address
           in: path
           required: true
