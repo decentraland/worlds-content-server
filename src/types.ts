@@ -42,7 +42,7 @@ import {
   WorldPermissionRecordForChecking
 } from './logic/permissions'
 import { AccessSetting, IAccessComponent } from './logic/access'
-import { ISocialServiceAdapter } from './adapters/social-service'
+import { ISocialServiceComponent } from './adapters/social-service'
 
 export type GlobalContext = {
   components: BaseComponents
@@ -450,7 +450,7 @@ export type BaseComponents = {
   search: ISearchComponent
   server: IHttpServerComponent<GlobalContext>
   snsClient: IPublisherComponent
-  socialService: ISocialServiceAdapter
+  socialService: ISocialServiceComponent
   status: IStatusComponent
   storage: IContentStorageComponent
   updateOwnerJob: IRunnable<void>

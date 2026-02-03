@@ -45,7 +45,7 @@ import { createCoordinatesComponent } from './logic/coordinates'
 import { createPermissionsComponent } from './logic/permissions'
 import { createAccessComponent } from './logic/access'
 import { createSearchComponent } from './adapters/search'
-import { createSocialServiceAdapter } from './adapters/social-service'
+import { createSocialServiceComponent } from './adapters/social-service'
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
@@ -134,7 +134,7 @@ export async function initComponents(): Promise<AppComponents> {
   const worldsIndexer = await createWorldsIndexerComponent({ worldsManager })
   const permissionsManager = await createPermissionsManagerComponent({ database, worldsManager })
   const permissions = await createPermissionsComponent({ config, permissionsManager, snsClient })
-  const socialService = await createSocialServiceAdapter({ config, fetch, logs })
+  const socialService = await createSocialServiceComponent({ config, fetch, logs })
   const access = createAccessComponent({ socialService, worldsManager })
 
   const entityDeployer = createEntityDeployer({

@@ -1,4 +1,4 @@
-import { createSocialServiceAdapter, ISocialServiceAdapter } from '../../src/adapters/social-service'
+import { createSocialServiceComponent, ISocialServiceComponent } from '../../src/adapters/social-service'
 import { IConfigComponent, IFetchComponent, ILoggerComponent } from '@well-known-components/interfaces'
 import * as nodeFetch from 'node-fetch'
 
@@ -16,22 +16,15 @@ function mockResponse(options: {
   } as unknown as nodeFetch.Response
 }
 
-describe('SocialServiceAdapter', () => {
+describe('SocialServiceComponent', () => {
   const socialServiceUrl = 'https://social.example.com'
+  const apiKey = 'test-api-key'
 
-  let socialService: ISocialServiceAdapter
   let mockConfig: jest.Mocked<IConfigComponent>
   let mockFetch: jest.Mocked<IFetchComponent>
   let mockLogs: ILoggerComponent
 
-  beforeEach(async () => {
-    mockConfig = {
-      getString: jest.fn(),
-      getNumber: jest.fn(),
-      requireString: jest.fn().mockResolvedValue(socialServiceUrl),
-      requireNumber: jest.fn()
-    } as unknown as jest.Mocked<IConfigComponent>
-
+  beforeEach(() => {
     mockFetch = {
       fetch: jest.fn()
     } as unknown as jest.Mocked<IFetchComponent>
@@ -44,12 +37,6 @@ describe('SocialServiceAdapter', () => {
         debug: jest.fn()
       })
     } as unknown as ILoggerComponent
-
-    socialService = await createSocialServiceAdapter({
-      config: mockConfig,
-      fetch: mockFetch,
-      logs: mockLogs
-    })
   })
 
   afterEach(() => {
@@ -58,6 +45,23 @@ describe('SocialServiceAdapter', () => {
 
   describe('when getMemberCommunities is called', () => {
     describe('and communityIds is empty', () => {
+      let socialService: ISocialServiceComponent
+
+      beforeEach(async () => {
+        mockConfig = {
+          getString: jest.fn().mockResolvedValue(apiKey),
+          getNumber: jest.fn(),
+          requireString: jest.fn().mockResolvedValue(socialServiceUrl),
+          requireNumber: jest.fn()
+        } as unknown as jest.Mocked<IConfigComponent>
+
+        socialService = await createSocialServiceComponent({
+          config: mockConfig,
+          fetch: mockFetch,
+          logs: mockLogs
+        })
+      })
+
       it('should return empty communities without making a request', async () => {
         const result = await socialService.getMemberCommunities('0x1234', [])
 
@@ -66,11 +70,51 @@ describe('SocialServiceAdapter', () => {
       })
     })
 
+    describe('and the API key is not configured', () => {
+      let socialService: ISocialServiceComponent
+
+      beforeEach(async () => {
+        mockConfig = {
+          getString: jest.fn().mockResolvedValue(undefined),
+          getNumber: jest.fn(),
+          requireString: jest.fn().mockResolvedValue(socialServiceUrl),
+          requireNumber: jest.fn()
+        } as unknown as jest.Mocked<IConfigComponent>
+
+        socialService = await createSocialServiceComponent({
+          config: mockConfig,
+          fetch: mockFetch,
+          logs: mockLogs
+        })
+      })
+
+      it('should return empty communities without making a request', async () => {
+        const result = await socialService.getMemberCommunities('0x1234', ['community-1'])
+
+        expect(result).toEqual({ communities: [] })
+        expect(mockFetch.fetch).not.toHaveBeenCalled()
+      })
+    })
+
     describe('and the request succeeds', () => {
+      let socialService: ISocialServiceComponent
       let address: string
       let communityIds: string[]
 
-      beforeEach(() => {
+      beforeEach(async () => {
+        mockConfig = {
+          getString: jest.fn().mockResolvedValue(apiKey),
+          getNumber: jest.fn(),
+          requireString: jest.fn().mockResolvedValue(socialServiceUrl),
+          requireNumber: jest.fn()
+        } as unknown as jest.Mocked<IConfigComponent>
+
+        socialService = await createSocialServiceComponent({
+          config: mockConfig,
+          fetch: mockFetch,
+          logs: mockLogs
+        })
+
         address = '0x1234'
         communityIds = ['community-1', 'community-2']
         mockFetch.fetch.mockResolvedValueOnce(
@@ -83,13 +127,14 @@ describe('SocialServiceAdapter', () => {
         )
       })
 
-      it('should call the correct endpoint', async () => {
+      it('should call the correct endpoint with Bearer token', async () => {
         await socialService.getMemberCommunities(address, communityIds)
 
         expect(mockFetch.fetch).toHaveBeenCalledWith(`${socialServiceUrl}/v1/members/0x1234/communities`, {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${apiKey}`
           },
           body: JSON.stringify({ communityIds })
         })
@@ -114,7 +159,22 @@ describe('SocialServiceAdapter', () => {
     })
 
     describe('and the request fails with non-ok status', () => {
-      beforeEach(() => {
+      let socialService: ISocialServiceComponent
+
+      beforeEach(async () => {
+        mockConfig = {
+          getString: jest.fn().mockResolvedValue(apiKey),
+          getNumber: jest.fn(),
+          requireString: jest.fn().mockResolvedValue(socialServiceUrl),
+          requireNumber: jest.fn()
+        } as unknown as jest.Mocked<IConfigComponent>
+
+        socialService = await createSocialServiceComponent({
+          config: mockConfig,
+          fetch: mockFetch,
+          logs: mockLogs
+        })
+
         mockFetch.fetch.mockResolvedValueOnce(
           mockResponse({
             ok: false,
@@ -132,7 +192,22 @@ describe('SocialServiceAdapter', () => {
     })
 
     describe('and the request throws an error', () => {
-      beforeEach(() => {
+      let socialService: ISocialServiceComponent
+
+      beforeEach(async () => {
+        mockConfig = {
+          getString: jest.fn().mockResolvedValue(apiKey),
+          getNumber: jest.fn(),
+          requireString: jest.fn().mockResolvedValue(socialServiceUrl),
+          requireNumber: jest.fn()
+        } as unknown as jest.Mocked<IConfigComponent>
+
+        socialService = await createSocialServiceComponent({
+          config: mockConfig,
+          fetch: mockFetch,
+          logs: mockLogs
+        })
+
         mockFetch.fetch.mockRejectedValueOnce(new Error('Network error'))
       })
 

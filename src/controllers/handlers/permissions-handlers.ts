@@ -9,13 +9,18 @@ import {
   PermissionNotFoundError,
   PermissionType
 } from '../../logic/permissions'
-import { AccessInput, AccessSetting, AccessType, InvalidAccessTypeError } from '../../logic/access'
+import {
+  AccessInput,
+  AccessSetting,
+  AccessType,
+  InvalidAccessTypeError,
+  UnauthorizedCommunityError
+} from '../../logic/access'
 import { PermissionParcelsInput } from '../schemas/permission-parcels-schema'
 
 function isAllowListPermission(permission: string): permission is AllowListPermission {
   return permission === 'deployment' || permission === 'streaming'
 }
-
 
 function removeSecrets(access: AccessSetting): AccessSetting {
   const noSecrets = JSON.parse(JSON.stringify(access)) as AccessSetting
@@ -133,9 +138,9 @@ export async function postPermissionsHandler(
       }
       case 'access': {
         try {
-          await access.setAccess(worldName, authMetadata as AccessInput)
+          await access.setAccess(worldName, ctx.verification!.auth, authMetadata as AccessInput)
         } catch (error) {
-          if (error instanceof InvalidAccessTypeError) {
+          if (error instanceof InvalidAccessTypeError || error instanceof UnauthorizedCommunityError) {
             throw new InvalidRequestError(error.message)
           }
           throw error
@@ -375,4 +380,3 @@ export async function deletePermissionsAddressHandler(
 
   return { status: 204 }
 }
-

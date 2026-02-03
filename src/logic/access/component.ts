@@ -3,8 +3,8 @@ import { AccessInput, AccessSetting, AccessType, AddressAccessInfo, IAccessCompo
 import { EthAddress } from '@dcl/schemas'
 import bcrypt from 'bcrypt'
 import { defaultAccess, MAX_COMMUNITIES } from './constants'
-import { InvalidAccessTypeError } from './errors'
-import { ISocialServiceAdapter } from '../../adapters/social-service'
+import { InvalidAccessTypeError, UnauthorizedCommunityError } from './errors'
+import { ISocialServiceComponent } from '../../adapters/social-service'
 
 const saltRounds = 10
 
@@ -33,7 +33,7 @@ function createNftOwnershipChecker(_requiredNft: string): CheckingFunction {
  * Creates an allow-list checker factory that captures the socialService dependency.
  * This avoids passing socialService through multiple layers.
  */
-function createAllowListCheckerFactory(socialService: ISocialServiceAdapter) {
+function createAllowListCheckerFactory(socialService: ISocialServiceComponent) {
   return (allowList: string[], communities: string[]): CheckingFunction => {
     const lowerCasedAllowList = allowList.map((ethAddress) => ethAddress.toLowerCase())
 
@@ -86,8 +86,9 @@ export function createAccessComponent({
   /**
    * Set access settings for a world with validation.
    * Validates the access type and constructs the appropriate AccessSetting.
+   * For AllowList with communities, validates that the signer is a member of all communities.
    */
-  async function setAccess(worldName: string, input: AccessInput): Promise<void> {
+  async function setAccess(worldName: string, signer: EthAddress, input: AccessInput): Promise<void> {
     const { type, wallets, communities, nft, secret } = input
     let accessSetting: AccessSetting
 
@@ -98,6 +99,18 @@ export function createAccessComponent({
             `Too many communities. Maximum allowed is ${MAX_COMMUNITIES}, but ${communities.length} were provided.`
           )
         }
+
+        // Validate that the signer is a member of all communities they're trying to set
+        if (communities && communities.length > 0) {
+          const { communities: memberCommunities } = await socialService.getMemberCommunities(signer, communities)
+          const memberCommunityIds = new Set(memberCommunities.map((c) => c.id))
+          const unauthorizedCommunities = communities.filter((id) => !memberCommunityIds.has(id))
+
+          if (unauthorizedCommunities.length > 0) {
+            throw new UnauthorizedCommunityError(unauthorizedCommunities)
+          }
+        }
+
         accessSetting = {
           type: AccessType.AllowList,
           wallets: wallets || [],

@@ -48,6 +48,6 @@ export type AddressAccessInfo = {
 
 export type IAccessComponent = {
   checkAccess(worldName: string, ethAddress: EthAddress, extras?: any): Promise<boolean>
-  setAccess(worldName: string, input: AccessInput): Promise<void>
+  setAccess(worldName: string, signer: EthAddress, input: AccessInput): Promise<void>
   getAddressAccessPermission(worldName: string, address: EthAddress): Promise<AddressAccessInfo | null>
 }
