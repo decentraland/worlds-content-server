@@ -137,8 +137,8 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   router.post('/livekit-webhook', livekitWebhookHandler)
 
   // Comms endpoints
-  router.get('/worlds/:worldName/comms', signedFetchMiddleware, worldCommsHandler)
-  router.get('/worlds/:worldName/scenes/:sceneId/comms', signedFetchMiddleware, worldCommsHandler)
+  router.post('/worlds/:worldName/comms', signedFetchMiddleware, worldCommsHandler)
+  router.post('/worlds/:worldName/scenes/:sceneId/comms', signedFetchMiddleware, worldCommsHandler)
 
   router.post('/get-comms-adapter/:roomId', signedFetchMiddleware, commsAdapterHandler)
   router.post('/cast-adapter/:roomId', signedFetchMiddleware, castAdapterHandler)
