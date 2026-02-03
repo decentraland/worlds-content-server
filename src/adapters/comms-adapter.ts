@@ -35,7 +35,7 @@ export async function createCommsAdapterComponent({
       const apiSecret = await config.requireString('LIVEKIT_API_SECRET')
       return cachingAdapter(
         { logs },
-        createLiveKitAdapter({ fetch }, worldRoomPrefix, sceneRoomPrefix, host, apiKey, apiSecret)
+        createLiveKitAdapter({ fetch, logs }, worldRoomPrefix, sceneRoomPrefix, host, apiKey, apiSecret)
       )
 
     default:
