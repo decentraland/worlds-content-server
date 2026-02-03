@@ -1267,6 +1267,12 @@ components:
           items:
             type: string
           description: List of Ethereum addresses
+        communities:
+          type: array
+          items:
+            type: string
+          description: List of community IDs. Users who are members of any of these communities will have access. Maximum 50 communities allowed.
+          maxItems: 50
       required:
         - type
         - wallets

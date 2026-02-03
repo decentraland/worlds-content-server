@@ -9,7 +9,13 @@ import {
   PermissionNotFoundError,
   PermissionType
 } from '../../logic/permissions'
-import { AccessInput, AccessSetting, AccessType, InvalidAccessTypeError } from '../../logic/access'
+import {
+  AccessInput,
+  AccessSetting,
+  AccessType,
+  InvalidAccessTypeError,
+  UnauthorizedCommunityError
+} from '../../logic/access'
 import { PermissionParcelsInput } from '../schemas/permission-parcels-schema'
 
 function isAllowListPermission(permission: string): permission is AllowListPermission {
@@ -131,14 +137,7 @@ export async function postPermissionsHandler(
         break
       }
       case 'access': {
-        try {
-          await access.setAccess(worldName, authMetadata as AccessInput)
-        } catch (error) {
-          if (error instanceof InvalidAccessTypeError) {
-            throw new InvalidRequestError(error.message)
-          }
-          throw error
-        }
+        await access.setAccess(worldName, ctx.verification!.auth, authMetadata as AccessInput)
         break
       }
       default: {
@@ -146,7 +145,11 @@ export async function postPermissionsHandler(
       }
     }
   } catch (error) {
-    if (error instanceof InvalidPermissionRequestError) {
+    if (
+      error instanceof InvalidPermissionRequestError ||
+      error instanceof InvalidAccessTypeError ||
+      error instanceof UnauthorizedCommunityError
+    ) {
       throw new InvalidRequestError(error.message)
     }
     throw error
