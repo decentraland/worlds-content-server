@@ -51,7 +51,7 @@ test('GET /world/:world_name/permissions', ({ components, stubComponents }) => {
       const body = await response.json()
       expect(body.permissions).toMatchObject({
         deployment: defaultPermissions().deployment,
-        streaming: { type: PermissionType.Unrestricted },
+        streaming: defaultPermissions().streaming,
         access: { type: AccessType.Unrestricted }
       })
     })

@@ -1,8 +1,9 @@
 import { test } from '../../components'
 import { getIdentity, Identity } from '../../utils'
 import { IAuthenticatedFetchComponent } from '../../components/local-auth-fetch'
-import { IPermissionsManager, IWorldCreator } from '../../../src/types'
+import { IPermissionsManager, IWorldCreator, IWorldsManager } from '../../../src/types'
 import { IPermissionsComponent } from '../../../src/logic/permissions'
+import { AccessType, IAccessComponent } from '../../../src/logic/access'
 
 const BUILDER_METADATA = {
   origin: 'https://builder.decentraland.org',
@@ -16,6 +17,8 @@ test('DELETE /world/:world_name/permissions/:permission_name/:address', ({ compo
   let worldCreator: IWorldCreator
   let permissions: IPermissionsComponent
   let permissionsManager: IPermissionsManager
+  let worldsManager: IWorldsManager
+  let access: IAccessComponent
 
   let identity: Identity
   let worldName: string
@@ -25,6 +28,8 @@ test('DELETE /world/:world_name/permissions/:permission_name/:address', ({ compo
     worldCreator = components.worldCreator
     permissions = components.permissions
     permissionsManager = components.permissionsManager
+    worldsManager = components.worldsManager
+    access = components.access
 
     identity = await getIdentity()
 
@@ -137,22 +142,73 @@ test('DELETE /world/:world_name/permissions/:permission_name/:address', ({ compo
     })
   })
 
-  describe('when the permission type is access (not allow-list based)', () => {
-    let addressToRemove: Identity
-    let path: string
+  describe('when the permission type is access', () => {
+    describe('and the world has allow-list access', () => {
+      let addressToRemove: Identity
+      let path: string
 
-    beforeEach(async () => {
-      addressToRemove = await getIdentity()
-      path = `/world/${worldName}/permissions/access/${addressToRemove.realAccount.address}`
+      beforeEach(async () => {
+        addressToRemove = await getIdentity()
+        path = `/world/${worldName}/permissions/access/${addressToRemove.realAccount.address}`
+
+        await worldsManager.storeAccess(worldName, {
+          type: AccessType.AllowList,
+          wallets: [addressToRemove.realAccount.address.toLowerCase(), '0x1234567890123456789012345678901234567890'],
+          communities: []
+        })
+      })
+
+      it('should respond with 204 and remove the wallet from the access allow list', async () => {
+        const response = await localFetch.fetch(path, { method: 'DELETE', identity, metadata: BUILDER_METADATA })
+
+        expect(response.status).toBe(204)
+        expect(await response.text()).toEqual('')
+
+        const accessSetting = await access.getAccessForWorld(worldName)
+        expect(accessSetting.type).toBe(AccessType.AllowList)
+        if (accessSetting.type === AccessType.AllowList) {
+          expect(accessSetting.wallets).not.toContain(addressToRemove.realAccount.address.toLowerCase())
+          expect(accessSetting.wallets).toContain('0x1234567890123456789012345678901234567890')
+        }
+      })
+
+      describe('and the wallet is not in the access allow list', () => {
+        let differentAddress: Identity
+
+        beforeEach(async () => {
+          differentAddress = await getIdentity()
+          path = `/world/${worldName}/permissions/access/${differentAddress.realAccount.address}`
+        })
+
+        it('should respond with 204 (idempotent operation)', async () => {
+          const response = await localFetch.fetch(path, { method: 'DELETE', identity, metadata: BUILDER_METADATA })
+
+          expect(response.status).toBe(204)
+        })
+      })
     })
 
-    it('should respond with 400 and a permission type error', async () => {
-      const response = await localFetch.fetch(path, { method: 'DELETE', identity, metadata: BUILDER_METADATA })
+    describe('and the world does not have allow-list access', () => {
+      let addressToRemove: Identity
+      let path: string
 
-      expect(response.status).toEqual(400)
-      expect(await response.json()).toMatchObject({
-        error: 'Bad request',
-        message: "Permission 'access' does not support allow-list. Only 'deployment' and 'streaming' do."
+      beforeEach(async () => {
+        addressToRemove = await getIdentity()
+        path = `/world/${worldName}/permissions/access/${addressToRemove.realAccount.address}`
+
+        await worldsManager.storeAccess(worldName, {
+          type: AccessType.Unrestricted
+        })
+      })
+
+      it('should respond with 400 and a not allow-list error', async () => {
+        const response = await localFetch.fetch(path, { method: 'DELETE', identity, metadata: BUILDER_METADATA })
+
+        expect(response.status).toEqual(400)
+        expect(await response.json()).toMatchObject({
+          error: 'Bad request',
+          message: expect.stringContaining('does not have allow-list access type')
+        })
       })
     })
   })

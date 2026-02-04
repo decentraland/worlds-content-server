@@ -14,12 +14,19 @@ import {
   AccessSetting,
   AccessType,
   InvalidAccessTypeError,
+  NotAllowListAccessError,
   UnauthorizedCommunityError
 } from '../../logic/access'
 import { PermissionParcelsInput } from '../schemas/permission-parcels-schema'
 
 function isAllowListPermission(permission: string): permission is AllowListPermission {
   return permission === 'deployment' || permission === 'streaming'
+}
+
+type PermissionWithWalletSupport = AllowListPermission | 'access'
+
+function isPermissionWithWalletSupport(permission: string): permission is PermissionWithWalletSupport {
+  return permission === 'deployment' || permission === 'streaming' || permission === 'access'
 }
 
 function removeSecrets(access: AccessSetting): AccessSetting {
@@ -40,13 +47,13 @@ async function checkOwnership(namePermissionChecker: IWorldNamePermissionChecker
 }
 
 export async function getPermissionsHandler(
-  ctx: HandlerContextWithPath<'permissions' | 'permissionsManager' | 'worldsManager', '/world/:world_name/permissions'>
+  ctx: HandlerContextWithPath<'access' | 'permissions' | 'permissionsManager', '/world/:world_name/permissions'>
 ): Promise<IHttpServerComponent.IResponse> {
-  const { permissions, permissionsManager, worldsManager } = ctx.components
+  const { access, permissions, permissionsManager } = ctx.components
   const worldName = ctx.params.world_name
 
-  const [metadata, owner, summary] = await Promise.all([
-    worldsManager.getMetadataForWorld(worldName),
+  const [worldAccess, owner, summary] = await Promise.all([
+    access.getAccessForWorld(worldName),
     permissionsManager.getOwner(worldName),
     permissions.getPermissionsSummary(worldName)
   ])
@@ -66,11 +73,7 @@ export async function getPermissionsHandler(
   }
 
   // Access settings (with secrets removed)
-  const access = metadata?.access || { type: AccessType.Unrestricted }
-  const accessWithoutSecrets = removeSecrets(access)
-
-  // Streaming is allow-list if there are entries, unrestricted otherwise
-  const hasStreamingEntries = streamingWallets.length > 0
+  const accessWithoutSecrets = removeSecrets(worldAccess)
 
   // Transform summary to snake_case for the response
   const transformedSummary: Record<string, { permission: string; world_wide: boolean; parcel_count?: number }[]> = {}
@@ -90,12 +93,10 @@ export async function getPermissionsHandler(
           type: PermissionType.AllowList,
           wallets: deploymentWallets
         },
-        streaming: hasStreamingEntries
-          ? {
-              type: PermissionType.AllowList,
-              wallets: streamingWallets
-            }
-          : { type: PermissionType.Unrestricted },
+        streaming: {
+          type: PermissionType.AllowList,
+          wallets: streamingWallets
+        },
         access: accessWithoutSecrets
       },
       owner,
@@ -162,15 +163,17 @@ export async function postPermissionsHandler(
 
 /**
  * Grant world-wide permission to an address - idempotent PUT operation
+ * For deployment/streaming: grants world-wide permission to the address
+ * For access: adds the wallet to the access allow-list
  */
 export async function putPermissionsAddressHandler(
   ctx: HandlerContextWithPath<
-    'namePermissionChecker' | 'permissions',
+    'namePermissionChecker' | 'permissions' | 'access',
     '/world/:world_name/permissions/:permission_name/:address'
   > &
     DecentralandSignatureContext<any>
 ): Promise<IHttpServerComponent.IResponse> {
-  const { namePermissionChecker, permissions } = ctx.components
+  const { namePermissionChecker, permissions, access } = ctx.components
 
   const worldName = ctx.params.world_name
   const permissionName = ctx.params.permission_name
@@ -180,15 +183,25 @@ export async function putPermissionsAddressHandler(
     throw new InvalidRequestError(`Invalid address: ${address}.`)
   }
 
-  if (!isAllowListPermission(permissionName)) {
-    throw new InvalidRequestError(
-      `Permission '${permissionName}' does not support allow-list. Only 'deployment' and 'streaming' do.`
-    )
+  if (!isPermissionWithWalletSupport(permissionName)) {
+    throw new InvalidRequestError(`Invalid permission name: ${permissionName}.`)
   }
 
   await checkOwnership(namePermissionChecker, ctx.verification!.auth, worldName)
 
-  await permissions.grantWorldWidePermission(worldName, permissionName, [address])
+  try {
+    if (isAllowListPermission(permissionName)) {
+      await permissions.grantWorldWidePermission(worldName, permissionName, [address])
+    } else {
+      // permissionName === 'access'
+      await access.addWalletToAccessAllowList(worldName, address)
+    }
+  } catch (error) {
+    if (error instanceof NotAllowListAccessError) {
+      throw new InvalidRequestError(error.message)
+    }
+    throw error
+  }
 
   return { status: 204 }
 }
@@ -346,15 +359,17 @@ export async function getAllowedParcelsForPermissionHandler(
 
 /**
  * Delete permission for an address
+ * For deployment/streaming: revokes the permission from the address
+ * For access: removes the wallet from the access allow-list
  */
 export async function deletePermissionsAddressHandler(
   ctx: HandlerContextWithPath<
-    'namePermissionChecker' | 'permissions',
+    'namePermissionChecker' | 'permissions' | 'access',
     '/world/:world_name/permissions/:permission_name/:address'
   > &
     DecentralandSignatureContext<any>
 ): Promise<IHttpServerComponent.IResponse> {
-  const { namePermissionChecker, permissions } = ctx.components
+  const { namePermissionChecker, permissions, access } = ctx.components
 
   const worldName = ctx.params.world_name
   const permissionName = ctx.params.permission_name
@@ -364,16 +379,28 @@ export async function deletePermissionsAddressHandler(
     throw new InvalidRequestError(`Invalid address: ${address}.`)
   }
 
-  if (!isAllowListPermission(permissionName)) {
+  if (!isPermissionWithWalletSupport(permissionName)) {
     throw new InvalidRequestError(
-      `Permission '${permissionName}' does not support allow-list. Only 'deployment' and 'streaming' do.`
+      `Permission '${permissionName}' does not support allow-list. Only 'deployment', 'streaming', and 'access' do.`
     )
   }
 
   await checkOwnership(namePermissionChecker, ctx.verification!.auth, worldName)
 
-  // Revoke permission from the address (handles delete and notification)
-  await permissions.revokePermission(worldName, permissionName, [address])
+  try {
+    if (isAllowListPermission(permissionName)) {
+      // Revoke permission from the address (handles delete and notification)
+      await permissions.revokePermission(worldName, permissionName, [address])
+    } else {
+      // permissionName === 'access'
+      await access.removeWalletFromAccessAllowList(worldName, address)
+    }
+  } catch (error) {
+    if (error instanceof NotAllowListAccessError) {
+      throw new InvalidRequestError(error.message)
+    }
+    throw error
+  }
 
   return { status: 204 }
 }
