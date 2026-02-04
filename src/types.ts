@@ -196,6 +196,16 @@ export type GetRawWorldRecordsResult = {
   total: number
 }
 
+export type GetOccupiedParcelsOptions = {
+  limit?: number
+  offset?: number
+}
+
+export type GetOccupiedParcelsResult = {
+  parcels: string[]
+  total: number
+}
+
 export type WorldMetadata = {
   access: AccessSetting
   spawnCoordinates: string | null
@@ -303,6 +313,12 @@ export type WorldBoundingRectangle = {
   max: { x: number; y: number }
 }
 
+export type WorldManifest = {
+  parcels: string[]
+  spawnCoordinates: string | null
+  total: number
+}
+
 export type UpdateWorldSettingsResult = {
   settings: WorldSettings
   oldSpawnCoordinates: string | null
@@ -344,6 +360,7 @@ export type IWorldsManager = {
   getTotalWorldSize(worldName: string): Promise<bigint>
   getWorldBoundingRectangle(worldName: string): Promise<WorldBoundingRectangle | undefined>
   getWorlds(filters?: GetWorldsFilters, options?: GetWorldsOptions): Promise<GetWorldsResult>
+  getOccupiedParcels(worldName: string, options?: GetOccupiedParcelsOptions): Promise<GetOccupiedParcelsResult>
 }
 
 export type IPermissionsManager = {

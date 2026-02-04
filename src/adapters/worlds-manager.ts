@@ -21,7 +21,9 @@ import {
   WorldsOrderBy,
   GetRawWorldRecordsFilters,
   GetRawWorldRecordsOptions,
-  GetRawWorldRecordsResult
+  GetRawWorldRecordsResult,
+  GetOccupiedParcelsOptions,
+  GetOccupiedParcelsResult
 } from '../types'
 import { streamToBuffer } from '@dcl/catalyst-storage'
 import { Entity, EthAddress } from '@dcl/schemas'
@@ -929,6 +931,63 @@ export async function createWorldsManagerComponent({
     return { worlds, total }
   }
 
+  /**
+   * Gets occupied parcels for a world with pagination, sorted by x,y coordinates
+   *
+   * This method performs a single efficient SQL query that:
+   * 1. Retrieves all unique parcels from world_scenes using UNNEST
+   * 2. Returns parcels sorted by x,y coordinates with pagination
+   * 3. Includes total count using window function
+   *
+   * @param worldName - The name of the world
+   * @param options - Pagination options (limit, offset)
+   * @returns Object with parcels array and total count
+   */
+  async function getOccupiedParcels(
+    worldName: string,
+    options?: GetOccupiedParcelsOptions
+  ): Promise<GetOccupiedParcelsResult> {
+    const normalizedWorldName = worldName.toLowerCase()
+    const { limit, offset } = options ?? {}
+
+    // Build count query
+    const countQuery = SQL`
+      SELECT COUNT(DISTINCT parcel)::text as total
+      FROM world_scenes ws
+      CROSS JOIN UNNEST(ws.parcels) as parcel
+      WHERE ws.world_name = ${normalizedWorldName}
+    `
+
+    // Build main query for parcels
+    const mainQuery = SQL`
+      SELECT parcel
+      FROM (
+        SELECT DISTINCT parcel
+        FROM world_scenes ws
+        CROSS JOIN UNNEST(ws.parcels) as parcel
+        WHERE ws.world_name = ${normalizedWorldName}
+      ) unique_parcels
+      ORDER BY 
+        SPLIT_PART(parcel, ',', 1)::integer,
+        SPLIT_PART(parcel, ',', 2)::integer
+    `
+      .append(limit !== undefined ? SQL` LIMIT ${limit}` : SQL``)
+      .append(offset !== undefined ? SQL` OFFSET ${offset}` : SQL``)
+
+    // Execute both queries concurrently
+    const [countResult, result] = await Promise.all([
+      database.query<{ total: string }>(countQuery),
+      database.query<{ parcel: string }>(mainQuery)
+    ])
+
+    const total = parseInt(countResult.rows[0]?.total || '0', 10)
+
+    return {
+      parcels: result.rows.map((row) => row.parcel),
+      total
+    }
+  }
+
   return {
     getRawWorldRecords,
     getDeployedWorldCount,
@@ -944,6 +1003,7 @@ export async function createWorldsManagerComponent({
     getWorldSettings,
     getTotalWorldSize,
     getWorldBoundingRectangle,
-    getWorlds
+    getWorlds,
+    getOccupiedParcels
   }
 }

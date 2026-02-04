@@ -1,3 +1,5 @@
+import { WorldManifest } from '../../types'
+
 export interface IWorldsComponent {
   /**
    * Checks if a world exists and is valid (has scenes and is not blocked beyond grace period)
@@ -23,4 +25,12 @@ export interface IWorldsComponent {
    * @returns true if the world has the scene, false otherwise
    */
   hasWorldScene(worldName: string, sceneId: string): Promise<boolean>
+
+  /**
+   * Gets the world manifest containing all occupied parcels and spawn coordinates
+   *
+   * @param worldName - The name of the world
+   * @returns WorldManifest with parcels and spawnCoordinates, or undefined if no scenes exist
+   */
+  getWorldManifest(worldName: string): Promise<WorldManifest | undefined>
 }

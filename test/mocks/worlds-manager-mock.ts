@@ -289,6 +289,10 @@ export async function createWorldsManagerMockComponent({
     return { worlds: [], total: 0 }
   }
 
+  async function getOccupiedParcels() {
+    return { parcels: [], total: 0 }
+  }
+
   return {
     getContributableDomains,
     getRawWorldRecords,
@@ -304,7 +308,8 @@ export async function createWorldsManagerMockComponent({
     getWorldSettings,
     getTotalWorldSize,
     getWorldBoundingRectangle,
-    getWorlds
+    getWorlds,
+    getOccupiedParcels
   }
 }
 
