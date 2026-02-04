@@ -30,6 +30,7 @@ import { livekitWebhookHandler } from './handlers/livekit-webhook-handler'
 import { walletConnectedWorldHandler } from './handlers/wallet-connected-world-handler'
 import { getScenesHandler, undeploySceneHandler } from './handlers/scenes-handler'
 import { getWorldSettingsHandler, updateWorldSettingsHandler } from './handlers/world-settings-handler'
+import { getWorldManifestHandler } from './handlers/world-manifest-handler'
 import { permissionParcelsSchema } from './schemas/permission-parcels-schema'
 import { getWorldsHandler } from './handlers/worlds-handler'
 import { reprocessABSchema } from './schemas/reprocess-ab-schemas'
@@ -73,6 +74,9 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   // World settings
   router.get('/world/:world_name/settings', getWorldSettingsHandler)
   router.put('/world/:world_name/settings', signedFetchMiddleware, multipartParserWrapper(updateWorldSettingsHandler))
+
+  // World manifest
+  router.get('/world/:world_name/manifest', getWorldManifestHandler)
 
   // Worlds listing
   router.get('/worlds', getWorldsHandler)
