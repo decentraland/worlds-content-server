@@ -43,24 +43,8 @@ export async function getWorldManifestHandler(
 
   const { parcels, spawnCoordinates, total } = manifest
 
-  // Parse spawn coordinates or default to first parcel
-  let spawnX: string
-  let spawnY: string
-
-  if (spawnCoordinates) {
-    const [x, y] = spawnCoordinates.split(',')
-    spawnX = x
-    spawnY = y
-  } else if (parcels.length > 0) {
-    // Default to first occupied parcel if no spawn coordinates set
-    const [x, y] = parcels[0].split(',')
-    spawnX = x
-    spawnY = y
-  } else {
-    // Fallback if no parcels (shouldn't happen due to earlier check)
-    spawnX = '0'
-    spawnY = '0'
-  }
+  // Worlds with scenes should always have spawn coordinates set
+  const [spawnX, spawnY] = (spawnCoordinates ?? '0,0').split(',')
 
   const body: WorldManifestResponse = {
     occupied: parcels,
