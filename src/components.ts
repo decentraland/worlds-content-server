@@ -38,7 +38,7 @@ import { S3 } from 'aws-sdk'
 import { createNotificationsClientComponent } from './adapters/notifications-service'
 import { createNatsComponent } from '@well-known-components/nats-component'
 import { createSchemaValidatorComponent } from '@dcl/schema-validator-component'
-import { createLivekitClient, createStubLivekitClient } from './adapters/livekit-client'
+import { createLivekitClient } from './adapters/livekit-client'
 import { createPeersRegistry } from './adapters/peers-registry'
 import { createSettingsComponent } from './logic/settings'
 import { createCoordinatesComponent } from './logic/coordinates'
@@ -75,9 +75,7 @@ export async function initComponents(): Promise<AppComponents> {
 
   const nats = await createNatsComponent({ config, logs })
 
-  const commsAdapterType = await config.getString('COMMS_ADAPTER')
-  const livekitClient =
-    commsAdapterType === 'livekit' ? await createLivekitClient({ config }) : createStubLivekitClient()
+  const livekitClient = await createLivekitClient({ config })
   const commsAdapter: ICommsAdapter = await createCommsAdapterComponent({ config, fetch, logs, livekitClient })
 
   const rpcUrl = await config.requireString('RPC_URL')
