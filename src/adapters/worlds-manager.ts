@@ -988,6 +988,34 @@ export async function createWorldsManagerComponent({
     }
   }
 
+  /**
+   * Ensures a world record exists in the database, creating a minimal entry if it doesn't.
+   * Uses INSERT ... ON CONFLICT DO NOTHING so it is safe to call when the world already exists.
+   *
+   * @param worldName - The name of the world
+   * @param owner - The Ethereum address of the world owner
+   */
+  async function createBasicWorldIfNotExists(worldName: string, owner: EthAddress): Promise<void> {
+    await database.query(SQL`
+      INSERT INTO worlds (name, owner, access, created_at, updated_at)
+      VALUES (${worldName.toLowerCase()}, ${owner.toLowerCase()}, ${JSON.stringify(defaultAccess())}::jsonb, ${new Date()}, ${new Date()})
+      ON CONFLICT (name) DO NOTHING
+    `)
+  }
+
+  /**
+   * Checks whether a world record exists in the database.
+   *
+   * @param worldName - The name of the world to check
+   * @returns true if the world exists, false otherwise
+   */
+  async function worldExists(worldName: string): Promise<boolean> {
+    const result = await database.query<{ exists: boolean }>(SQL`
+      SELECT EXISTS(SELECT 1 FROM worlds WHERE name = ${worldName.toLowerCase()}) as exists
+    `)
+    return result.rows[0]?.exists ?? false
+  }
+
   return {
     getRawWorldRecords,
     getDeployedWorldCount,
@@ -1004,6 +1032,8 @@ export async function createWorldsManagerComponent({
     getTotalWorldSize,
     getWorldBoundingRectangle,
     getWorlds,
-    getOccupiedParcels
+    getOccupiedParcels,
+    createBasicWorldIfNotExists,
+    worldExists
   }
 }

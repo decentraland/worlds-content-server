@@ -5,21 +5,24 @@ import {
   WorldPermissionRecordForChecking
 } from '../../src/logic/permissions/types'
 import { InvalidPermissionRequestError, PermissionNotFoundError } from '../../src/logic/permissions/errors'
-import { IPermissionsManager } from '../../src/types'
+import { IPermissionsManager, IWorldsManager } from '../../src/types'
 import { IConfigComponent } from '@well-known-components/interfaces'
 import { IPublisherComponent } from '@dcl/sns-component'
 import { createMockedPermissionsManager } from '../mocks/permissions-manager-mock'
 import { createMockedConfig } from '../mocks/config-mock'
 import { createMockedSnsClient } from '../mocks/sns-client-mock'
+import { createMockedWorldsManager } from '../mocks/worlds-manager-mock'
 
 describe('PermissionsComponent', () => {
   let permissionsComponent: IPermissionsComponent
   let permissionsManager: jest.Mocked<IPermissionsManager>
+  let worldsManager: jest.Mocked<IWorldsManager>
   let config: jest.Mocked<IConfigComponent>
   let snsClient: jest.Mocked<IPublisherComponent>
 
   beforeEach(async () => {
     permissionsManager = createMockedPermissionsManager()
+    worldsManager = createMockedWorldsManager()
 
     config = createMockedConfig()
     config.requireString.mockImplementation((key: string) => {
@@ -36,7 +39,8 @@ describe('PermissionsComponent', () => {
     permissionsComponent = await createPermissionsComponent({
       config,
       permissionsManager,
-      snsClient
+      snsClient,
+      worldsManager
     })
   })
 
@@ -374,7 +378,10 @@ describe('PermissionsComponent', () => {
       })
 
       it('should remove old wallets not in the new list', async () => {
-        await permissionsComponent.setDeploymentPermission('test-world', PermissionType.AllowList, ['0xold2', '0xnew1'])
+        await permissionsComponent.setDeploymentPermission('test-world', '0xowner', PermissionType.AllowList, [
+          '0xold2',
+          '0xnew1'
+        ])
 
         expect(permissionsManager.removeAddressesPermission).toHaveBeenCalledWith('test-world', 'deployment', [
           '0xold1'
@@ -382,7 +389,10 @@ describe('PermissionsComponent', () => {
       })
 
       it('should add new wallets not in the old list', async () => {
-        await permissionsComponent.setDeploymentPermission('test-world', PermissionType.AllowList, ['0xold2', '0xnew1'])
+        await permissionsComponent.setDeploymentPermission('test-world', '0xowner', PermissionType.AllowList, [
+          '0xold2',
+          '0xnew1'
+        ])
 
         expect(permissionsManager.grantAddressesWorldWidePermission).toHaveBeenCalledWith('test-world', 'deployment', [
           '0xnew1'
@@ -393,7 +403,7 @@ describe('PermissionsComponent', () => {
     describe('and setting unrestricted permission', () => {
       it('should throw InvalidPermissionRequestError', async () => {
         await expect(
-          permissionsComponent.setDeploymentPermission('test-world', PermissionType.Unrestricted, [])
+          permissionsComponent.setDeploymentPermission('test-world', '0xowner', PermissionType.Unrestricted, [])
         ).rejects.toThrow(InvalidPermissionRequestError)
       })
     })
@@ -421,7 +431,7 @@ describe('PermissionsComponent', () => {
       })
 
       it('should remove all streaming entries', async () => {
-        await permissionsComponent.setStreamingPermission('test-world', PermissionType.Unrestricted)
+        await permissionsComponent.setStreamingPermission('test-world', '0xowner', PermissionType.Unrestricted)
 
         expect(permissionsManager.removeAddressesPermission).toHaveBeenCalledWith('test-world', 'streaming', ['0x1234'])
       })
@@ -434,7 +444,7 @@ describe('PermissionsComponent', () => {
       })
 
       it('should add the wallets', async () => {
-        await permissionsComponent.setStreamingPermission('test-world', PermissionType.AllowList, ['0x1234'])
+        await permissionsComponent.setStreamingPermission('test-world', '0xowner', PermissionType.AllowList, ['0x1234'])
 
         expect(permissionsManager.grantAddressesWorldWidePermission).toHaveBeenCalledWith('test-world', 'streaming', [
           '0x1234'
@@ -445,7 +455,7 @@ describe('PermissionsComponent', () => {
     describe('and setting an invalid permission type', () => {
       it('should throw InvalidPermissionRequestError', async () => {
         await expect(
-          permissionsComponent.setStreamingPermission('test-world', 'invalid' as PermissionType)
+          permissionsComponent.setStreamingPermission('test-world', '0xowner', 'invalid' as PermissionType)
         ).rejects.toThrow(InvalidPermissionRequestError)
       })
     })

@@ -263,6 +263,63 @@ test('POST /world/:world_name/permissions/:permission_name', ({ components, stub
     })
   })
 
+  describe('when the world does not exist', () => {
+    let nonExistentWorldName: string
+
+    beforeEach(() => {
+      nonExistentWorldName = worldCreator.randomWorldName()
+
+      stubComponents.namePermissionChecker.checkPermission
+        .withArgs(identity.authChain.authChain[0].payload.toLowerCase(), nonExistentWorldName)
+        .resolves(true)
+    })
+
+    describe('and setting deployment permissions', () => {
+      it('should create the world and respond with 204', async () => {
+        const response = await localFetch.fetch(`/world/${nonExistentWorldName}/permissions/deployment`, {
+          method: 'POST',
+          identity,
+          metadata: { ...BUILDER_METADATA, type: PermissionType.AllowList, wallets: [] }
+        })
+
+        expect(response.status).toBe(204)
+
+        const exists = await worldsManager.worldExists(nonExistentWorldName)
+        expect(exists).toBe(true)
+      })
+    })
+
+    describe('and setting streaming permissions', () => {
+      it('should create the world and respond with 204', async () => {
+        const response = await localFetch.fetch(`/world/${nonExistentWorldName}/permissions/streaming`, {
+          method: 'POST',
+          identity,
+          metadata: { ...BUILDER_METADATA, type: PermissionType.AllowList, wallets: [] }
+        })
+
+        expect(response.status).toBe(204)
+
+        const exists = await worldsManager.worldExists(nonExistentWorldName)
+        expect(exists).toBe(true)
+      })
+    })
+
+    describe('and setting access permissions', () => {
+      it('should create the world and respond with 204', async () => {
+        const response = await localFetch.fetch(`/world/${nonExistentWorldName}/permissions/access`, {
+          method: 'POST',
+          identity,
+          metadata: { ...BUILDER_METADATA, type: AccessType.Unrestricted }
+        })
+
+        expect(response.status).toBe(204)
+
+        const exists = await worldsManager.worldExists(nonExistentWorldName)
+        expect(exists).toBe(true)
+      })
+    })
+  })
+
   describe('when the caller is not the world owner', () => {
     let nonOwnerIdentity: Identity
 

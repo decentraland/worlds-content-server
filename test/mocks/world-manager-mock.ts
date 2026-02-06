@@ -20,6 +20,8 @@ export function createMockedWorldsManager(
     getWorldBoundingRectangle: jest.fn(),
     getWorlds: jest.fn(),
     getOccupiedParcels: jest.fn(),
+    createBasicWorldIfNotExists: jest.fn(),
+    worldExists: jest.fn(),
     ...overrides
   }
 }

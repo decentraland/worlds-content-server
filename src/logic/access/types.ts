@@ -44,7 +44,7 @@ export type AccessInput = {
 export type IAccessComponent = {
   checkAccess(worldName: string, ethAddress: EthAddress, extras?: any): Promise<boolean>
   setAccess(worldName: string, signer: EthAddress, input: AccessInput): Promise<void>
-  addWalletToAccessAllowList(worldName: string, wallet: EthAddress): Promise<void>
+  addWalletToAccessAllowList(worldName: string, owner: EthAddress, wallet: EthAddress): Promise<void>
   removeWalletFromAccessAllowList(worldName: string, wallet: EthAddress): Promise<void>
   addCommunityToAccessAllowList(worldName: string, signer: EthAddress, communityId: string): Promise<void>
   removeCommunityFromAccessAllowList(worldName: string, communityId: string): Promise<void>

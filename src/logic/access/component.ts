@@ -172,18 +172,23 @@ export async function createAccessComponent({
       }
     }
 
+    await worldsManager.createBasicWorldIfNotExists(worldName, signer)
     await worldsManager.storeAccess(worldName, accessSetting)
   }
 
   /**
    * Adds a wallet to the access allow-list for a world.
+   * Ensures the world entry exists before modifying permissions.
    * The world must have allow-list access type for this operation to succeed.
    *
    * @param worldName - The name of the world
+   * @param owner - The Ethereum address of the world owner
    * @param wallet - The wallet address to add to the allow-list
    * @throws {NotAllowListAccessError} If the world does not have allow-list access type
    */
-  async function addWalletToAccessAllowList(worldName: string, wallet: EthAddress): Promise<void> {
+  async function addWalletToAccessAllowList(worldName: string, owner: EthAddress, wallet: EthAddress): Promise<void> {
+    await worldsManager.createBasicWorldIfNotExists(worldName, owner)
+
     const access = await getAccessForWorld(worldName)
 
     if (access.type !== AccessType.AllowList) {

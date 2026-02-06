@@ -72,10 +72,15 @@ export type IPermissionsComponent = {
     parcels: string[]
   ): Promise<boolean>
   hasWorldWidePermission(worldName: string, permission: AllowListPermission, ethAddress: EthAddress): Promise<boolean>
-  grantWorldWidePermission(worldName: string, permission: AllowListPermission, wallets: string[]): Promise<void>
+  grantWorldWidePermission(
+    worldName: string,
+    permission: AllowListPermission,
+    wallets: string[],
+    owner?: EthAddress
+  ): Promise<void>
   revokePermission(worldName: string, permission: AllowListPermission, addresses: string[]): Promise<void>
-  setDeploymentPermission(worldName: string, type: PermissionType, wallets: string[]): Promise<void>
-  setStreamingPermission(worldName: string, type: PermissionType, wallets?: string[]): Promise<void>
+  setDeploymentPermission(worldName: string, owner: EthAddress, type: PermissionType, wallets: string[]): Promise<void>
+  setStreamingPermission(worldName: string, owner: EthAddress, type: PermissionType, wallets?: string[]): Promise<void>
   addParcelsToPermission(
     worldName: string,
     permission: AllowListPermission,
