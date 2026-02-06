@@ -103,6 +103,31 @@ test('DELETE /world/:world_name/permissions/:permission_name/:address', ({ compo
     })
   })
 
+  describe('when the world does not exist', () => {
+    let nonExistentWorldName: string
+    let addressToRemove: Identity
+
+    beforeEach(async () => {
+      nonExistentWorldName = worldCreator.randomWorldName()
+      addressToRemove = await getIdentity()
+
+      stubComponents.namePermissionChecker.checkPermission
+        .withArgs(identity.authChain.authChain[0].payload.toLowerCase(), nonExistentWorldName)
+        .resolves(true)
+    })
+
+    it('should respond with 404 and a world not found error', async () => {
+      const path = `/world/${nonExistentWorldName}/permissions/deployment/${addressToRemove.realAccount.address}`
+      const response = await localFetch.fetch(path, { method: 'DELETE', identity, metadata: BUILDER_METADATA })
+
+      expect(response.status).toEqual(404)
+      expect(await response.json()).toMatchObject({
+        error: 'Not Found',
+        message: `World "${nonExistentWorldName}" not found.`
+      })
+    })
+  })
+
   describe('when the address is invalid', () => {
     let path: string
 

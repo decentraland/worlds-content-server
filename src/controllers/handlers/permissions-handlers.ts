@@ -128,13 +128,19 @@ export async function postPermissionsHandler(
       case 'deployment': {
         await permissions.setDeploymentPermission(
           worldName,
+          ctx.verification!.auth,
           authMetadata.type as PermissionType,
           authMetadata.wallets || []
         )
         break
       }
       case 'streaming': {
-        await permissions.setStreamingPermission(worldName, authMetadata.type as PermissionType, authMetadata.wallets)
+        await permissions.setStreamingPermission(
+          worldName,
+          ctx.verification!.auth,
+          authMetadata.type as PermissionType,
+          authMetadata.wallets
+        )
         break
       }
       case 'access': {
@@ -191,10 +197,10 @@ export async function putPermissionsAddressHandler(
 
   try {
     if (isAllowListPermission(permissionName)) {
-      await permissions.grantWorldWidePermission(worldName, permissionName, [address])
+      await permissions.grantWorldWidePermission(worldName, permissionName, [address], ctx.verification!.auth)
     } else {
       // permissionName === 'access'
-      await access.addWalletToAccessAllowList(worldName, address)
+      await access.addWalletToAccessAllowList(worldName, ctx.verification!.auth, address)
     }
   } catch (error) {
     if (error instanceof NotAllowListAccessError) {
@@ -364,12 +370,12 @@ export async function getAllowedParcelsForPermissionHandler(
  */
 export async function deletePermissionsAddressHandler(
   ctx: HandlerContextWithPath<
-    'namePermissionChecker' | 'permissions' | 'access',
+    'namePermissionChecker' | 'permissions' | 'access' | 'worlds',
     '/world/:world_name/permissions/:permission_name/:address'
   > &
     DecentralandSignatureContext<any>
 ): Promise<IHttpServerComponent.IResponse> {
-  const { namePermissionChecker, permissions, access } = ctx.components
+  const { namePermissionChecker, permissions, access, worlds } = ctx.components
 
   const worldName = ctx.params.world_name
   const permissionName = ctx.params.permission_name
@@ -386,6 +392,12 @@ export async function deletePermissionsAddressHandler(
   }
 
   await checkOwnership(namePermissionChecker, ctx.verification!.auth, worldName)
+
+  // Return 404 if the world does not exist or is not valid
+  const isValid = await worlds.isWorldValid(worldName)
+  if (!isValid) {
+    throw new NotFoundError(`World "${worldName}" not found.`)
+  }
 
   try {
     if (isAllowListPermission(permissionName)) {

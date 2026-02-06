@@ -135,6 +135,37 @@ test('PUT /world/:world_name/permissions/:permission_name/:address', ({ componen
     })
   })
 
+  describe('when the world does not exist', () => {
+    let nonExistentWorldName: string
+    let addressToAllow: Identity
+
+    beforeEach(async () => {
+      nonExistentWorldName = worldCreator.randomWorldName()
+      addressToAllow = await getIdentity()
+
+      stubComponents.namePermissionChecker.checkPermission
+        .withArgs(identity.authChain.authChain[0].payload.toLowerCase(), nonExistentWorldName)
+        .resolves(true)
+    })
+
+    it('should create the world and respond with 204', async () => {
+      const path = `/world/${nonExistentWorldName}/permissions/deployment/${addressToAllow.realAccount.address}`
+      const response = await localFetch.fetch(path, { method: 'PUT', identity, metadata: BUILDER_METADATA })
+
+      expect(response.status).toBe(204)
+
+      const exists = await worldsManager.worldExists(nonExistentWorldName)
+      expect(exists).toBe(true)
+
+      const hasPermission = await permissions.hasWorldWidePermission(
+        nonExistentWorldName,
+        'deployment',
+        addressToAllow.realAccount.address
+      )
+      expect(hasPermission).toBe(true)
+    })
+  })
+
   describe('when the address is invalid', () => {
     let path: string
 

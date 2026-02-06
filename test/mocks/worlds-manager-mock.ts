@@ -293,6 +293,15 @@ export async function createWorldsManagerMockComponent({
     return { parcels: [], total: 0 }
   }
 
+  async function createBasicWorldIfNotExists(_worldName: string, _owner: EthAddress): Promise<void> {
+    // Mock implementation - no-op
+  }
+
+  async function worldExists(worldName: string): Promise<boolean> {
+    const content = await storage.retrieve(`name-${worldName.toLowerCase()}`)
+    return content !== undefined
+  }
+
   return {
     getContributableDomains,
     getRawWorldRecords,
@@ -309,7 +318,9 @@ export async function createWorldsManagerMockComponent({
     getTotalWorldSize,
     getWorldBoundingRectangle,
     getWorlds,
-    getOccupiedParcels
+    getOccupiedParcels,
+    createBasicWorldIfNotExists,
+    worldExists
   }
 }
 
@@ -331,6 +342,8 @@ export function createMockedWorldsManager(
     getWorldScenes: jest.fn(),
     getTotalWorldSize: jest.fn(),
     getWorldBoundingRectangle: jest.fn(),
+    createBasicWorldIfNotExists: jest.fn(),
+    worldExists: jest.fn(),
     ...overrides
   } as jest.Mocked<IWorldsManager>
 }

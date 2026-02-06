@@ -361,6 +361,8 @@ export type IWorldsManager = {
   getWorldBoundingRectangle(worldName: string): Promise<WorldBoundingRectangle | undefined>
   getWorlds(filters?: GetWorldsFilters, options?: GetWorldsOptions): Promise<GetWorldsResult>
   getOccupiedParcels(worldName: string, options?: GetOccupiedParcelsOptions): Promise<GetOccupiedParcelsResult>
+  createBasicWorldIfNotExists(worldName: string, owner: EthAddress): Promise<void>
+  worldExists(worldName: string): Promise<boolean>
 }
 
 export type IPermissionsManager = {

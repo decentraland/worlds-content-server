@@ -7,8 +7,12 @@ import { randomUUID } from 'crypto'
 export async function createPermissionsComponent({
   config,
   permissionsManager,
-  snsClient
-}: Pick<AppComponents, 'config' | 'permissionsManager' | 'snsClient'>): Promise<IPermissionsComponent> {
+  snsClient,
+  worldsManager
+}: Pick<
+  AppComponents,
+  'config' | 'permissionsManager' | 'snsClient' | 'worldsManager'
+>): Promise<IPermissionsComponent> {
   const builderUrl = await config.requireString('BUILDER_URL')
 
   /**
@@ -154,18 +158,25 @@ export async function createPermissionsComponent({
   /**
    * Grants world-wide permission to multiple wallets for a world.
    * Sends a notification to each wallet about the granted permission.
+   * When owner is provided, ensures the world entry exists before granting permissions.
    *
    * @param worldName - The name of the world
    * @param permission - The type of permission ('deployment' or 'streaming')
    * @param wallets - Array of wallet addresses to grant world-wide permission to
+   * @param owner - Optional owner address; when provided, ensures the world entry exists
    */
   async function grantWorldWidePermission(
     worldName: string,
     permission: AllowListPermission,
-    wallets: string[]
+    wallets: string[],
+    owner?: EthAddress
   ): Promise<void> {
     if (wallets.length === 0) {
       return
+    }
+
+    if (owner) {
+      await worldsManager.createBasicWorldIfNotExists(worldName, owner)
     }
 
     // Batch insert all addresses and get the ones that were actually added
@@ -202,17 +213,26 @@ export async function createPermissionsComponent({
   /**
    * Sets deployment permission for a world. Deployment is always allow-list.
    * Replaces all existing deployment wallets with the provided ones.
+   * Ensures the world entry exists before modifying permissions.
    *
    * @param worldName - The name of the world
+   * @param owner - The Ethereum address of the world owner
    * @param type - Must be 'allow-list' for deployment
    * @param wallets - Array of wallet addresses to grant deployment permission
    */
-  async function setDeploymentPermission(worldName: string, type: PermissionType, wallets: string[]): Promise<void> {
+  async function setDeploymentPermission(
+    worldName: string,
+    owner: EthAddress,
+    type: PermissionType,
+    wallets: string[]
+  ): Promise<void> {
     if (type !== PermissionType.AllowList) {
       throw new InvalidPermissionRequestError(
         `Invalid payload received. Deployment permission needs to be '${PermissionType.AllowList}'.`
       )
     }
+
+    await worldsManager.createBasicWorldIfNotExists(worldName, owner)
 
     const lowerCaseWorldName = worldName.toLowerCase()
 
@@ -239,17 +259,26 @@ export async function createPermissionsComponent({
 
   /**
    * Sets streaming permission for a world.
+   * Ensures the world entry exists before modifying permissions.
    *
    * @param worldName - The name of the world
+   * @param owner - The Ethereum address of the world owner
    * @param type - Either 'unrestricted' or 'allow-list'
    * @param wallets - Array of wallet addresses (only used when type is 'allow-list')
    */
-  async function setStreamingPermission(worldName: string, type: PermissionType, wallets?: string[]): Promise<void> {
+  async function setStreamingPermission(
+    worldName: string,
+    owner: EthAddress,
+    type: PermissionType,
+    wallets?: string[]
+  ): Promise<void> {
     if (type !== PermissionType.Unrestricted && type !== PermissionType.AllowList) {
       throw new InvalidPermissionRequestError(
         `Invalid payload received. Streaming permission needs to be either '${PermissionType.Unrestricted}' or '${PermissionType.AllowList}'.`
       )
     }
+
+    await worldsManager.createBasicWorldIfNotExists(worldName, owner)
 
     const lowerCaseWorldName = worldName.toLowerCase()
 

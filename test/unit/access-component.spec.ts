@@ -33,7 +33,8 @@ describe('AccessComponent', () => {
   beforeEach(() => {
     worldsManager = {
       getRawWorldRecords: jest.fn(),
-      storeAccess: jest.fn()
+      storeAccess: jest.fn(),
+      createBasicWorldIfNotExists: jest.fn()
     } as unknown as jest.Mocked<IWorldsManager>
 
     socialService = {
@@ -528,7 +529,7 @@ describe('AccessComponent', () => {
         })
 
         it('should add the wallet to the list', async () => {
-          await accessComponent.addWalletToAccessAllowList('test-world', '0x5678')
+          await accessComponent.addWalletToAccessAllowList('test-world', TEST_SIGNER, '0x5678')
 
           expect(worldsManager.storeAccess).toHaveBeenCalledWith('test-world', {
             type: AccessType.AllowList,
@@ -546,7 +547,7 @@ describe('AccessComponent', () => {
         })
 
         it('should not add the wallet again (idempotent)', async () => {
-          await accessComponent.addWalletToAccessAllowList('test-world', '0x5678')
+          await accessComponent.addWalletToAccessAllowList('test-world', TEST_SIGNER, '0x5678')
 
           expect(worldsManager.storeAccess).not.toHaveBeenCalled()
         })
@@ -560,7 +561,7 @@ describe('AccessComponent', () => {
         })
 
         it('should not add the wallet again (case insensitive)', async () => {
-          await accessComponent.addWalletToAccessAllowList('test-world', '0xabcd')
+          await accessComponent.addWalletToAccessAllowList('test-world', TEST_SIGNER, '0xabcd')
 
           expect(worldsManager.storeAccess).not.toHaveBeenCalled()
         })
@@ -574,7 +575,7 @@ describe('AccessComponent', () => {
         })
 
         it('should add the wallet to the empty list', async () => {
-          await accessComponent.addWalletToAccessAllowList('test-world', '0x5678')
+          await accessComponent.addWalletToAccessAllowList('test-world', TEST_SIGNER, '0x5678')
 
           expect(worldsManager.storeAccess).toHaveBeenCalledWith('test-world', {
             type: AccessType.AllowList,
@@ -591,13 +592,15 @@ describe('AccessComponent', () => {
       })
 
       it('should throw NotAllowListAccessError', async () => {
-        await expect(accessComponent.addWalletToAccessAllowList('test-world', '0x1234')).rejects.toThrow(
+        await expect(accessComponent.addWalletToAccessAllowList('test-world', TEST_SIGNER, '0x1234')).rejects.toThrow(
           NotAllowListAccessError
         )
       })
 
       it('should include the world name in the error message', async () => {
-        await expect(accessComponent.addWalletToAccessAllowList('test-world', '0x1234')).rejects.toThrow('test-world')
+        await expect(accessComponent.addWalletToAccessAllowList('test-world', TEST_SIGNER, '0x1234')).rejects.toThrow(
+          'test-world'
+        )
       })
     })
 
@@ -609,7 +612,7 @@ describe('AccessComponent', () => {
       })
 
       it('should throw NotAllowListAccessError', async () => {
-        await expect(accessComponent.addWalletToAccessAllowList('test-world', '0x1234')).rejects.toThrow(
+        await expect(accessComponent.addWalletToAccessAllowList('test-world', TEST_SIGNER, '0x1234')).rejects.toThrow(
           NotAllowListAccessError
         )
       })
@@ -623,7 +626,7 @@ describe('AccessComponent', () => {
       })
 
       it('should throw NotAllowListAccessError', async () => {
-        await expect(accessComponent.addWalletToAccessAllowList('test-world', '0x1234')).rejects.toThrow(
+        await expect(accessComponent.addWalletToAccessAllowList('test-world', TEST_SIGNER, '0x1234')).rejects.toThrow(
           NotAllowListAccessError
         )
       })
@@ -635,7 +638,7 @@ describe('AccessComponent', () => {
       })
 
       it('should throw NotAllowListAccessError', async () => {
-        await expect(accessComponent.addWalletToAccessAllowList('test-world', '0x1234')).rejects.toThrow(
+        await expect(accessComponent.addWalletToAccessAllowList('test-world', TEST_SIGNER, '0x1234')).rejects.toThrow(
           NotAllowListAccessError
         )
       })
