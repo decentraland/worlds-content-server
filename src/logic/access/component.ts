@@ -2,11 +2,14 @@ import { AppComponents } from '../../types'
 import { AccessInput, AccessSetting, AccessType, IAccessComponent } from './types'
 import { EthAddress } from '@dcl/schemas'
 import bcrypt from 'bcrypt'
-import { defaultAccess, MAX_COMMUNITIES } from './constants'
-import { InvalidAccessTypeError, NotAllowListAccessError, UnauthorizedCommunityError } from './errors'
+import { defaultAccess, DEFAULT_MAX_COMMUNITIES, DEFAULT_MAX_WALLETS, SALT_ROUNDS } from './constants'
+import {
+  InvalidAccessTypeError,
+  InvalidAllowListSettingError,
+  NotAllowListAccessError,
+  UnauthorizedCommunityError
+} from './errors'
 import { ISocialServiceComponent } from '../../adapters/social-service'
-
-const saltRounds = 10
 
 type CheckingFunction = (ethAddress: EthAddress, extras?: any) => Promise<boolean>
 
@@ -54,10 +57,14 @@ function createAllowListCheckerFactory(socialService: ISocialServiceComponent) {
   }
 }
 
-export function createAccessComponent({
+export async function createAccessComponent({
+  config,
   socialService,
   worldsManager
-}: Pick<AppComponents, 'socialService' | 'worldsManager'>): IAccessComponent {
+}: Pick<AppComponents, 'config' | 'socialService' | 'worldsManager'>): Promise<IAccessComponent> {
+  const maxCommunities = (await config.getNumber('ACCESS_MAX_COMMUNITIES')) ?? DEFAULT_MAX_COMMUNITIES
+  const maxWallets = (await config.getNumber('ACCESS_MAX_WALLETS')) ?? DEFAULT_MAX_WALLETS
+
   const createAllowListChecker = createAllowListCheckerFactory(socialService)
 
   function createAccessCheckerFrom(accessSetting: AccessSetting): CheckingFunction {
@@ -108,9 +115,16 @@ export function createAccessComponent({
 
     switch (type) {
       case AccessType.AllowList: {
-        if (communities && communities.length > MAX_COMMUNITIES) {
-          throw new InvalidAccessTypeError(
-            `Too many communities. Maximum allowed is ${MAX_COMMUNITIES}, but ${communities.length} were provided.`
+        if (communities && communities.length > maxCommunities) {
+          throw new InvalidAllowListSettingError(
+            `Too many communities. Maximum allowed is ${maxCommunities}, but ${communities.length} were provided.`
+          )
+        }
+
+        const walletList = wallets || []
+        if (walletList.length > maxWallets) {
+          throw new InvalidAllowListSettingError(
+            `Too many wallets in allow-list. Maximum allowed is ${maxWallets}, but ${walletList.length} were provided.`
           )
         }
 
@@ -127,7 +141,7 @@ export function createAccessComponent({
 
         accessSetting = {
           type: AccessType.AllowList,
-          wallets: wallets || [],
+          wallets: walletList,
           communities: communities || []
         }
         break
@@ -149,7 +163,7 @@ export function createAccessComponent({
         }
         accessSetting = {
           type: AccessType.SharedSecret,
-          secret: bcrypt.hashSync(secret, saltRounds)
+          secret: bcrypt.hashSync(secret, SALT_ROUNDS)
         }
         break
       }
@@ -184,9 +198,16 @@ export function createAccessComponent({
       return // Already in the list, idempotent operation
     }
 
+    const updatedWallets = [...existingWallets, lowerWallet]
+    if (updatedWallets.length > maxWallets) {
+      throw new InvalidAllowListSettingError(
+        `Cannot add wallet: allow-list would exceed the maximum of ${maxWallets} wallets.`
+      )
+    }
+
     const updatedAccess: AccessSetting = {
       ...access,
-      wallets: [...existingWallets, lowerWallet]
+      wallets: updatedWallets
     }
 
     await worldsManager.storeAccess(worldName, updatedAccess)
