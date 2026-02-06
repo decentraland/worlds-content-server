@@ -181,12 +181,11 @@ describe('comms-adapter', function () {
       })
       const logs = await createLogComponent({ config })
 
-      const livekitClient = createMockLivekitClient({
-        listRooms: jest.fn().mockResolvedValue([
-          { name: 'world-prd-mariano.dcl.eth', numParticipants: 3 },
-          { name: 'world-prd-another-world.dcl.eth', numParticipants: 1 }
-        ])
-      })
+      const listRoomsMock = jest.fn().mockResolvedValue([
+        { name: 'world-prd-mariano.dcl.eth', numParticipants: 3 },
+        { name: 'world-prd-another-world.dcl.eth', numParticipants: 1 }
+      ])
+      const livekitClient = createMockLivekitClient({ listRooms: listRoomsMock })
 
       const fetch: IFetchComponent = {
         fetch: async (_url: Request): Promise<Response> => new Response(undefined)
@@ -208,6 +207,99 @@ describe('comms-adapter', function () {
           }
         ]
       })
+      expect(listRoomsMock).toHaveBeenCalledTimes(2)
+      expect(listRoomsMock).toHaveBeenNthCalledWith(1)
+      expect(listRoomsMock).toHaveBeenNthCalledWith(2, ['world-prd-mariano.dcl.eth', 'world-prd-another-world.dcl.eth'])
+    })
+
+    it('chunks world room names in batches of 10 when resolving status', async () => {
+      const config: IConfigComponent = await createConfigComponent({
+        COMMS_ADAPTER: 'livekit',
+        COMMS_ROOM_PREFIX: 'world-',
+        SCENE_ROOM_PREFIX: 'scene-',
+        LIVEKIT_HOST: 'livekit.dcl.org',
+        LIVEKIT_API_KEY: 'myApiKey',
+        LIVEKIT_API_SECRET: 'myApiSecret'
+      })
+      const logs = await createLogComponent({ config })
+
+      const allRooms = Array.from({ length: 12 }, (_, i) => ({
+        name: `world-room-${i + 1}`,
+        numParticipants: 0
+      }))
+      const chunk1 = Array.from({ length: 10 }, (_, i) => ({
+        name: `world-room-${i + 1}`,
+        numParticipants: i + 1
+      }))
+      const chunk2 = [
+        { name: 'world-room-11', numParticipants: 2 },
+        { name: 'world-room-12', numParticipants: 1 }
+      ]
+
+      const listRoomsMock = jest
+        .fn()
+        .mockResolvedValueOnce(allRooms)
+        .mockResolvedValueOnce(chunk1)
+        .mockResolvedValueOnce(chunk2)
+
+      const livekitClient = createMockLivekitClient({ listRooms: listRoomsMock })
+
+      const fetch: IFetchComponent = {
+        fetch: async (_url: Request): Promise<Response> => new Response(undefined)
+      }
+      const commsAdapter = await createCommsAdapterComponent({ config, fetch, logs, livekitClient })
+
+      const adapter = await commsAdapter.status()
+
+      const expectedUsers = chunk1.reduce((s, r) => s + r.numParticipants, 0) + 2 + 1
+      expect(adapter.rooms).toBe(12)
+      expect(adapter.users).toBe(expectedUsers)
+      expect(adapter.details).toHaveLength(12)
+
+      expect(listRoomsMock).toHaveBeenCalledTimes(3)
+      expect(listRoomsMock).toHaveBeenNthCalledWith(1)
+      expect(listRoomsMock).toHaveBeenNthCalledWith(
+        2,
+        Array.from({ length: 10 }, (_, i) => `world-room-${i + 1}`)
+      )
+      expect(listRoomsMock).toHaveBeenNthCalledWith(3, ['world-room-11', 'world-room-12'])
+    })
+
+    it('returns partial details when a chunk request fails', async () => {
+      const config: IConfigComponent = await createConfigComponent({
+        COMMS_ADAPTER: 'livekit',
+        COMMS_ROOM_PREFIX: 'world-',
+        SCENE_ROOM_PREFIX: 'scene-',
+        LIVEKIT_HOST: 'livekit.dcl.org',
+        LIVEKIT_API_KEY: 'myApiKey',
+        LIVEKIT_API_SECRET: 'myApiSecret'
+      })
+      const logs = await createLogComponent({ config })
+
+      const allRooms = [
+        { name: 'world-room-1', numParticipants: 0 },
+        { name: 'world-room-2', numParticipants: 0 }
+      ]
+      const listRoomsMock = jest
+        .fn()
+        .mockResolvedValueOnce(allRooms)
+        .mockRejectedValueOnce(new Error('Chunk request failed'))
+
+      const livekitClient = createMockLivekitClient({ listRooms: listRoomsMock })
+
+      const fetch: IFetchComponent = {
+        fetch: async (_url: Request): Promise<Response> => new Response(undefined)
+      }
+      const commsAdapter = await createCommsAdapterComponent({ config, fetch, logs, livekitClient })
+
+      const adapter = await commsAdapter.status()
+
+      expect(adapter.adapterType).toBe('livekit')
+      expect(adapter.rooms).toBe(0)
+      expect(adapter.users).toBe(0)
+      expect(adapter.details).toHaveLength(0)
+      expect(listRoomsMock).toHaveBeenCalledTimes(2)
+      expect(listRoomsMock).toHaveBeenNthCalledWith(2, ['world-room-1', 'world-room-2'])
     })
 
     it('refuses to initialize when misconfigured', async () => {

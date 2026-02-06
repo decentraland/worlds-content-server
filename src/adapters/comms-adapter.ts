@@ -2,6 +2,7 @@ import { AppComponents, CommsStatus, ICommsAdapter, LivekitClient, WorldStatus }
 import { EthAddress } from '@dcl/schemas'
 import { TrackSource, VideoGrant } from 'livekit-server-sdk'
 import { LRUCache } from 'lru-cache'
+import { chunks } from '../logic/utils'
 
 export async function createCommsAdapterComponent({
   config,
@@ -116,14 +117,34 @@ function createLiveKitAdapter(
   return {
     async status(): Promise<CommsStatus> {
       try {
-        // TODO: check if we still need to chunk the room names because the endpoint retrieves max_participants for the first 10 rooms
-        const rooms = await livekitClient.listRooms()
-        const roomsWithUsers: WorldStatus[] = rooms
-          .filter((room) => room.name.startsWith(worldRoomPrefix) && room.numParticipants > 0)
-          .map((room) => ({
-            worldName: room.name.substring(worldRoomPrefix.length),
-            users: room.numParticipants
-          }))
+        const allRooms = await livekitClient.listRooms()
+        const worldRoomNames = allRooms.filter((room) => room.name.startsWith(worldRoomPrefix)).map((room) => room.name)
+
+        const LIST_ROOMS_PARTICIPANT_LIMIT = 10
+        const roomsWithUsers: WorldStatus[] = (
+          await Promise.all(
+            chunks(worldRoomNames, LIST_ROOMS_PARTICIPANT_LIMIT).map(
+              async (chunkedRoomNames: string[]): Promise<WorldStatus[]> => {
+                try {
+                  const rooms = await livekitClient.listRooms(chunkedRoomNames)
+                  return rooms.map((room) => ({
+                    worldName: room.name.substring(worldRoomPrefix.length),
+                    users: room.numParticipants
+                  }))
+                } catch (error) {
+                  logger.error(`Error retrieving comms status for chunk: ${(error as Error).message}`)
+                  return chunkedRoomNames.map((worldRoomName) => ({
+                    worldName: worldRoomName.substring(worldRoomPrefix.length),
+                    users: 0
+                  }))
+                }
+              }
+            )
+          )
+        )
+          .flat()
+          .filter((room) => room.users > 0)
+
         return {
           adapterType: 'livekit',
           statusUrl: `https://${host}/`,
