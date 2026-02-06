@@ -155,11 +155,12 @@ async function initComponents(): Promise<TestComponents> {
 
   const worlds = createWorldsComponent({ worldsManager })
 
-  const comms = createCommsComponent({
+  const comms = await createCommsComponent({
     namePermissionChecker,
     access,
     worlds,
-    commsAdapter
+    commsAdapter,
+    config
   })
 
   return {

@@ -75,7 +75,8 @@ export async function initComponents(): Promise<AppComponents> {
 
   const nats = await createNatsComponent({ config, logs })
 
-  const commsAdapter: ICommsAdapter = await createCommsAdapterComponent({ config, fetch, logs })
+  const livekitClient = await createLivekitClient({ config })
+  const commsAdapter: ICommsAdapter = await createCommsAdapterComponent({ config, fetch, logs, livekitClient })
 
   const rpcUrl = await config.requireString('RPC_URL')
   const ethereumProvider = new HTTPProvider(rpcUrl, fetch)
@@ -173,7 +174,6 @@ export async function initComponents(): Promise<AppComponents> {
   })
 
   const peersRegistry = await createPeersRegistry({ config })
-  const livekitClient = await createLivekitClient({ config })
   const settings = await createSettingsComponent({
     config,
     coordinates,
@@ -186,11 +186,12 @@ export async function initComponents(): Promise<AppComponents> {
 
   const worlds = createWorldsComponent({ worldsManager })
 
-  const comms = createCommsComponent({
+  const comms = await createCommsComponent({
     namePermissionChecker,
     access,
     commsAdapter,
-    worlds
+    worlds,
+    config
   })
 
   return {

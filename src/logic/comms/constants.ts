@@ -1,0 +1,1 @@
+export const DEFAULT_MAX_USERS_PER_WORLD = 100
