@@ -37,7 +37,6 @@ test('PUT /world/:world_name/permissions/access/communities/:communityId', ({ co
     stubComponents.namePermissionChecker.checkPermission
       .withArgs(identity.authChain.authChain[0].payload.toLowerCase(), worldName)
       .resolves(true)
-
     ;(components.socialService as jest.Mocked<ISocialServiceComponent>).getMemberCommunities.mockResolvedValue({
       communities: [{ id: COMMUNITY_ID }]
     })
@@ -101,7 +100,6 @@ test('PUT /world/:world_name/permissions/access/communities/:communityId', ({ co
         wallets: [],
         communities: []
       })
-
       ;(components.socialService as jest.Mocked<ISocialServiceComponent>).getMemberCommunities.mockResolvedValue({
         communities: []
       })
