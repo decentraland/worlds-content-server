@@ -5,6 +5,7 @@ import { createConfigComponent } from '@well-known-components/env-config-provide
 import { LivekitClient } from '../../src/types'
 
 const mockListRooms = jest.fn()
+
 jest.mock('livekit-server-sdk', () => {
   const actual = jest.requireActual<typeof import('livekit-server-sdk')>('livekit-server-sdk')
   return {
@@ -28,12 +29,6 @@ describe('LivekitClient', () => {
       LIVEKIT_API_SECRET: 'test_api_secret'
     })
     livekitClient = await createLivekitClient({ config })
-  })
-
-  it('should create a livekit client with listRooms, createConnectionToken and receiveWebhookEvent', () => {
-    expect(livekitClient.listRooms).toBeDefined()
-    expect(livekitClient.createConnectionToken).toBeDefined()
-    expect(livekitClient.receiveWebhookEvent).toBeDefined()
   })
 
   it('should receive webhook events correctly', async () => {

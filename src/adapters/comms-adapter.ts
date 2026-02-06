@@ -116,6 +116,7 @@ function createLiveKitAdapter(
   return {
     async status(): Promise<CommsStatus> {
       try {
+        // TODO: check if we still need to chunk the room names because the endpoint retrieves max_participants for the first 10 rooms
         const rooms = await livekitClient.listRooms()
         const roomsWithUsers: WorldStatus[] = rooms
           .filter((room) => room.name.startsWith(worldRoomPrefix) && room.numParticipants > 0)
