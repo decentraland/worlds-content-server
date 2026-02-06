@@ -886,7 +886,11 @@ describe('AccessComponent', () => {
       describe('and the community is already in the list', () => {
         beforeEach(() => {
           worldsManager.getRawWorldRecords.mockResolvedValueOnce(
-            mockRawWorldRecords({ type: AccessType.AllowList, wallets: [], communities: ['community-1', 'community-2'] })
+            mockRawWorldRecords({
+              type: AccessType.AllowList,
+              wallets: [],
+              communities: ['community-1', 'community-2']
+            })
           )
           socialService.getMemberCommunities.mockResolvedValue({ communities: [{ id: 'community-2' }] })
         })
@@ -915,7 +919,7 @@ describe('AccessComponent', () => {
 
       describe('and the communities list is at MAX_COMMUNITIES', () => {
         beforeEach(() => {
-          const fullList = Array.from({ length: MAX_COMMUNITIES }, (_, i) => `community-${i}`)
+          const fullList = Array.from({ length: DEFAULT_MAX_COMMUNITIES }, (_, i) => `community-${i}`)
           worldsManager.getRawWorldRecords.mockResolvedValueOnce(
             mockRawWorldRecords({ type: AccessType.AllowList, wallets: [], communities: fullList })
           )
@@ -992,9 +996,9 @@ describe('AccessComponent', () => {
       })
 
       it('should throw NotAllowListAccessError', async () => {
-        await expect(
-          accessComponent.removeCommunityFromAccessAllowList('test-world', 'community-1')
-        ).rejects.toThrow(NotAllowListAccessError)
+        await expect(accessComponent.removeCommunityFromAccessAllowList('test-world', 'community-1')).rejects.toThrow(
+          NotAllowListAccessError
+        )
       })
     })
   })
