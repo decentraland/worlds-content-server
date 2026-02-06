@@ -141,10 +141,7 @@ describe('LivekitClient', () => {
         { name: 'world-room-11', numParticipants: 2 },
         { name: 'world-room-12', numParticipants: 1 }
       ]
-      mockListRooms
-        .mockResolvedValueOnce(allRooms)
-        .mockResolvedValueOnce(chunk1)
-        .mockResolvedValueOnce(chunk2)
+      mockListRooms.mockResolvedValueOnce(allRooms).mockResolvedValueOnce(chunk1).mockResolvedValueOnce(chunk2)
 
       const result = await livekitClient.listRoomsWithParticipantCounts({
         namePrefix: 'world-',

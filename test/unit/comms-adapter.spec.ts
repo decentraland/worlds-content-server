@@ -295,9 +295,7 @@ describe('comms-adapter', function () {
       })
       const logs = await createLogComponent({ config })
 
-      const listRoomsWithParticipantCountsMock = jest
-        .fn()
-        .mockRejectedValue(new Error('Chunk request failed'))
+      const listRoomsWithParticipantCountsMock = jest.fn().mockRejectedValue(new Error('Chunk request failed'))
       const livekitClient = createMockLivekitClient({
         listRoomsWithParticipantCounts: listRoomsWithParticipantCountsMock
       })

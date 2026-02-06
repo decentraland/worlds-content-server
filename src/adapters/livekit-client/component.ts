@@ -39,9 +39,7 @@ export async function createLivekitClient({ config }: Pick<AppComponents, 'confi
       if (roomNames.length === 0) return []
       const chunkSize = options?.chunkSize ?? LIST_ROOMS_PARTICIPANT_CHUNK_SIZE
       const chunkedNames = chunks(roomNames, chunkSize)
-      const results = await Promise.all(
-        chunkedNames.map((names) => roomService.listRooms(names))
-      )
+      const results = await Promise.all(chunkedNames.map((names) => roomService.listRooms(names)))
       return results.flat().map((room) => ({
         name: room.name,
         numParticipants: room.numParticipants ?? 0
