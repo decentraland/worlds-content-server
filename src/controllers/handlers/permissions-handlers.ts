@@ -406,3 +406,76 @@ export async function deletePermissionsAddressHandler(
 
   return { status: 204 }
 }
+
+/**
+ * Add a community to the access allow-list for a world.
+ * PUT /world/:world_name/permissions/access/communities/:communityId
+ * The signer must be a member of the community being added.
+ */
+export async function putPermissionsAccessCommunityHandler(
+  ctx: HandlerContextWithPath<
+    'namePermissionChecker' | 'access',
+    '/world/:world_name/permissions/access/communities/:communityId'
+  > &
+    DecentralandSignatureContext<any>
+): Promise<IHttpServerComponent.IResponse> {
+  const { namePermissionChecker, access } = ctx.components
+
+  const worldName = ctx.params.world_name
+  const communityId = ctx.params.communityId
+
+  if (!communityId || communityId.trim() === '') {
+    throw new InvalidRequestError('Invalid community id.')
+  }
+
+  await checkOwnership(namePermissionChecker, ctx.verification!.auth, worldName)
+
+  try {
+    await access.addCommunityToAccessAllowList(worldName, ctx.verification!.auth, communityId)
+  } catch (error) {
+    if (
+      error instanceof NotAllowListAccessError ||
+      error instanceof UnauthorizedCommunityError ||
+      error instanceof InvalidAllowListSettingError
+    ) {
+      throw new InvalidRequestError(error.message)
+    }
+    throw error
+  }
+
+  return { status: 204 }
+}
+
+/**
+ * Remove a community from the access allow-list for a world.
+ * DELETE /world/:world_name/permissions/access/communities/:communityId
+ */
+export async function deletePermissionsAccessCommunityHandler(
+  ctx: HandlerContextWithPath<
+    'namePermissionChecker' | 'access',
+    '/world/:world_name/permissions/access/communities/:communityId'
+  > &
+    DecentralandSignatureContext<any>
+): Promise<IHttpServerComponent.IResponse> {
+  const { namePermissionChecker, access } = ctx.components
+
+  const worldName = ctx.params.world_name
+  const communityId = ctx.params.communityId
+
+  if (!communityId || communityId.trim() === '') {
+    throw new InvalidRequestError('Invalid community id.')
+  }
+
+  await checkOwnership(namePermissionChecker, ctx.verification!.auth, worldName)
+
+  try {
+    await access.removeCommunityFromAccessAllowList(worldName, communityId)
+  } catch (error) {
+    if (error instanceof NotAllowListAccessError) {
+      throw new InvalidRequestError(error.message)
+    }
+    throw error
+  }
+
+  return { status: 204 }
+}
