@@ -2,11 +2,14 @@ import { AppComponents } from '../../types'
 import { AccessInput, AccessSetting, AccessType, IAccessComponent } from './types'
 import { EthAddress } from '@dcl/schemas'
 import bcrypt from 'bcrypt'
-import { defaultAccess, MAX_COMMUNITIES } from './constants'
-import { InvalidAccessTypeError, NotAllowListAccessError, UnauthorizedCommunityError } from './errors'
+import { defaultAccess, DEFAULT_MAX_COMMUNITIES, DEFAULT_MAX_WALLETS, SALT_ROUNDS } from './constants'
+import {
+  InvalidAccessTypeError,
+  InvalidAllowListSettingError,
+  NotAllowListAccessError,
+  UnauthorizedCommunityError
+} from './errors'
 import { ISocialServiceComponent } from '../../adapters/social-service'
-
-const saltRounds = 10
 
 type CheckingFunction = (ethAddress: EthAddress, extras?: any) => Promise<boolean>
 
@@ -54,10 +57,14 @@ function createAllowListCheckerFactory(socialService: ISocialServiceComponent) {
   }
 }
 
-export function createAccessComponent({
+export async function createAccessComponent({
+  config,
   socialService,
   worldsManager
-}: Pick<AppComponents, 'socialService' | 'worldsManager'>): IAccessComponent {
+}: Pick<AppComponents, 'config' | 'socialService' | 'worldsManager'>): Promise<IAccessComponent> {
+  const maxCommunities = (await config.getNumber('ACCESS_MAX_COMMUNITIES')) ?? DEFAULT_MAX_COMMUNITIES
+  const maxWallets = (await config.getNumber('ACCESS_MAX_WALLETS')) ?? DEFAULT_MAX_WALLETS
+
   const createAllowListChecker = createAllowListCheckerFactory(socialService)
 
   function createAccessCheckerFrom(accessSetting: AccessSetting): CheckingFunction {
@@ -108,9 +115,16 @@ export function createAccessComponent({
 
     switch (type) {
       case AccessType.AllowList: {
-        if (communities && communities.length > MAX_COMMUNITIES) {
-          throw new InvalidAccessTypeError(
-            `Too many communities. Maximum allowed is ${MAX_COMMUNITIES}, but ${communities.length} were provided.`
+        if (communities && communities.length > maxCommunities) {
+          throw new InvalidAllowListSettingError(
+            `Too many communities. Maximum allowed is ${maxCommunities}, but ${communities.length} were provided.`
+          )
+        }
+
+        const walletList = wallets || []
+        if (walletList.length > maxWallets) {
+          throw new InvalidAllowListSettingError(
+            `Too many wallets in allow-list. Maximum allowed is ${maxWallets}, but ${walletList.length} were provided.`
           )
         }
 
@@ -127,7 +141,7 @@ export function createAccessComponent({
 
         accessSetting = {
           type: AccessType.AllowList,
-          wallets: wallets || [],
+          wallets: walletList,
           communities: communities || []
         }
         break
@@ -149,7 +163,7 @@ export function createAccessComponent({
         }
         accessSetting = {
           type: AccessType.SharedSecret,
-          secret: bcrypt.hashSync(secret, saltRounds)
+          secret: bcrypt.hashSync(secret, SALT_ROUNDS)
         }
         break
       }
@@ -189,9 +203,16 @@ export function createAccessComponent({
       return // Already in the list, idempotent operation
     }
 
+    const updatedWallets = [...existingWallets, lowerWallet]
+    if (updatedWallets.length > maxWallets) {
+      throw new InvalidAllowListSettingError(
+        `Cannot add wallet: allow-list would exceed the maximum of ${maxWallets} wallets.`
+      )
+    }
+
     const updatedAccess: AccessSetting = {
       ...access,
-      wallets: [...existingWallets, lowerWallet]
+      wallets: updatedWallets
     }
 
     await worldsManager.storeAccess(worldName, updatedAccess)
@@ -226,11 +247,85 @@ export function createAccessComponent({
     await worldsManager.storeAccess(worldName, updatedAccess)
   }
 
+  /**
+   * Adds a community to the access allow-list for a world.
+   * The world must have allow-list access type. The signer must be a member of the community.
+   *
+   * @param worldName - The name of the world
+   * @param signer - The wallet adding the community (must be a member of the community)
+   * @param communityId - The community id to add to the allow-list
+   * @throws {NotAllowListAccessError} If the world does not have allow-list access type
+   * @throws {UnauthorizedCommunityError} If the signer is not a member of the community
+   */
+  async function addCommunityToAccessAllowList(
+    worldName: string,
+    signer: EthAddress,
+    communityId: string
+  ): Promise<void> {
+    const access = await getAccessForWorld(worldName)
+
+    if (access.type !== AccessType.AllowList) {
+      throw new NotAllowListAccessError(worldName)
+    }
+
+    const { communities: memberCommunities } = await socialService.getMemberCommunities(signer, [communityId])
+    const isMember = memberCommunities.some((c: { id: string }) => c.id === communityId)
+    if (!isMember) {
+      throw new UnauthorizedCommunityError([communityId])
+    }
+
+    const existingCommunities = access.communities || []
+    if (existingCommunities.includes(communityId)) {
+      return
+    }
+
+    if (existingCommunities.length >= maxCommunities) {
+      throw new InvalidAllowListSettingError(
+        `Too many communities. Maximum allowed is ${maxCommunities}, cannot add more.`
+      )
+    }
+
+    const updatedAccess: AccessSetting = {
+      ...access,
+      communities: [...existingCommunities, communityId]
+    }
+
+    await worldsManager.storeAccess(worldName, updatedAccess)
+  }
+
+  /**
+   * Removes a community from the access allow-list for a world.
+   * The world must have allow-list access type for this operation to succeed.
+   *
+   * @param worldName - The name of the world
+   * @param communityId - The community id to remove from the allow-list
+   * @throws {NotAllowListAccessError} If the world does not have allow-list access type
+   */
+  async function removeCommunityFromAccessAllowList(worldName: string, communityId: string): Promise<void> {
+    const access = await getAccessForWorld(worldName)
+
+    if (access.type !== AccessType.AllowList) {
+      throw new NotAllowListAccessError(worldName)
+    }
+
+    const existingCommunities = access.communities || []
+    const updatedCommunities = existingCommunities.filter((id) => id !== communityId)
+
+    const updatedAccess: AccessSetting = {
+      ...access,
+      communities: updatedCommunities
+    }
+
+    await worldsManager.storeAccess(worldName, updatedAccess)
+  }
+
   return {
     checkAccess,
     setAccess,
     addWalletToAccessAllowList,
     removeWalletFromAccessAllowList,
+    addCommunityToAccessAllowList,
+    removeCommunityFromAccessAllowList,
     getAccessForWorld
   }
 }

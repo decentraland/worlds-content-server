@@ -2,7 +2,7 @@ import { HandlerContextWithPath } from '../../types'
 import { IHttpServerComponent } from '@well-known-components/interfaces'
 import { DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
 import { InvalidRequestError } from '@dcl/http-commons'
-import { InvalidAccessError, InvalidWorldError, SceneNotFoundError } from '../../logic/comms'
+import { InvalidAccessError, InvalidWorldError, SceneNotFoundError, WorldAtCapacityError } from '../../logic/comms'
 
 type CommsMetadata = {
   secret?: string
@@ -50,6 +50,11 @@ export async function worldCommsHandler(
     } else if (error instanceof InvalidWorldError || error instanceof SceneNotFoundError) {
       return {
         status: 404,
+        body: { error: error.message }
+      }
+    } else if (error instanceof WorldAtCapacityError) {
+      return {
+        status: 503,
         body: { error: error.message }
       }
     }

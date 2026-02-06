@@ -1,22 +1,14 @@
-import { AppComponents, CommsStatus, ICommsAdapter, WorldStatus } from '../types'
-import { AccessToken, TrackSource } from 'livekit-server-sdk'
+import { AppComponents, CommsStatus, ICommsAdapter, LivekitClient, WorldStatus } from '../types'
 import { EthAddress } from '@dcl/schemas'
+import { TrackSource, VideoGrant } from 'livekit-server-sdk'
 import { LRUCache } from 'lru-cache'
-
-function chunk<T>(theArray: T[], size: number): T[][] {
-  return theArray.reduce((acc: T[][], _, i) => {
-    if (i % size === 0) {
-      acc.push(theArray.slice(i, i + size))
-    }
-    return acc
-  }, [])
-}
 
 export async function createCommsAdapterComponent({
   config,
   fetch,
-  logs
-}: Pick<AppComponents, 'config' | 'fetch' | 'logs'>): Promise<ICommsAdapter> {
+  logs,
+  livekitClient
+}: Pick<AppComponents, 'config' | 'fetch' | 'logs' | 'livekitClient'>): Promise<ICommsAdapter> {
   const logger = logs.getLogger('comms-adapter')
 
   const worldRoomPrefix = await config.requireString('COMMS_ROOM_PREFIX')
@@ -31,11 +23,9 @@ export async function createCommsAdapterComponent({
     case 'livekit':
       const host = await config.requireString('LIVEKIT_HOST')
       logger.info(`Using livekit adapter with host: ${host}`)
-      const apiKey = await config.requireString('LIVEKIT_API_KEY')
-      const apiSecret = await config.requireString('LIVEKIT_API_SECRET')
       return cachingAdapter(
         { logs },
-        createLiveKitAdapter({ fetch, logs }, worldRoomPrefix, sceneRoomPrefix, host, apiKey, apiSecret)
+        createLiveKitAdapter({ logs }, worldRoomPrefix, sceneRoomPrefix, host, livekitClient)
       )
 
     default:
@@ -49,7 +39,7 @@ function createWsRoomAdapter(
   sceneRoomPrefix: string,
   fixedAdapter: string
 ): ICommsAdapter {
-  return {
+  const adapter: ICommsAdapter = {
     async status(): Promise<CommsStatus> {
       const url = fixedAdapter.substring(fixedAdapter.indexOf(':') + 1)
       const urlWithProtocol =
@@ -90,26 +80,46 @@ function createWsRoomAdapter(
       const roomsUrl = fixedAdapter.replace(/rooms\/.*/, 'rooms')
       const roomId = `${sceneRoomPrefix}${worldName.toLowerCase()}-${sceneId.toLowerCase()}`
       return `${roomsUrl}/${roomId}`
+    },
+    async getWorldRoomParticipantCount(worldName: string): Promise<number> {
+      const s = await adapter.status()
+      const normalized = worldName.toLowerCase()
+      const detail = s.details?.find((d) => d.worldName.toLowerCase() === normalized)
+      return detail?.users ?? 0
+    },
+    async getWorldSceneRoomsParticipantCount(worldName: string): Promise<number> {
+      const url = fixedAdapter.substring(fixedAdapter.indexOf(':') + 1)
+      const urlWithProtocol =
+        !url.startsWith('ws:') && !url.startsWith('wss:') ? 'https://' + url : url.replace(/ws\[s]?:/, 'https')
+      const statusUrl = urlWithProtocol.replace(/rooms\/.*/, 'status')
+      const res = await fetch
+        .fetch(statusUrl, {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' }
+        })
+        .then((response) => response.json())
+      const normalized = worldName.toLowerCase()
+      const sceneRoomPrefixForWorld = `${sceneRoomPrefix}${normalized}-`
+      const details = (res.details ?? []) as { roomName: string; count: number }[]
+      return details
+        .filter((d) => d.roomName.startsWith(sceneRoomPrefixForWorld))
+        .reduce((sum, d) => sum + (d.count ?? 0), 0)
     }
   }
+  return adapter
 }
 
 function createLiveKitAdapter(
-  { fetch, logs }: Pick<AppComponents, 'fetch' | 'logs'>,
+  { logs }: Pick<AppComponents, 'logs'>,
   worldRoomPrefix: string,
   sceneRoomPrefix: string,
   host: string,
-  apiKey: string,
-  apiSecret: string
+  livekitClient: LivekitClient
 ): ICommsAdapter {
   const logger = logs.getLogger('livekit-adapter')
 
-  async function getRoomConnectionString(userAddress: EthAddress, roomId: string): Promise<string> {
-    const token = new AccessToken(apiKey, apiSecret, {
-      identity: userAddress.toLowerCase(),
-      ttl: 5 * 60 // 5 minutes
-    })
-    token.addGrant({
+  function buildWorldRoomGrant(roomId: string): VideoGrant {
+    return {
       roomJoin: true,
       room: roomId,
       roomList: false,
@@ -118,92 +128,70 @@ function createLiveKitAdapter(
       canPublishData: true,
       canUpdateOwnMetadata: true,
       canPublishSources: [TrackSource.MICROPHONE]
-    })
-    return `livekit:wss://${host}?access_token=${await token.toJwt()}`
+    }
   }
 
   return {
     async status(): Promise<CommsStatus> {
-      const token = new AccessToken(apiKey, apiSecret, {
-        name: 'SuperAdmin',
-        ttl: 5 * 60 // 5 minutes
-      })
-      token.addGrant({ roomList: true })
-
-      const bearerToken = await token.toJwt()
-
-      const worldRoomNames: string[] = await fetch
-        .fetch(`https://${host}/twirp/livekit.RoomService/ListRooms`, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${bearerToken}`,
-            'Content-Type': 'application/json'
-          },
-          body: '{}'
+      try {
+        const roomsWithCounts = await livekitClient.listRoomsWithParticipantCounts({
+          namePrefix: worldRoomPrefix
         })
-        .then((response) => response.json())
-        .then((res: any) =>
-          res.rooms
-            .filter((room: { name: string }) => room.name.startsWith(worldRoomPrefix))
-            .map((room: { name: string }) => room.name)
-        )
+        const roomsWithUsers: WorldStatus[] = roomsWithCounts
+          .map((room) => ({
+            worldName: room.name.substring(worldRoomPrefix.length),
+            users: room.numParticipants
+          }))
+          .filter((room) => room.users > 0)
 
-      // We need to chunk the room names because the ListRooms endpoint
-      // only retrieves max_participants for the first 10 rooms
-      const roomsWithUsers = (
-        await Promise.all(
-          chunk(worldRoomNames, 10).map((chunkedRoomNames: string[]): Promise<WorldStatus[]> => {
-            return fetch
-              .fetch(`https://${host}/twirp/livekit.RoomService/ListRooms`, {
-                method: 'POST',
-                headers: {
-                  Authorization: `Bearer ${bearerToken}`,
-                  'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ names: chunkedRoomNames })
-              })
-              .then((response) => response.json())
-              .then((res: any) => {
-                return res.rooms.map(
-                  (room: { name: string; num_participants: number }): WorldStatus => ({
-                    worldName: room.name.substring(worldRoomPrefix.length),
-                    users: room.num_participants
-                  })
-                )
-              })
-              .catch((error) => {
-                logger.error(`Error retrieving comms status: ${error.message}`)
-                return chunkedRoomNames.map(
-                  (worldRoomName: string): WorldStatus => ({
-                    worldName: worldRoomName.substring(worldRoomPrefix.length),
-                    users: 0
-                  })
-                )
-              })
-          })
-        )
-      )
-        .flat()
-        .filter((room: WorldStatus) => room.users > 0)
-
-      return {
-        adapterType: 'livekit',
-        statusUrl: `https://${host}/`,
-        rooms: roomsWithUsers.length,
-        users: roomsWithUsers.reduce((carry: number, value: WorldStatus) => carry + value.users, 0),
-        details: roomsWithUsers,
-        timestamp: Date.now()
+        return {
+          adapterType: 'livekit',
+          statusUrl: `https://${host}/`,
+          rooms: roomsWithUsers.length,
+          users: roomsWithUsers.reduce((carry, value) => carry + value.users, 0),
+          details: roomsWithUsers,
+          timestamp: Date.now()
+        }
+      } catch (error) {
+        logger.error(`Error retrieving comms status: ${(error as Error).message}`)
+        return {
+          adapterType: 'livekit',
+          statusUrl: `https://${host}/`,
+          rooms: 0,
+          users: 0,
+          details: [],
+          timestamp: Date.now()
+        }
       }
     },
 
     async getWorldRoomConnectionString(userId: EthAddress, worldName: string): Promise<string> {
       const roomId = `${worldRoomPrefix}${worldName.toLowerCase()}`
-      return getRoomConnectionString(userId, roomId)
+      return livekitClient.createConnectionToken(userId.toLowerCase(), buildWorldRoomGrant(roomId))
     },
 
     async getSceneRoomConnectionString(userId: EthAddress, worldName: string, sceneId: string): Promise<string> {
       const roomId = `${sceneRoomPrefix}${worldName.toLowerCase()}-${sceneId.toLowerCase()}`
-      return getRoomConnectionString(userId, roomId)
+      return livekitClient.createConnectionToken(userId.toLowerCase(), buildWorldRoomGrant(roomId))
+    },
+
+    async getWorldRoomParticipantCount(worldName: string): Promise<number> {
+      const roomId = `${worldRoomPrefix}${worldName.toLowerCase()}`
+      const room = await livekitClient.getRoom(roomId)
+      return room?.numParticipants ?? 0
+    },
+    async getWorldSceneRoomsParticipantCount(worldName: string): Promise<number> {
+      try {
+        const normalized = worldName.toLowerCase()
+        const sceneRoomPrefixForWorld = `${sceneRoomPrefix}${normalized}-`
+        const roomsWithCounts = await livekitClient.listRoomsWithParticipantCounts({
+          namePrefix: sceneRoomPrefixForWorld
+        })
+        return roomsWithCounts.reduce((sum, room) => sum + room.numParticipants, 0)
+      } catch (error) {
+        logger.error(`Error retrieving world scene rooms participant count: ${(error as Error).message}`)
+        return 0
+      }
     }
   }
 }
@@ -236,6 +224,17 @@ function cachingAdapter({ logs }: Pick<AppComponents, 'logs'>, wrappedAdapter: I
 
     getSceneRoomConnectionString(userId: EthAddress, worldName: string, sceneId: string): Promise<string> {
       return wrappedAdapter.getSceneRoomConnectionString(userId, worldName, sceneId)
+    },
+
+    async getWorldRoomParticipantCount(worldName: string): Promise<number> {
+      const status = await cache.fetch(CACHE_KEY)
+      const normalized = worldName.toLowerCase()
+      const detail = status?.details?.find((d) => d.worldName.toLowerCase() === normalized)
+      return detail?.users ?? 0
+    },
+
+    getWorldSceneRoomsParticipantCount(worldName: string): Promise<number> {
+      return wrappedAdapter.getWorldSceneRoomsParticipantCount(worldName)
     }
   }
 }

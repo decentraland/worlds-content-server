@@ -12,12 +12,14 @@ import { getLiveDataHandler } from './handlers/live-data-handler'
 import { castAdapterHandler } from './handlers/cast-adapter-handler'
 import { wellKnownComponents } from '@dcl/platform-crypto-middleware'
 import {
+  deletePermissionsAccessCommunityHandler,
   deletePermissionsAddressHandler,
   deletePermissionParcelsHandler,
   getAllowedParcelsForPermissionHandler,
   getPermissionsHandler,
   postPermissionsHandler,
   postPermissionParcelsHandler,
+  putPermissionsAccessCommunityHandler,
   putPermissionsAddressHandler
 } from './handlers/permissions-handlers'
 import { walletStatsHandler } from './handlers/wallet-stats-handler'
@@ -114,6 +116,19 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
     signedFetchMiddleware,
     schemaValidator.withSchemaValidatorMiddleware(permissionParcelsSchema),
     deletePermissionParcelsHandler
+  )
+
+  // Access allow-list: add/remove single community (world must have allow-list access)
+  // Registered before :permission_name/:address so /access/communities/:id is matched first
+  router.put(
+    '/world/:world_name/permissions/access/communities/:communityId',
+    signedFetchMiddleware,
+    putPermissionsAccessCommunityHandler
+  )
+  router.delete(
+    '/world/:world_name/permissions/access/communities/:communityId',
+    signedFetchMiddleware,
+    deletePermissionsAccessCommunityHandler
   )
 
   // PUT: Set permission (create or replace) - grants world-wide permission
