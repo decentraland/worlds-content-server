@@ -14,6 +14,7 @@ import {
   AccessSetting,
   AccessType,
   InvalidAccessTypeError,
+  InvalidAllowListSettingError,
   NotAllowListAccessError,
   UnauthorizedCommunityError
 } from '../../logic/access'
@@ -149,7 +150,8 @@ export async function postPermissionsHandler(
     if (
       error instanceof InvalidPermissionRequestError ||
       error instanceof InvalidAccessTypeError ||
-      error instanceof UnauthorizedCommunityError
+      error instanceof UnauthorizedCommunityError ||
+      error instanceof InvalidAllowListSettingError
     ) {
       throw new InvalidRequestError(error.message)
     }
@@ -197,7 +199,7 @@ export async function putPermissionsAddressHandler(
       await access.addWalletToAccessAllowList(worldName, address)
     }
   } catch (error) {
-    if (error instanceof NotAllowListAccessError) {
+    if (error instanceof NotAllowListAccessError || error instanceof InvalidAllowListSettingError) {
       throw new InvalidRequestError(error.message)
     }
     throw error

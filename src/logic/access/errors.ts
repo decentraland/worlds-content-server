@@ -5,6 +5,13 @@ export class InvalidAccessTypeError extends Error {
   }
 }
 
+export class InvalidAllowListSettingError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'InvalidAllowListSettingError'
+  }
+}
+
 export class UnauthorizedCommunityError extends Error {
   constructor(communities: string[]) {
     super(`You are not a member of the following communities: ${communities.join(', ')}.`)

@@ -2,12 +2,14 @@ import { createAccessComponent } from '../../src/logic/access/component'
 import { AccessSetting, AccessType, IAccessComponent } from '../../src/logic/access/types'
 import {
   InvalidAccessTypeError,
+  InvalidAllowListSettingError,
   NotAllowListAccessError,
   UnauthorizedCommunityError
 } from '../../src/logic/access/errors'
-import { MAX_COMMUNITIES } from '../../src/logic/access/constants'
+import { DEFAULT_MAX_COMMUNITIES, DEFAULT_MAX_WALLETS } from '../../src/logic/access/constants'
 import { GetRawWorldRecordsResult, IWorldsManager, WorldRecord } from '../../src/types'
 import { ISocialServiceComponent } from '../../src/adapters/social-service'
+import { createMockedConfig } from '../mocks/config-mock'
 import bcrypt from 'bcrypt'
 
 const TEST_SIGNER = '0xSigner'
@@ -29,8 +31,9 @@ describe('AccessComponent', () => {
   let accessComponent: IAccessComponent
   let worldsManager: jest.Mocked<IWorldsManager>
   let socialService: jest.Mocked<ISocialServiceComponent>
+  let config: ReturnType<typeof createMockedConfig>
 
-  beforeEach(() => {
+  beforeEach(async () => {
     worldsManager = {
       getRawWorldRecords: jest.fn(),
       storeAccess: jest.fn()
@@ -40,7 +43,18 @@ describe('AccessComponent', () => {
       getMemberCommunities: jest.fn().mockResolvedValue({ communities: [] })
     } as unknown as jest.Mocked<ISocialServiceComponent>
 
-    accessComponent = createAccessComponent({ socialService, worldsManager })
+    config = createMockedConfig({
+      getNumber: jest.fn((key: string) =>
+        Promise.resolve(
+          {
+            ACCESS_MAX_COMMUNITIES: DEFAULT_MAX_COMMUNITIES,
+            ACCESS_MAX_WALLETS: DEFAULT_MAX_WALLETS
+          }[key]
+        )
+      )
+    })
+
+    accessComponent = await createAccessComponent({ config, socialService, worldsManager })
   })
 
   afterEach(() => {
@@ -405,17 +419,17 @@ describe('AccessComponent', () => {
         let tooManyCommunities: string[]
 
         beforeEach(() => {
-          tooManyCommunities = Array.from({ length: MAX_COMMUNITIES + 1 }, (_, i) => `community-${i}`)
+          tooManyCommunities = Array.from({ length: DEFAULT_MAX_COMMUNITIES + 1 }, (_, i) => `community-${i}`)
         })
 
-        it('should throw InvalidAccessTypeError', async () => {
+        it('should throw InvalidAllowListSettingError', async () => {
           await expect(
             accessComponent.setAccess('test-world', TEST_SIGNER, {
               type: AccessType.AllowList,
               wallets: ['0x1234'],
               communities: tooManyCommunities
             })
-          ).rejects.toThrow(InvalidAccessTypeError)
+          ).rejects.toThrow(InvalidAllowListSettingError)
         })
 
         it('should include the limit in the error message', async () => {
@@ -425,7 +439,35 @@ describe('AccessComponent', () => {
               wallets: ['0x1234'],
               communities: tooManyCommunities
             })
-          ).rejects.toThrow(`Maximum allowed is ${MAX_COMMUNITIES}`)
+          ).rejects.toThrow(`Maximum allowed is ${DEFAULT_MAX_COMMUNITIES}`)
+        })
+      })
+
+      describe('and wallets exceed the maximum limit', () => {
+        let tooManyWallets: string[]
+
+        beforeEach(() => {
+          tooManyWallets = Array.from({ length: DEFAULT_MAX_WALLETS + 1 }, (_, i) => `0x${String(i).padStart(40, '0')}`)
+        })
+
+        it('should throw InvalidAllowListSettingError', async () => {
+          await expect(
+            accessComponent.setAccess('test-world', TEST_SIGNER, {
+              type: AccessType.AllowList,
+              wallets: tooManyWallets,
+              communities: []
+            })
+          ).rejects.toThrow(InvalidAllowListSettingError)
+        })
+
+        it('should include the wallet limit in the error message', async () => {
+          await expect(
+            accessComponent.setAccess('test-world', TEST_SIGNER, {
+              type: AccessType.AllowList,
+              wallets: tooManyWallets,
+              communities: []
+            })
+          ).rejects.toThrow(`Maximum allowed is ${DEFAULT_MAX_WALLETS}`)
         })
       })
 
@@ -433,7 +475,7 @@ describe('AccessComponent', () => {
         let maxCommunities: string[]
 
         beforeEach(() => {
-          maxCommunities = Array.from({ length: MAX_COMMUNITIES }, (_, i) => `community-${i}`)
+          maxCommunities = Array.from({ length: DEFAULT_MAX_COMMUNITIES }, (_, i) => `community-${i}`)
           socialService.getMemberCommunities.mockResolvedValueOnce({
             communities: maxCommunities.map((id) => ({ id }))
           })
@@ -581,6 +623,46 @@ describe('AccessComponent', () => {
             wallets: ['0x5678'],
             communities: []
           })
+        })
+      })
+
+      describe('and adding would exceed the maximum wallets', () => {
+        beforeEach(async () => {
+          const configWithLowLimit = createMockedConfig({
+            getNumber: jest.fn((key: string) =>
+              Promise.resolve(
+                key === 'ACCESS_MAX_COMMUNITIES'
+                  ? DEFAULT_MAX_COMMUNITIES
+                  : key === 'ACCESS_MAX_WALLETS'
+                    ? 2
+                    : undefined
+              )
+            )
+          })
+          accessComponent = await createAccessComponent({
+            config: configWithLowLimit,
+            socialService,
+            worldsManager
+          })
+          worldsManager.getRawWorldRecords.mockResolvedValueOnce(
+            mockRawWorldRecords({
+              type: AccessType.AllowList,
+              wallets: ['0x1234', '0x5678'],
+              communities: []
+            })
+          )
+        })
+
+        it('should throw InvalidAllowListSettingError', async () => {
+          await expect(accessComponent.addWalletToAccessAllowList('test-world', '0xabcd')).rejects.toThrow(
+            InvalidAllowListSettingError
+          )
+        })
+
+        it('should include the maximum wallets in the error message', async () => {
+          await expect(accessComponent.addWalletToAccessAllowList('test-world', '0xabcd')).rejects.toThrow(
+            'maximum of 2 wallets'
+          )
         })
       })
     })
