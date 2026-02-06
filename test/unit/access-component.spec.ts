@@ -862,6 +862,147 @@ describe('AccessComponent', () => {
     })
   })
 
+  describe('when adding a community to access allow list', () => {
+    describe('and the world has allow-list access', () => {
+      describe('and the signer is a member of the community', () => {
+        beforeEach(() => {
+          worldsManager.getRawWorldRecords.mockResolvedValueOnce(
+            mockRawWorldRecords({ type: AccessType.AllowList, wallets: [], communities: ['community-1'] })
+          )
+          socialService.getMemberCommunities.mockResolvedValue({ communities: [{ id: 'community-2' }] })
+        })
+
+        it('should add the community to the list', async () => {
+          await accessComponent.addCommunityToAccessAllowList('test-world', TEST_SIGNER, 'community-2')
+
+          expect(worldsManager.storeAccess).toHaveBeenCalledWith('test-world', {
+            type: AccessType.AllowList,
+            wallets: [],
+            communities: ['community-1', 'community-2']
+          })
+        })
+      })
+
+      describe('and the community is already in the list', () => {
+        beforeEach(() => {
+          worldsManager.getRawWorldRecords.mockResolvedValueOnce(
+            mockRawWorldRecords({
+              type: AccessType.AllowList,
+              wallets: [],
+              communities: ['community-1', 'community-2']
+            })
+          )
+          socialService.getMemberCommunities.mockResolvedValue({ communities: [{ id: 'community-2' }] })
+        })
+
+        it('should not add the community again (idempotent)', async () => {
+          await accessComponent.addCommunityToAccessAllowList('test-world', TEST_SIGNER, 'community-2')
+
+          expect(worldsManager.storeAccess).not.toHaveBeenCalled()
+        })
+      })
+
+      describe('and the signer is not a member of the community', () => {
+        beforeEach(() => {
+          worldsManager.getRawWorldRecords.mockResolvedValueOnce(
+            mockRawWorldRecords({ type: AccessType.AllowList, wallets: [], communities: [] })
+          )
+          socialService.getMemberCommunities.mockResolvedValue({ communities: [] })
+        })
+
+        it('should throw UnauthorizedCommunityError', async () => {
+          await expect(
+            accessComponent.addCommunityToAccessAllowList('test-world', TEST_SIGNER, 'community-1')
+          ).rejects.toThrow(UnauthorizedCommunityError)
+        })
+      })
+
+      describe('and the communities list is at MAX_COMMUNITIES', () => {
+        beforeEach(() => {
+          const fullList = Array.from({ length: DEFAULT_MAX_COMMUNITIES }, (_, i) => `community-${i}`)
+          worldsManager.getRawWorldRecords.mockResolvedValueOnce(
+            mockRawWorldRecords({ type: AccessType.AllowList, wallets: [], communities: fullList })
+          )
+          socialService.getMemberCommunities.mockResolvedValue({ communities: [{ id: 'new-community' }] })
+        })
+
+        it('should throw InvalidAllowListSettingError', async () => {
+          await expect(
+            accessComponent.addCommunityToAccessAllowList('test-world', TEST_SIGNER, 'new-community')
+          ).rejects.toThrow(InvalidAllowListSettingError)
+        })
+      })
+    })
+
+    describe('and the world has unrestricted access', () => {
+      beforeEach(() => {
+        worldsManager.getRawWorldRecords.mockResolvedValueOnce(mockRawWorldRecords({ type: AccessType.Unrestricted }))
+      })
+
+      it('should throw NotAllowListAccessError', async () => {
+        await expect(
+          accessComponent.addCommunityToAccessAllowList('test-world', TEST_SIGNER, 'community-1')
+        ).rejects.toThrow(NotAllowListAccessError)
+      })
+    })
+  })
+
+  describe('when removing a community from access allow list', () => {
+    describe('and the world has allow-list access', () => {
+      describe('and the community is in the list', () => {
+        beforeEach(() => {
+          worldsManager.getRawWorldRecords.mockResolvedValueOnce(
+            mockRawWorldRecords({
+              type: AccessType.AllowList,
+              wallets: ['0x1234'],
+              communities: ['community-1', 'community-2']
+            })
+          )
+        })
+
+        it('should remove the community from the list', async () => {
+          await accessComponent.removeCommunityFromAccessAllowList('test-world', 'community-2')
+
+          expect(worldsManager.storeAccess).toHaveBeenCalledWith('test-world', {
+            type: AccessType.AllowList,
+            wallets: ['0x1234'],
+            communities: ['community-1']
+          })
+        })
+      })
+
+      describe('and the community is not in the list', () => {
+        beforeEach(() => {
+          worldsManager.getRawWorldRecords.mockResolvedValueOnce(
+            mockRawWorldRecords({ type: AccessType.AllowList, wallets: [], communities: ['community-1'] })
+          )
+        })
+
+        it('should update the access with the same list (idempotent)', async () => {
+          await accessComponent.removeCommunityFromAccessAllowList('test-world', 'community-2')
+
+          expect(worldsManager.storeAccess).toHaveBeenCalledWith('test-world', {
+            type: AccessType.AllowList,
+            wallets: [],
+            communities: ['community-1']
+          })
+        })
+      })
+    })
+
+    describe('and the world has unrestricted access', () => {
+      beforeEach(() => {
+        worldsManager.getRawWorldRecords.mockResolvedValueOnce(mockRawWorldRecords({ type: AccessType.Unrestricted }))
+      })
+
+      it('should throw NotAllowListAccessError', async () => {
+        await expect(accessComponent.removeCommunityFromAccessAllowList('test-world', 'community-1')).rejects.toThrow(
+          NotAllowListAccessError
+        )
+      })
+    })
+  })
+
   describe('when getting access for world', () => {
     describe('and the world exists with access defined', () => {
       describe('and the access is unrestricted', () => {
