@@ -117,7 +117,7 @@ async function initComponents(): Promise<TestComponents> {
 
   const permissions = await createPermissionsComponent({ config, permissionsManager, snsClient })
   const socialService = createMockSocialService()
-  const access = createAccessComponent({ socialService, worldsManager })
+  const access = await createAccessComponent({ config, socialService, worldsManager })
 
   const entityDeployer = createEntityDeployer({
     config,
