@@ -17,7 +17,7 @@ import { IPgComponent } from '@well-known-components/pg-component'
 import { AuthIdentity } from '@dcl/crypto'
 import { IFetchComponent } from '@well-known-components/interfaces'
 import { INatsComponent } from '@well-known-components/nats-component/dist/types'
-import { WebhookEvent } from 'livekit-server-sdk'
+import type { Room, VideoGrant, WebhookEvent } from 'livekit-server-sdk'
 import { IPublisherComponent } from '@dcl/sns-component'
 import { ISettingsComponent } from './logic/settings'
 import { ISchemaValidatorComponent } from '@dcl/schema-validator-component'
@@ -299,6 +299,7 @@ export type CommsStatus = {
 export type ICommsAdapter = {
   getWorldRoomConnectionString(userId: EthAddress, worldName: string): Promise<string>
   getSceneRoomConnectionString(userId: EthAddress, worldName: string, sceneId: string): Promise<string>
+  getRoomParticipantCount(worldName: string): Promise<number>
   status(): Promise<CommsStatus>
 }
 
@@ -438,7 +439,13 @@ export type AwsConfig = {
   s3ForcePathStyle?: boolean // for SDK v2
 }
 
+export type CreateConnectionTokenOptions = {
+  ttl?: number
+}
+
 export type LivekitClient = {
+  listRooms(roomNames?: string[]): Promise<Room[]>
+  createConnectionToken(identity: string, grant: VideoGrant, options?: CreateConnectionTokenOptions): Promise<string>
   receiveWebhookEvent(body: string, authorization: string): Promise<WebhookEvent>
 }
 

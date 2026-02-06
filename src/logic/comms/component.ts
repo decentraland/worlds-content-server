@@ -1,6 +1,7 @@
 import { EthAddress } from '@dcl/crypto'
 import { AppComponents } from '../../types'
-import { InvalidWorldError, InvalidAccessError, SceneNotFoundError } from './errors'
+import { InvalidWorldError, InvalidAccessError, SceneNotFoundError, WorldAtCapacityError } from './errors'
+import { MAX_USERS_PER_WORLD } from './constants'
 import { ICommsComponent } from './types'
 
 export const createCommsComponent = (
@@ -48,6 +49,11 @@ export const createCommsComponent = (
     accessOptions?: { secret?: string }
   ): Promise<string> {
     await assertWorldAccess(userAddress, worldName, accessOptions)
+
+    const participantCount = await commsAdapter.getRoomParticipantCount(worldName)
+    if (participantCount >= MAX_USERS_PER_WORLD) {
+      throw new WorldAtCapacityError(worldName)
+    }
 
     return commsAdapter.getWorldRoomConnectionString(userAddress, worldName)
   }

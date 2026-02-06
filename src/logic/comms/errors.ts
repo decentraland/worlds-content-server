@@ -25,3 +25,10 @@ export class InvalidAccessError extends Error {
     this.name = 'NotAuthorizedError'
   }
 }
+
+export class WorldAtCapacityError extends Error {
+  constructor(worldName: string) {
+    super(`World "${worldName}" has reached its maximum capacity.`)
+    this.name = 'WorldAtCapacityError'
+  }
+}

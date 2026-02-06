@@ -9,6 +9,9 @@ export function createMockCommsAdapterComponent(): ICommsAdapter {
     getSceneRoomConnectionString(_userId: EthAddress, worldName: string, sceneId: string): Promise<string> {
       return Promise.resolve(`ws-room:ws-room-service.decentraland.org/rooms/scene-${worldName}-${sceneId}`)
     },
+    getRoomParticipantCount(_worldName: string): Promise<number> {
+      return Promise.resolve(0)
+    },
     status(): Promise<CommsStatus> {
       return Promise.resolve({
         adapterType: 'mock',

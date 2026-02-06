@@ -1,6 +1,6 @@
 import { createCommsComponent } from '../../src/logic/comms/component'
 import { ICommsComponent } from '../../src/logic/comms/types'
-import { InvalidWorldError, InvalidAccessError, SceneNotFoundError } from '../../src/logic/comms/errors'
+import { InvalidWorldError, InvalidAccessError, SceneNotFoundError, WorldAtCapacityError } from '../../src/logic/comms/errors'
 import { ICommsAdapter, IWorldNamePermissionChecker } from '../../src/types'
 import { IAccessComponent } from '../../src/logic/access/types'
 import { IWorldsComponent } from '../../src/logic/worlds/types'
@@ -30,6 +30,7 @@ describe('CommsComponent', () => {
     commsAdapter = {
       getWorldRoomConnectionString: jest.fn(),
       getSceneRoomConnectionString: jest.fn(),
+      getRoomParticipantCount: jest.fn(),
       status: jest.fn()
     } as unknown as jest.Mocked<ICommsAdapter>
 
@@ -59,6 +60,7 @@ describe('CommsComponent', () => {
         beforeEach(() => {
           namePermissionChecker.checkPermission.mockResolvedValueOnce(true)
           access.checkAccess.mockResolvedValueOnce(true)
+          commsAdapter.getRoomParticipantCount.mockResolvedValueOnce(0)
           commsAdapter.getWorldRoomConnectionString.mockResolvedValueOnce(connectionString)
         })
 
@@ -84,6 +86,7 @@ describe('CommsComponent', () => {
 
         it('should call the adapter with correct parameters', async () => {
           await commsComponent.getWorldRoomConnectionString(userAddress, worldName)
+          expect(commsAdapter.getRoomParticipantCount).toHaveBeenCalledWith(worldName)
           expect(commsAdapter.getWorldRoomConnectionString).toHaveBeenCalledWith(userAddress, worldName)
         })
       })
@@ -92,6 +95,7 @@ describe('CommsComponent', () => {
         beforeEach(() => {
           namePermissionChecker.checkPermission.mockResolvedValueOnce(true)
           access.checkAccess.mockResolvedValueOnce(true)
+          commsAdapter.getRoomParticipantCount.mockResolvedValueOnce(0)
           commsAdapter.getWorldRoomConnectionString.mockResolvedValueOnce(connectionString)
         })
 
@@ -114,6 +118,30 @@ describe('CommsComponent', () => {
         })
 
         it('should not call the adapter', async () => {
+          try {
+            await commsComponent.getWorldRoomConnectionString(userAddress, worldName)
+          } catch {
+            // Expected to throw
+          }
+          expect(commsAdapter.getRoomParticipantCount).not.toHaveBeenCalled()
+          expect(commsAdapter.getWorldRoomConnectionString).not.toHaveBeenCalled()
+        })
+      })
+
+      describe('and the world is at capacity', () => {
+        beforeEach(() => {
+          namePermissionChecker.checkPermission.mockResolvedValueOnce(true)
+          access.checkAccess.mockResolvedValueOnce(true)
+          commsAdapter.getRoomParticipantCount.mockResolvedValueOnce(100)
+        })
+
+        it('should throw WorldAtCapacityError', async () => {
+          await expect(commsComponent.getWorldRoomConnectionString(userAddress, worldName)).rejects.toThrow(
+            WorldAtCapacityError
+          )
+        })
+
+        it('should not call getWorldRoomConnectionString', async () => {
           try {
             await commsComponent.getWorldRoomConnectionString(userAddress, worldName)
           } catch {

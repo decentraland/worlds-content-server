@@ -1,6 +1,6 @@
 import { worldCommsHandler } from '../../src/controllers/handlers/world-comms-handler'
 import { ICommsComponent } from '../../src/logic/comms/types'
-import { InvalidAccessError, InvalidWorldError, SceneNotFoundError } from '../../src/logic/comms/errors'
+import { InvalidAccessError, InvalidWorldError, SceneNotFoundError, WorldAtCapacityError } from '../../src/logic/comms/errors'
 import { HandlerContextWithPath } from '../../src/types'
 import { DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
 
@@ -124,6 +124,19 @@ describe('worldCommsHandler', () => {
         const response = await worldCommsHandler(context)
 
         expect(response.status).toBe(404)
+        expect(response.body).toEqual({ error: expect.stringContaining(worldName) })
+      })
+    })
+
+    describe('and the comms component throws WorldAtCapacityError', () => {
+      beforeEach(() => {
+        comms.getWorldRoomConnectionString.mockRejectedValueOnce(new WorldAtCapacityError(worldName))
+      })
+
+      it('should return 503 with the error message', async () => {
+        const response = await worldCommsHandler(context)
+
+        expect(response.status).toBe(503)
         expect(response.body).toEqual({ error: expect.stringContaining(worldName) })
       })
     })

@@ -4,6 +4,7 @@ import { createCommsAdapterComponent } from '../../src/adapters/comms-adapter'
 import { createLogComponent } from '@well-known-components/logger'
 import { IFetchComponent } from '@well-known-components/interfaces'
 import { Request, Response } from 'node-fetch'
+import { createMockLivekitClient } from '../mocks/livekit-client-mock'
 
 describe('comms-adapter', function () {
   describe('ws-room', function () {
@@ -20,7 +21,12 @@ describe('comms-adapter', function () {
         fetch: async (_url: Request): Promise<Response> => new Response(undefined)
       }
 
-      const commsAdapter = await createCommsAdapterComponent({ config, fetch, logs })
+      const commsAdapter = await createCommsAdapterComponent({
+        config,
+        fetch,
+        logs,
+        livekitClient: createMockLivekitClient()
+      })
 
       expect(await commsAdapter.getWorldRoomConnectionString('0xA', 'my-room')).toBe(
         'ws-room:ws-room-service.decentraland.org/rooms/world-prd-my-room'
@@ -57,7 +63,12 @@ describe('comms-adapter', function () {
           )
       }
 
-      const commsAdapter = await createCommsAdapterComponent({ config, fetch, logs })
+      const commsAdapter = await createCommsAdapterComponent({
+        config,
+        fetch,
+        logs,
+        livekitClient: createMockLivekitClient()
+      })
 
       expect(await commsAdapter.status()).toMatchObject({
         rooms: 1,
@@ -69,6 +80,42 @@ describe('comms-adapter', function () {
           }
         ]
       })
+    })
+
+    it('returns room participant count from cached status', async () => {
+      const config: IConfigComponent = await createConfigComponent({
+        COMMS_ADAPTER: 'ws-room',
+        COMMS_FIXED_ADAPTER: 'ws-room:ws-room-service.decentraland.org/rooms/test-scene',
+        COMMS_ROOM_PREFIX: 'world-prd-',
+        SCENE_ROOM_PREFIX: 'scene-prd-'
+      })
+      const logs = await createLogComponent({ config })
+
+      const fetch: IFetchComponent = {
+        fetch: async (_url: Request): Promise<Response> =>
+          new Response(
+            JSON.stringify({
+              commitHash: 'unknown',
+              users: 2,
+              rooms: 1,
+              details: [
+                { roomName: 'world-prd-mariano.dcl.eth', count: 2 },
+                { roomName: 'world-prd-an-empty-world.dcl.eth', count: 0 }
+              ]
+            })
+          )
+      }
+
+      const commsAdapter = await createCommsAdapterComponent({
+        config,
+        fetch,
+        logs,
+        livekitClient: createMockLivekitClient()
+      })
+
+      expect(await commsAdapter.getRoomParticipantCount('mariano.dcl.eth')).toBe(2)
+      expect(await commsAdapter.getRoomParticipantCount('an-empty-world.dcl.eth')).toBe(0)
+      expect(await commsAdapter.getRoomParticipantCount('nonexistent.dcl.eth')).toBe(0)
     })
 
     it('refuses to initialize when misconfigured', async () => {
@@ -83,9 +130,14 @@ describe('comms-adapter', function () {
         fetch: async (_url: Request): Promise<Response> => new Response(undefined)
       }
 
-      await expect(createCommsAdapterComponent({ config, fetch, logs })).rejects.toThrow(
-        'Configuration: string COMMS_FIXED_ADAPTER is required'
-      )
+      await expect(
+        createCommsAdapterComponent({
+          config,
+          fetch,
+          logs,
+          livekitClient: createMockLivekitClient()
+        })
+      ).rejects.toThrow('Configuration: string COMMS_FIXED_ADAPTER is required')
     })
   })
 
@@ -105,10 +157,17 @@ describe('comms-adapter', function () {
         fetch: async (_url: Request): Promise<Response> => new Response(undefined)
       }
 
-      const commsAdapter = await createCommsAdapterComponent({ config, fetch, logs })
+      const livekitClient = createMockLivekitClient({
+        createConnectionToken: jest.fn().mockResolvedValue('livekit:wss://livekit.dcl.org?access_token=token')
+      })
+      const commsAdapter = await createCommsAdapterComponent({ config, fetch, logs, livekitClient })
 
       const adapter = await commsAdapter.getWorldRoomConnectionString('0xA', 'my-room')
       expect(adapter).toContain('livekit:wss://livekit.dcl.org?access_token=')
+      expect(livekitClient.createConnectionToken).toHaveBeenCalledWith(
+        '0xa',
+        expect.objectContaining({ room: 'world-my-room' })
+      )
     })
 
     it('resolves status when well configured', async () => {
@@ -122,42 +181,17 @@ describe('comms-adapter', function () {
       })
       const logs = await createLogComponent({ config })
 
-      const fetch = {
-        fetch: jest.fn()
+      const livekitClient = createMockLivekitClient({
+        listRooms: jest.fn().mockResolvedValue([
+          { name: 'world-prd-mariano.dcl.eth', numParticipants: 3 },
+          { name: 'world-prd-another-world.dcl.eth', numParticipants: 1 }
+        ])
+      })
+
+      const fetch: IFetchComponent = {
+        fetch: async (_url: Request): Promise<Response> => new Response(undefined)
       }
-
-      fetch.fetch.mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            rooms: [
-              {
-                name: 'world-prd-mariano.dcl.eth'
-              },
-              {
-                name: 'world-prd-another-world.dcl.eth'
-              }
-            ]
-          })
-        )
-      )
-      fetch.fetch.mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            rooms: [
-              {
-                name: 'world-prd-mariano.dcl.eth',
-                num_participants: 3
-              },
-              {
-                name: 'world-prd-another-world.dcl.eth',
-                num_participants: 1
-              }
-            ]
-          })
-        )
-      )
-
-      const commsAdapter = await createCommsAdapterComponent({ config, fetch, logs })
+      const commsAdapter = await createCommsAdapterComponent({ config, fetch, logs, livekitClient })
 
       const adapter = await commsAdapter.status()
       expect(adapter).toMatchObject({
@@ -188,9 +222,14 @@ describe('comms-adapter', function () {
         fetch: async (_url: Request): Promise<Response> => new Response(undefined)
       }
 
-      await expect(createCommsAdapterComponent({ config, fetch, logs })).rejects.toThrow(
-        'Configuration: string LIVEKIT_HOST is required'
-      )
+      await expect(
+        createCommsAdapterComponent({
+          config,
+          fetch,
+          logs,
+          livekitClient: createMockLivekitClient()
+        })
+      ).rejects.toThrow('Configuration: string LIVEKIT_HOST is required')
     })
 
     it('survives failure to retrieve comms status', async () => {
@@ -204,14 +243,22 @@ describe('comms-adapter', function () {
       })
       const logs = await createLogComponent({ config })
 
-      const fetch: IFetchComponent = {
-        fetch: async (_url: Request): Promise<Response> => {
-          throw Error('Failed to fetch comms status')
-        }
-      }
-      const commsAdapter = await createCommsAdapterComponent({ config, fetch, logs })
+      const livekitClient = createMockLivekitClient({
+        listRooms: jest.fn().mockRejectedValue(new Error('Failed to fetch comms status'))
+      })
 
-      await expect(commsAdapter.status()).resolves.toBeUndefined()
+      const fetch: IFetchComponent = {
+        fetch: async (_url: Request): Promise<Response> => new Response(undefined)
+      }
+      const commsAdapter = await createCommsAdapterComponent({ config, fetch, logs, livekitClient })
+
+      const status = await commsAdapter.status()
+      expect(status).toMatchObject({
+        adapterType: 'livekit',
+        rooms: 0,
+        users: 0,
+        details: []
+      })
     })
   })
 
@@ -228,7 +275,14 @@ describe('comms-adapter', function () {
         fetch: async (_url: Request): Promise<Response> => new Response(undefined)
       }
 
-      await expect(createCommsAdapterComponent({ config, fetch, logs })).rejects.toThrow('Invalid comms adapter: other')
+      await expect(
+        createCommsAdapterComponent({
+          config,
+          fetch,
+          logs,
+          livekitClient: createMockLivekitClient()
+        })
+      ).rejects.toThrow('Invalid comms adapter: other')
     })
   })
 })
