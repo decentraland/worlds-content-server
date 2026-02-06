@@ -655,13 +655,13 @@ describe('AccessComponent', () => {
         })
 
         it('should throw InvalidAllowListSettingError', async () => {
-          await expect(accessComponent.addWalletToAccessAllowList('test-world', '0xabcd')).rejects.toThrow(
+          await expect(accessComponent.addWalletToAccessAllowList('test-world', TEST_SIGNER, '0xabcd')).rejects.toThrow(
             InvalidAllowListSettingError
           )
         })
 
         it('should include the maximum wallets in the error message', async () => {
-          await expect(accessComponent.addWalletToAccessAllowList('test-world', '0xabcd')).rejects.toThrow(
+          await expect(accessComponent.addWalletToAccessAllowList('test-world', TEST_SIGNER, '0xabcd')).rejects.toThrow(
             'maximum of 2 wallets'
           )
         })
