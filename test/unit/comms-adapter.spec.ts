@@ -51,7 +51,7 @@ describe('comms-adapter', function () {
               rooms: 1,
               details: [
                 {
-                  roomName: 'world-prd-mariano.dcl.eth',
+                  roomName: 'world-prd-sample.dcl.eth',
                   count: 2
                 },
                 {
@@ -76,7 +76,7 @@ describe('comms-adapter', function () {
         details: [
           {
             users: 2,
-            worldName: 'mariano.dcl.eth'
+            worldName: 'sample.dcl.eth'
           }
         ]
       })
@@ -99,7 +99,7 @@ describe('comms-adapter', function () {
               users: 2,
               rooms: 1,
               details: [
-                { roomName: 'world-prd-mariano.dcl.eth', count: 2 },
+                { roomName: 'world-prd-sample.dcl.eth', count: 2 },
                 { roomName: 'world-prd-an-empty-world.dcl.eth', count: 0 }
               ]
             })
@@ -113,9 +113,46 @@ describe('comms-adapter', function () {
         livekitClient: createMockLivekitClient()
       })
 
-      expect(await commsAdapter.getRoomParticipantCount('mariano.dcl.eth')).toBe(2)
-      expect(await commsAdapter.getRoomParticipantCount('an-empty-world.dcl.eth')).toBe(0)
-      expect(await commsAdapter.getRoomParticipantCount('nonexistent.dcl.eth')).toBe(0)
+      expect(await commsAdapter.getWorldRoomParticipantCount('sample.dcl.eth')).toBe(2)
+      expect(await commsAdapter.getWorldRoomParticipantCount('an-empty-world.dcl.eth')).toBe(0)
+      expect(await commsAdapter.getWorldRoomParticipantCount('nonexistent.dcl.eth')).toBe(0)
+    })
+
+    it('returns sum of scene room participant counts for a world', async () => {
+      const config: IConfigComponent = await createConfigComponent({
+        COMMS_ADAPTER: 'ws-room',
+        COMMS_FIXED_ADAPTER: 'ws-room:ws-room-service.decentraland.org/rooms/test-scene',
+        COMMS_ROOM_PREFIX: 'world-prd-',
+        SCENE_ROOM_PREFIX: 'scene-prd-'
+      })
+      const logs = await createLogComponent({ config })
+
+      const fetch: IFetchComponent = {
+        fetch: async (_url: Request): Promise<Response> =>
+          new Response(
+            JSON.stringify({
+              commitHash: 'unknown',
+              users: 10,
+              rooms: 3,
+              details: [
+                { roomName: 'scene-prd-sample.dcl.eth-scene1', count: 5 },
+                { roomName: 'scene-prd-sample.dcl.eth-scene2', count: 3 },
+                { roomName: 'scene-prd-another-world.dcl.eth-scene1', count: 2 }
+              ]
+            })
+          )
+      }
+
+      const commsAdapter = await createCommsAdapterComponent({
+        config,
+        fetch,
+        logs,
+        livekitClient: createMockLivekitClient()
+      })
+
+      expect(await commsAdapter.getWorldSceneRoomsParticipantCount('sample.dcl.eth')).toBe(8)
+      expect(await commsAdapter.getWorldSceneRoomsParticipantCount('another-world.dcl.eth')).toBe(2)
+      expect(await commsAdapter.getWorldSceneRoomsParticipantCount('nonexistent.dcl.eth')).toBe(0)
     })
 
     it('refuses to initialize when misconfigured', async () => {
@@ -181,11 +218,13 @@ describe('comms-adapter', function () {
       })
       const logs = await createLogComponent({ config })
 
-      const listRoomsMock = jest.fn().mockResolvedValue([
-        { name: 'world-prd-mariano.dcl.eth', numParticipants: 3 },
+      const listRoomsWithParticipantCountsMock = jest.fn().mockResolvedValue([
+        { name: 'world-prd-sample.dcl.eth', numParticipants: 3 },
         { name: 'world-prd-another-world.dcl.eth', numParticipants: 1 }
       ])
-      const livekitClient = createMockLivekitClient({ listRooms: listRoomsMock })
+      const livekitClient = createMockLivekitClient({
+        listRoomsWithParticipantCounts: listRoomsWithParticipantCountsMock
+      })
 
       const fetch: IFetchComponent = {
         fetch: async (_url: Request): Promise<Response> => new Response(undefined)
@@ -199,7 +238,7 @@ describe('comms-adapter', function () {
         details: [
           {
             users: 3,
-            worldName: 'prd-mariano.dcl.eth'
+            worldName: 'prd-sample.dcl.eth'
           },
           {
             users: 1,
@@ -207,12 +246,11 @@ describe('comms-adapter', function () {
           }
         ]
       })
-      expect(listRoomsMock).toHaveBeenCalledTimes(2)
-      expect(listRoomsMock).toHaveBeenNthCalledWith(1)
-      expect(listRoomsMock).toHaveBeenNthCalledWith(2, ['world-prd-mariano.dcl.eth', 'world-prd-another-world.dcl.eth'])
+      expect(listRoomsWithParticipantCountsMock).toHaveBeenCalledTimes(1)
+      expect(listRoomsWithParticipantCountsMock).toHaveBeenCalledWith({ namePrefix: 'world-' })
     })
 
-    it('chunks world room names in batches of 10 when resolving status', async () => {
+    it('aggregates status from many world rooms returned by listRoomsWithParticipantCounts', async () => {
       const config: IConfigComponent = await createConfigComponent({
         COMMS_ADAPTER: 'livekit',
         COMMS_ROOM_PREFIX: 'world-',
@@ -223,26 +261,14 @@ describe('comms-adapter', function () {
       })
       const logs = await createLogComponent({ config })
 
-      const allRooms = Array.from({ length: 12 }, (_, i) => ({
-        name: `world-room-${i + 1}`,
-        numParticipants: 0
-      }))
-      const chunk1 = Array.from({ length: 10 }, (_, i) => ({
+      const roomsWithCounts = Array.from({ length: 12 }, (_, i) => ({
         name: `world-room-${i + 1}`,
         numParticipants: i + 1
       }))
-      const chunk2 = [
-        { name: 'world-room-11', numParticipants: 2 },
-        { name: 'world-room-12', numParticipants: 1 }
-      ]
-
-      const listRoomsMock = jest
-        .fn()
-        .mockResolvedValueOnce(allRooms)
-        .mockResolvedValueOnce(chunk1)
-        .mockResolvedValueOnce(chunk2)
-
-      const livekitClient = createMockLivekitClient({ listRooms: listRoomsMock })
+      const listRoomsWithParticipantCountsMock = jest.fn().mockResolvedValue(roomsWithCounts)
+      const livekitClient = createMockLivekitClient({
+        listRoomsWithParticipantCounts: listRoomsWithParticipantCountsMock
+      })
 
       const fetch: IFetchComponent = {
         fetch: async (_url: Request): Promise<Response> => new Response(undefined)
@@ -251,21 +277,14 @@ describe('comms-adapter', function () {
 
       const adapter = await commsAdapter.status()
 
-      const expectedUsers = chunk1.reduce((s, r) => s + r.numParticipants, 0) + 2 + 1
+      const expectedUsers = roomsWithCounts.reduce((s, r) => s + r.numParticipants, 0)
       expect(adapter.rooms).toBe(12)
       expect(adapter.users).toBe(expectedUsers)
       expect(adapter.details).toHaveLength(12)
-
-      expect(listRoomsMock).toHaveBeenCalledTimes(3)
-      expect(listRoomsMock).toHaveBeenNthCalledWith(1)
-      expect(listRoomsMock).toHaveBeenNthCalledWith(
-        2,
-        Array.from({ length: 10 }, (_, i) => `world-room-${i + 1}`)
-      )
-      expect(listRoomsMock).toHaveBeenNthCalledWith(3, ['world-room-11', 'world-room-12'])
+      expect(listRoomsWithParticipantCountsMock).toHaveBeenCalledWith({ namePrefix: 'world-' })
     })
 
-    it('returns partial details when a chunk request fails', async () => {
+    it('returns empty details when listRoomsWithParticipantCounts fails', async () => {
       const config: IConfigComponent = await createConfigComponent({
         COMMS_ADAPTER: 'livekit',
         COMMS_ROOM_PREFIX: 'world-',
@@ -276,16 +295,12 @@ describe('comms-adapter', function () {
       })
       const logs = await createLogComponent({ config })
 
-      const allRooms = [
-        { name: 'world-room-1', numParticipants: 0 },
-        { name: 'world-room-2', numParticipants: 0 }
-      ]
-      const listRoomsMock = jest
+      const listRoomsWithParticipantCountsMock = jest
         .fn()
-        .mockResolvedValueOnce(allRooms)
-        .mockRejectedValueOnce(new Error('Chunk request failed'))
-
-      const livekitClient = createMockLivekitClient({ listRooms: listRoomsMock })
+        .mockRejectedValue(new Error('Chunk request failed'))
+      const livekitClient = createMockLivekitClient({
+        listRoomsWithParticipantCounts: listRoomsWithParticipantCountsMock
+      })
 
       const fetch: IFetchComponent = {
         fetch: async (_url: Request): Promise<Response> => new Response(undefined)
@@ -298,8 +313,7 @@ describe('comms-adapter', function () {
       expect(adapter.rooms).toBe(0)
       expect(adapter.users).toBe(0)
       expect(adapter.details).toHaveLength(0)
-      expect(listRoomsMock).toHaveBeenCalledTimes(2)
-      expect(listRoomsMock).toHaveBeenNthCalledWith(2, ['world-room-1', 'world-room-2'])
+      expect(listRoomsWithParticipantCountsMock).toHaveBeenCalledWith({ namePrefix: 'world-' })
     })
 
     it('refuses to initialize when misconfigured', async () => {
@@ -336,7 +350,7 @@ describe('comms-adapter', function () {
       const logs = await createLogComponent({ config })
 
       const livekitClient = createMockLivekitClient({
-        listRooms: jest.fn().mockRejectedValue(new Error('Failed to fetch comms status'))
+        listRoomsWithParticipantCounts: jest.fn().mockRejectedValue(new Error('Failed to fetch comms status'))
       })
 
       const fetch: IFetchComponent = {
@@ -350,6 +364,37 @@ describe('comms-adapter', function () {
         rooms: 0,
         users: 0,
         details: []
+      })
+    })
+
+    it('returns sum of scene room participant counts for a world', async () => {
+      const config: IConfigComponent = await createConfigComponent({
+        COMMS_ADAPTER: 'livekit',
+        COMMS_ROOM_PREFIX: 'world-',
+        SCENE_ROOM_PREFIX: 'scene-',
+        LIVEKIT_HOST: 'livekit.dcl.org',
+        LIVEKIT_API_KEY: 'myApiKey',
+        LIVEKIT_API_SECRET: 'myApiSecret'
+      })
+      const logs = await createLogComponent({ config })
+
+      const listRoomsWithParticipantCountsMock = jest.fn().mockResolvedValue([
+        { name: 'scene-sample.dcl.eth-scene1', numParticipants: 4 },
+        { name: 'scene-sample.dcl.eth-scene2', numParticipants: 3 }
+      ])
+      const livekitClient = createMockLivekitClient({
+        listRoomsWithParticipantCounts: listRoomsWithParticipantCountsMock
+      })
+
+      const fetch: IFetchComponent = {
+        fetch: async (_url: Request): Promise<Response> => new Response(undefined)
+      }
+      const commsAdapter = await createCommsAdapterComponent({ config, fetch, logs, livekitClient })
+
+      expect(await commsAdapter.getWorldSceneRoomsParticipantCount('sample.dcl.eth')).toBe(7)
+      expect(listRoomsWithParticipantCountsMock).toHaveBeenCalledTimes(1)
+      expect(listRoomsWithParticipantCountsMock).toHaveBeenCalledWith({
+        namePrefix: 'scene-sample.dcl.eth-'
       })
     })
   })

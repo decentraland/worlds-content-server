@@ -9,6 +9,7 @@ import {
 import { ICommsAdapter, IWorldNamePermissionChecker } from '../../src/types'
 import { IAccessComponent } from '../../src/logic/access/types'
 import { IWorldsComponent } from '../../src/logic/worlds/types'
+import { IConfigComponent } from '@well-known-components/interfaces'
 
 describe('CommsComponent', () => {
   let commsComponent: ICommsComponent
@@ -16,8 +17,9 @@ describe('CommsComponent', () => {
   let access: jest.Mocked<IAccessComponent>
   let worlds: jest.Mocked<IWorldsComponent>
   let commsAdapter: jest.Mocked<ICommsAdapter>
+  let config: jest.Mocked<IConfigComponent>
 
-  beforeEach(() => {
+  beforeEach(async () => {
     namePermissionChecker = {
       checkPermission: jest.fn()
     } as unknown as jest.Mocked<IWorldNamePermissionChecker>
@@ -35,15 +37,21 @@ describe('CommsComponent', () => {
     commsAdapter = {
       getWorldRoomConnectionString: jest.fn(),
       getSceneRoomConnectionString: jest.fn(),
-      getRoomParticipantCount: jest.fn(),
+      getWorldRoomParticipantCount: jest.fn(),
+      getWorldSceneRoomsParticipantCount: jest.fn(),
       status: jest.fn()
     } as unknown as jest.Mocked<ICommsAdapter>
 
-    commsComponent = createCommsComponent({
+    config = {
+      getNumber: jest.fn().mockResolvedValue(undefined)
+    } as unknown as jest.Mocked<IConfigComponent>
+
+    commsComponent = await createCommsComponent({
       namePermissionChecker,
       access,
       worlds,
-      commsAdapter
+      commsAdapter,
+      config
     })
   })
 
@@ -65,7 +73,7 @@ describe('CommsComponent', () => {
         beforeEach(() => {
           namePermissionChecker.checkPermission.mockResolvedValueOnce(true)
           access.checkAccess.mockResolvedValueOnce(true)
-          commsAdapter.getRoomParticipantCount.mockResolvedValueOnce(0)
+          commsAdapter.getWorldRoomParticipantCount.mockResolvedValueOnce(0)
           commsAdapter.getWorldRoomConnectionString.mockResolvedValueOnce(connectionString)
         })
 
@@ -91,7 +99,7 @@ describe('CommsComponent', () => {
 
         it('should call the adapter with correct parameters', async () => {
           await commsComponent.getWorldRoomConnectionString(userAddress, worldName)
-          expect(commsAdapter.getRoomParticipantCount).toHaveBeenCalledWith(worldName)
+          expect(commsAdapter.getWorldRoomParticipantCount).toHaveBeenCalledWith(worldName)
           expect(commsAdapter.getWorldRoomConnectionString).toHaveBeenCalledWith(userAddress, worldName)
         })
       })
@@ -100,7 +108,7 @@ describe('CommsComponent', () => {
         beforeEach(() => {
           namePermissionChecker.checkPermission.mockResolvedValueOnce(true)
           access.checkAccess.mockResolvedValueOnce(true)
-          commsAdapter.getRoomParticipantCount.mockResolvedValueOnce(0)
+          commsAdapter.getWorldRoomParticipantCount.mockResolvedValueOnce(0)
           commsAdapter.getWorldRoomConnectionString.mockResolvedValueOnce(connectionString)
         })
 
@@ -128,7 +136,7 @@ describe('CommsComponent', () => {
           } catch {
             // Expected to throw
           }
-          expect(commsAdapter.getRoomParticipantCount).not.toHaveBeenCalled()
+          expect(commsAdapter.getWorldRoomParticipantCount).not.toHaveBeenCalled()
           expect(commsAdapter.getWorldRoomConnectionString).not.toHaveBeenCalled()
         })
       })
@@ -137,7 +145,7 @@ describe('CommsComponent', () => {
         beforeEach(() => {
           namePermissionChecker.checkPermission.mockResolvedValueOnce(true)
           access.checkAccess.mockResolvedValueOnce(true)
-          commsAdapter.getRoomParticipantCount.mockResolvedValueOnce(100)
+          commsAdapter.getWorldRoomParticipantCount.mockResolvedValueOnce(100)
         })
 
         it('should throw WorldAtCapacityError', async () => {
@@ -235,6 +243,7 @@ describe('CommsComponent', () => {
         describe('and the scene exists', () => {
           beforeEach(() => {
             worlds.hasWorldScene.mockResolvedValueOnce(true)
+            commsAdapter.getWorldSceneRoomsParticipantCount.mockResolvedValueOnce(0)
             commsAdapter.getSceneRoomConnectionString.mockResolvedValueOnce(connectionString)
           })
 
@@ -248,9 +257,32 @@ describe('CommsComponent', () => {
             expect(worlds.hasWorldScene).toHaveBeenCalledWith(worldName, sceneId)
           })
 
-          it('should call the adapter with correct parameters', async () => {
+          it('should call getWorldSceneRoomsParticipantCount and the adapter with correct parameters', async () => {
             await commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, sceneId)
+            expect(commsAdapter.getWorldSceneRoomsParticipantCount).toHaveBeenCalledWith(worldName)
             expect(commsAdapter.getSceneRoomConnectionString).toHaveBeenCalledWith(userAddress, worldName, sceneId)
+          })
+        })
+
+        describe('and the world scene rooms are at capacity', () => {
+          beforeEach(() => {
+            worlds.hasWorldScene.mockResolvedValueOnce(true)
+            commsAdapter.getWorldSceneRoomsParticipantCount.mockResolvedValueOnce(100)
+          })
+
+          it('should throw WorldAtCapacityError', async () => {
+            await expect(
+              commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, sceneId)
+            ).rejects.toThrow(WorldAtCapacityError)
+          })
+
+          it('should not call getSceneRoomConnectionString', async () => {
+            try {
+              await commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, sceneId)
+            } catch {
+              // Expected to throw
+            }
+            expect(commsAdapter.getSceneRoomConnectionString).not.toHaveBeenCalled()
           })
         })
 
@@ -281,6 +313,7 @@ describe('CommsComponent', () => {
           namePermissionChecker.checkPermission.mockResolvedValueOnce(true)
           access.checkAccess.mockResolvedValueOnce(true)
           worlds.hasWorldScene.mockResolvedValueOnce(true)
+          commsAdapter.getWorldSceneRoomsParticipantCount.mockResolvedValueOnce(0)
           commsAdapter.getSceneRoomConnectionString.mockResolvedValueOnce(connectionString)
         })
 

@@ -186,11 +186,12 @@ export async function initComponents(): Promise<AppComponents> {
 
   const worlds = createWorldsComponent({ worldsManager })
 
-  const comms = createCommsComponent({
+  const comms = await createCommsComponent({
     namePermissionChecker,
     access,
     commsAdapter,
-    worlds
+    worlds,
+    config
   })
 
   return {

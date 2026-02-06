@@ -1,1 +1,1 @@
-export const MAX_USERS_PER_WORLD = 100
+export const DEFAULT_MAX_USERS_PER_WORLD = 100

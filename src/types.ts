@@ -299,7 +299,8 @@ export type CommsStatus = {
 export type ICommsAdapter = {
   getWorldRoomConnectionString(userId: EthAddress, worldName: string): Promise<string>
   getSceneRoomConnectionString(userId: EthAddress, worldName: string, sceneId: string): Promise<string>
-  getRoomParticipantCount(worldName: string): Promise<number>
+  getWorldRoomParticipantCount(worldName: string): Promise<number>
+  getWorldSceneRoomsParticipantCount(worldName: string): Promise<number>
   status(): Promise<CommsStatus>
 }
 
@@ -443,8 +444,20 @@ export type CreateConnectionTokenOptions = {
   ttl?: number
 }
 
+export type RoomParticipantCount = {
+  name: string
+  numParticipants: number
+}
+
+export type ListRoomsWithParticipantCountsOptions = {
+  namePrefix?: string
+  chunkSize?: number
+}
+
 export type LivekitClient = {
+  getRoom(roomId: string): Promise<Room | null>
   listRooms(roomNames?: string[]): Promise<Room[]>
+  listRoomsWithParticipantCounts(options?: ListRoomsWithParticipantCountsOptions): Promise<RoomParticipantCount[]>
   createConnectionToken(identity: string, grant: VideoGrant, options?: CreateConnectionTokenOptions): Promise<string>
   receiveWebhookEvent(body: string, authorization: string): Promise<WebhookEvent>
 }
