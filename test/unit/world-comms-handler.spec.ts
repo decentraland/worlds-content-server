@@ -1,6 +1,11 @@
 import { worldCommsHandler } from '../../src/controllers/handlers/world-comms-handler'
 import { ICommsComponent } from '../../src/logic/comms/types'
-import { InvalidAccessError, InvalidWorldError, SceneNotFoundError, WorldAtCapacityError } from '../../src/logic/comms/errors'
+import {
+  InvalidAccessError,
+  InvalidWorldError,
+  SceneNotFoundError,
+  WorldAtCapacityError
+} from '../../src/logic/comms/errors'
 import { HandlerContextWithPath } from '../../src/types'
 import { DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
 

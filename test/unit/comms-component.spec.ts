@@ -1,6 +1,11 @@
 import { createCommsComponent } from '../../src/logic/comms/component'
 import { ICommsComponent } from '../../src/logic/comms/types'
-import { InvalidWorldError, InvalidAccessError, SceneNotFoundError, WorldAtCapacityError } from '../../src/logic/comms/errors'
+import {
+  InvalidWorldError,
+  InvalidAccessError,
+  SceneNotFoundError,
+  WorldAtCapacityError
+} from '../../src/logic/comms/errors'
 import { ICommsAdapter, IWorldNamePermissionChecker } from '../../src/types'
 import { IAccessComponent } from '../../src/logic/access/types'
 import { IWorldsComponent } from '../../src/logic/worlds/types'
