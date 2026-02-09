@@ -61,232 +61,17 @@ export async function createAccessComponent({
   config,
   socialService,
   worldsManager,
-  peersRegistry,
-  commsAdapter,
-  logs
+  accessChangeHandler,
+  commsAdapter: _commsAdapter,
+  logs: _logs
 }: Pick<
   AppComponents,
-  'config' | 'socialService' | 'worldsManager' | 'peersRegistry' | 'commsAdapter' | 'logs'
+  'config' | 'socialService' | 'worldsManager' | 'accessChangeHandler' | 'commsAdapter' | 'logs'
 >): Promise<IAccessComponent> {
-  const logger = logs.getLogger('access-component')
   const maxCommunities = (await config.getNumber('ACCESS_MAX_COMMUNITIES')) ?? DEFAULT_MAX_COMMUNITIES
   const maxWallets = (await config.getNumber('ACCESS_MAX_WALLETS')) ?? DEFAULT_MAX_WALLETS
-  const kickBatchSize = (await config.getNumber('ACCESS_KICK_BATCH_SIZE')) ?? 20
 
   const createAllowListChecker = createAllowListCheckerFactory(socialService)
-
-  /**
-   * State-based kick policy that determines which participants should be kicked
-   * based on the transition between access types.
-   *
-   * Design Pattern: State Transition Matrix
-   * - Each transition is explicitly modeled
-   * - Clear separation between "kick all" vs "kick unauthorized only"
-   * - Handles edge cases (same type transitions, unrestricted targets)
-   */
-  type KickPolicy = {
-    shouldKickAll: boolean
-    shouldCheckIndividualAccess: boolean
-  }
-
-  function determineKickPolicy(previousType: AccessType, newType: AccessType): KickPolicy {
-    // Unrestricted target → no kicks needed (opening access)
-    if (newType === AccessType.Unrestricted) {
-      return { shouldKickAll: false, shouldCheckIndividualAccess: false }
-    }
-
-    // Same type transitions
-    if (previousType === newType) {
-      if (newType === AccessType.SharedSecret) {
-        // Secret may have changed → kick all
-        return { shouldKickAll: true, shouldCheckIndividualAccess: false }
-      }
-      if (newType === AccessType.AllowList) {
-        // AllowList → AllowList: kick only those not in new list
-        return { shouldKickAll: false, shouldCheckIndividualAccess: true }
-      }
-      // Unrestricted → Unrestricted or NFT → NFT: no kicks
-      return { shouldKickAll: false, shouldCheckIndividualAccess: false }
-    }
-
-    // Transitions FROM Unrestricted TO restricted types
-    if (previousType === AccessType.Unrestricted) {
-      if (newType === AccessType.AllowList) {
-        // Check individual access (some may be in list)
-        return { shouldKickAll: false, shouldCheckIndividualAccess: true }
-      }
-      // TO SharedSecret or NFTOwnership: kick all
-      return { shouldKickAll: true, shouldCheckIndividualAccess: false }
-    }
-
-    // Transitions TO AllowList from SharedSecret/NFTOwnership: check individual access
-    if (newType === AccessType.AllowList) {
-      return { shouldKickAll: false, shouldCheckIndividualAccess: true }
-    }
-
-    // All other transitions (TO SharedSecret or NFTOwnership from restricted types): kick all
-    return { shouldKickAll: true, shouldCheckIndividualAccess: false }
-  }
-
-  /**
-   * Kicks participants in batches to avoid unbounded parallelism.
-   * Uses Promise.allSettled to ensure all kick attempts are made even if some fail.
-   * Kicks from ALL rooms the participant is in (both world room and scene rooms).
-   */
-  async function kickParticipantsInBatches(worldName: string, identities: string[]): Promise<void> {
-    if (identities.length === 0) {
-      return
-    }
-
-    logger.info(`Kicking ${identities.length} participant(s) from world ${worldName}`, {
-      worldName,
-      participantCount: identities.length
-    })
-
-    for (let i = 0; i < identities.length; i += kickBatchSize) {
-      const batch = identities.slice(i, i + kickBatchSize)
-      const results = await Promise.allSettled(
-        batch.map(async (identity) => {
-          // Get all rooms this peer is in (comms + scene rooms)
-          const rooms = peersRegistry.getPeerRooms(identity)
-
-          if (rooms.length === 0) {
-            logger.debug(`Peer not in any rooms, skipping`, {
-              worldName,
-              identity
-            })
-            return
-          }
-
-          // Kick from all rooms
-          const kickResults = await Promise.allSettled(
-            rooms.map(async (roomName) => {
-              try {
-                await commsAdapter.removeParticipant(roomName, identity)
-                logger.debug(`Kicked participant from room`, {
-                  worldName,
-                  roomName,
-                  identity
-                })
-              } catch (error) {
-                logger.warn(`Failed to kick participant from room`, {
-                  worldName,
-                  roomName,
-                  identity,
-                  error: error instanceof Error ? error.message : String(error)
-                })
-                throw error
-              }
-            })
-          )
-
-          const kickFailures = kickResults.filter((r) => r.status === 'rejected')
-          if (kickFailures.length > 0) {
-            logger.warn(`Failed to kick participant from ${kickFailures.length}/${rooms.length} room(s)`, {
-              worldName,
-              identity,
-              totalRooms: rooms.length,
-              failedRooms: kickFailures.length
-            })
-            throw new Error(`Failed to kick from ${kickFailures.length} room(s)`)
-          }
-        })
-      )
-
-      const failures = results.filter((r) => r.status === 'rejected')
-      if (failures.length > 0) {
-        logger.warn(`Batch completed with ${failures.length} failure(s)`, {
-          worldName,
-          batchSize: batch.length,
-          failures: failures.length
-        })
-      }
-    }
-
-    logger.info(`Completed kicking participants from world ${worldName}`, {
-      worldName,
-      totalKicked: identities.length
-    })
-  }
-
-  /**
-   * Enforces access control after settings change by kicking unauthorized participants.
-   * Implements the state transition matrix for determining kick policy.
-   */
-  async function enforceAccessAfterChange(
-    worldName: string,
-    previousAccess: AccessSetting,
-    newAccess: AccessSetting
-  ): Promise<void> {
-    const policy = determineKickPolicy(previousAccess.type, newAccess.type)
-
-    // No kicks needed
-    if (!policy.shouldKickAll && !policy.shouldCheckIndividualAccess) {
-      logger.debug(`No kicks needed for access change`, {
-        worldName,
-        previousType: previousAccess.type,
-        newType: newAccess.type
-      })
-      return
-    }
-
-    const identities = peersRegistry.getPeersInWorld(worldName)
-
-    if (identities.length === 0) {
-      logger.debug(`No participants in world, skipping kicks`, { worldName })
-      return
-    }
-
-    if (policy.shouldKickAll) {
-      logger.info(`Kicking all participants due to access type change`, {
-        worldName,
-        previousType: previousAccess.type,
-        newType: newAccess.type,
-        participantCount: identities.length
-      })
-      await kickParticipantsInBatches(worldName, identities)
-      return
-    }
-
-    if (policy.shouldCheckIndividualAccess) {
-      logger.info(`Checking individual access for participants`, {
-        worldName,
-        previousType: previousAccess.type,
-        newType: newAccess.type,
-        participantCount: identities.length
-      })
-
-      // Check each participant's access and collect those without access
-      const unauthorizedIdentities: string[] = []
-      for (const identity of identities) {
-        try {
-          const hasAccess = await checkAccess(worldName, identity as EthAddress)
-          if (!hasAccess) {
-            unauthorizedIdentities.push(identity)
-          }
-        } catch (error) {
-          logger.warn(`Error checking access for participant, kicking as precaution`, {
-            worldName,
-            identity,
-            error: error instanceof Error ? error.message : String(error)
-          })
-          // If we can't verify access, kick as a safety measure
-          unauthorizedIdentities.push(identity)
-        }
-      }
-
-      if (unauthorizedIdentities.length > 0) {
-        logger.info(`Found ${unauthorizedIdentities.length} unauthorized participant(s)`, {
-          worldName,
-          total: identities.length,
-          unauthorized: unauthorizedIdentities.length
-        })
-        await kickParticipantsInBatches(worldName, unauthorizedIdentities)
-      } else {
-        logger.debug(`All participants have valid access`, { worldName })
-      }
-    }
-  }
 
   function createAccessCheckerFrom(accessSetting: AccessSetting): CheckingFunction {
     switch (accessSetting.type) {
@@ -329,7 +114,7 @@ export async function createAccessComponent({
    * Set access settings for a world with validation.
    * Validates the access type and constructs the appropriate AccessSetting.
    * For AllowList with communities, validates that the signer is a member of all communities.
-   * After storing the new access, enforces the change by kicking unauthorized participants.
+   * After storing the new access, handles the access change (e.g. kicks participants when required).
    */
   async function setAccess(worldName: string, signer: EthAddress, input: AccessInput): Promise<void> {
     const { type, wallets, communities, nft, secret } = input
@@ -399,19 +184,7 @@ export async function createAccessComponent({
     await worldsManager.createBasicWorldIfNotExists(worldName, signer)
     await worldsManager.storeAccess(worldName, accessSetting)
 
-    // Enforce the access change by kicking unauthorized participants
-    try {
-      await enforceAccessAfterChange(worldName, previousAccess, accessSetting)
-    } catch (error) {
-      // Log but don't fail the setAccess operation
-      // The access settings have been stored successfully
-      logger.error(`Error enforcing access change`, {
-        worldName,
-        previousType: previousAccess.type,
-        newType: accessSetting.type,
-        error: error instanceof Error ? error.message : String(error)
-      })
-    }
+    await accessChangeHandler.handleAccessChange(worldName, previousAccess, accessSetting)
   }
 
   /**

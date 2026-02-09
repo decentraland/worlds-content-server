@@ -44,6 +44,8 @@ import { createSettingsComponent } from './logic/settings'
 import { createCoordinatesComponent } from './logic/coordinates'
 import { createPermissionsComponent } from './logic/permissions'
 import { createAccessComponent } from './logic/access'
+import { createAccessChangeHandler } from './logic/access-manager'
+import { createParticipantKicker } from './logic/participant-kicker'
 import { createSearchComponent } from './adapters/search'
 import { createCommsComponent } from './logic/comms'
 import { createWorldsComponent } from './logic/worlds'
@@ -139,7 +141,16 @@ export async function initComponents(): Promise<AppComponents> {
   const permissions = await createPermissionsComponent({ config, permissionsManager, snsClient, worldsManager })
   const socialService = await createSocialServiceComponent({ config, fetch, logs })
   const peersRegistry = await createPeersRegistry({ config })
-  const access = await createAccessComponent({ config, socialService, worldsManager, peersRegistry, commsAdapter, logs })
+  const participantKicker = await createParticipantKicker({ peersRegistry, commsAdapter, logs, config })
+  const accessChangeHandler = createAccessChangeHandler({ peersRegistry, participantKicker, logs })
+  const access = await createAccessComponent({
+    config,
+    socialService,
+    worldsManager,
+    accessChangeHandler,
+    commsAdapter,
+    logs
+  })
 
   const entityDeployer = createEntityDeployer({
     config,
@@ -195,12 +206,10 @@ export async function initComponents(): Promise<AppComponents> {
   })
 
   return {
-    worlds,
-    comms,
     access,
+    accessChangeHandler,
     awsConfig,
-    schemaValidator,
-    settings,
+    comms,
     commsAdapter,
     config,
     coordinates,
@@ -214,16 +223,19 @@ export async function initComponents(): Promise<AppComponents> {
     marketplaceSubGraph,
     metrics,
     migrationExecutor,
-    nats,
     nameDenyListChecker,
     nameOwnership,
     namePermissionChecker,
+    nats,
     notificationService,
+    participantKicker,
+    peersRegistry,
     permissions,
     permissionsManager,
-    peersRegistry,
+    schemaValidator,
     search,
     server,
+    settings,
     snsClient,
     socialService,
     status,
@@ -232,6 +244,7 @@ export async function initComponents(): Promise<AppComponents> {
     updateOwnerJob,
     validator,
     walletStats,
+    worlds,
     worldsIndexer,
     worldsManager
   }

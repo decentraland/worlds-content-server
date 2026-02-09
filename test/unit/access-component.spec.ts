@@ -1,4 +1,6 @@
-import { createAccessComponent } from '../../src/logic/access/component'
+import { createAccessComponent } from '../../src/logic/access'
+import { createAccessChangeHandler } from '../../src/logic/access-manager'
+import { createParticipantKicker } from '../../src/logic/participant-kicker'
 import { AccessSetting, AccessType, IAccessComponent } from '../../src/logic/access/types'
 import {
   InvalidAccessTypeError,
@@ -79,11 +81,13 @@ describe('AccessComponent', () => {
       }))
     } as unknown as jest.Mocked<ILoggerComponent>
 
+    const participantKicker = await createParticipantKicker({ peersRegistry, commsAdapter, logs, config })
+    const accessChangeHandler = createAccessChangeHandler({ peersRegistry, participantKicker, logs })
     accessComponent = await createAccessComponent({
       config,
       socialService,
       worldsManager,
-      peersRegistry,
+      accessChangeHandler,
       commsAdapter,
       logs
     })
@@ -699,11 +703,22 @@ describe('AccessComponent', () => {
               Promise.resolve(key === 'COMMS_ROOM_PREFIX' ? 'world-' : 'unknown')
             )
           })
+          const participantKickerWithLowLimit = await createParticipantKicker({
+            peersRegistry,
+            commsAdapter,
+            logs,
+            config: configWithLowLimit
+          })
+          const accessChangeHandlerWithLowLimit = createAccessChangeHandler({
+            peersRegistry,
+            participantKicker: participantKickerWithLowLimit,
+            logs
+          })
           accessComponent = await createAccessComponent({
             config: configWithLowLimit,
             socialService,
             worldsManager,
-            peersRegistry,
+            accessChangeHandler: accessChangeHandlerWithLowLimit,
             commsAdapter,
             logs
           })
@@ -1208,13 +1223,14 @@ describe('AccessComponent', () => {
           )
         })
 
-        it('should not kick any participants', async () => {
+        it('should kick all participants (type changed)', async () => {
           await accessComponent.setAccess('test-world', TEST_SIGNER, {
             type: AccessType.AllowList,
             wallets: ['0xalice', '0xbob', '0xcharlie']
           })
 
-          expect(commsAdapter.removeParticipant).not.toHaveBeenCalled()
+          // 3 participants * 2 rooms each = 6 total kicks (changing type always kicks everyone)
+          expect(commsAdapter.removeParticipant).toHaveBeenCalledTimes(6)
         })
       })
 
@@ -1226,21 +1242,14 @@ describe('AccessComponent', () => {
           )
         })
 
-        it('should kick only unauthorized participants from all their rooms', async () => {
+        it('should kick all participants (type changed)', async () => {
           await accessComponent.setAccess('test-world', TEST_SIGNER, {
             type: AccessType.AllowList,
             wallets: ['0xalice']
           })
 
-          // Each unauthorized user should be kicked from 2 rooms (world + scene)
-          // 0xbob and 0xcharlie are unauthorized, so 2 * 2 = 4 total kicks
-          expect(commsAdapter.removeParticipant).toHaveBeenCalledTimes(4)
-          // Verify kicks from both room types for 0xbob
-          expect(commsAdapter.removeParticipant).toHaveBeenCalledWith('world-test-world', '0xbob')
-          expect(commsAdapter.removeParticipant).toHaveBeenCalledWith('world-scene-room-test-world-scene1', '0xbob')
-          // Verify kicks from both room types for 0xcharlie
-          expect(commsAdapter.removeParticipant).toHaveBeenCalledWith('world-test-world', '0xcharlie')
-          expect(commsAdapter.removeParticipant).toHaveBeenCalledWith('world-scene-room-test-world-scene1', '0xcharlie')
+          // 3 participants * 2 rooms each = 6 total kicks (changing type always kicks everyone)
+          expect(commsAdapter.removeParticipant).toHaveBeenCalledTimes(6)
         })
       })
 
@@ -1324,12 +1333,13 @@ describe('AccessComponent', () => {
         peersRegistry.getPeersInWorld = jest.fn().mockReturnValue(['0xalice', '0xbob'])
       })
 
-      it('should not kick any participants (opening access)', async () => {
+      it('should kick all participants (type changed)', async () => {
         await accessComponent.setAccess('test-world', TEST_SIGNER, {
           type: AccessType.Unrestricted
         })
 
-        expect(commsAdapter.removeParticipant).not.toHaveBeenCalled()
+        // 2 participants * 2 rooms each = 4 total kicks (changing type always kicks everyone)
+        expect(commsAdapter.removeParticipant).toHaveBeenCalledTimes(4)
       })
     })
 
@@ -1379,12 +1389,13 @@ describe('AccessComponent', () => {
         peersRegistry.getPeersInWorld = jest.fn().mockReturnValue(['0xalice'])
       })
 
-      it('should not kick any participants (opening access)', async () => {
+      it('should kick all participants (type changed)', async () => {
         await accessComponent.setAccess('test-world', TEST_SIGNER, {
           type: AccessType.Unrestricted
         })
 
-        expect(commsAdapter.removeParticipant).not.toHaveBeenCalled()
+        // 1 participant * 2 rooms = 2 total kicks (changing type always kicks everyone)
+        expect(commsAdapter.removeParticipant).toHaveBeenCalledTimes(2)
       })
     })
 
@@ -1419,14 +1430,13 @@ describe('AccessComponent', () => {
           peersRegistry.getPeersInWorld = jest.fn().mockReturnValue(['0xalice', '0xbob'])
         })
 
-        it('should kick only participants not in the new list from all their rooms', async () => {
+        it('should not kick any participants (same type)', async () => {
           await accessComponent.setAccess('test-world', TEST_SIGNER, {
             type: AccessType.AllowList,
             wallets: ['0xalice']
           })
 
-          // 1 unauthorized participant (0xbob) * 2 rooms = 2 total kicks
-          expect(commsAdapter.removeParticipant).toHaveBeenCalledTimes(2)
+          expect(commsAdapter.removeParticipant).not.toHaveBeenCalled()
         })
       })
 
@@ -1492,15 +1502,14 @@ describe('AccessComponent', () => {
           })
         })
 
-        it('should kick participants not in the new community from all their rooms', async () => {
+        it('should not kick any participants (same type)', async () => {
           await accessComponent.setAccess('test-world', TEST_SIGNER, {
             type: AccessType.AllowList,
             wallets: [],
             communities: ['community-2']
           })
 
-          // 1 unauthorized participant (0xbob) * 2 rooms = 2 total kicks
-          expect(commsAdapter.removeParticipant).toHaveBeenCalledTimes(2)
+          expect(commsAdapter.removeParticipant).not.toHaveBeenCalled()
         })
       })
     })
@@ -1513,14 +1522,13 @@ describe('AccessComponent', () => {
         peersRegistry.getPeersInWorld = jest.fn().mockReturnValue(['0xalice', '0xbob'])
       })
 
-      it('should kick all participants from all their rooms (secret may have changed)', async () => {
+      it('should not kick any participants (same type)', async () => {
         await accessComponent.setAccess('test-world', TEST_SIGNER, {
           type: AccessType.SharedSecret,
           secret: 'new-secret'
         })
 
-        // 2 participants * 2 rooms each = 4 total kicks
-        expect(commsAdapter.removeParticipant).toHaveBeenCalledTimes(4)
+        expect(commsAdapter.removeParticipant).not.toHaveBeenCalled()
       })
     })
 
@@ -1612,11 +1620,22 @@ describe('AccessComponent', () => {
           )
         })
 
+        const participantKickerWithSmallBatch = await createParticipantKicker({
+          peersRegistry,
+          commsAdapter,
+          logs,
+          config: configWithSmallBatch
+        })
+        const accessChangeHandlerWithSmallBatch = createAccessChangeHandler({
+          peersRegistry,
+          participantKicker: participantKickerWithSmallBatch,
+          logs
+        })
         accessComponent = await createAccessComponent({
           config: configWithSmallBatch,
           socialService,
           worldsManager,
-          peersRegistry,
+          accessChangeHandler: accessChangeHandlerWithSmallBatch,
           commsAdapter,
           logs
         })

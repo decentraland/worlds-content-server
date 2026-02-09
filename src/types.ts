@@ -30,9 +30,11 @@ import {
   WorldPermissionRecordForChecking
 } from './logic/permissions'
 import { AccessSetting, IAccessComponent } from './logic/access'
+import { IAccessChangeHandler } from './logic/access-manager'
 import { ISocialServiceComponent } from './adapters/social-service'
 import { ICommsComponent } from './logic/comms'
 import { IWorldsComponent } from './logic/worlds'
+import { IParticipantKicker } from './logic/participant-kicker'
 
 export type GlobalContext = {
   components: BaseComponents
@@ -477,6 +479,7 @@ export type IPeersRegistry = {
 // components used in every environment
 export type BaseComponents = {
   access: IAccessComponent
+  accessChangeHandler: IAccessChangeHandler
   awsConfig: AwsConfig
   commsAdapter: ICommsAdapter
   config: IConfigComponent
@@ -496,6 +499,7 @@ export type BaseComponents = {
   nameOwnership: INameOwnership
   namePermissionChecker: IWorldNamePermissionChecker
   notificationService: INotificationService
+  participantKicker: IParticipantKicker
   permissions: IPermissionsComponent
   permissionsManager: IPermissionsManager
   peersRegistry: IPeersRegistry
