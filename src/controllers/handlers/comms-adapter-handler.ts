@@ -41,7 +41,7 @@ export async function commsAdapterHandler(
     access.checkAccess(worldName, identity, authMetadata.secret)
   ])
 
-  if (!hasPermission || !hasAccess) {
+  if (!hasPermission && !hasAccess) {
     throw new NotAuthorizedError(`You are not allowed to access world "${worldName}".`)
   }
 
