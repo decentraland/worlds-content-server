@@ -39,6 +39,9 @@ import { createMockPeersRegistry } from './mocks/peers-registry-mock'
 import { IPublisherComponent } from '@dcl/sns-component'
 import { createAuthenticatedLocalFetchComponent } from './components/local-auth-fetch'
 import { createMockSocialService } from './mocks/social-service-mock'
+import { createAccessChangeHandler } from '../src/logic/access-change-handler'
+import { createAccessCheckerComponent } from '../src/logic/access-checker'
+import { createParticipantKicker } from '../src/logic/participant-kicker'
 
 /**
  * Behaves like Jest "describe" function, used to describe a test for a
@@ -118,14 +121,22 @@ async function initComponents(): Promise<TestComponents> {
   const permissions = await createPermissionsComponent({ config, permissionsManager, snsClient, worldsManager })
   const socialService = createMockSocialService()
   const peersRegistry = createMockPeersRegistry()
-  const commsAdapter = createMockCommsAdapterComponent()
+  const participantKicker = await createParticipantKicker({ peersRegistry, commsAdapter, logs, config })
+  const accessChecker = await createAccessCheckerComponent({ worldsManager, socialService })
+  const accessChangeHandler = createAccessChangeHandler({
+    peersRegistry,
+    participantKicker,
+    logs,
+    accessChecker
+  })
   const access = await createAccessComponent({
     config,
     socialService,
     worldsManager,
-    peersRegistry,
     commsAdapter,
-    logs
+    logs,
+    accessChangeHandler,
+    accessChecker
   })
 
   const entityDeployer = createEntityDeployer({
