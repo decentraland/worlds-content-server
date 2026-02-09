@@ -92,10 +92,12 @@ function parseMultipartInput(
   if (isDefinedMultipartField(fields.categories)) {
     if (fields.categories.value.length === 1 && fields.categories.value[0] === 'null') {
       input.categories = []
-    } else if (fields.categories.value.length > 20) {
-      throw new ValidationError(`Invalid categories: ${fields.categories.value.length} items. Expected at most 20`)
+    } else {
+      if (fields.categories.value.length > 20) {
+        throw new ValidationError(`Invalid categories: ${fields.categories.value.length} items. Expected at most 20`)
+      }
+      input.categories = fields.categories.value
     }
-    input.categories = fields.categories.value
   }
 
   if (isDefinedMultipartField(fields.single_player)) {
