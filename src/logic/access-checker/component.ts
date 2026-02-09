@@ -29,13 +29,14 @@ function createNftOwnershipChecker(_requiredNft: string): CheckingFunction {
 
 function createAllowListCheckerFactory(socialService: ISocialServiceComponent) {
   return (allowList: string[], communities: string[]): CheckingFunction => {
-    const lowerCasedAllowList = allowList.map((ethAddress) => ethAddress.toLowerCase())
+    const lowerCasedAllowList = allowList?.map((ethAddress) => ethAddress.toLowerCase()) ?? []
 
     return async (ethAddress: EthAddress, _extras?: any): Promise<boolean> => {
       if (lowerCasedAllowList.includes(ethAddress.toLowerCase())) {
         return true
       }
-      if (communities.length > 0) {
+
+      if (communities && communities.length > 0) {
         const { communities: memberCommunities } = await socialService.getMemberCommunities(ethAddress, communities)
         return memberCommunities.length > 0
       }

@@ -107,7 +107,7 @@ export function createAccessChangeHandler({
       previousAccess: AccessSetting,
       newAccess: AccessSetting
     ): Promise<void> {
-      const identities = peersRegistry.getPeersInWorld(worldName)
+      const identities = peersRegistry.getPeersInWorld(worldName) ?? []
       if (identities.length === 0) {
         logger.debug(`No participants in world, skipping access change reaction`, { worldName })
         return
