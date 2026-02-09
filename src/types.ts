@@ -302,6 +302,7 @@ export type ICommsAdapter = {
   getWorldRoomParticipantCount(worldName: string): Promise<number>
   getWorldSceneRoomsParticipantCount(worldName: string): Promise<number>
   status(): Promise<CommsStatus>
+  removeParticipant(roomName: string, identity: string): Promise<void>
 }
 
 export type ILimitsManager = {
@@ -462,6 +463,7 @@ export type LivekitClient = {
   listRoomsWithParticipantCounts(options?: ListRoomsWithParticipantCountsOptions): Promise<RoomParticipantCount[]>
   createConnectionToken(identity: string, grant: VideoGrant, options?: CreateConnectionTokenOptions): Promise<string>
   receiveWebhookEvent(body: string, authorization: string): Promise<WebhookEvent>
+  removeParticipant(roomName: string, identity: string): Promise<void>
 }
 
 export type IPeersRegistry = {

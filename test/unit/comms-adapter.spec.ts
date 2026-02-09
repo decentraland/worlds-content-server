@@ -155,6 +155,29 @@ describe('comms-adapter', function () {
       expect(await commsAdapter.getWorldSceneRoomsParticipantCount('nonexistent.dcl.eth')).toBe(0)
     })
 
+    it('should not throw when removeParticipant is called', async () => {
+      const config: IConfigComponent = await createConfigComponent({
+        COMMS_ADAPTER: 'ws-room',
+        COMMS_FIXED_ADAPTER: 'ws-room:ws-room-service.decentraland.org/rooms/test-scene',
+        COMMS_ROOM_PREFIX: 'world-prd-',
+        SCENE_ROOM_PREFIX: 'scene-prd-'
+      })
+      const logs = await createLogComponent({ config })
+
+      const fetch: IFetchComponent = {
+        fetch: async (_url: Request): Promise<Response> => new Response(undefined)
+      }
+
+      const commsAdapter = await createCommsAdapterComponent({
+        config,
+        fetch,
+        logs,
+        livekitClient: createMockLivekitClient()
+      })
+
+      await expect(commsAdapter.removeParticipant('world-prd-sample.dcl.eth', '0xuser123')).resolves.toBeUndefined()
+    })
+
     it('refuses to initialize when misconfigured', async () => {
       const config: IConfigComponent = await createConfigComponent({
         COMMS_ADAPTER: 'ws-room',
@@ -394,6 +417,32 @@ describe('comms-adapter', function () {
       expect(listRoomsWithParticipantCountsMock).toHaveBeenCalledWith({
         namePrefix: 'scene-sample.dcl.eth-'
       })
+    })
+
+    it('should delegate removeParticipant to livekitClient', async () => {
+      const config: IConfigComponent = await createConfigComponent({
+        COMMS_ADAPTER: 'livekit',
+        COMMS_ROOM_PREFIX: 'world-',
+        SCENE_ROOM_PREFIX: 'scene-',
+        LIVEKIT_HOST: 'livekit.dcl.org',
+        LIVEKIT_API_KEY: 'myApiKey',
+        LIVEKIT_API_SECRET: 'myApiSecret'
+      })
+      const logs = await createLogComponent({ config })
+
+      const removeParticipantMock = jest.fn().mockResolvedValue(undefined)
+      const livekitClient = createMockLivekitClient({
+        removeParticipant: removeParticipantMock
+      })
+
+      const fetch: IFetchComponent = {
+        fetch: async (_url: Request): Promise<Response> => new Response(undefined)
+      }
+      const commsAdapter = await createCommsAdapterComponent({ config, fetch, logs, livekitClient })
+
+      await commsAdapter.removeParticipant('world-sample.dcl.eth', '0xuser123')
+
+      expect(removeParticipantMock).toHaveBeenCalledWith('world-sample.dcl.eth', '0xuser123')
     })
   })
 

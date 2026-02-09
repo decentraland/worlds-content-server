@@ -63,6 +63,10 @@ export async function createLivekitClient({ config }: Pick<AppComponents, 'confi
 
     receiveWebhookEvent: async (body: string, authorization: string): Promise<WebhookEvent> => {
       return receiver.receive(body, authorization)
+    },
+
+    async removeParticipant(roomName: string, identity: string): Promise<void> {
+      await roomService.removeParticipant(roomName, identity)
     }
   }
 }
