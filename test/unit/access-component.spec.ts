@@ -10,6 +10,7 @@ import { DEFAULT_MAX_COMMUNITIES, DEFAULT_MAX_WALLETS } from '../../src/logic/ac
 import { GetRawWorldRecordsResult, IWorldsManager, WorldRecord } from '../../src/types'
 import { ISocialServiceComponent } from '../../src/adapters/social-service'
 import { createMockedConfig } from '../mocks/config-mock'
+import { createMockPeersRegistry } from '../mocks/peers-registry-mock'
 import bcrypt from 'bcrypt'
 
 const TEST_SIGNER = '0xSigner'
@@ -32,6 +33,7 @@ describe('AccessComponent', () => {
   let worldsManager: jest.Mocked<IWorldsManager>
   let socialService: jest.Mocked<ISocialServiceComponent>
   let config: ReturnType<typeof createMockedConfig>
+  let peersRegistry: ReturnType<typeof createMockPeersRegistry>
 
   beforeEach(async () => {
     worldsManager = {
@@ -55,7 +57,8 @@ describe('AccessComponent', () => {
       )
     })
 
-    accessComponent = await createAccessComponent({ config, socialService, worldsManager })
+    peersRegistry = createMockPeersRegistry()
+    accessComponent = await createAccessComponent({ config, socialService, worldsManager, peersRegistry })
   })
 
   afterEach(() => {
@@ -643,7 +646,8 @@ describe('AccessComponent', () => {
           accessComponent = await createAccessComponent({
             config: configWithLowLimit,
             socialService,
-            worldsManager
+            worldsManager,
+            peersRegistry
           })
           worldsManager.getRawWorldRecords.mockResolvedValueOnce(
             mockRawWorldRecords({

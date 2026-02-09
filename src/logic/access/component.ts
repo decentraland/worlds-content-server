@@ -60,8 +60,9 @@ function createAllowListCheckerFactory(socialService: ISocialServiceComponent) {
 export async function createAccessComponent({
   config,
   socialService,
-  worldsManager
-}: Pick<AppComponents, 'config' | 'socialService' | 'worldsManager'>): Promise<IAccessComponent> {
+  worldsManager,
+  peersRegistry
+}: Pick<AppComponents, 'config' | 'socialService' | 'worldsManager' | 'peersRegistry'>): Promise<IAccessComponent> {
   const maxCommunities = (await config.getNumber('ACCESS_MAX_COMMUNITIES')) ?? DEFAULT_MAX_COMMUNITIES
   const maxWallets = (await config.getNumber('ACCESS_MAX_WALLETS')) ?? DEFAULT_MAX_WALLETS
 
@@ -121,10 +122,9 @@ export async function createAccessComponent({
           )
         }
 
-        const walletList = wallets || []
-        if (walletList.length > maxWallets) {
+        if (wallets && wallets.length > maxWallets) {
           throw new InvalidAllowListSettingError(
-            `Too many wallets in allow-list. Maximum allowed is ${maxWallets}, but ${walletList.length} were provided.`
+            `Too many wallets in allow-list. Maximum allowed is ${maxWallets}, but ${wallets.length} were provided.`
           )
         }
 
@@ -141,7 +141,7 @@ export async function createAccessComponent({
 
         accessSetting = {
           type: AccessType.AllowList,
-          wallets: walletList,
+          wallets: wallets || [],
           communities: communities || []
         }
         break

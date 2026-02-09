@@ -138,7 +138,8 @@ export async function initComponents(): Promise<AppComponents> {
   const permissionsManager = await createPermissionsManagerComponent({ database, worldsManager })
   const permissions = await createPermissionsComponent({ config, permissionsManager, snsClient, worldsManager })
   const socialService = await createSocialServiceComponent({ config, fetch, logs })
-  const access = await createAccessComponent({ config, socialService, worldsManager })
+  const peersRegistry = await createPeersRegistry({ config })
+  const access = await createAccessComponent({ config, socialService, worldsManager, peersRegistry })
 
   const entityDeployer = createEntityDeployer({
     config,
@@ -173,7 +174,6 @@ export async function initComponents(): Promise<AppComponents> {
     walletStats
   })
 
-  const peersRegistry = await createPeersRegistry({ config })
   const settings = await createSettingsComponent({
     config,
     coordinates,

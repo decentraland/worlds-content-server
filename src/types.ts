@@ -466,8 +466,9 @@ export type LivekitClient = {
 
 export type IPeersRegistry = {
   onPeerConnected(id: string, roomName: string): void
-  onPeerDisconnected(id: string): void
+  onPeerDisconnected(id: string, roomName: string): void
   getPeerWorld(id: string): string | undefined
+  getPeersInWorld(worldName: string): string[]
 }
 
 // components used in every environment

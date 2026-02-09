@@ -117,7 +117,8 @@ async function initComponents(): Promise<TestComponents> {
 
   const permissions = await createPermissionsComponent({ config, permissionsManager, snsClient, worldsManager })
   const socialService = createMockSocialService()
-  const access = await createAccessComponent({ config, socialService, worldsManager })
+  const peersRegistry = createMockPeersRegistry()
+  const access = await createAccessComponent({ config, socialService, worldsManager, peersRegistry })
 
   const entityDeployer = createEntityDeployer({
     config,
@@ -181,7 +182,7 @@ async function initComponents(): Promise<TestComponents> {
     namePermissionChecker,
     nats: createMockNatsComponent(),
     permissionsManager,
-    peersRegistry: createMockPeersRegistry(),
+    peersRegistry,
     search,
     settings,
     snsClient,
