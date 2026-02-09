@@ -73,7 +73,7 @@ export type WorldSettings = {
   contentRating?: string
   spawnCoordinates?: string
   skyboxTime?: number | null
-  categories?: string[]
+  categories?: string[] | null
   singlePlayer?: boolean
   showInPlaces?: boolean
   thumbnailHash?: string
@@ -85,7 +85,7 @@ export type WorldSettingsInput = {
   contentRating?: string
   spawnCoordinates?: string
   skyboxTime?: number | null
-  categories?: string[]
+  categories?: string[] | null
   singlePlayer?: boolean
   showInPlaces?: boolean
   thumbnail?: Buffer
