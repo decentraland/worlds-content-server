@@ -113,8 +113,8 @@ export function createAccessChangeHandler({
         return
       }
 
-      const entry = TRANSITION_MATRIX[previousAccess.type]?.[newAccess.type] ?? 'kickAll'
-      const action: AccessChangeAction = typeof entry === 'function' ? entry(previousAccess, newAccess) : entry
+      const action: AccessChangeAction =
+        TRANSITION_MATRIX[previousAccess.type]?.[newAccess.type]?.(previousAccess, newAccess) ?? 'kickAll'
 
       try {
         await reactions[action].apply(worldName, identities, accessChecker)
