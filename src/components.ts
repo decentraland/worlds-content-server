@@ -44,7 +44,8 @@ import { createSettingsComponent } from './logic/settings'
 import { createCoordinatesComponent } from './logic/coordinates'
 import { createPermissionsComponent } from './logic/permissions'
 import { createAccessComponent } from './logic/access'
-import { createAccessChangeHandler } from './logic/access-manager'
+import { createAccessCheckerComponent } from './logic/access-checker'
+import { createAccessChangeHandler } from './logic/access-change-handler'
 import { createParticipantKicker } from './logic/participant-kicker'
 import { createSearchComponent } from './adapters/search'
 import { createCommsComponent } from './logic/comms'
@@ -142,12 +143,19 @@ export async function initComponents(): Promise<AppComponents> {
   const socialService = await createSocialServiceComponent({ config, fetch, logs })
   const peersRegistry = await createPeersRegistry({ config })
   const participantKicker = await createParticipantKicker({ peersRegistry, commsAdapter, logs, config })
-  const accessChangeHandler = createAccessChangeHandler({ peersRegistry, participantKicker, logs })
+  const accessChecker = await createAccessCheckerComponent({ worldsManager, socialService })
+  const accessChangeHandler = createAccessChangeHandler({
+    peersRegistry,
+    participantKicker,
+    logs,
+    accessChecker
+  })
   const access = await createAccessComponent({
     config,
     socialService,
     worldsManager,
     accessChangeHandler,
+    accessChecker,
     commsAdapter,
     logs
   })
@@ -207,6 +215,7 @@ export async function initComponents(): Promise<AppComponents> {
 
   return {
     access,
+    accessChecker,
     accessChangeHandler,
     awsConfig,
     comms,

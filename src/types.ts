@@ -30,7 +30,8 @@ import {
   WorldPermissionRecordForChecking
 } from './logic/permissions'
 import { AccessSetting, IAccessComponent } from './logic/access'
-import { IAccessChangeHandler } from './logic/access-manager'
+import { IAccessChangeHandler } from './logic/access-change-handler'
+import { IAccessCheckerComponent } from './logic/access-checker'
 import { ISocialServiceComponent } from './adapters/social-service'
 import { ICommsComponent } from './logic/comms'
 import { IWorldsComponent } from './logic/worlds'
@@ -479,6 +480,7 @@ export type IPeersRegistry = {
 // components used in every environment
 export type BaseComponents = {
   access: IAccessComponent
+  accessChecker: IAccessCheckerComponent
   accessChangeHandler: IAccessChangeHandler
   awsConfig: AwsConfig
   commsAdapter: ICommsAdapter

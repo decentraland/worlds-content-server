@@ -1,5 +1,6 @@
 import { createAccessComponent } from '../../src/logic/access'
-import { createAccessChangeHandler } from '../../src/logic/access-manager'
+import { createAccessCheckerComponent } from '../../src/logic/access-checker'
+import { createAccessChangeHandler } from '../../src/logic/access-change-handler'
 import { createParticipantKicker } from '../../src/logic/participant-kicker'
 import { AccessSetting, AccessType, IAccessComponent } from '../../src/logic/access/types'
 import {
@@ -9,7 +10,7 @@ import {
   UnauthorizedCommunityError
 } from '../../src/logic/access/errors'
 import { DEFAULT_MAX_COMMUNITIES, DEFAULT_MAX_WALLETS } from '../../src/logic/access/constants'
-import { GetRawWorldRecordsResult, ICommsAdapter, IPeersRegistry, IWorldsManager, WorldRecord } from '../../src/types'
+import { GetRawWorldRecordsResult, ICommsAdapter, IWorldsManager, WorldRecord } from '../../src/types'
 import { ISocialServiceComponent } from '../../src/adapters/social-service'
 import { createMockedConfig } from '../mocks/config-mock'
 import { createMockPeersRegistry } from '../mocks/peers-registry-mock'
@@ -62,9 +63,7 @@ describe('AccessComponent', () => {
           }[key]
         )
       ),
-      requireString: jest.fn((key: string) =>
-        Promise.resolve(key === 'COMMS_ROOM_PREFIX' ? 'world-' : 'unknown')
-      )
+      requireString: jest.fn((key: string) => Promise.resolve(key === 'COMMS_ROOM_PREFIX' ? 'world-' : 'unknown'))
     })
 
     peersRegistry = createMockPeersRegistry()
@@ -82,12 +81,19 @@ describe('AccessComponent', () => {
     } as unknown as jest.Mocked<ILoggerComponent>
 
     const participantKicker = await createParticipantKicker({ peersRegistry, commsAdapter, logs, config })
-    const accessChangeHandler = createAccessChangeHandler({ peersRegistry, participantKicker, logs })
+    const accessChecker = await createAccessCheckerComponent({ worldsManager, socialService })
+    const accessChangeHandler = createAccessChangeHandler({
+      peersRegistry,
+      participantKicker,
+      logs,
+      accessChecker
+    })
     accessComponent = await createAccessComponent({
       config,
       socialService,
       worldsManager,
       accessChangeHandler,
+      accessChecker,
       commsAdapter,
       logs
     })
@@ -699,9 +705,7 @@ describe('AccessComponent', () => {
                       : undefined
               )
             ),
-            requireString: jest.fn((key: string) =>
-              Promise.resolve(key === 'COMMS_ROOM_PREFIX' ? 'world-' : 'unknown')
-            )
+            requireString: jest.fn((key: string) => Promise.resolve(key === 'COMMS_ROOM_PREFIX' ? 'world-' : 'unknown'))
           })
           const participantKickerWithLowLimit = await createParticipantKicker({
             peersRegistry,
@@ -709,16 +713,19 @@ describe('AccessComponent', () => {
             logs,
             config: configWithLowLimit
           })
+          const accessCheckerWithLowLimit = await createAccessCheckerComponent({ worldsManager, socialService })
           const accessChangeHandlerWithLowLimit = createAccessChangeHandler({
             peersRegistry,
             participantKicker: participantKickerWithLowLimit,
-            logs
+            logs,
+            accessChecker: accessCheckerWithLowLimit
           })
           accessComponent = await createAccessComponent({
             config: configWithLowLimit,
             socialService,
             worldsManager,
             accessChangeHandler: accessChangeHandlerWithLowLimit,
+            accessChecker: accessCheckerWithLowLimit,
             commsAdapter,
             logs
           })
@@ -1202,7 +1209,7 @@ describe('AccessComponent', () => {
   describe('when setting access with participants to kick', () => {
     beforeEach(() => {
       // Mock getPeerRooms to return both comms and scene rooms
-      peersRegistry.getPeerRooms = jest.fn((identity: string) => {
+      peersRegistry.getPeerRooms = jest.fn((_identity: string) => {
         // Return both world room and a scene room for each peer
         const worldName = 'test-world'
         return [`world-${worldName}`, `world-scene-room-${worldName}-scene1`]
@@ -1219,7 +1226,11 @@ describe('AccessComponent', () => {
         beforeEach(() => {
           // Second call: for checking individual access after storing
           worldsManager.getRawWorldRecords.mockResolvedValue(
-            mockRawWorldRecords({ type: AccessType.AllowList, wallets: ['0xalice', '0xbob', '0xcharlie'], communities: [] })
+            mockRawWorldRecords({
+              type: AccessType.AllowList,
+              wallets: ['0xalice', '0xbob', '0xcharlie'],
+              communities: []
+            })
           )
         })
 
@@ -1522,13 +1533,13 @@ describe('AccessComponent', () => {
         peersRegistry.getPeersInWorld = jest.fn().mockReturnValue(['0xalice', '0xbob'])
       })
 
-      it('should not kick any participants (same type)', async () => {
+      it('should kick all participants when the secret changed', async () => {
         await accessComponent.setAccess('test-world', TEST_SIGNER, {
           type: AccessType.SharedSecret,
           secret: 'new-secret'
         })
 
-        expect(commsAdapter.removeParticipant).not.toHaveBeenCalled()
+        expect(commsAdapter.removeParticipant).toHaveBeenCalledTimes(4)
       })
     })
 
@@ -1615,9 +1626,7 @@ describe('AccessComponent', () => {
           getNumber: jest.fn((key: string) =>
             Promise.resolve(key === 'ACCESS_KICK_BATCH_SIZE' ? 2 : DEFAULT_MAX_WALLETS)
           ),
-          requireString: jest.fn((key: string) =>
-            Promise.resolve(key === 'COMMS_ROOM_PREFIX' ? 'world-' : 'unknown')
-          )
+          requireString: jest.fn((key: string) => Promise.resolve(key === 'COMMS_ROOM_PREFIX' ? 'world-' : 'unknown'))
         })
 
         const participantKickerWithSmallBatch = await createParticipantKicker({
@@ -1626,16 +1635,19 @@ describe('AccessComponent', () => {
           logs,
           config: configWithSmallBatch
         })
+        const accessCheckerWithSmallBatch = await createAccessCheckerComponent({ worldsManager, socialService })
         const accessChangeHandlerWithSmallBatch = createAccessChangeHandler({
           peersRegistry,
           participantKicker: participantKickerWithSmallBatch,
-          logs
+          logs,
+          accessChecker: accessCheckerWithSmallBatch
         })
         accessComponent = await createAccessComponent({
           config: configWithSmallBatch,
           socialService,
           worldsManager,
           accessChangeHandler: accessChangeHandlerWithSmallBatch,
+          accessChecker: accessCheckerWithSmallBatch,
           commsAdapter,
           logs
         })

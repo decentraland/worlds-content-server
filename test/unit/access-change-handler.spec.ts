@@ -1,6 +1,7 @@
-import { createAccessChangeHandler } from '../../src/logic/access-manager'
+import { createAccessChangeHandler } from '../../src/logic/access-change-handler'
 import { IParticipantKicker } from '../../src/logic/participant-kicker'
 import { AccessType } from '../../src/logic/access/types'
+import { IAccessCheckerComponent } from '../../src/logic/access-checker/types'
 
 function createMockParticipantKicker(): jest.Mocked<IParticipantKicker> {
   return {
@@ -8,8 +9,15 @@ function createMockParticipantKicker(): jest.Mocked<IParticipantKicker> {
   }
 }
 
+function createMockAccessChecker(): jest.Mocked<IAccessCheckerComponent> {
+  return {
+    checkAccess: jest.fn().mockResolvedValue(false)
+  }
+}
+
 describe('AccessChangeHandler', () => {
   const mockParticipantKicker = createMockParticipantKicker()
+  const mockAccessChecker = createMockAccessChecker()
   const mockPeersRegistry = {
     getPeersInWorld: jest.fn().mockReturnValue(['0xalice'])
   }
@@ -24,7 +32,8 @@ describe('AccessChangeHandler', () => {
   const accessChangeHandler = createAccessChangeHandler({
     peersRegistry: mockPeersRegistry as any,
     participantKicker: mockParticipantKicker,
-    logs: mockLogs as any
+    logs: mockLogs as any,
+    accessChecker: mockAccessChecker
   })
 
   describe('when access type transition requires no kick (same type)', () => {
@@ -37,11 +46,7 @@ describe('AccessChangeHandler', () => {
     noKickTransitions.forEach(({ from, to }) => {
       it(`should not kick participants for ${from} -> ${to}`, async () => {
         mockParticipantKicker.kickInBatches.mockClear()
-        await accessChangeHandler.handleAccessChange(
-          'world',
-          { type: from } as any,
-          { type: to } as any
-        )
+        await accessChangeHandler.handleAccessChange('world', { type: from } as any, { type: to } as any)
         expect(mockParticipantKicker.kickInBatches).not.toHaveBeenCalled()
       })
     })
@@ -60,11 +65,7 @@ describe('AccessChangeHandler', () => {
     kickAllTransitions.forEach(({ from, to }) => {
       it(`should kick all participants for ${from} -> ${to}`, async () => {
         mockParticipantKicker.kickInBatches.mockClear()
-        await accessChangeHandler.handleAccessChange(
-          'world',
-          { type: from } as any,
-          { type: to } as any
-        )
+        await accessChangeHandler.handleAccessChange('world', { type: from } as any, { type: to } as any)
         expect(mockParticipantKicker.kickInBatches).toHaveBeenCalledWith('world', ['0xalice'])
       })
     })
@@ -102,10 +103,7 @@ describe('AccessChangeHandler', () => {
         { type: AccessType.Unrestricted },
         { type: AccessType.SharedSecret, secret: 'x' }
       )
-      expect(mockParticipantKicker.kickInBatches).toHaveBeenCalledWith('world', [
-        '0xalice',
-        '0xbob'
-      ])
+      expect(mockParticipantKicker.kickInBatches).toHaveBeenCalledWith('world', ['0xalice', '0xbob'])
     })
 
     it('should not throw when reaction fails (errors are logged)', async () => {

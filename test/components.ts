@@ -119,7 +119,14 @@ async function initComponents(): Promise<TestComponents> {
   const socialService = createMockSocialService()
   const peersRegistry = createMockPeersRegistry()
   const commsAdapter = createMockCommsAdapterComponent()
-  const access = await createAccessComponent({ config, socialService, worldsManager, peersRegistry, commsAdapter, logs })
+  const access = await createAccessComponent({
+    config,
+    socialService,
+    worldsManager,
+    peersRegistry,
+    commsAdapter,
+    logs
+  })
 
   const entityDeployer = createEntityDeployer({
     config,

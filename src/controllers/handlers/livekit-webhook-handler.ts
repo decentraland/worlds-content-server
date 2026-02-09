@@ -1,5 +1,5 @@
 import { DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
-import { HandlerContextWithPath, IPeersRegistry } from '../../types'
+import { HandlerContextWithPath } from '../../types'
 import { IHttpServerComponent } from '@well-known-components/interfaces'
 import { InvalidRequestError } from '@dcl/http-commons'
 import { ParticipantEvent, WebhookEventName } from '../../adapters/livekit-client'
