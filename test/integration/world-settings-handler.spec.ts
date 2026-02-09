@@ -177,6 +177,76 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
       })
     })
 
+    describe('when the user sends null for categories to clear them', () => {
+      let identity: Identity
+      let worldName: string
+
+      beforeEach(async () => {
+        const { worldCreator, worldsManager } = components
+
+        identity = await getIdentity()
+        const created = await worldCreator.createWorldWithScene({ owner: identity.authChain })
+        worldName = created.worldName
+
+        stubComponents.namePermissionChecker.checkPermission
+          .withArgs(identity.authChain.authChain[0].payload.toLowerCase(), worldName)
+          .resolves(true)
+
+        // First set categories
+        await worldsManager.updateWorldSettings(worldName, identity.authChain.authChain[0].payload.toLowerCase(), {
+          categories: ['art', 'gaming']
+        })
+      })
+
+      it('should clear the categories in the DB', async () => {
+        const { localFetch, worldsManager } = components
+
+        const response = await makeSignedMultipartRequest(localFetch, `/world/${worldName}/settings`, identity, {
+          categories: 'null'
+        })
+
+        expect(response.status).toBe(200)
+
+        const settings = await worldsManager.getWorldSettings(worldName)
+        expect(settings?.categories).toEqual([])
+      })
+    })
+
+    describe('when the user sends null for skybox_time to clear it', () => {
+      let identity: Identity
+      let worldName: string
+
+      beforeEach(async () => {
+        const { worldCreator, worldsManager } = components
+
+        identity = await getIdentity()
+        const created = await worldCreator.createWorldWithScene({ owner: identity.authChain })
+        worldName = created.worldName
+
+        stubComponents.namePermissionChecker.checkPermission
+          .withArgs(identity.authChain.authChain[0].payload.toLowerCase(), worldName)
+          .resolves(true)
+
+        // First set skybox_time
+        await worldsManager.updateWorldSettings(worldName, identity.authChain.authChain[0].payload.toLowerCase(), {
+          skyboxTime: 3600
+        })
+      })
+
+      it('should clear the skybox_time in the DB', async () => {
+        const { localFetch, worldsManager } = components
+
+        const response = await makeSignedMultipartRequest(localFetch, `/world/${worldName}/settings`, identity, {
+          skybox_time: 'null'
+        })
+
+        expect(response.status).toBe(200)
+
+        const settings = await worldsManager.getWorldSettings(worldName)
+        expect(settings?.skyboxTime).toBeUndefined()
+      })
+    })
+
     describe('when the user has deployment permission but does not own the name', () => {
       let deployer: Identity
       let worldName: string
@@ -436,6 +506,21 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
         })
       })
 
+      describe('and title is empty', () => {
+        it('should respond with 400 and a descriptive error', async () => {
+          const { localFetch } = components
+
+          const response = await makeSignedMultipartRequest(localFetch, `/world/${worldName}/settings`, identity, {
+            title: ''
+          })
+
+          expect(response.status).toBe(400)
+          expect(await response.json()).toMatchObject({
+            error: 'Invalid title: title cannot be empty. Expected between 3 and 100 characters.'
+          })
+        })
+      })
+
       describe('and title is too short', () => {
         it('should respond with 400 validation error', async () => {
           const { localFetch } = components
@@ -463,6 +548,21 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
           expect(response.status).toBe(400)
           expect(await response.json()).toMatchObject({
             error: `Invalid title: ${longTitle}. Expected between 3 and 100 characters.`
+          })
+        })
+      })
+
+      describe('and description is empty', () => {
+        it('should respond with 400 and a descriptive error', async () => {
+          const { localFetch } = components
+
+          const response = await makeSignedMultipartRequest(localFetch, `/world/${worldName}/settings`, identity, {
+            description: ''
+          })
+
+          expect(response.status).toBe(400)
+          expect(await response.json()).toMatchObject({
+            error: 'Invalid description: description cannot be empty. Expected between 3 and 1000 characters.'
           })
         })
       })
