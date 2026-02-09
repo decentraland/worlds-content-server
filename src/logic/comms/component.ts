@@ -24,7 +24,7 @@ export const createCommsComponent = async (
       access.checkAccess(worldName, userAddress, accessOptions?.secret)
     ])
 
-    if (!hasPermission || !hasAccess) {
+    if (!hasPermission && !hasAccess) {
       throw new InvalidAccessError(worldName)
     }
   }
