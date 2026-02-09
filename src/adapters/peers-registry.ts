@@ -8,6 +8,8 @@ export async function createPeersRegistry({ config }: Pick<AppComponents, 'confi
 
   const peerToWorld = new Map<string, string>()
   const worldToPeers = new Map<string, Set<string>>()
+  // Track which specific rooms (comms + scene) each peer is in
+  const peerToRooms = new Map<string, Set<string>>()
 
   /**
    * Extracts the base world name from a LiveKit room name.
@@ -35,7 +37,7 @@ export async function createPeersRegistry({ config }: Pick<AppComponents, 'confi
 
     const idx = stripped.indexOf(DCL_ETH_SUFFIX)
     if (idx !== -1) {
-      return stripped.substring(0, idx + DCL_ETH_SUFFIX.length)
+      return stripped.substring(0, idx + DCL_ETH_SUFFIX.length).toLowerCase()
     }
 
     return stripped.toLowerCase()
@@ -71,10 +73,20 @@ export async function createPeersRegistry({ config }: Pick<AppComponents, 'confi
     const previous = peerToWorld.get(identity)
     if (previous !== undefined && previous !== world) {
       removeFromIndex(identity, previous)
+      // Clear all rooms when moving to a different world
+      peerToRooms.delete(identity)
     }
 
     peerToWorld.set(identity, world)
     addToIndex(identity, world)
+
+    // Track the specific room this peer joined
+    let rooms = peerToRooms.get(identity)
+    if (!rooms) {
+      rooms = new Set()
+      peerToRooms.set(identity, rooms)
+    }
+    rooms.add(roomName)
   }
 
   /**
@@ -90,8 +102,21 @@ export async function createPeersRegistry({ config }: Pick<AppComponents, 'confi
 
     if (peerToWorld.get(identity) !== world) return
 
-    peerToWorld.delete(identity)
-    removeFromIndex(identity, world)
+    // Remove this specific room
+    const rooms = peerToRooms.get(identity)
+    if (rooms) {
+      rooms.delete(roomName)
+      // If no more rooms, remove the peer entirely
+      if (rooms.size === 0) {
+        peerToRooms.delete(identity)
+        peerToWorld.delete(identity)
+        removeFromIndex(identity, world)
+      }
+    } else {
+      // Fallback: remove peer entirely if rooms not tracked
+      peerToWorld.delete(identity)
+      removeFromIndex(identity, world)
+    }
   }
 
   /**
@@ -110,10 +135,22 @@ export async function createPeersRegistry({ config }: Pick<AppComponents, 'confi
     return Array.from(worldToPeers.get(worldName.toLowerCase()) ?? [])
   }
 
+  /**
+   * Gets all room names a peer is currently connected to.
+   * This includes both the world comms room and any scene rooms.
+   *
+   * @param id - peer identity (case-insensitive)
+   * @returns array of room names the peer is in
+   */
+  function getPeerRooms(id: string): string[] {
+    return Array.from(peerToRooms.get(id.toLowerCase()) ?? [])
+  }
+
   return {
     onPeerConnected,
     onPeerDisconnected,
     getPeerWorld,
-    getPeersInWorld
+    getPeersInWorld,
+    getPeerRooms
   }
 }

@@ -7,10 +7,12 @@ import {
   UnauthorizedCommunityError
 } from '../../src/logic/access/errors'
 import { DEFAULT_MAX_COMMUNITIES, DEFAULT_MAX_WALLETS } from '../../src/logic/access/constants'
-import { GetRawWorldRecordsResult, IWorldsManager, WorldRecord } from '../../src/types'
+import { GetRawWorldRecordsResult, ICommsAdapter, IPeersRegistry, IWorldsManager, WorldRecord } from '../../src/types'
 import { ISocialServiceComponent } from '../../src/adapters/social-service'
 import { createMockedConfig } from '../mocks/config-mock'
 import { createMockPeersRegistry } from '../mocks/peers-registry-mock'
+import { createMockCommsAdapterComponent } from '../mocks/comms-adapter-mock'
+import { ILoggerComponent } from '@well-known-components/interfaces'
 import bcrypt from 'bcrypt'
 
 const TEST_SIGNER = '0xSigner'
@@ -34,6 +36,8 @@ describe('AccessComponent', () => {
   let socialService: jest.Mocked<ISocialServiceComponent>
   let config: ReturnType<typeof createMockedConfig>
   let peersRegistry: ReturnType<typeof createMockPeersRegistry>
+  let commsAdapter: jest.Mocked<ICommsAdapter>
+  let logs: jest.Mocked<ILoggerComponent>
 
   beforeEach(async () => {
     worldsManager = {
@@ -51,14 +55,38 @@ describe('AccessComponent', () => {
         Promise.resolve(
           {
             ACCESS_MAX_COMMUNITIES: DEFAULT_MAX_COMMUNITIES,
-            ACCESS_MAX_WALLETS: DEFAULT_MAX_WALLETS
+            ACCESS_MAX_WALLETS: DEFAULT_MAX_WALLETS,
+            ACCESS_KICK_BATCH_SIZE: 20
           }[key]
         )
+      ),
+      requireString: jest.fn((key: string) =>
+        Promise.resolve(key === 'COMMS_ROOM_PREFIX' ? 'world-' : 'unknown')
       )
     })
 
     peersRegistry = createMockPeersRegistry()
-    accessComponent = await createAccessComponent({ config, socialService, worldsManager, peersRegistry })
+    commsAdapter = createMockCommsAdapterComponent() as jest.Mocked<ICommsAdapter>
+    commsAdapter.removeParticipant = jest.fn().mockResolvedValue(undefined)
+
+    logs = {
+      getLogger: jest.fn(() => ({
+        log: jest.fn(),
+        debug: jest.fn(),
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn()
+      }))
+    } as unknown as jest.Mocked<ILoggerComponent>
+
+    accessComponent = await createAccessComponent({
+      config,
+      socialService,
+      worldsManager,
+      peersRegistry,
+      commsAdapter,
+      logs
+    })
   })
 
   afterEach(() => {
@@ -278,6 +306,10 @@ describe('AccessComponent', () => {
 
   describe('when setting access', () => {
     describe('and setting unrestricted access', () => {
+      beforeEach(() => {
+        worldsManager.getRawWorldRecords.mockResolvedValueOnce(mockRawWorldRecords({ type: AccessType.Unrestricted }))
+      })
+
       it('should store unrestricted access setting', async () => {
         await accessComponent.setAccess('test-world', TEST_SIGNER, { type: AccessType.Unrestricted })
 
@@ -288,6 +320,11 @@ describe('AccessComponent', () => {
     })
 
     describe('and setting allow-list access', () => {
+      beforeEach(() => {
+        // Mock for getting previous access (default unrestricted)
+        worldsManager.getRawWorldRecords.mockResolvedValue(mockRawWorldRecords())
+      })
+
       describe('and wallets are provided', () => {
         it('should store allow-list access setting with wallets', async () => {
           await accessComponent.setAccess('test-world', TEST_SIGNER, {
@@ -502,6 +539,11 @@ describe('AccessComponent', () => {
     })
 
     describe('and setting shared-secret access', () => {
+      beforeEach(() => {
+        // Mock for getting previous access
+        worldsManager.getRawWorldRecords.mockResolvedValue(mockRawWorldRecords())
+      })
+
       describe('and a secret is provided', () => {
         let storedAccess: any
 
@@ -532,6 +574,11 @@ describe('AccessComponent', () => {
     })
 
     describe('and setting nft-ownership access', () => {
+      beforeEach(() => {
+        // Mock for getting previous access
+        worldsManager.getRawWorldRecords.mockResolvedValue(mockRawWorldRecords())
+      })
+
       describe('and an nft is provided', () => {
         it('should store nft access setting', async () => {
           await accessComponent.setAccess('test-world', TEST_SIGNER, {
@@ -556,6 +603,10 @@ describe('AccessComponent', () => {
     })
 
     describe('and setting an invalid access type', () => {
+      beforeEach(() => {
+        worldsManager.getRawWorldRecords.mockResolvedValue(mockRawWorldRecords())
+      })
+
       it('should throw InvalidAccessTypeError', async () => {
         await expect(accessComponent.setAccess('test-world', TEST_SIGNER, { type: 'invalid-type' })).rejects.toThrow(
           InvalidAccessTypeError
@@ -639,15 +690,22 @@ describe('AccessComponent', () => {
                   ? DEFAULT_MAX_COMMUNITIES
                   : key === 'ACCESS_MAX_WALLETS'
                     ? 2
-                    : undefined
+                    : key === 'ACCESS_KICK_BATCH_SIZE'
+                      ? 20
+                      : undefined
               )
+            ),
+            requireString: jest.fn((key: string) =>
+              Promise.resolve(key === 'COMMS_ROOM_PREFIX' ? 'world-' : 'unknown')
             )
           })
           accessComponent = await createAccessComponent({
             config: configWithLowLimit,
             socialService,
             worldsManager,
-            peersRegistry
+            peersRegistry,
+            commsAdapter,
+            logs
           })
           worldsManager.getRawWorldRecords.mockResolvedValueOnce(
             mockRawWorldRecords({
@@ -1123,6 +1181,459 @@ describe('AccessComponent', () => {
       await accessComponent.getAccessForWorld('my-world.dcl.eth')
 
       expect(worldsManager.getRawWorldRecords).toHaveBeenCalledWith({ worldName: 'my-world.dcl.eth' })
+    })
+  })
+
+  describe('when setting access with participants to kick', () => {
+    beforeEach(() => {
+      // Mock getPeerRooms to return both comms and scene rooms
+      peersRegistry.getPeerRooms = jest.fn((identity: string) => {
+        // Return both world room and a scene room for each peer
+        const worldName = 'test-world'
+        return [`world-${worldName}`, `world-scene-room-${worldName}-scene1`]
+      })
+    })
+
+    describe('and transitioning from Unrestricted to AllowList', () => {
+      beforeEach(() => {
+        worldsManager.getRawWorldRecords.mockResolvedValueOnce(mockRawWorldRecords({ type: AccessType.Unrestricted }))
+        peersRegistry.getPeersInWorld = jest.fn().mockReturnValue(['0xalice', '0xbob', '0xcharlie'])
+      })
+
+      describe('and all participants are in the new allow list', () => {
+        beforeEach(() => {
+          // Second call: for checking individual access after storing
+          worldsManager.getRawWorldRecords.mockResolvedValue(
+            mockRawWorldRecords({ type: AccessType.AllowList, wallets: ['0xalice', '0xbob', '0xcharlie'], communities: [] })
+          )
+        })
+
+        it('should not kick any participants', async () => {
+          await accessComponent.setAccess('test-world', TEST_SIGNER, {
+            type: AccessType.AllowList,
+            wallets: ['0xalice', '0xbob', '0xcharlie']
+          })
+
+          expect(commsAdapter.removeParticipant).not.toHaveBeenCalled()
+        })
+      })
+
+      describe('and some participants are not in the new allow list', () => {
+        beforeEach(() => {
+          // For checking individual access after storing
+          worldsManager.getRawWorldRecords.mockResolvedValue(
+            mockRawWorldRecords({ type: AccessType.AllowList, wallets: ['0xalice'], communities: [] })
+          )
+        })
+
+        it('should kick only unauthorized participants from all their rooms', async () => {
+          await accessComponent.setAccess('test-world', TEST_SIGNER, {
+            type: AccessType.AllowList,
+            wallets: ['0xalice']
+          })
+
+          // Each unauthorized user should be kicked from 2 rooms (world + scene)
+          // 0xbob and 0xcharlie are unauthorized, so 2 * 2 = 4 total kicks
+          expect(commsAdapter.removeParticipant).toHaveBeenCalledTimes(4)
+          // Verify kicks from both room types for 0xbob
+          expect(commsAdapter.removeParticipant).toHaveBeenCalledWith('world-test-world', '0xbob')
+          expect(commsAdapter.removeParticipant).toHaveBeenCalledWith('world-scene-room-test-world-scene1', '0xbob')
+          // Verify kicks from both room types for 0xcharlie
+          expect(commsAdapter.removeParticipant).toHaveBeenCalledWith('world-test-world', '0xcharlie')
+          expect(commsAdapter.removeParticipant).toHaveBeenCalledWith('world-scene-room-test-world-scene1', '0xcharlie')
+        })
+      })
+
+      describe('and no participants are in the new allow list', () => {
+        beforeEach(() => {
+          worldsManager.getRawWorldRecords.mockResolvedValue(
+            mockRawWorldRecords({ type: AccessType.AllowList, wallets: ['0xdave'], communities: [] })
+          )
+        })
+
+        it('should kick all participants from all their rooms', async () => {
+          await accessComponent.setAccess('test-world', TEST_SIGNER, {
+            type: AccessType.AllowList,
+            wallets: ['0xdave']
+          })
+
+          // 3 participants * 2 rooms each = 6 total kicks
+          expect(commsAdapter.removeParticipant).toHaveBeenCalledTimes(6)
+        })
+      })
+    })
+
+    describe('and transitioning from Unrestricted to SharedSecret', () => {
+      beforeEach(() => {
+        worldsManager.getRawWorldRecords.mockResolvedValueOnce(mockRawWorldRecords({ type: AccessType.Unrestricted }))
+        peersRegistry.getPeersInWorld = jest.fn().mockReturnValue(['0xalice', '0xbob'])
+      })
+
+      it('should kick all participants from all their rooms', async () => {
+        await accessComponent.setAccess('test-world', TEST_SIGNER, {
+          type: AccessType.SharedSecret,
+          secret: 'new-secret'
+        })
+
+        // 2 participants * 2 rooms each = 4 total kicks
+        expect(commsAdapter.removeParticipant).toHaveBeenCalledTimes(4)
+      })
+    })
+
+    describe('and transitioning from Unrestricted to NFTOwnership', () => {
+      beforeEach(() => {
+        worldsManager.getRawWorldRecords.mockResolvedValueOnce(mockRawWorldRecords({ type: AccessType.Unrestricted }))
+        peersRegistry.getPeersInWorld = jest.fn().mockReturnValue(['0xalice', '0xbob'])
+      })
+
+      it('should kick all participants from all their rooms', async () => {
+        await accessComponent.setAccess('test-world', TEST_SIGNER, {
+          type: AccessType.NFTOwnership,
+          nft: 'some-nft'
+        })
+
+        // 2 participants * 2 rooms each = 4 total kicks
+        expect(commsAdapter.removeParticipant).toHaveBeenCalledTimes(4)
+      })
+    })
+
+    describe('and transitioning from SharedSecret to AllowList', () => {
+      beforeEach(() => {
+        worldsManager.getRawWorldRecords.mockResolvedValueOnce(
+          mockRawWorldRecords({ type: AccessType.SharedSecret, secret: 'old-secret' })
+        )
+        peersRegistry.getPeersInWorld = jest.fn().mockReturnValue(['0xalice', '0xbob'])
+      })
+
+      it('should kick all participants from all their rooms', async () => {
+        await accessComponent.setAccess('test-world', TEST_SIGNER, {
+          type: AccessType.AllowList,
+          wallets: ['0xalice']
+        })
+
+        // 2 participants * 2 rooms each = 4 total kicks
+        expect(commsAdapter.removeParticipant).toHaveBeenCalledTimes(4)
+      })
+    })
+
+    describe('and transitioning from SharedSecret to Unrestricted', () => {
+      beforeEach(() => {
+        worldsManager.getRawWorldRecords.mockResolvedValueOnce(
+          mockRawWorldRecords({ type: AccessType.SharedSecret, secret: 'old-secret' })
+        )
+        peersRegistry.getPeersInWorld = jest.fn().mockReturnValue(['0xalice', '0xbob'])
+      })
+
+      it('should not kick any participants (opening access)', async () => {
+        await accessComponent.setAccess('test-world', TEST_SIGNER, {
+          type: AccessType.Unrestricted
+        })
+
+        expect(commsAdapter.removeParticipant).not.toHaveBeenCalled()
+      })
+    })
+
+    describe('and transitioning from SharedSecret to NFTOwnership', () => {
+      beforeEach(() => {
+        worldsManager.getRawWorldRecords.mockResolvedValueOnce(
+          mockRawWorldRecords({ type: AccessType.SharedSecret, secret: 'old-secret' })
+        )
+        peersRegistry.getPeersInWorld = jest.fn().mockReturnValue(['0xalice'])
+      })
+
+      it('should kick all participants from all their rooms', async () => {
+        await accessComponent.setAccess('test-world', TEST_SIGNER, {
+          type: AccessType.NFTOwnership,
+          nft: 'some-nft'
+        })
+
+        // 1 participant * 2 rooms = 2 total kicks
+        expect(commsAdapter.removeParticipant).toHaveBeenCalledTimes(2)
+      })
+    })
+
+    describe('and transitioning from AllowList to SharedSecret', () => {
+      beforeEach(() => {
+        worldsManager.getRawWorldRecords.mockResolvedValueOnce(
+          mockRawWorldRecords({ type: AccessType.AllowList, wallets: ['0xalice'], communities: [] })
+        )
+        peersRegistry.getPeersInWorld = jest.fn().mockReturnValue(['0xalice', '0xbob'])
+      })
+
+      it('should kick all participants from all their rooms', async () => {
+        await accessComponent.setAccess('test-world', TEST_SIGNER, {
+          type: AccessType.SharedSecret,
+          secret: 'new-secret'
+        })
+
+        // 2 participants * 2 rooms each = 4 total kicks
+        expect(commsAdapter.removeParticipant).toHaveBeenCalledTimes(4)
+      })
+    })
+
+    describe('and transitioning from AllowList to Unrestricted', () => {
+      beforeEach(() => {
+        worldsManager.getRawWorldRecords.mockResolvedValueOnce(
+          mockRawWorldRecords({ type: AccessType.AllowList, wallets: ['0xalice'], communities: [] })
+        )
+        peersRegistry.getPeersInWorld = jest.fn().mockReturnValue(['0xalice'])
+      })
+
+      it('should not kick any participants (opening access)', async () => {
+        await accessComponent.setAccess('test-world', TEST_SIGNER, {
+          type: AccessType.Unrestricted
+        })
+
+        expect(commsAdapter.removeParticipant).not.toHaveBeenCalled()
+      })
+    })
+
+    describe('and transitioning from AllowList to NFTOwnership', () => {
+      beforeEach(() => {
+        worldsManager.getRawWorldRecords.mockResolvedValueOnce(
+          mockRawWorldRecords({ type: AccessType.AllowList, wallets: ['0xalice'], communities: [] })
+        )
+        peersRegistry.getPeersInWorld = jest.fn().mockReturnValue(['0xalice'])
+      })
+
+      it('should kick all participants from all their rooms', async () => {
+        await accessComponent.setAccess('test-world', TEST_SIGNER, {
+          type: AccessType.NFTOwnership,
+          nft: 'some-nft'
+        })
+
+        // 1 participant * 2 rooms = 2 total kicks
+        expect(commsAdapter.removeParticipant).toHaveBeenCalledTimes(2)
+      })
+    })
+
+    describe('and transitioning from AllowList to AllowList', () => {
+      describe('and the wallet list changed (some removed)', () => {
+        beforeEach(() => {
+          worldsManager.getRawWorldRecords.mockResolvedValueOnce(
+            mockRawWorldRecords({ type: AccessType.AllowList, wallets: ['0xalice', '0xbob'], communities: [] })
+          )
+          worldsManager.getRawWorldRecords.mockResolvedValueOnce(
+            mockRawWorldRecords({ type: AccessType.AllowList, wallets: ['0xalice'], communities: [] })
+          )
+          peersRegistry.getPeersInWorld = jest.fn().mockReturnValue(['0xalice', '0xbob'])
+        })
+
+        it('should kick only participants not in the new list from all their rooms', async () => {
+          await accessComponent.setAccess('test-world', TEST_SIGNER, {
+            type: AccessType.AllowList,
+            wallets: ['0xalice']
+          })
+
+          // 1 unauthorized participant (0xbob) * 2 rooms = 2 total kicks
+          expect(commsAdapter.removeParticipant).toHaveBeenCalledTimes(2)
+        })
+      })
+
+      describe('and the wallet list expanded', () => {
+        beforeEach(() => {
+          worldsManager.getRawWorldRecords.mockResolvedValueOnce(
+            mockRawWorldRecords({ type: AccessType.AllowList, wallets: ['0xalice'], communities: [] })
+          )
+          worldsManager.getRawWorldRecords.mockResolvedValueOnce(
+            mockRawWorldRecords({ type: AccessType.AllowList, wallets: ['0xalice', '0xbob'], communities: [] })
+          )
+          peersRegistry.getPeersInWorld = jest.fn().mockReturnValue(['0xalice'])
+        })
+
+        it('should not kick any participants', async () => {
+          await accessComponent.setAccess('test-world', TEST_SIGNER, {
+            type: AccessType.AllowList,
+            wallets: ['0xalice', '0xbob']
+          })
+
+          expect(commsAdapter.removeParticipant).not.toHaveBeenCalled()
+        })
+      })
+
+      describe('and the wallet list stayed the same', () => {
+        beforeEach(() => {
+          worldsManager.getRawWorldRecords.mockResolvedValueOnce(
+            mockRawWorldRecords({ type: AccessType.AllowList, wallets: ['0xalice'], communities: [] })
+          )
+          worldsManager.getRawWorldRecords.mockResolvedValueOnce(
+            mockRawWorldRecords({ type: AccessType.AllowList, wallets: ['0xalice'], communities: [] })
+          )
+          peersRegistry.getPeersInWorld = jest.fn().mockReturnValue(['0xalice'])
+        })
+
+        it('should not kick any participants', async () => {
+          await accessComponent.setAccess('test-world', TEST_SIGNER, {
+            type: AccessType.AllowList,
+            wallets: ['0xalice']
+          })
+
+          expect(commsAdapter.removeParticipant).not.toHaveBeenCalled()
+        })
+      })
+
+      describe('and communities are used', () => {
+        beforeEach(() => {
+          worldsManager.getRawWorldRecords.mockResolvedValueOnce(
+            mockRawWorldRecords({ type: AccessType.AllowList, wallets: [], communities: ['community-1'] })
+          )
+          worldsManager.getRawWorldRecords.mockResolvedValueOnce(
+            mockRawWorldRecords({ type: AccessType.AllowList, wallets: [], communities: ['community-2'] })
+          )
+          peersRegistry.getPeersInWorld = jest.fn().mockReturnValue(['0xalice', '0xbob'])
+          socialService.getMemberCommunities.mockImplementation((ethAddress: string) => {
+            if (ethAddress === TEST_SIGNER) {
+              return Promise.resolve({ communities: [{ id: 'community-2' }] })
+            }
+            if (ethAddress === '0xalice') {
+              return Promise.resolve({ communities: [{ id: 'community-2' }] })
+            }
+            return Promise.resolve({ communities: [] })
+          })
+        })
+
+        it('should kick participants not in the new community from all their rooms', async () => {
+          await accessComponent.setAccess('test-world', TEST_SIGNER, {
+            type: AccessType.AllowList,
+            wallets: [],
+            communities: ['community-2']
+          })
+
+          // 1 unauthorized participant (0xbob) * 2 rooms = 2 total kicks
+          expect(commsAdapter.removeParticipant).toHaveBeenCalledTimes(2)
+        })
+      })
+    })
+
+    describe('and transitioning from SharedSecret to SharedSecret', () => {
+      beforeEach(() => {
+        worldsManager.getRawWorldRecords.mockResolvedValueOnce(
+          mockRawWorldRecords({ type: AccessType.SharedSecret, secret: 'old-secret' })
+        )
+        peersRegistry.getPeersInWorld = jest.fn().mockReturnValue(['0xalice', '0xbob'])
+      })
+
+      it('should kick all participants from all their rooms (secret may have changed)', async () => {
+        await accessComponent.setAccess('test-world', TEST_SIGNER, {
+          type: AccessType.SharedSecret,
+          secret: 'new-secret'
+        })
+
+        // 2 participants * 2 rooms each = 4 total kicks
+        expect(commsAdapter.removeParticipant).toHaveBeenCalledTimes(4)
+      })
+    })
+
+    describe('and transitioning from Unrestricted to Unrestricted', () => {
+      beforeEach(() => {
+        worldsManager.getRawWorldRecords.mockResolvedValueOnce(mockRawWorldRecords({ type: AccessType.Unrestricted }))
+        peersRegistry.getPeersInWorld = jest.fn().mockReturnValue(['0xalice'])
+      })
+
+      it('should not kick any participants', async () => {
+        await accessComponent.setAccess('test-world', TEST_SIGNER, {
+          type: AccessType.Unrestricted
+        })
+
+        expect(commsAdapter.removeParticipant).not.toHaveBeenCalled()
+      })
+    })
+
+    describe('and there are no participants in the world', () => {
+      beforeEach(() => {
+        worldsManager.getRawWorldRecords.mockResolvedValueOnce(mockRawWorldRecords({ type: AccessType.Unrestricted }))
+        peersRegistry.getPeersInWorld = jest.fn().mockReturnValue([])
+      })
+
+      it('should not attempt to kick anyone', async () => {
+        await accessComponent.setAccess('test-world', TEST_SIGNER, {
+          type: AccessType.SharedSecret,
+          secret: 'new-secret'
+        })
+
+        expect(commsAdapter.removeParticipant).not.toHaveBeenCalled()
+      })
+    })
+
+    describe('and kicking participants fails', () => {
+      beforeEach(() => {
+        worldsManager.getRawWorldRecords.mockResolvedValueOnce(mockRawWorldRecords({ type: AccessType.Unrestricted }))
+        peersRegistry.getPeersInWorld = jest.fn().mockReturnValue(['0xalice', '0xbob'])
+        commsAdapter.removeParticipant = jest.fn().mockRejectedValue(new Error('LiveKit error'))
+      })
+
+      it('should still store the access settings', async () => {
+        await accessComponent.setAccess('test-world', TEST_SIGNER, {
+          type: AccessType.SharedSecret,
+          secret: 'new-secret'
+        })
+
+        expect(worldsManager.storeAccess).toHaveBeenCalled()
+      })
+
+      it('should attempt to kick all participants from all rooms despite failures', async () => {
+        await accessComponent.setAccess('test-world', TEST_SIGNER, {
+          type: AccessType.SharedSecret,
+          secret: 'new-secret'
+        })
+
+        // 2 participants * 2 rooms each = 4 total kick attempts
+        expect(commsAdapter.removeParticipant).toHaveBeenCalledTimes(4)
+      })
+    })
+
+    describe('and checking access fails for some participants', () => {
+      beforeEach(() => {
+        worldsManager.getRawWorldRecords.mockResolvedValueOnce(mockRawWorldRecords({ type: AccessType.Unrestricted }))
+        worldsManager.getRawWorldRecords.mockImplementation(() => {
+          throw new Error('Database error')
+        })
+        peersRegistry.getPeersInWorld = jest.fn().mockReturnValue(['0xalice'])
+      })
+
+      it('should kick participants as a precaution', async () => {
+        await accessComponent.setAccess('test-world', TEST_SIGNER, {
+          type: AccessType.AllowList,
+          wallets: ['0xalice']
+        })
+
+        expect(commsAdapter.removeParticipant).toHaveBeenCalledWith('world-test-world', '0xalice')
+      })
+    })
+
+    describe('and batching is needed', () => {
+      beforeEach(async () => {
+        const configWithSmallBatch = createMockedConfig({
+          getNumber: jest.fn((key: string) =>
+            Promise.resolve(key === 'ACCESS_KICK_BATCH_SIZE' ? 2 : DEFAULT_MAX_WALLETS)
+          ),
+          requireString: jest.fn((key: string) =>
+            Promise.resolve(key === 'COMMS_ROOM_PREFIX' ? 'world-' : 'unknown')
+          )
+        })
+
+        accessComponent = await createAccessComponent({
+          config: configWithSmallBatch,
+          socialService,
+          worldsManager,
+          peersRegistry,
+          commsAdapter,
+          logs
+        })
+
+        worldsManager.getRawWorldRecords.mockResolvedValueOnce(mockRawWorldRecords({ type: AccessType.Unrestricted }))
+        peersRegistry.getPeersInWorld = jest.fn().mockReturnValue(['0xalice', '0xbob', '0xcharlie', '0xdave', '0xeve'])
+      })
+
+      it('should kick participants in batches from all their rooms', async () => {
+        await accessComponent.setAccess('test-world', TEST_SIGNER, {
+          type: AccessType.SharedSecret,
+          secret: 'new-secret'
+        })
+
+        // 5 participants * 2 rooms each = 10 total kicks
+        expect(commsAdapter.removeParticipant).toHaveBeenCalledTimes(10)
+      })
     })
   })
 })

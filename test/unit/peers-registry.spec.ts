@@ -110,4 +110,68 @@ describe('PeersRegistry', () => {
       expect(peersRegistry.getPeersInWorld('name.dcl.eth')).toEqual([])
     })
   })
+
+  describe('when getting peer rooms', () => {
+    describe('and a peer is in multiple rooms', () => {
+      beforeEach(() => {
+        peersRegistry.onPeerConnected('0xalice', 'world-name.dcl.eth')
+        peersRegistry.onPeerConnected('0xalice', 'world-scene-room-name.dcl.eth-scene1')
+        peersRegistry.onPeerConnected('0xalice', 'world-scene-room-name.dcl.eth-scene2')
+      })
+
+      it('should return all rooms the peer is in', () => {
+        const rooms = peersRegistry.getPeerRooms('0xalice')
+        expect(rooms).toHaveLength(3)
+        expect(rooms).toContain('world-name.dcl.eth')
+        expect(rooms).toContain('world-scene-room-name.dcl.eth-scene1')
+        expect(rooms).toContain('world-scene-room-name.dcl.eth-scene2')
+      })
+
+      it('should be case-insensitive', () => {
+        const rooms = peersRegistry.getPeerRooms('0xALICE')
+        expect(rooms).toHaveLength(3)
+      })
+    })
+
+    describe('and a peer disconnects from one room', () => {
+      beforeEach(() => {
+        peersRegistry.onPeerConnected('0xalice', 'world-name.dcl.eth')
+        peersRegistry.onPeerConnected('0xalice', 'world-scene-room-name.dcl.eth-scene1')
+        peersRegistry.onPeerDisconnected('0xalice', 'world-scene-room-name.dcl.eth-scene1')
+      })
+
+      it('should still return the remaining rooms', () => {
+        const rooms = peersRegistry.getPeerRooms('0xalice')
+        expect(rooms).toHaveLength(1)
+        expect(rooms).toContain('world-name.dcl.eth')
+      })
+
+      it('should still show the peer in the world', () => {
+        expect(peersRegistry.getPeersInWorld('name.dcl.eth')).toContain('0xalice')
+      })
+    })
+
+    describe('and a peer disconnects from all rooms', () => {
+      beforeEach(() => {
+        peersRegistry.onPeerConnected('0xalice', 'world-name.dcl.eth')
+        peersRegistry.onPeerConnected('0xalice', 'world-scene-room-name.dcl.eth-scene1')
+        peersRegistry.onPeerDisconnected('0xalice', 'world-name.dcl.eth')
+        peersRegistry.onPeerDisconnected('0xalice', 'world-scene-room-name.dcl.eth-scene1')
+      })
+
+      it('should return empty array', () => {
+        expect(peersRegistry.getPeerRooms('0xalice')).toEqual([])
+      })
+
+      it('should remove the peer from the world', () => {
+        expect(peersRegistry.getPeersInWorld('name.dcl.eth')).not.toContain('0xalice')
+      })
+    })
+
+    describe('and a peer is not connected', () => {
+      it('should return empty array', () => {
+        expect(peersRegistry.getPeerRooms('0xunknown')).toEqual([])
+      })
+    })
+  })
 })

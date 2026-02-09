@@ -471,6 +471,7 @@ export type IPeersRegistry = {
   onPeerDisconnected(id: string, roomName: string): void
   getPeerWorld(id: string): string | undefined
   getPeersInWorld(worldName: string): string[]
+  getPeerRooms(id: string): string[]
 }
 
 // components used in every environment

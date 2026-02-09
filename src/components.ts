@@ -139,7 +139,7 @@ export async function initComponents(): Promise<AppComponents> {
   const permissions = await createPermissionsComponent({ config, permissionsManager, snsClient, worldsManager })
   const socialService = await createSocialServiceComponent({ config, fetch, logs })
   const peersRegistry = await createPeersRegistry({ config })
-  const access = await createAccessComponent({ config, socialService, worldsManager, peersRegistry })
+  const access = await createAccessComponent({ config, socialService, worldsManager, peersRegistry, commsAdapter, logs })
 
   const entityDeployer = createEntityDeployer({
     config,

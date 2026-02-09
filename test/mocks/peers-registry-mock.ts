@@ -5,6 +5,7 @@ export function createMockPeersRegistry(): jest.Mocked<IPeersRegistry> {
     onPeerConnected: jest.fn(),
     onPeerDisconnected: jest.fn(),
     getPeerWorld: jest.fn(),
-    getPeersInWorld: jest.fn().mockReturnValue([])
+    getPeersInWorld: jest.fn().mockReturnValue([]),
+    getPeerRooms: jest.fn().mockReturnValue([])
   }
 }
