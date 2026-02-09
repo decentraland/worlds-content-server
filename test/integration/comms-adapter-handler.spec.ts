@@ -68,7 +68,11 @@ test('comms adapter handler /get-comms-adapter/:roomId', function ({ components,
     expect(await r.json()).toMatchObject({ message: `World "${worldName}" was not found.` })
   })
 
-  it('fails when signed-fetch request metadata is correct but user does not have access permission', async () => {
+  it('fails when signed-fetch request metadata is correct but user has neither permission nor access', async () => {
+    const { namePermissionChecker } = stubComponents
+
+    namePermissionChecker.checkPermission.resolves(false)
+
     await worldsManager.storeAccess(worldName, {
       type: AccessType.AllowList,
       wallets: [],
@@ -89,6 +93,22 @@ test('comms adapter handler /get-comms-adapter/:roomId', function ({ components,
       error: 'Not Authorized',
       message: `You are not allowed to access world "${worldName}".`
     })
+  })
+
+  it('works when user does not have access but has permission', async () => {
+    await worldsManager.storeAccess(worldName, {
+      type: AccessType.AllowList,
+      wallets: [],
+      communities: []
+    })
+
+    const r = await localFetch.fetch(`/get-comms-adapter/world-${worldName}`, {
+      method: 'POST',
+      identity,
+      metadata: EXPLORER_METADATA
+    })
+
+    expect(r.status).toEqual(200)
   })
 
   it('fails when signed-fetch request metadata is correct but name is deny listed', async () => {
