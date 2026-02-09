@@ -181,7 +181,8 @@ describe('WorldsComponent', () => {
                 version: 'v3',
                 type: EntityType.SCENE,
                 pointers: ['0,0'],
-                timestamp: Date.now()
+                timestamp: Date.now(),
+                content: []
               },
               parcels: ['0,0'],
               size: BigInt(1000),
