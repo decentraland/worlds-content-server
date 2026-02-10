@@ -8,19 +8,23 @@ import {
 } from '../../src/logic/comms/errors'
 import { HandlerContextWithPath } from '../../src/types'
 import { DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
+import { IAccessComponent, AccessType } from '../../src/logic/access'
+import { IRateLimiterComponent } from '../../src/logic/rate-limiter'
 
 type CommsMetadata = {
   secret?: string
 }
 
 type HandlerContext = HandlerContextWithPath<
-  'comms',
+  'access' | 'comms' | 'rateLimiter',
   '/worlds/:worldName/comms' | '/worlds/:worldName/scenes/:sceneId/comms'
 > &
   DecentralandSignatureContext<CommsMetadata>
 
 describe('worldCommsHandler', () => {
   let comms: jest.Mocked<ICommsComponent>
+  let access: jest.Mocked<Pick<IAccessComponent, 'getAccessForWorld'>>
+  let rateLimiter: jest.Mocked<IRateLimiterComponent>
   let context: HandlerContext
 
   beforeEach(() => {
@@ -28,6 +32,15 @@ describe('worldCommsHandler', () => {
       getWorldRoomConnectionString: jest.fn(),
       getWorldSceneRoomConnectionString: jest.fn()
     } as jest.Mocked<ICommsComponent>
+
+    access = {
+      getAccessForWorld: jest.fn().mockResolvedValue({ type: AccessType.Unrestricted })
+    }
+
+    rateLimiter = {
+      recordFailedAttempt: jest.fn().mockResolvedValue({ rateLimited: false }),
+      clearAttempts: jest.fn().mockResolvedValue(undefined)
+    }
   })
 
   afterEach(() => {
@@ -37,8 +50,9 @@ describe('worldCommsHandler', () => {
   describe('when the request has no auth metadata', () => {
     beforeEach(() => {
       context = {
-        components: { comms },
+        components: { access, comms, rateLimiter },
         params: { worldName: 'test-world' },
+        request: { headers: new Map() },
         verification: {
           auth: '0x1234567890abcdef',
           authMetadata: undefined
@@ -58,8 +72,9 @@ describe('worldCommsHandler', () => {
 
     beforeEach(() => {
       context = {
-        components: { comms },
+        components: { access, comms, rateLimiter },
         params: { worldName },
+        request: { headers: new Map() },
         verification: {
           auth: identity,
           authMetadata: {}
@@ -89,8 +104,9 @@ describe('worldCommsHandler', () => {
     describe('and the request includes a secret', () => {
       beforeEach(() => {
         context = {
-          components: { comms },
+          components: { access, comms, rateLimiter },
           params: { worldName },
+          request: { headers: new Map() },
           verification: {
             auth: identity,
             authMetadata: { secret: 'my-secret' }
@@ -165,8 +181,9 @@ describe('worldCommsHandler', () => {
 
     beforeEach(() => {
       context = {
-        components: { comms },
+        components: { access, comms, rateLimiter },
         params: { worldName, sceneId },
+        request: { headers: new Map() },
         verification: {
           auth: identity,
           authMetadata: {}
@@ -204,8 +221,9 @@ describe('worldCommsHandler', () => {
     describe('and the request includes a secret', () => {
       beforeEach(() => {
         context = {
-          components: { comms },
+          components: { access, comms, rateLimiter },
           params: { worldName, sceneId },
+          request: { headers: new Map() },
           verification: {
             auth: identity,
             authMetadata: { secret: 'my-secret' }
@@ -271,6 +289,151 @@ describe('worldCommsHandler', () => {
       it('should re-throw the error', async () => {
         await expect(worldCommsHandler(context)).rejects.toThrow('Unexpected error')
       })
+    })
+  })
+
+  describe('when the world has shared-secret access', () => {
+    const worldName = 'secret-world'
+    const identity = '0x1234567890abcdef'
+    const connectionString = 'livekit:wss://host?access_token=abc123'
+    const clientIp = '1.2.3.4'
+
+    beforeEach(() => {
+      access.getAccessForWorld = jest.fn().mockResolvedValue({
+        type: AccessType.SharedSecret,
+        secret: '$2b$10$hashedSecret'
+      })
+
+      context = {
+        components: { access, comms, rateLimiter },
+        params: { worldName },
+        request: {
+          headers: new Map([['cf-connecting-ip', clientIp]])
+        },
+        verification: {
+          auth: identity,
+          authMetadata: { secret: 'my-secret' }
+        }
+      } as unknown as HandlerContext
+    })
+
+    describe('and the request succeeds', () => {
+      beforeEach(() => {
+        comms.getWorldRoomConnectionString.mockResolvedValueOnce(connectionString)
+      })
+
+      it('should clear attempts on successful connection', async () => {
+        const response = await worldCommsHandler(context)
+
+        expect(response.status).toBe(200)
+        expect(rateLimiter.clearAttempts).toHaveBeenCalledWith(worldName, clientIp)
+      })
+    })
+
+    describe('and the secret is wrong (InvalidAccessError)', () => {
+      beforeEach(() => {
+        comms.getWorldRoomConnectionString.mockRejectedValueOnce(new InvalidAccessError(worldName))
+      })
+
+      it('should return 403 and record the failed attempt', async () => {
+        const response = await worldCommsHandler(context)
+
+        expect(response.status).toBe(403)
+        expect(rateLimiter.recordFailedAttempt).toHaveBeenCalledWith(worldName, clientIp)
+      })
+    })
+
+    describe('and the rate limiter reports the subject is rate-limited', () => {
+      beforeEach(() => {
+        comms.getWorldRoomConnectionString.mockRejectedValueOnce(new InvalidAccessError(worldName))
+        rateLimiter.recordFailedAttempt.mockResolvedValue({ rateLimited: true })
+      })
+
+      it('should return 429 with Retry-After header', async () => {
+        const response = await worldCommsHandler(context)
+
+        expect(response.status).toBe(429)
+        expect(response.headers).toEqual(expect.objectContaining({ 'Retry-After': '60' }))
+        expect(response.body).toEqual({ error: 'Too many shared-secret attempts. Try again later.' })
+      })
+    })
+
+    describe('and no cf-connecting-ip header is present', () => {
+      beforeEach(() => {
+        context = {
+          components: { access, comms, rateLimiter },
+          params: { worldName },
+          request: {
+            headers: new Map([['x-forwarded-for', '5.6.7.8, 9.10.11.12']])
+          },
+          verification: {
+            auth: identity,
+            authMetadata: { secret: 'my-secret' }
+          }
+        } as unknown as HandlerContext
+
+        comms.getWorldRoomConnectionString.mockRejectedValueOnce(new InvalidAccessError(worldName))
+      })
+
+      it('should use the first IP from x-forwarded-for as the subject', async () => {
+        await worldCommsHandler(context)
+
+        expect(rateLimiter.recordFailedAttempt).toHaveBeenCalledWith(worldName, '5.6.7.8')
+      })
+    })
+
+    describe('and no IP headers are present', () => {
+      beforeEach(() => {
+        context = {
+          components: { access, comms, rateLimiter },
+          params: { worldName },
+          request: {
+            headers: new Map()
+          },
+          verification: {
+            auth: identity,
+            authMetadata: { secret: 'my-secret' }
+          }
+        } as unknown as HandlerContext
+
+        comms.getWorldRoomConnectionString.mockRejectedValueOnce(new InvalidAccessError(worldName))
+      })
+
+      it('should fallback to the wallet identity as the subject', async () => {
+        await worldCommsHandler(context)
+
+        expect(rateLimiter.recordFailedAttempt).toHaveBeenCalledWith(worldName, identity)
+      })
+    })
+  })
+
+  describe('when the world has non-shared-secret access', () => {
+    const worldName = 'open-world'
+    const identity = '0x1234567890abcdef'
+    const connectionString = 'livekit:wss://host?access_token=abc123'
+
+    beforeEach(() => {
+      access.getAccessForWorld = jest.fn().mockResolvedValue({ type: AccessType.Unrestricted })
+
+      context = {
+        components: { access, comms, rateLimiter },
+        params: { worldName },
+        request: { headers: new Map() },
+        verification: {
+          auth: identity,
+          authMetadata: {}
+        }
+      } as unknown as HandlerContext
+
+      comms.getWorldRoomConnectionString.mockResolvedValueOnce(connectionString)
+    })
+
+    it('should not interact with the rate limiter at all', async () => {
+      const response = await worldCommsHandler(context)
+
+      expect(response.status).toBe(200)
+      expect(rateLimiter.recordFailedAttempt).not.toHaveBeenCalled()
+      expect(rateLimiter.clearAttempts).not.toHaveBeenCalled()
     })
   })
 })

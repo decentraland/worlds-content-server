@@ -43,6 +43,8 @@ import { createAccessChangeHandler } from '../src/logic/access-change-handler'
 import { createAccessCheckerComponent } from '../src/logic/access-checker'
 import { createParticipantKicker } from '../src/logic/participant-kicker'
 import { createMockQueueConsumer } from './mocks/queue-consumer-mock'
+import { createRedisMock } from './mocks/redis-mock'
+import { createRateLimiterComponent } from '../src/logic/rate-limiter'
 
 /**
  * Behaves like Jest "describe" function, used to describe a test for a
@@ -176,6 +178,8 @@ async function initComponents(): Promise<TestComponents> {
   })
 
   const worlds = createWorldsComponent({ worldsManager, snsClient })
+  const redis = createRedisMock()
+  const rateLimiter = await createRateLimiterComponent({ config, redis })
 
   const comms = await createCommsComponent({
     namePermissionChecker,
@@ -207,6 +211,8 @@ async function initComponents(): Promise<TestComponents> {
     permissionsManager,
     peersRegistry,
     queueConsumer,
+    rateLimiter,
+    redis,
     search,
     settings,
     snsClient,
