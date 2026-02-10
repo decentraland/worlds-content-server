@@ -40,7 +40,7 @@
     "@smithy/util-utf8" "^2.0.0"
     tslib "^2.6.2"
 
-"@aws-sdk/client-sns@^3.782.0", "@aws-sdk/client-sns@^3.896.0":
+"@aws-sdk/client-sns@^3.782.0":
   version "3.948.0"
   resolved "https://registry.npmjs.org/@aws-sdk/client-sns/-/client-sns-3.948.0.tgz"
   integrity sha512-e/0nzLAh+ApBPhhtchlCRu/touZK6XDTF1gFtKj6vvHmr1DNf34yBCrbe7aAoPh1Ce++bWShTLHZoGOTi02WWQ==
@@ -746,13 +746,6 @@
     destroy "^1.2.0"
     file-type "15"
 
-"@dcl/core-commons@0.5.1":
-  version "0.5.1"
-  resolved "https://registry.npmjs.org/@dcl/core-commons/-/core-commons-0.5.1.tgz"
-  integrity sha512-958pmcxYQ3YI8olTH09IMf4w35MjPWAo48+k0uf97b3IiySGz0akjidawY0wK8oVbE849umgDiQSf3keiJJaew==
-  dependencies:
-    "@well-known-components/interfaces" "^1.5.2"
-
 "@dcl/core-commons@0.6.0":
   version "0.6.0"
   resolved "https://registry.npmjs.org/@dcl/core-commons/-/core-commons-0.6.0.tgz"
@@ -864,10 +857,10 @@
     ajv-keywords "^5.1.0"
     mitt "^3.0.1"
 
-"@dcl/schemas@^22.4.0":
-  version "22.4.0"
-  resolved "https://registry.yarnpkg.com/@dcl/schemas/-/schemas-22.4.0.tgz#36f12a44993c58ec8da979140831128af24aeddb"
-  integrity sha512-uDCTK+Qe5aNLiOk1vs50P41H95gNC/XYSvvl65EWzDBDw1ZWp2+CMpDavuWg1IZiapNbnpgkMSIHYXvJz+WU8Q==
+"@dcl/schemas@^23.1.0":
+  version "23.1.0"
+  resolved "https://registry.yarnpkg.com/@dcl/schemas/-/schemas-23.1.0.tgz#e9c87c74fc5589d821425f41e0fe1896575b1189"
+  integrity sha512-2+Sp4OrUKyGxEe1nLMuLtEmNwLThGUDei0QqXzurkQMkhQdJvB1viS4UW86Wia7AelmCzBewSLU6to8CgQ8UEw==
   dependencies:
     ajv "^8.11.0"
     ajv-errors "^3.0.0"
@@ -883,13 +876,13 @@
     ajv-errors "^3.0.0"
     ajv-keywords "^5.1.0"
 
-"@dcl/sns-component@^3.0.0":
-  version "3.0.1"
-  resolved "https://registry.npmjs.org/@dcl/sns-component/-/sns-component-3.0.1.tgz"
-  integrity sha512-1/zi0jHQhHb6Xz7b0qg1FmugT/DAqUDrnme3Ysv0IjZhPlNNDC8fFAtVTOaLv83fF37haqVb6TcNEdvGBpsDNQ==
+"@dcl/sns-component@^3.0.2":
+  version "3.0.2"
+  resolved "https://registry.yarnpkg.com/@dcl/sns-component/-/sns-component-3.0.2.tgz#69083fbe42fef52035c47871d36cbdaf016e49e8"
+  integrity sha512-MpX7r2a7+0IUgGzJbHkOxWQlRu3er8Jtiir5tAXPMDyJEKWnF4UV+DWvBqWfAqO6D0Nlpd3ouywCHvhHcUXsWQ==
   dependencies:
     "@aws-sdk/client-sns" "^3.782.0"
-    "@dcl/core-commons" "0.5.1"
+    "@dcl/core-commons" "0.6.0"
     "@well-known-components/interfaces" "^1.5.2"
 
 "@emnapi/core@^1.4.3":
@@ -2229,7 +2222,7 @@
     "@types/node" "*"
     form-data "^4.0.4"
 
-"@types/node@*", "@types/node@^20.11.10", "@types/node@^20.3.1":
+"@types/node@*", "@types/node@^20.3.1":
   version "20.19.26"
   resolved "https://registry.npmjs.org/@types/node/-/node-20.19.26.tgz"
   integrity sha512-0l6cjgF0XnihUpndDhk+nyD3exio3iKaYROSgvh/qSevPXax3L8p5DBRFjbvalnwatGgHEQn2R88y2fA3g4irg==
@@ -2249,6 +2242,13 @@
   integrity sha512-LPM2G3Syo1GLzXLGJAKdqoU35XvrWzGJ21/7sgZTUpbkBaOasTj8tjwn6w+hCkqaa1TfJ/w67rJSwYItlJ2mYw==
   dependencies:
     undici-types "~6.21.0"
+
+"@types/node@^24":
+  version "24.10.12"
+  resolved "https://registry.yarnpkg.com/@types/node/-/node-24.10.12.tgz#a51b49260a045c08ac761cbde7e407ef144d2b2a"
+  integrity sha512-68e+T28EbdmLSTkPgs3+UacC6rzmqrcWFPQs1C8mwJhI/r5Uxr0yEuQotczNRROd1gq30NGxee+fo0rSIxpyAw==
+  dependencies:
+    undici-types "~7.16.0"
 
 "@types/pg@^8.0.0", "@types/pg@^8.6.5":
   version "8.15.6"
@@ -5241,9 +5241,9 @@ node-releases@^2.0.27:
   resolved "https://registry.npmjs.org/node-releases/-/node-releases-2.0.27.tgz"
   integrity sha512-nmh3lCkYZ3grZvqcCH+fjmQ7X+H0OeZgP40OierEaAptX4XofMh5kwNbWh7lBduUzCcV/8kZ+NDLCwm2iorIlA==
 
-nodemon@^3.1.9:
+nodemon@^3.1.11:
   version "3.1.11"
-  resolved "https://registry.npmjs.org/nodemon/-/nodemon-3.1.11.tgz"
+  resolved "https://registry.yarnpkg.com/nodemon/-/nodemon-3.1.11.tgz#04a54d1e794fbec9d8f6ffd8bf1ba9ea93a756ed"
   integrity sha512-is96t8F/1//UHAjNPHpbsNY46ELPpftGUoSVNXwUfMk/qdjSylYrWSu1XavVTBOn526kFiOR733ATgNBCQyH0g==
   dependencies:
     chokidar "^3.5.2"

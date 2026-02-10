@@ -11,7 +11,7 @@ type SnakeCaseWorldSettings = {
   content_rating?: string
   spawn_coordinates?: string
   skybox_time?: number | null
-  categories?: string[]
+  categories?: string[] | null
   single_player?: boolean
   show_in_places?: boolean
   thumbnail_hash?: string
@@ -38,20 +38,28 @@ function parseMultipartInput(
   const { fields, files } = formData
   const input: WorldSettingsInput = {}
 
-  if (isDefinedMultipartField(fields.title)) {
-    if (fields.title.value[0].length < 3 || fields.title.value[0].length > 100) {
-      throw new ValidationError(`Invalid title: ${fields.title.value[0]}. Expected between 3 and 100 characters.`)
-    }
-    input.title = fields.title.value[0]
-  }
-
-  if (isDefinedMultipartField(fields.description)) {
-    if (fields.description.value[0].length < 3 || fields.description.value[0].length > 1000) {
+  if (fields.title?.value?.length > 0) {
+    const titleValue = fields.title.value[0]
+    if (titleValue.length < 3 || titleValue.length > 100) {
       throw new ValidationError(
-        `Invalid description: ${fields.description.value[0]}. Expected between 3 and 1000 characters.`
+        titleValue.length === 0
+          ? 'Invalid title: title cannot be empty. Expected between 3 and 100 characters.'
+          : `Invalid title: ${titleValue}. Expected between 3 and 100 characters.`
       )
     }
-    input.description = fields.description.value[0]
+    input.title = titleValue
+  }
+
+  if (fields.description?.value?.length > 0) {
+    const descriptionValue = fields.description.value[0]
+    if (descriptionValue.length < 3 || descriptionValue.length > 1000) {
+      throw new ValidationError(
+        descriptionValue.length === 0
+          ? 'Invalid description: description cannot be empty. Expected between 3 and 1000 characters.'
+          : `Invalid description: ${descriptionValue}. Expected between 3 and 1000 characters.`
+      )
+    }
+    input.description = descriptionValue
   }
 
   if (isDefinedMultipartField(fields.content_rating)) {
@@ -82,10 +90,14 @@ function parseMultipartInput(
   }
 
   if (isDefinedMultipartField(fields.categories)) {
-    if (fields.categories.value.length > 20) {
-      throw new ValidationError(`Invalid categories: ${fields.categories.value.length} items. Expected at most 20`)
+    if (fields.categories.value.length === 1 && fields.categories.value[0] === 'null') {
+      input.categories = []
+    } else {
+      if (fields.categories.value.length > 20) {
+        throw new ValidationError(`Invalid categories: ${fields.categories.value.length} items. Expected at most 20`)
+      }
+      input.categories = fields.categories.value
     }
-    input.categories = fields.categories.value
   }
 
   if (isDefinedMultipartField(fields.single_player)) {
