@@ -133,10 +133,7 @@ describe('RateLimiterComponent', () => {
     it('should use lowercase world name and subject in the key', async () => {
       await rateLimiter.recordFailedAttempt('MyWorld', 'AbCdEf')
 
-      expect(redis.acquireLock).toHaveBeenCalledWith(
-        expect.stringContaining('myworld:abcdef'),
-        expect.any(Object)
-      )
+      expect(redis.acquireLock).toHaveBeenCalledWith(expect.stringContaining('myworld:abcdef'), expect.any(Object))
       expect(redis.get).toHaveBeenCalledWith(expect.stringContaining('myworld:abcdef'))
     })
 
