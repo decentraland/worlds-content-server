@@ -7,7 +7,7 @@ import { createWalletStatsComponent } from '../../src/adapters/wallet-stats'
 import { createDatabaseMock } from '../mocks/database-mock'
 import { getIdentity, Identity } from '../utils'
 import { IWorldsManager, MB_BigInt } from '../../src/types'
-import { createMockedWorldsManager } from '../mocks/world-manager-mock'
+import { createMockedWorldsManager } from '../mocks/worlds-manager-mock'
 
 describe('wallet stats', function () {
   let identity: Identity

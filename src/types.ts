@@ -36,6 +36,7 @@ import { ISocialServiceComponent } from './adapters/social-service'
 import { ICommsComponent } from './logic/comms'
 import { IWorldsComponent } from './logic/worlds'
 import { IParticipantKicker } from './logic/participant-kicker'
+import { IQueueConsumerComponent } from '@dcl/queue-consumer-component'
 
 export type GlobalContext = {
   components: BaseComponents
@@ -369,6 +370,7 @@ export type IWorldsManager = {
   getOccupiedParcels(worldName: string, options?: GetOccupiedParcelsOptions): Promise<GetOccupiedParcelsResult>
   createBasicWorldIfNotExists(worldName: string, owner: EthAddress): Promise<void>
   worldExists(worldName: string): Promise<boolean>
+  getWorldNamesByCommunityId(communityId: string): Promise<string[]>
 }
 
 export type IPermissionsManager = {
@@ -505,6 +507,7 @@ export type BaseComponents = {
   permissions: IPermissionsComponent
   permissionsManager: IPermissionsManager
   peersRegistry: IPeersRegistry
+  queueConsumer: IQueueConsumerComponent
   search: ISearchComponent
   server: IHttpServerComponent<GlobalContext>
   snsClient: IPublisherComponent

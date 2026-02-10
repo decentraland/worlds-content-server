@@ -69,7 +69,7 @@ export async function createAccessCheckerComponent({
     }
   }
 
-  async function getAccessForWorld(worldName: string): Promise<AccessSetting> {
+  async function getWorldAccess(worldName: string): Promise<AccessSetting> {
     const { records } = await worldsManager.getRawWorldRecords({ worldName })
     if (records.length === 0) {
       return defaultAccess()
@@ -78,10 +78,10 @@ export async function createAccessCheckerComponent({
   }
 
   async function checkAccess(worldName: string, ethAddress: EthAddress, extras?: any): Promise<boolean> {
-    const access = await getAccessForWorld(worldName)
+    const access = await getWorldAccess(worldName)
     const checker = createAccessCheckerFrom(access)
     return checker(ethAddress, extras)
   }
 
-  return { checkAccess }
+  return { checkAccess, getWorldAccess }
 }

@@ -1,4 +1,5 @@
 import { EthAddress } from '@dcl/schemas'
+import { AccessSetting } from '../access/types'
 
 /**
  * Access checker: answers whether an identity has access to a world
@@ -6,4 +7,5 @@ import { EthAddress } from '@dcl/schemas'
  */
 export interface IAccessCheckerComponent {
   checkAccess(worldName: string, ethAddress: EthAddress, extras?: any): Promise<boolean>
+  getWorldAccess(worldName: string): Promise<AccessSetting>
 }

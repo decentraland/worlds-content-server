@@ -3,5 +3,6 @@
  * Encapsulates batching and room iteration; used when handling access changes.
  */
 export interface IParticipantKicker {
-  kickInBatches(worldName: string, identities: string[]): Promise<void>
+  kickParticipant(worldName: string, identity: string): Promise<void>
+  kickParticipants(worldName: string, identities: string[]): Promise<void>
 }

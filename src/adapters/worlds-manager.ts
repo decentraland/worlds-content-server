@@ -1016,6 +1016,22 @@ export async function createWorldsManagerComponent({
     return result.rows[0]?.exists ?? false
   }
 
+  /**
+   * Finds all world names whose access settings use the given community ID
+   * in their allow-list communities array.
+   *
+   * @param communityId - The community ID to search for
+   * @returns Array of world names that reference this community
+   */
+  async function getWorldNamesByCommunityId(communityId: string): Promise<string[]> {
+    const result = await database.query<{ name: string }>(SQL`
+      SELECT name FROM worlds
+      WHERE access->>'type' = 'allow-list'
+        AND access->'communities' @> ${JSON.stringify([communityId])}::jsonb
+    `)
+    return result.rows.map((row) => row.name)
+  }
+
   return {
     getRawWorldRecords,
     getDeployedWorldCount,
@@ -1034,6 +1050,7 @@ export async function createWorldsManagerComponent({
     getWorlds,
     getOccupiedParcels,
     createBasicWorldIfNotExists,
-    worldExists
+    worldExists,
+    getWorldNamesByCommunityId
   }
 }
