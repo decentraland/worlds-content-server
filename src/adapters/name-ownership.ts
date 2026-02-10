@@ -418,7 +418,7 @@ class LowerCaseKeysMap implements ReadonlyMap<string, EthAddress | undefined> {
     this.map.forEach(callbackfn, thisArg)
   }
 
-  [Symbol.iterator](): IterableIterator<[string, EthAddress | undefined]> {
+  [Symbol.iterator]() {
     return this.map[Symbol.iterator]()
   }
 
@@ -438,15 +438,15 @@ class LowerCaseKeysMap implements ReadonlyMap<string, EthAddress | undefined> {
     return this.map.size
   }
 
-  entries(): IterableIterator<[string, EthAddress | undefined]> {
+  entries() {
     return this.map.entries()
   }
 
-  keys(): IterableIterator<string> {
+  keys() {
     return this.map.keys()
   }
 
-  values(): IterableIterator<EthAddress | undefined> {
+  values() {
     return this.map.values()
   }
 }

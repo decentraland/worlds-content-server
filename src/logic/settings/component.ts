@@ -119,7 +119,7 @@ export async function createSettingsComponent(
         description: settings.description,
         contentRating: settings.contentRating,
         skyboxTime: settings.skyboxTime,
-        categories: settings.categories,
+        categories: settings.categories ?? [],
         singlePlayer: settings.singlePlayer,
         showInPlaces: settings.showInPlaces,
         thumbnailUrl: settings.thumbnailHash ? getThumbnailUrl(settings.thumbnailHash) : undefined

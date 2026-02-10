@@ -13,7 +13,6 @@
     "start:db": "docker-compose up -d && docker exec world_content_server_db bash -c \"until pg_isready; do sleep 1; done\" && sleep 5"
   },
   "dependencies": {
-    "@aws-sdk/client-sns": "^3.896.0",
     "@dcl/catalyst-api-specs": "^3.3.0",
     "@dcl/catalyst-contracts": "^4.4.2",
     "@dcl/catalyst-storage": "^4.3.1",
@@ -25,7 +24,7 @@
     "@dcl/queue-consumer-component": "^2.0.0",
     "@dcl/schema-validator-component": "^0.2.2",
     "@dcl/schemas": "^23.1.0",
-    "@dcl/sns-component": "^3.0.0",
+    "@dcl/sns-component": "^3.0.2",
     "@ensdomains/eth-ens-namehash": "^2.0.15",
     "@types/busboy": "^1.5.3",
     "@well-known-components/env-config-provider": "^1.2.0",
@@ -49,11 +48,11 @@
     "@dcl/eslint-config": "^2.2.1",
     "@redocly/cli": "^1.25.14",
     "@types/bcrypt": "^5.0.2",
-    "@types/node": "^20.11.10",
+    "@types/node": "^24",
     "@well-known-components/test-helpers": "^1.5.8",
     "dcl-catalyst-client": "^21.8.0",
     "form-data": "4.0.5",
-    "nodemon": "^3.1.9",
+    "nodemon": "^3.1.11",
     "ts-node": "^10.9.2",
     "typescript": "^5.3.3"
   },

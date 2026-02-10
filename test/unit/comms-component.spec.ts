@@ -118,26 +118,17 @@ describe('CommsComponent', () => {
         })
       })
 
-      describe('and the user does not have permission', () => {
+      describe('and the user does not have permission but has access', () => {
         beforeEach(() => {
           namePermissionChecker.checkPermission.mockResolvedValueOnce(false)
           access.checkAccess.mockResolvedValueOnce(true)
+          commsAdapter.getWorldRoomParticipantCount.mockResolvedValueOnce(0)
+          commsAdapter.getWorldRoomConnectionString.mockResolvedValueOnce(connectionString)
         })
 
-        it('should throw InvalidAccessError', async () => {
-          await expect(commsComponent.getWorldRoomConnectionString(userAddress, worldName)).rejects.toThrow(
-            InvalidAccessError
-          )
-        })
-
-        it('should not call the adapter', async () => {
-          try {
-            await commsComponent.getWorldRoomConnectionString(userAddress, worldName)
-          } catch {
-            // Expected to throw
-          }
-          expect(commsAdapter.getWorldRoomParticipantCount).not.toHaveBeenCalled()
-          expect(commsAdapter.getWorldRoomConnectionString).not.toHaveBeenCalled()
+        it('should return the connection string', async () => {
+          const result = await commsComponent.getWorldRoomConnectionString(userAddress, worldName)
+          expect(result).toBe(connectionString)
         })
       })
 
@@ -164,16 +155,17 @@ describe('CommsComponent', () => {
         })
       })
 
-      describe('and the user does not have access', () => {
+      describe('and the user does not have access but has permission', () => {
         beforeEach(() => {
           namePermissionChecker.checkPermission.mockResolvedValueOnce(true)
           access.checkAccess.mockResolvedValueOnce(false)
+          commsAdapter.getWorldRoomParticipantCount.mockResolvedValueOnce(0)
+          commsAdapter.getWorldRoomConnectionString.mockResolvedValueOnce(connectionString)
         })
 
-        it('should throw InvalidAccessError', async () => {
-          await expect(commsComponent.getWorldRoomConnectionString(userAddress, worldName)).rejects.toThrow(
-            InvalidAccessError
-          )
+        it('should return the connection string', async () => {
+          const result = await commsComponent.getWorldRoomConnectionString(userAddress, worldName)
+          expect(result).toBe(connectionString)
         })
       })
 
@@ -325,31 +317,39 @@ describe('CommsComponent', () => {
         })
       })
 
-      describe('and the user does not have permission', () => {
+      describe('and the user does not have permission but has access', () => {
         beforeEach(() => {
           namePermissionChecker.checkPermission.mockResolvedValueOnce(false)
           access.checkAccess.mockResolvedValueOnce(true)
+          worlds.hasWorldScene.mockResolvedValueOnce(true)
+          commsAdapter.getWorldSceneRoomsParticipantCount.mockResolvedValueOnce(0)
+          commsAdapter.getSceneRoomConnectionString.mockResolvedValueOnce(connectionString)
         })
 
-        it('should throw InvalidAccessError', async () => {
-          await expect(
-            commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, sceneId)
-          ).rejects.toThrow(InvalidAccessError)
-        })
-
-        it('should not check if scene exists', async () => {
-          try {
-            await commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, sceneId)
-          } catch {
-            // Expected to throw
-          }
-          expect(worlds.hasWorldScene).not.toHaveBeenCalled()
+        it('should return the connection string', async () => {
+          const result = await commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, sceneId)
+          expect(result).toBe(connectionString)
         })
       })
 
-      describe('and the user does not have access', () => {
+      describe('and the user does not have access but has permission', () => {
         beforeEach(() => {
           namePermissionChecker.checkPermission.mockResolvedValueOnce(true)
+          access.checkAccess.mockResolvedValueOnce(false)
+          worlds.hasWorldScene.mockResolvedValueOnce(true)
+          commsAdapter.getWorldSceneRoomsParticipantCount.mockResolvedValueOnce(0)
+          commsAdapter.getSceneRoomConnectionString.mockResolvedValueOnce(connectionString)
+        })
+
+        it('should return the connection string', async () => {
+          const result = await commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, sceneId)
+          expect(result).toBe(connectionString)
+        })
+      })
+
+      describe('and the user has neither permission nor access', () => {
+        beforeEach(() => {
+          namePermissionChecker.checkPermission.mockResolvedValueOnce(false)
           access.checkAccess.mockResolvedValueOnce(false)
         })
 

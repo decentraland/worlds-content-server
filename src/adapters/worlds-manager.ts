@@ -632,6 +632,13 @@ export async function createWorldsManagerComponent({
         }
       }
 
+      // Boolean flag to distinguish "not provided" (undefined) from "explicitly null"
+      // When skyboxTime is explicitly provided (even as null), we want to overwrite the DB value
+      const skyboxTimeProvided = settings.skyboxTime !== undefined
+
+      // Normalize null categories to an empty array so the DB always stores an array, never NULL
+      const categoriesValue = settings.categories === null ? [] : (settings.categories ?? null)
+
       // Perform the upsert
       const result = await client.query<WorldRecord>(SQL`
         INSERT INTO worlds (
@@ -649,7 +656,7 @@ export async function createWorldsManagerComponent({
           ${settings.contentRating ?? null},
           ${settings.spawnCoordinates ?? null},
           ${settings.skyboxTime ?? null},
-          ${settings.categories ?? null}::text[],
+          ${categoriesValue}::text[],
           ${settings.singlePlayer ?? null},
           ${settings.showInPlaces ?? null},
           ${settings.thumbnailHash ?? null},
@@ -661,7 +668,7 @@ export async function createWorldsManagerComponent({
           description = COALESCE(EXCLUDED.description, worlds.description),
           content_rating = COALESCE(EXCLUDED.content_rating, worlds.content_rating),
           spawn_coordinates = COALESCE(EXCLUDED.spawn_coordinates, worlds.spawn_coordinates),
-          skybox_time = COALESCE(EXCLUDED.skybox_time, worlds.skybox_time),
+          skybox_time = CASE WHEN ${skyboxTimeProvided}::boolean THEN EXCLUDED.skybox_time ELSE COALESCE(EXCLUDED.skybox_time, worlds.skybox_time) END,
           categories = COALESCE(EXCLUDED.categories, worlds.categories),
           single_player = COALESCE(EXCLUDED.single_player, worlds.single_player),
           show_in_places = COALESCE(EXCLUDED.show_in_places, worlds.show_in_places),

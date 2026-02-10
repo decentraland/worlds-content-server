@@ -981,6 +981,14 @@ paths:
 
         For spawn coordinates, they must be within the world shape rectangle if the world has deployed scenes.
         Worlds without deployments can have most settings pre-defined (except spawn coordinates).
+
+        **Clearing nullable fields:**
+        - Send `skybox_time` with the string value `"null"` to reset skybox time (use dynamic day/night cycle).
+        - Send `categories` with the string value `"null"` to clear all categories (stores an empty array).
+
+        **Validation:**
+        - `title` must be between 3 and 100 characters. Empty strings are rejected with a 400 error.
+        - `description` must be between 3 and 1000 characters. Empty strings are rejected with a 400 error.
       operationId: worldsContentServer_updateWorldSettings
       security:
         - SignedFetch: []
@@ -1001,10 +1009,14 @@ paths:
               properties:
                 title:
                   type: string
-                  description: World title
+                  description: World title. Must be between 3 and 100 characters. Empty strings are rejected.
+                  minLength: 3
+                  maxLength: 100
                 description:
                   type: string
-                  description: World description
+                  description: World description. Must be between 3 and 1000 characters. Empty strings are rejected.
+                  minLength: 3
+                  maxLength: 1000
                 content_rating:
                   type: string
                   description: Content rating
@@ -1014,10 +1026,10 @@ paths:
                   pattern: '^-?\d+,-?\d+$'
                 skybox_time:
                   type: string
-                  description: Fixed skybox time (number or "null" to reset)
+                  description: Fixed skybox time as a number string, or the string "null" to reset to dynamic day/night cycle
                 categories:
                   type: string
-                  description: Categories as JSON array or comma-separated string
+                  description: Category values as repeated multipart fields, or the string "null" to clear all categories (stores an empty array)
                 single_player:
                   type: string
                   description: Single player mode ("true" or "false")
@@ -1027,7 +1039,7 @@ paths:
                 thumbnail:
                   type: string
                   format: binary
-                  description: Thumbnail image file
+                  description: Thumbnail image file (max 1MB)
       responses:
         '200':
           description: World settings updated successfully
@@ -1967,13 +1979,21 @@ components:
         All fields are optional to allow partial updates.
 
         Note: This is sent as multipart/form-data, not JSON, to support thumbnail file uploads.
+
+        **Clearing nullable fields:**
+        - Send `skybox_time` with the string value `"null"` to reset to dynamic day/night cycle.
+        - Send `categories` with the string value `"null"` to clear all categories (stores an empty array).
       properties:
         title:
           type: string
-          description: The title of the world
+          description: The title of the world. Must be between 3 and 100 characters. Empty strings are rejected with a 400 error.
+          minLength: 3
+          maxLength: 100
         description:
           type: string
-          description: A description of the world
+          description: A description of the world. Must be between 3 and 1000 characters. Empty strings are rejected with a 400 error.
+          minLength: 3
+          maxLength: 1000
         content_rating:
           type: string
           description: Content rating for the world
@@ -1985,13 +2005,13 @@ components:
           pattern: '^-?\d+,-?\d+$'
           example: '10,20'
         skybox_time:
-          type: number
-          description: Fixed skybox time (0-24 hours). Use 'null' string to reset.
-          nullable: true
+          type: string
+          description: Fixed skybox time as a number string (0-24 hours). Send the string "null" to reset to dynamic day/night cycle.
+          example: '12'
         categories:
           type: string
-          description: Categories as JSON array or comma-separated string
-          example: '["game", "adventure"]'
+          description: Category values as repeated multipart fields, or the string "null" to clear all categories (stores an empty array).
+          example: 'art'
         single_player:
           type: string
           description: Single player mode ("true" or "false")
@@ -2003,7 +2023,7 @@ components:
         thumbnail:
           type: string
           format: binary
-          description: Thumbnail image file
+          description: Thumbnail image file (max 1MB)
 
     GetWorldScenesRequestBody:
       type: object
