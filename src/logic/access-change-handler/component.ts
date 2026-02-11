@@ -2,18 +2,17 @@ import { AccessChangeAction, IAccessChangeHandler } from './types'
 import type { AccessSetting } from '../access/types'
 import { TRANSITION_MATRIX } from './constants'
 import { AppComponents } from '../../types'
-import { IAccessCheckerComponent } from '../access-checker/types'
 
 /** Internal: reaction to an access change. kickWithoutAccess uses accessChecker. */
 interface AccessChangeReaction {
-  apply(worldName: string, identities: string[], accessChecker: IAccessCheckerComponent): Promise<void>
+  apply(worldName: string, identities: string[]): Promise<void>
 }
 
 function createNoKickReaction({ logs }: Pick<AppComponents, 'logs'>): AccessChangeReaction {
   const logger = logs.getLogger('no-kick-reaction')
 
   return {
-    async apply(_worldName, _identities, _accessChecker): Promise<void> {
+    async apply(_worldName, _identities): Promise<void> {
       logger.debug(`No kicks needed for access change`, {
         worldName: _worldName,
         participantCount: _identities.length
@@ -29,7 +28,7 @@ function createKickAllReaction({
   const logger = logs.getLogger('kick-all-reaction')
 
   return {
-    async apply(worldName, identities, _accessChecker): Promise<void> {
+    async apply(worldName, identities): Promise<void> {
       if (identities.length === 0) return
       logger.info(`Kicking all participants due to access type change`, {
         worldName,
@@ -46,12 +45,13 @@ function createKickAllReaction({
  */
 function createKickWithoutAccessReaction({
   participantKicker,
-  logs
-}: Pick<AppComponents, 'participantKicker' | 'logs'>): AccessChangeReaction {
+  logs,
+  accessChecker
+}: Pick<AppComponents, 'participantKicker' | 'logs' | 'accessChecker'>): AccessChangeReaction {
   const logger = logs.getLogger('kick-without-access-reaction')
 
   return {
-    async apply(worldName: string, identities: string[], accessChecker: IAccessCheckerComponent): Promise<void> {
+    async apply(worldName: string, identities: string[]): Promise<void> {
       if (identities.length === 0) return
 
       const accessResults = await Promise.all(
@@ -121,7 +121,7 @@ export function createAccessChangeHandler({
   const reactions: Record<AccessChangeAction, AccessChangeReaction> = {
     [AccessChangeAction.NoKick]: createNoKickReaction({ logs }),
     [AccessChangeAction.KickAll]: createKickAllReaction({ participantKicker, logs }),
-    [AccessChangeAction.KickWithoutAccess]: createKickWithoutAccessReaction({ participantKicker, logs })
+    [AccessChangeAction.KickWithoutAccess]: createKickWithoutAccessReaction({ participantKicker, logs, accessChecker })
   }
 
   /**
@@ -169,7 +169,7 @@ export function createAccessChangeHandler({
       }
 
       try {
-        await reactions[action].apply(worldName, identities, accessChecker)
+        await reactions[action].apply(worldName, identities)
       } catch (error) {
         logger.error(`Error applying access change`, {
           worldName,
