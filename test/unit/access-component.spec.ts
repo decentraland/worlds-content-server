@@ -1144,13 +1144,12 @@ describe('AccessComponent', () => {
         peersRegistry.getPeersInWorld = jest.fn().mockReturnValue(['0xalice', '0xbob'])
       })
 
-      it('should kick all participants (type changed)', async () => {
+      it('should not kick any participants (new type is unrestricted)', async () => {
         await accessComponent.setAccess('test-world', TEST_SIGNER, {
           type: AccessType.Unrestricted
         })
 
-        // 2 participants * 2 rooms each = 4 total kicks (changing type always kicks everyone)
-        expect(commsAdapter.removeParticipant).toHaveBeenCalledTimes(4)
+        expect(commsAdapter.removeParticipant).not.toHaveBeenCalled()
       })
     })
 
@@ -1200,13 +1199,12 @@ describe('AccessComponent', () => {
         peersRegistry.getPeersInWorld = jest.fn().mockReturnValue(['0xalice'])
       })
 
-      it('should kick all participants (type changed)', async () => {
+      it('should not kick any participants (new type is unrestricted)', async () => {
         await accessComponent.setAccess('test-world', TEST_SIGNER, {
           type: AccessType.Unrestricted
         })
 
-        // 1 participant * 2 rooms = 2 total kicks (changing type always kicks everyone)
-        expect(commsAdapter.removeParticipant).toHaveBeenCalledTimes(2)
+        expect(commsAdapter.removeParticipant).not.toHaveBeenCalled()
       })
     })
 

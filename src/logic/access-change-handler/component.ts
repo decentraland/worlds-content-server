@@ -1,9 +1,8 @@
 import { AccessChangeAction, IAccessChangeHandler } from './types'
-import type { AccessSetting } from '../access/types'
-import { TRANSITION_MATRIX } from './constants'
+import { type AccessSetting, AccessType } from '../access/types'
+import { allowListChanged, secretChanged } from './utils'
 import { AppComponents } from '../../types'
 
-/** Internal: reaction to an access change. kickWithoutAccess uses accessChecker. */
 interface AccessChangeReaction {
   apply(worldName: string, identities: string[]): Promise<void>
 }
@@ -39,10 +38,6 @@ function createKickAllReaction({
   }
 }
 
-/**
- * Reaction: kick only participants for whom accessChecker.checkAccess returns false (they
- * lost access). Used when AllowList → AllowList and wallets/communities changed.
- */
 function createKickWithoutAccessReaction({
   participantKicker,
   logs,
@@ -57,7 +52,6 @@ function createKickWithoutAccessReaction({
       const accessResults = await Promise.all(
         identities.map(async (identity) => {
           try {
-            // TODO: optimize by checking wallets in one db query, and then the community gated access separately
             const hasAccess = await accessChecker.checkAccess(worldName, identity)
             return { identity, hasAccess }
           } catch (error) {
@@ -100,13 +94,6 @@ function createKickWithoutAccessReaction({
   }
 }
 
-/**
- * Creates the access change handler. Selects the reaction from the transition
- * matrix (entries may be direct actions or resolvers for same-type transitions)
- * and applies it. Requires accessChecker so kickWithoutAccess can run when
- * AllowList lists change. World owners and deployers are never kicked
- * regardless of the access change.
- */
 export function createAccessChangeHandler({
   peersRegistry,
   participantKicker,
@@ -120,14 +107,36 @@ export function createAccessChangeHandler({
   const logger = logs.getLogger('access-change-handler')
   const reactions: Record<AccessChangeAction, AccessChangeReaction> = {
     [AccessChangeAction.NoKick]: createNoKickReaction({ logs }),
-    [AccessChangeAction.KickAll]: createKickAllReaction({ participantKicker, logs }),
-    [AccessChangeAction.KickWithoutAccess]: createKickWithoutAccessReaction({ participantKicker, logs, accessChecker })
+    [AccessChangeAction.KickAllParticipants]: createKickAllReaction({ participantKicker, logs }),
+    [AccessChangeAction.KickParticipantsWithoutAccess]: createKickWithoutAccessReaction({
+      participantKicker,
+      logs,
+      accessChecker
+    })
   }
 
-  /**
-   * Filters out identities that should never be kicked: the world owner
-   * and addresses with deployment permission.
-   */
+  // Sorting matters here, as the first condition that matches will be used
+  const actionRules = [
+    {
+      condition: (_prev: AccessSetting, next: AccessSetting) => next.type === AccessType.Unrestricted,
+      action: AccessChangeAction.NoKick
+    },
+    {
+      condition: (prev: AccessSetting, next: AccessSetting) => prev.type !== next.type || secretChanged(prev, next),
+      action: AccessChangeAction.KickAllParticipants
+    },
+    {
+      condition: (prev: AccessSetting, next: AccessSetting) => allowListChanged(prev, next),
+      action: AccessChangeAction.KickParticipantsWithoutAccess
+    }
+  ]
+
+  function resolveAction(previousAccess: AccessSetting, newAccess: AccessSetting): AccessChangeAction {
+    return (
+      actionRules.find(({ condition }) => condition(previousAccess, newAccess))?.action ?? AccessChangeAction.NoKick
+    )
+  }
+
   async function filterOutPrivilegedUsers(worldName: string, identities: string[]): Promise<string[]> {
     const [owner, permissionRecords] = await Promise.all([
       permissionsManager.getOwner(worldName),
@@ -155,11 +164,8 @@ export function createAccessChangeHandler({
         return
       }
 
-      const action: AccessChangeAction =
-        TRANSITION_MATRIX[previousAccess.type]?.[newAccess.type]?.(previousAccess, newAccess) ??
-        AccessChangeAction.KickAll
+      const action = resolveAction(previousAccess, newAccess)
 
-      // For actions that involve kicking, filter out the owner and deployers first
       const identities =
         action === AccessChangeAction.NoKick ? allIdentities : await filterOutPrivilegedUsers(worldName, allIdentities)
 
