@@ -104,48 +104,69 @@ describe('CommunityMemberRemovedHandler', () => {
     })
   })
 
-  describe('when the member is connected and still has access (via wallet or another community)', () => {
+  describe('when the member is connected', () => {
     beforeEach(() => {
       mockPeersRegistry.getPeerWorld.mockReturnValue('world-1')
-      mockAccessChecker.checkAccess.mockResolvedValue(true)
     })
 
-    it('should get world access, re-validate access and not kick the member', async () => {
-      await handler.handle(createMemberRemovedEvent('community-1', '0xAlice'))
+    describe('and still has access (via wallet or another community)', () => {
+      beforeEach(() => {
+        mockAccessChecker.checkAccess.mockResolvedValue(true)
+      })
 
-      expect(mockPeersRegistry.getPeerWorld).toHaveBeenCalledWith('0xAlice')
-      expect(mockAccessChecker.getWorldAccess).toHaveBeenCalledWith('world-1')
-      expect(mockAccessChecker.checkAccess).toHaveBeenCalledWith('world-1', '0xAlice')
-      expect(mockParticipantKicker.kickParticipant).not.toHaveBeenCalled()
-    })
-  })
+      it('should get world access', async () => {
+        await handler.handle(createMemberRemovedEvent('community-1', '0xAlice'))
 
-  describe('when the member is connected and no longer has access', () => {
-    beforeEach(() => {
-      mockPeersRegistry.getPeerWorld.mockReturnValue('world-1')
-      mockAccessChecker.checkAccess.mockResolvedValue(false)
-    })
+        expect(mockAccessChecker.getWorldAccess).toHaveBeenCalledWith('world-1')
+      })
 
-    it('should get world access, check access and kick the member from MEMBER_REMOVED event', async () => {
-      await handler.handle(createMemberRemovedEvent('community-1', '0xAlice'))
+      it('should re-validate access', async () => {
+        await handler.handle(createMemberRemovedEvent('community-1', '0xAlice'))
 
-      expect(mockAccessChecker.getWorldAccess).toHaveBeenCalledWith('world-1')
-      expect(mockAccessChecker.checkAccess).toHaveBeenCalledWith('world-1', '0xAlice')
-      expect(mockParticipantKicker.kickParticipant).toHaveBeenCalledWith('world-1', '0xAlice')
-    })
+        expect(mockAccessChecker.checkAccess).toHaveBeenCalledWith('world-1', '0xAlice')
+      })
 
-    it('should kick the member from MEMBER_BANNED event', async () => {
-      await handler.handle(createMemberBannedEvent('community-1', '0xAlice'))
+      it('should not kick the member', async () => {
+        await handler.handle(createMemberRemovedEvent('community-1', '0xAlice'))
 
-      expect(mockAccessChecker.checkAccess).toHaveBeenCalledWith('world-1', '0xAlice')
-      expect(mockParticipantKicker.kickParticipant).toHaveBeenCalledWith('world-1', '0xAlice')
+        expect(mockParticipantKicker.kickParticipant).not.toHaveBeenCalled()
+      })
     })
 
-    it('should kick the member from MEMBER_LEFT event', async () => {
-      await handler.handle(createMemberLeftEvent('community-1', '0xAlice'))
+    describe('and no longer has access', () => {
+      beforeEach(() => {
+        mockAccessChecker.checkAccess.mockResolvedValue(false)
+      })
 
-      expect(mockAccessChecker.checkAccess).toHaveBeenCalledWith('world-1', '0xAlice')
-      expect(mockParticipantKicker.kickParticipant).toHaveBeenCalledWith('world-1', '0xAlice')
+      it('should get world access', async () => {
+        await handler.handle(createMemberRemovedEvent('community-1', '0xAlice'))
+
+        expect(mockAccessChecker.getWorldAccess).toHaveBeenCalledWith('world-1')
+      })
+
+      it('should re-check access', async () => {
+        await handler.handle(createMemberRemovedEvent('community-1', '0xAlice'))
+
+        expect(mockAccessChecker.checkAccess).toHaveBeenCalledWith('world-1', '0xAlice')
+      })
+
+      it('should kick the member from MEMBER_REMOVED event', async () => {
+        await handler.handle(createMemberRemovedEvent('community-1', '0xAlice'))
+
+        expect(mockParticipantKicker.kickParticipant).toHaveBeenCalledWith('world-1', '0xAlice')
+      })
+
+      it('should kick the member from MEMBER_BANNED event', async () => {
+        await handler.handle(createMemberBannedEvent('community-1', '0xAlice'))
+
+        expect(mockParticipantKicker.kickParticipant).toHaveBeenCalledWith('world-1', '0xAlice')
+      })
+
+      it('should kick the member from MEMBER_LEFT event', async () => {
+        await handler.handle(createMemberLeftEvent('community-1', '0xAlice'))
+
+        expect(mockParticipantKicker.kickParticipant).toHaveBeenCalledWith('world-1', '0xAlice')
+      })
     })
   })
 
