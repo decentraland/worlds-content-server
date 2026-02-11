@@ -18,6 +18,7 @@ type SnakeCaseWorldInfo = {
   thumbnail_hash: string | null
   last_deployed_at: string | null
   blocked_since: string | null
+  deployed_scenes: number
 }
 
 function toSnakeCaseWorldInfo(world: WorldInfo): SnakeCaseWorldInfo {
@@ -35,7 +36,8 @@ function toSnakeCaseWorldInfo(world: WorldInfo): SnakeCaseWorldInfo {
     show_in_places: world.showInPlaces,
     thumbnail_hash: world.thumbnailHash,
     last_deployed_at: world.lastDeployedAt?.toISOString() ?? null,
-    blocked_since: world.blockedSince?.toISOString() ?? null
+    blocked_since: world.blockedSince?.toISOString() ?? null,
+    deployed_scenes: world.deployedScenes
   }
 }
 
