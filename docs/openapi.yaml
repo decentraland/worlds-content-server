@@ -2155,6 +2155,10 @@ components:
             ISO 8601 timestamp when the world owner was blocked.
             Null if the owner is not blocked.
           example: null
+        deployed_scenes:
+          type: integer
+          description: The number of scenes deployed to the world
+          example: 2
       required:
         - name
         - owner
@@ -2170,3 +2174,4 @@ components:
         - thumbnail_hash
         - last_deployed_at
         - blocked_since
+        - deployed_scenes

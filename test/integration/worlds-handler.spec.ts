@@ -100,7 +100,8 @@ test('WorldsHandler GET /worlds', function ({ components }) {
         single_player: false,
         show_in_places: false,
         last_deployed_at: expect.any(String),
-        blocked_since: null
+        blocked_since: null,
+        deployed_scenes: 1
       })
 
       const betaWorld = body.worlds.find((w: { name: string }) => w.name === worldName2)
@@ -114,7 +115,8 @@ test('WorldsHandler GET /worlds', function ({ components }) {
         single_player: false,
         show_in_places: false,
         last_deployed_at: expect.any(String),
-        blocked_since: null
+        blocked_since: null,
+        deployed_scenes: 1
       })
 
       const gammaWorld = body.worlds.find((w: { name: string }) => w.name === worldName3)
@@ -128,7 +130,8 @@ test('WorldsHandler GET /worlds', function ({ components }) {
         single_player: false,
         show_in_places: false,
         last_deployed_at: expect.any(String),
-        blocked_since: null
+        blocked_since: null,
+        deployed_scenes: 1
       })
     })
 
@@ -442,7 +445,8 @@ test('WorldsHandler GET /worlds', function ({ components }) {
       expect(world).toMatchObject({
         name: worldName,
         shape: null,
-        last_deployed_at: null
+        last_deployed_at: null,
+        deployed_scenes: 0
       })
     })
   })
@@ -474,7 +478,7 @@ test('WorldsHandler GET /worlds', function ({ components }) {
       })
     })
 
-    it('should calculate the correct shape spanning all scenes', async () => {
+    it('should calculate the correct shape spanning all scenes and return the correct deployed_scenes count', async () => {
       const { localFetch } = components
 
       const response = await localFetch.fetch('/worlds')
@@ -483,6 +487,7 @@ test('WorldsHandler GET /worlds', function ({ components }) {
       const body = await response.json()
       const world = body.worlds.find((w: { name: string }) => w.name === worldName)
       expect(world.shape).toEqual({ x1: 0, x2: 5, y1: 0, y2: 5 })
+      expect(world.deployed_scenes).toBe(2)
     })
   })
 
