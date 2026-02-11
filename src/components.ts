@@ -51,6 +51,13 @@ import { createSearchComponent } from './adapters/search'
 import { createCommsComponent } from './logic/comms'
 import { createWorldsComponent } from './logic/worlds'
 import { createSocialServiceComponent } from './adapters/social-service'
+import { createSqsComponent } from '@dcl/sqs-component'
+import { createQueueConsumerComponent } from '@dcl/queue-consumer-component'
+import {
+  createCommunityMemberRemovedHandler,
+  COMMUNITY_MEMBER_REMOVED_EVENT_SUBTYPES
+} from './controllers/handlers/community-member-removed-handler'
+import { Events } from '@dcl/schemas'
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
@@ -213,6 +220,21 @@ export async function initComponents(): Promise<AppComponents> {
     config
   })
 
+  const sqs = await createSqsComponent(config)
+  const queueConsumer = createQueueConsumerComponent({ sqs, logs })
+
+  const communityMemberRemovedHandler = createCommunityMemberRemovedHandler({
+    peersRegistry,
+    accessChecker,
+    participantKicker,
+    logs
+  })
+
+  // Register community member removed event handlers
+  for (const subType of COMMUNITY_MEMBER_REMOVED_EVENT_SUBTYPES) {
+    queueConsumer.addMessageHandler(Events.Type.COMMUNITY, subType, communityMemberRemovedHandler.handle)
+  }
+
   return {
     access,
     accessChecker,
@@ -241,6 +263,7 @@ export async function initComponents(): Promise<AppComponents> {
     peersRegistry,
     permissions,
     permissionsManager,
+    queueConsumer,
     schemaValidator,
     search,
     server,

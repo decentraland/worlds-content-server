@@ -1,39 +1,35 @@
+import { ILoggerComponent } from '@well-known-components/interfaces'
 import { createAccessChangeHandler } from '../../src/logic/access-change-handler'
-import { IParticipantKicker } from '../../src/logic/participant-kicker'
+import { IAccessChangeHandler } from '../../src/logic/access-change-handler/types'
 import { AccessType } from '../../src/logic/access/types'
+import { IParticipantKicker } from '../../src/logic/participant-kicker'
 import { IAccessCheckerComponent } from '../../src/logic/access-checker/types'
-
-function createMockParticipantKicker(): jest.Mocked<IParticipantKicker> {
-  return {
-    kickInBatches: jest.fn().mockResolvedValue(undefined)
-  }
-}
-
-function createMockAccessChecker(): jest.Mocked<IAccessCheckerComponent> {
-  return {
-    checkAccess: jest.fn().mockResolvedValue(false)
-  }
-}
+import { IPeersRegistry } from '../../src/types'
+import { createMockParticipantKicker } from '../mocks/participant-kicker-mock'
+import { createMockAccessChecker } from '../mocks/access-checker-mock'
+import { createMockPeersRegistry } from '../mocks/peers-registry-mock'
+import { createMockLogs } from '../mocks/logs-mock'
 
 describe('AccessChangeHandler', () => {
-  const mockParticipantKicker = createMockParticipantKicker()
-  const mockAccessChecker = createMockAccessChecker()
-  const mockPeersRegistry = {
-    getPeersInWorld: jest.fn().mockReturnValue(['0xalice'])
-  }
-  const mockLogs = {
-    getLogger: jest.fn().mockReturnValue({
-      debug: jest.fn(),
-      info: jest.fn(),
-      warn: jest.fn(),
-      error: jest.fn()
+  let mockParticipantKicker: jest.Mocked<IParticipantKicker>
+  let mockAccessChecker: jest.Mocked<IAccessCheckerComponent>
+  let mockPeersRegistry: jest.Mocked<IPeersRegistry>
+  let mockLogs: jest.Mocked<ILoggerComponent>
+  let accessChangeHandler: IAccessChangeHandler
+
+  beforeEach(() => {
+    mockParticipantKicker = createMockParticipantKicker()
+    mockAccessChecker = createMockAccessChecker()
+    mockPeersRegistry = createMockPeersRegistry()
+    mockLogs = createMockLogs()
+    mockPeersRegistry.getPeersInWorld.mockReturnValue(['0xalice'])
+
+    accessChangeHandler = createAccessChangeHandler({
+      peersRegistry: mockPeersRegistry,
+      participantKicker: mockParticipantKicker,
+      logs: mockLogs,
+      accessChecker: mockAccessChecker
     })
-  }
-  const accessChangeHandler = createAccessChangeHandler({
-    peersRegistry: mockPeersRegistry as any,
-    participantKicker: mockParticipantKicker,
-    logs: mockLogs as any,
-    accessChecker: mockAccessChecker
   })
 
   describe('when access type transition requires no kick (same type)', () => {
@@ -45,9 +41,9 @@ describe('AccessChangeHandler', () => {
 
     noKickTransitions.forEach(({ from, to }) => {
       it(`should not kick participants for ${from} -> ${to}`, async () => {
-        mockParticipantKicker.kickInBatches.mockClear()
+        mockParticipantKicker.kickParticipants.mockClear()
         await accessChangeHandler.handleAccessChange('world', { type: from } as any, { type: to } as any)
-        expect(mockParticipantKicker.kickInBatches).not.toHaveBeenCalled()
+        expect(mockParticipantKicker.kickParticipants).not.toHaveBeenCalled()
       })
     })
   })
@@ -64,27 +60,27 @@ describe('AccessChangeHandler', () => {
 
     kickAllTransitions.forEach(({ from, to }) => {
       it(`should kick all participants for ${from} -> ${to}`, async () => {
-        mockParticipantKicker.kickInBatches.mockClear()
+        mockParticipantKicker.kickParticipants.mockClear()
         await accessChangeHandler.handleAccessChange('world', { type: from } as any, { type: to } as any)
-        expect(mockParticipantKicker.kickInBatches).toHaveBeenCalledWith('world', ['0xalice'])
+        expect(mockParticipantKicker.kickParticipants).toHaveBeenCalledWith('world', ['0xalice'])
       })
     })
 
     it('should kick all when NFT is involved (NFT skipped in matrix)', async () => {
-      mockParticipantKicker.kickInBatches.mockClear()
+      mockParticipantKicker.kickParticipants.mockClear()
       await accessChangeHandler.handleAccessChange(
         'world',
         { type: AccessType.NFTOwnership } as any,
         { type: AccessType.Unrestricted } as any
       )
-      expect(mockParticipantKicker.kickInBatches).toHaveBeenCalledWith('world', ['0xalice'])
+      expect(mockParticipantKicker.kickParticipants).toHaveBeenCalledWith('world', ['0xalice'])
     })
   })
 
   describe('when handleAccessChange is called', () => {
     beforeEach(() => {
       mockPeersRegistry.getPeersInWorld.mockReturnValue(['0xalice', '0xbob'])
-      mockParticipantKicker.kickInBatches.mockClear()
+      mockParticipantKicker.kickParticipants.mockClear()
     })
 
     it('should skip reaction when no participants in world', async () => {
@@ -94,7 +90,7 @@ describe('AccessChangeHandler', () => {
         { type: AccessType.Unrestricted },
         { type: AccessType.SharedSecret, secret: 'x' }
       )
-      expect(mockParticipantKicker.kickInBatches).not.toHaveBeenCalled()
+      expect(mockParticipantKicker.kickParticipants).not.toHaveBeenCalled()
     })
 
     it('should apply reaction when participants exist', async () => {
@@ -103,11 +99,11 @@ describe('AccessChangeHandler', () => {
         { type: AccessType.Unrestricted },
         { type: AccessType.SharedSecret, secret: 'x' }
       )
-      expect(mockParticipantKicker.kickInBatches).toHaveBeenCalledWith('world', ['0xalice', '0xbob'])
+      expect(mockParticipantKicker.kickParticipants).toHaveBeenCalledWith('world', ['0xalice', '0xbob'])
     })
 
     it('should not throw when reaction fails (errors are logged)', async () => {
-      mockParticipantKicker.kickInBatches.mockRejectedValueOnce(new Error('kick failed'))
+      mockParticipantKicker.kickParticipants.mockRejectedValueOnce(new Error('kick failed'))
       await expect(
         accessChangeHandler.handleAccessChange(
           'world',

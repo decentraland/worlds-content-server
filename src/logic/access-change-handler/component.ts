@@ -35,7 +35,7 @@ function createKickAllReaction({
         worldName,
         participantCount: identities.length
       })
-      await participantKicker.kickInBatches(worldName, identities)
+      await participantKicker.kickParticipants(worldName, identities)
     }
   }
 }
@@ -77,7 +77,7 @@ function createKickWithoutAccessReaction({
         worldName,
         participantCount: identitiesWithoutAccess.length
       })
-      await participantKicker.kickInBatches(worldName, identitiesWithoutAccess)
+      await participantKicker.kickParticipants(worldName, identitiesWithoutAccess)
     }
   }
 }
