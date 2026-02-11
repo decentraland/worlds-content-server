@@ -26,9 +26,11 @@ describe('RateLimiterComponent', () => {
 
   describe('isRateLimited', () => {
     describe('when there are no attempts', () => {
-      it('should return false', async () => {
+      beforeEach(() => {
         redis.get.mockResolvedValue(undefined)
+      })
 
+      it('should return false', async () => {
         const result = await rateLimiter.isRateLimited(worldName, subject)
 
         expect(result).toBe(false)
@@ -77,12 +79,16 @@ describe('RateLimiterComponent', () => {
       })
     })
 
-    it('should use lowercase world name and subject in the key', async () => {
-      redis.get.mockResolvedValue(undefined)
+    describe('when checking the key format', () => {
+      beforeEach(() => {
+        redis.get.mockResolvedValue(undefined)
+      })
 
-      await rateLimiter.isRateLimited('MyWorld', 'AbCdEf')
+      it('should use lowercase world name and subject in the key', async () => {
+        await rateLimiter.isRateLimited('MyWorld', 'AbCdEf')
 
-      expect(redis.get).toHaveBeenCalledWith(expect.stringContaining('myworld:abcdef'))
+        expect(redis.get).toHaveBeenCalledWith(expect.stringContaining('myworld:abcdef'))
+      })
     })
   })
 
