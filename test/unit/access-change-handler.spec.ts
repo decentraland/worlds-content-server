@@ -35,8 +35,11 @@ describe('AccessChangeHandler', () => {
   describe.each([
     { from: AccessType.Unrestricted, to: AccessType.Unrestricted },
     { from: AccessType.SharedSecret, to: AccessType.SharedSecret },
-    { from: AccessType.AllowList, to: AccessType.AllowList }
-  ])('when transitioning from $from to $to (same type, no kick)', ({ from, to }) => {
+    { from: AccessType.AllowList, to: AccessType.AllowList },
+    { from: AccessType.SharedSecret, to: AccessType.Unrestricted },
+    { from: AccessType.AllowList, to: AccessType.Unrestricted },
+    { from: AccessType.NFTOwnership, to: AccessType.Unrestricted }
+  ])('when transitioning from $from to $to (no kick)', ({ from, to }) => {
     it('should not kick participants', async () => {
       await accessChangeHandler.handleAccessChange('world', { type: from } as any, { type: to } as any)
       expect(mockParticipantKicker.kickParticipants).not.toHaveBeenCalled()
@@ -46,11 +49,8 @@ describe('AccessChangeHandler', () => {
   describe.each([
     { from: AccessType.Unrestricted, to: AccessType.SharedSecret },
     { from: AccessType.Unrestricted, to: AccessType.AllowList },
-    { from: AccessType.SharedSecret, to: AccessType.Unrestricted },
     { from: AccessType.SharedSecret, to: AccessType.AllowList },
-    { from: AccessType.AllowList, to: AccessType.Unrestricted },
-    { from: AccessType.AllowList, to: AccessType.SharedSecret },
-    { from: AccessType.NFTOwnership, to: AccessType.Unrestricted }
+    { from: AccessType.AllowList, to: AccessType.SharedSecret }
   ])('when transitioning from $from to $to (type changed, kick all)', ({ from, to }) => {
     it('should kick all participants', async () => {
       await accessChangeHandler.handleAccessChange('world', { type: from } as any, { type: to } as any)
