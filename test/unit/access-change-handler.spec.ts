@@ -32,85 +32,73 @@ describe('AccessChangeHandler', () => {
     })
   })
 
-  describe('when access type transition requires no kick (same type)', () => {
-    const noKickTransitions: Array<{ from: AccessType; to: AccessType }> = [
-      { from: AccessType.Unrestricted, to: AccessType.Unrestricted },
-      { from: AccessType.SharedSecret, to: AccessType.SharedSecret },
-      { from: AccessType.AllowList, to: AccessType.AllowList }
-    ]
-
-    noKickTransitions.forEach(({ from, to }) => {
-      it(`should not kick participants for ${from} -> ${to}`, async () => {
-        mockParticipantKicker.kickParticipants.mockClear()
-        await accessChangeHandler.handleAccessChange('world', { type: from } as any, { type: to } as any)
-        expect(mockParticipantKicker.kickParticipants).not.toHaveBeenCalled()
-      })
+  describe.each([
+    { from: AccessType.Unrestricted, to: AccessType.Unrestricted },
+    { from: AccessType.SharedSecret, to: AccessType.SharedSecret },
+    { from: AccessType.AllowList, to: AccessType.AllowList }
+  ])('when transitioning from $from to $to (same type, no kick)', ({ from, to }) => {
+    it('should not kick participants', async () => {
+      await accessChangeHandler.handleAccessChange('world', { type: from } as any, { type: to } as any)
+      expect(mockParticipantKicker.kickParticipants).not.toHaveBeenCalled()
     })
   })
 
-  describe('when access type transition requires kick all (type changed)', () => {
-    const kickAllTransitions: Array<{ from: AccessType; to: AccessType }> = [
-      { from: AccessType.Unrestricted, to: AccessType.SharedSecret },
-      { from: AccessType.Unrestricted, to: AccessType.AllowList },
-      { from: AccessType.SharedSecret, to: AccessType.Unrestricted },
-      { from: AccessType.SharedSecret, to: AccessType.AllowList },
-      { from: AccessType.AllowList, to: AccessType.Unrestricted },
-      { from: AccessType.AllowList, to: AccessType.SharedSecret }
-    ]
-
-    kickAllTransitions.forEach(({ from, to }) => {
-      it(`should kick all participants for ${from} -> ${to}`, async () => {
-        mockParticipantKicker.kickParticipants.mockClear()
-        await accessChangeHandler.handleAccessChange('world', { type: from } as any, { type: to } as any)
-        expect(mockParticipantKicker.kickParticipants).toHaveBeenCalledWith('world', ['0xalice'])
-      })
-    })
-
-    it('should kick all when NFT is involved (NFT skipped in matrix)', async () => {
-      mockParticipantKicker.kickParticipants.mockClear()
-      await accessChangeHandler.handleAccessChange(
-        'world',
-        { type: AccessType.NFTOwnership } as any,
-        { type: AccessType.Unrestricted } as any
-      )
+  describe.each([
+    { from: AccessType.Unrestricted, to: AccessType.SharedSecret },
+    { from: AccessType.Unrestricted, to: AccessType.AllowList },
+    { from: AccessType.SharedSecret, to: AccessType.Unrestricted },
+    { from: AccessType.SharedSecret, to: AccessType.AllowList },
+    { from: AccessType.AllowList, to: AccessType.Unrestricted },
+    { from: AccessType.AllowList, to: AccessType.SharedSecret },
+    { from: AccessType.NFTOwnership, to: AccessType.Unrestricted }
+  ])('when transitioning from $from to $to (type changed, kick all)', ({ from, to }) => {
+    it('should kick all participants', async () => {
+      await accessChangeHandler.handleAccessChange('world', { type: from } as any, { type: to } as any)
       expect(mockParticipantKicker.kickParticipants).toHaveBeenCalledWith('world', ['0xalice'])
     })
   })
 
-  describe('when handleAccessChange is called', () => {
+  describe('when transitioning between different access types', () => {
+    let previousAccess: any
+    let newAccess: any
+
     beforeEach(() => {
-      mockPeersRegistry.getPeersInWorld.mockReturnValue(['0xalice', '0xbob'])
-      mockParticipantKicker.kickParticipants.mockClear()
+      previousAccess = { type: AccessType.Unrestricted }
+      newAccess = { type: AccessType.SharedSecret, secret: 'x' }
     })
 
-    it('should skip reaction when no participants in world', async () => {
-      mockPeersRegistry.getPeersInWorld.mockReturnValueOnce([])
-      await accessChangeHandler.handleAccessChange(
-        'world',
-        { type: AccessType.Unrestricted },
-        { type: AccessType.SharedSecret, secret: 'x' }
-      )
-      expect(mockParticipantKicker.kickParticipants).not.toHaveBeenCalled()
+    describe('and no participants are in the world', () => {
+      beforeEach(() => {
+        mockPeersRegistry.getPeersInWorld.mockReturnValue([])
+      })
+
+      it('should not kick participants', async () => {
+        await accessChangeHandler.handleAccessChange('world', previousAccess, newAccess)
+        expect(mockParticipantKicker.kickParticipants).not.toHaveBeenCalled()
+      })
     })
 
-    it('should apply reaction when participants exist', async () => {
-      await accessChangeHandler.handleAccessChange(
-        'world',
-        { type: AccessType.Unrestricted },
-        { type: AccessType.SharedSecret, secret: 'x' }
-      )
-      expect(mockParticipantKicker.kickParticipants).toHaveBeenCalledWith('world', ['0xalice', '0xbob'])
-    })
+    describe('and participants exist in the world', () => {
+      beforeEach(() => {
+        mockPeersRegistry.getPeersInWorld.mockReturnValue(['0xalice', '0xbob'])
+      })
 
-    it('should not throw when reaction fails (errors are logged)', async () => {
-      mockParticipantKicker.kickParticipants.mockRejectedValueOnce(new Error('kick failed'))
-      await expect(
-        accessChangeHandler.handleAccessChange(
-          'world',
-          { type: AccessType.Unrestricted },
-          { type: AccessType.SharedSecret, secret: 'x' }
-        )
-      ).resolves.toBeUndefined()
+      it('should kick all participants', async () => {
+        await accessChangeHandler.handleAccessChange('world', previousAccess, newAccess)
+        expect(mockParticipantKicker.kickParticipants).toHaveBeenCalledWith('world', ['0xalice', '0xbob'])
+      })
+
+      describe('and the kick fails', () => {
+        beforeEach(() => {
+          mockParticipantKicker.kickParticipants.mockRejectedValue(new Error('kick failed'))
+        })
+
+        it('should not throw', async () => {
+          await expect(
+            accessChangeHandler.handleAccessChange('world', previousAccess, newAccess)
+          ).resolves.toBeUndefined()
+        })
+      })
     })
   })
 })
