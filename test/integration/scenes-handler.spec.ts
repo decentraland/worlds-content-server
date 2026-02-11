@@ -1,3 +1,4 @@
+import { Events } from '@dcl/schemas'
 import { test } from '../components'
 import { getIdentity, Identity } from '../utils'
 import { IAuthenticatedFetchComponent } from '../components/local-auth-fetch'
@@ -479,8 +480,14 @@ test('ScenesHandler', function ({ components, stubComponents }) {
           .resolves(true)
       })
 
-      it('should successfully undeploy the scene and remove it from the world', async () => {
+      it('should successfully undeploy the scene, remove it from the world and publish a WorldScenesUndeploymentEvent', async () => {
         const { localFetch } = components
+        const { snsClient } = stubComponents
+
+        snsClient.publishMessages.resolves({
+          successfulMessageIds: ['msg-id'],
+          failedEvents: []
+        })
 
         const response = await makeSignedRequest(localFetch, `/world/${worldName}/scenes/20,24`, identity)
 
@@ -494,6 +501,25 @@ test('ScenesHandler', function ({ components, stubComponents }) {
 
         expect(scenesBody.scenes).toHaveLength(0)
         expect(scenesBody.total).toBe(0)
+
+        expect(snsClient.publishMessages.calledOnce).toBe(true)
+        const call = snsClient.publishMessages.getCall(0)
+        const events = call.args[0]
+        expect(events).toHaveLength(1)
+        expect(events[0]).toMatchObject({
+          type: Events.Type.WORLD,
+          subType: Events.SubType.Worlds.WORLD_SCENES_UNDEPLOYMENT,
+          key: worldName,
+          metadata: expect.objectContaining({
+            worldName,
+            scenes: expect.arrayContaining([
+              expect.objectContaining({
+                entityId: expect.any(String),
+                baseParcel: '20,24'
+              })
+            ])
+          })
+        })
       })
     })
 
