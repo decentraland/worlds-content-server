@@ -42,8 +42,8 @@ export async function createSocialServiceComponent({
         throw new Error(`Failed to get member communities: ${response.status} ${response.statusText}`)
       }
 
-      const data = (await response.json()) as MemberCommunitiesResponse
-      return data
+      const responseBody = (await response.json()) as { data?: { communities: Array<{ id: string }> } }
+      return { communities: responseBody.data?.communities ?? [] }
     } catch (error) {
       logger.error('Error getting member communities', {
         error: error instanceof Error ? error.message : String(error),
