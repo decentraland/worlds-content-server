@@ -121,7 +121,9 @@ describe('SocialServiceComponent', () => {
           mockResponse({
             ok: true,
             json: jest.fn().mockResolvedValueOnce({
-              communities: [{ id: 'community-1' }, { id: 'community-2' }]
+              data: {
+                communities: [{ id: 'community-1' }, { id: 'community-2' }]
+              }
             })
           })
         )
