@@ -148,7 +148,7 @@ test('LivekitWebhookHandler', function ({ components, stubComponents }) {
 
       it('should unregister peer in the registry', async () => {
         const { peersRegistry } = components
-        expect(peersRegistry.onPeerDisconnected).toHaveBeenCalledWith('test-user')
+        expect(peersRegistry.onPeerDisconnected).toHaveBeenCalledWith('test-user', 'test-room.dcl.eth')
       })
 
       it('should return 200', async () => {

@@ -1,5 +1,5 @@
 import { DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
-import { HandlerContextWithPath, IPeersRegistry } from '../../types'
+import { HandlerContextWithPath } from '../../types'
 import { IHttpServerComponent } from '@well-known-components/interfaces'
 import { InvalidRequestError } from '@dcl/http-commons'
 import { ParticipantEvent, WebhookEventName } from '../../adapters/livekit-client'
@@ -13,6 +13,7 @@ function isValidEvent(event: string): event is ParticipantEvent {
   return Object.values(WebhookEventName).includes(event as WebhookEventName)
 }
 
+// TODO: refactor this to be like the one in Comms Gatekeeper (might be a good idea for a new component in core-components)
 export async function livekitWebhookHandler(
   ctx: HandlerContextWithPath<'nats' | 'logs' | 'livekitClient' | 'peersRegistry', '/livekit-webhook'> &
     DecentralandSignatureContext<any>
@@ -22,12 +23,9 @@ export async function livekitWebhookHandler(
     request
   } = ctx
 
-  const peerRegistryHandlerByEvent: Record<
-    ParticipantEvent,
-    IPeersRegistry[keyof Pick<IPeersRegistry, 'onPeerConnected' | 'onPeerDisconnected'>]
-  > = {
+  const peerRegistryHandlerByEvent: Record<ParticipantEvent, (identity: string, roomName: string) => void> = {
     [WebhookEventName.ParticipantJoined]: peersRegistry.onPeerConnected,
-    [WebhookEventName.ParticipantLeft]: (identity: string) => peersRegistry.onPeerDisconnected(identity)
+    [WebhookEventName.ParticipantLeft]: peersRegistry.onPeerDisconnected
   }
 
   const logger = logs.getLogger('livekit-webhook')

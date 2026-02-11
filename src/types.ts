@@ -30,9 +30,13 @@ import {
   WorldPermissionRecordForChecking
 } from './logic/permissions'
 import { AccessSetting, IAccessComponent } from './logic/access'
+import { IAccessChangeHandler } from './logic/access-change-handler'
+import { IAccessCheckerComponent } from './logic/access-checker'
 import { ISocialServiceComponent } from './adapters/social-service'
 import { ICommsComponent } from './logic/comms'
 import { IWorldsComponent } from './logic/worlds'
+import { IParticipantKicker } from './logic/participant-kicker'
+import { IQueueConsumerComponent } from '@dcl/queue-consumer-component'
 
 export type GlobalContext = {
   components: BaseComponents
@@ -302,6 +306,7 @@ export type ICommsAdapter = {
   getWorldRoomParticipantCount(worldName: string): Promise<number>
   getWorldSceneRoomsParticipantCount(worldName: string): Promise<number>
   status(): Promise<CommsStatus>
+  removeParticipant(roomName: string, identity: string): Promise<void>
 }
 
 export type ILimitsManager = {
@@ -365,6 +370,7 @@ export type IWorldsManager = {
   getOccupiedParcels(worldName: string, options?: GetOccupiedParcelsOptions): Promise<GetOccupiedParcelsResult>
   createBasicWorldIfNotExists(worldName: string, owner: EthAddress): Promise<void>
   worldExists(worldName: string): Promise<boolean>
+  getWorldNamesByCommunityId(communityId: string): Promise<string[]>
 }
 
 export type IPermissionsManager = {
@@ -462,17 +468,22 @@ export type LivekitClient = {
   listRoomsWithParticipantCounts(options?: ListRoomsWithParticipantCountsOptions): Promise<RoomParticipantCount[]>
   createConnectionToken(identity: string, grant: VideoGrant, options?: CreateConnectionTokenOptions): Promise<string>
   receiveWebhookEvent(body: string, authorization: string): Promise<WebhookEvent>
+  removeParticipant(roomName: string, identity: string): Promise<void>
 }
 
 export type IPeersRegistry = {
   onPeerConnected(id: string, roomName: string): void
-  onPeerDisconnected(id: string): void
+  onPeerDisconnected(id: string, roomName: string): void
   getPeerWorld(id: string): string | undefined
+  getPeersInWorld(worldName: string): string[]
+  getPeerRooms(id: string): string[]
 }
 
 // components used in every environment
 export type BaseComponents = {
   access: IAccessComponent
+  accessChecker: IAccessCheckerComponent
+  accessChangeHandler: IAccessChangeHandler
   awsConfig: AwsConfig
   commsAdapter: ICommsAdapter
   config: IConfigComponent
@@ -492,9 +503,11 @@ export type BaseComponents = {
   nameOwnership: INameOwnership
   namePermissionChecker: IWorldNamePermissionChecker
   notificationService: INotificationService
+  participantKicker: IParticipantKicker
   permissions: IPermissionsComponent
   permissionsManager: IPermissionsManager
   peersRegistry: IPeersRegistry
+  queueConsumer: IQueueConsumerComponent
   search: ISearchComponent
   server: IHttpServerComponent<GlobalContext>
   snsClient: IPublisherComponent

@@ -302,6 +302,10 @@ export async function createWorldsManagerMockComponent({
     return content !== undefined
   }
 
+  async function getWorldNamesByCommunityId(_communityId: string): Promise<string[]> {
+    return []
+  }
+
   return {
     getContributableDomains,
     getRawWorldRecords,
@@ -320,7 +324,8 @@ export async function createWorldsManagerMockComponent({
     getWorlds,
     getOccupiedParcels,
     createBasicWorldIfNotExists,
-    worldExists
+    worldExists,
+    getWorldNamesByCommunityId
   }
 }
 
@@ -344,6 +349,7 @@ export function createMockedWorldsManager(
     getWorldBoundingRectangle: jest.fn(),
     createBasicWorldIfNotExists: jest.fn(),
     worldExists: jest.fn(),
+    getWorldNamesByCommunityId: jest.fn(),
     ...overrides
   } as jest.Mocked<IWorldsManager>
 }

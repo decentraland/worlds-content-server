@@ -104,6 +104,9 @@ function createWsRoomAdapter(
       return details
         .filter((d) => d.roomName.startsWith(sceneRoomPrefixForWorld))
         .reduce((sum, d) => sum + (d.count ?? 0), 0)
+    },
+    async removeParticipant(_roomName: string, _identity: string): Promise<void> {
+      // No-op for ws-room adapter
     }
   }
   return adapter
@@ -192,6 +195,10 @@ function createLiveKitAdapter(
         logger.error(`Error retrieving world scene rooms participant count: ${(error as Error).message}`)
         return 0
       }
+    },
+
+    async removeParticipant(roomName: string, identity: string): Promise<void> {
+      await livekitClient.removeParticipant(roomName, identity)
     }
   }
 }
@@ -235,6 +242,10 @@ function cachingAdapter({ logs }: Pick<AppComponents, 'logs'>, wrappedAdapter: I
 
     getWorldSceneRoomsParticipantCount(worldName: string): Promise<number> {
       return wrappedAdapter.getWorldSceneRoomsParticipantCount(worldName)
+    },
+
+    removeParticipant(roomName: string, identity: string): Promise<void> {
+      return wrappedAdapter.removeParticipant(roomName, identity)
     }
   }
 }

@@ -30,6 +30,9 @@ export function createMockCommsAdapterComponent(): ICommsAdapter {
         ],
         timestamp: Date.now()
       })
+    },
+    removeParticipant(_roomName: string, _identity: string): Promise<void> {
+      return Promise.resolve()
     }
   }
 }

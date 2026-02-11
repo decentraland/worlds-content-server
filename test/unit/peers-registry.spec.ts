@@ -9,109 +9,169 @@ describe('PeersRegistry', () => {
 
   beforeEach(async () => {
     config = createConfigComponent({
-      COMMS_ROOM_PREFIX: 'world-test-',
-      SCENE_ROOM_PREFIX: 'world-test-scene-room-'
+      COMMS_ROOM_PREFIX: 'world-',
+      SCENE_ROOM_PREFIX: 'world-scene-room-'
     })
     peersRegistry = await createPeersRegistry({ config })
   })
 
   describe('when a peer connects', () => {
-    it('should track connected peers with room name as world', () => {
-      peersRegistry.onPeerConnected('peer1', 'world1')
-      expect(peersRegistry.getPeerWorld('peer1')).toBe('world1')
+    it('should track the peer in the world extracted from the comms room', () => {
+      peersRegistry.onPeerConnected('0xalice', 'world-name.dcl.eth')
+      expect(peersRegistry.getPeerWorld('0xalice')).toBe('name.dcl.eth')
     })
 
-    it('should track connected peers with lowercase ids', () => {
-      peersRegistry.onPeerConnected('PEER1', 'world1')
-      expect(peersRegistry.getPeerWorld('peer1')).toBe('world1')
+    it('should track the peer in the world extracted from the scene room', () => {
+      peersRegistry.onPeerConnected('0xalice', 'world-scene-room-name.dcl.eth-scene1')
+      expect(peersRegistry.getPeerWorld('0xalice')).toBe('name.dcl.eth')
     })
 
-    it('should strip room prefix from room name when present', () => {
-      peersRegistry.onPeerConnected('peer1', 'world-test-myworld')
-      expect(peersRegistry.getPeerWorld('peer1')).toBe('myworld')
+    it('should normalize identity to lowercase', () => {
+      peersRegistry.onPeerConnected('0xALICE', 'world-name.dcl.eth')
+      expect(peersRegistry.getPeerWorld('0xalice')).toBe('name.dcl.eth')
     })
 
-    it('should keep full room name when prefix is not present', () => {
-      peersRegistry.onPeerConnected('peer1', 'myworld')
-      expect(peersRegistry.getPeerWorld('peer1')).toBe('myworld')
+    it('should use the full name when no prefix matches', () => {
+      peersRegistry.onPeerConnected('0xalice', 'name.dcl.eth')
+      expect(peersRegistry.getPeerWorld('0xalice')).toBe('name.dcl.eth')
     })
 
-    it('should handle room names that start with prefix but have additional content', () => {
-      peersRegistry.onPeerConnected('peer1', 'world-test-complex-world-name')
-      expect(peersRegistry.getPeerWorld('peer1')).toBe('complex-world-name')
-    })
+    it('should move the peer when they connect to a different world', () => {
+      peersRegistry.onPeerConnected('0xalice', 'world-first.dcl.eth')
+      peersRegistry.onPeerConnected('0xalice', 'world-second.dcl.eth')
 
-    it('should handle multiple peers with different room formats', () => {
-      peersRegistry.onPeerConnected('peer1', 'world-test-world1')
-      peersRegistry.onPeerConnected('peer2', 'world2')
-      peersRegistry.onPeerConnected('peer3', 'world-test-complex-name')
-
-      expect(peersRegistry.getPeerWorld('peer1')).toBe('world1')
-      expect(peersRegistry.getPeerWorld('peer2')).toBe('world2')
-      expect(peersRegistry.getPeerWorld('peer3')).toBe('complex-name')
-    })
-
-    it('should strip gatekeeper room prefix when present', () => {
-      peersRegistry.onPeerConnected('peer1', 'world-test-scene-room-myworld')
-      expect(peersRegistry.getPeerWorld('peer1')).toBe('myworld')
-    })
-
-    it('should prefer gatekeeper prefix over regular prefix when both match', () => {
-      peersRegistry.onPeerConnected('peer1', 'world-test-scene-room-complex-world')
-      expect(peersRegistry.getPeerWorld('peer1')).toBe('complex-world')
-    })
-
-    it('should handle room names with gatekeeper prefix and additional content', () => {
-      peersRegistry.onPeerConnected('peer1', 'world-test-scene-room-very-complex-world-name')
-      expect(peersRegistry.getPeerWorld('peer1')).toBe('very-complex-world-name')
-    })
-
-    it('should handle a mix of gatekeeper and regular prefixes', () => {
-      peersRegistry.onPeerConnected('peer1', 'world-test-scene-room-gatekeeper')
-      peersRegistry.onPeerConnected('peer2', 'world-test-regular')
-
-      expect(peersRegistry.getPeerWorld('peer1')).toBe('gatekeeper')
-      expect(peersRegistry.getPeerWorld('peer2')).toBe('regular')
+      expect(peersRegistry.getPeerWorld('0xalice')).toBe('second.dcl.eth')
+      expect(peersRegistry.getPeersInWorld('first.dcl.eth')).toEqual([])
+      expect(peersRegistry.getPeersInWorld('second.dcl.eth')).toEqual(['0xalice'])
     })
   })
 
   describe('when a peer disconnects', () => {
-    it('should remove disconnected peers', () => {
-      peersRegistry.onPeerConnected('peer1', 'world1')
-      peersRegistry.onPeerDisconnected('peer1')
-      expect(peersRegistry.getPeerWorld('peer1')).toBeUndefined()
+    it('should remove the peer', () => {
+      peersRegistry.onPeerConnected('0xalice', 'world-name.dcl.eth')
+      peersRegistry.onPeerDisconnected('0xalice', 'world-name.dcl.eth')
+
+      expect(peersRegistry.getPeerWorld('0xalice')).toBeUndefined()
+      expect(peersRegistry.getPeersInWorld('name.dcl.eth')).toEqual([])
     })
 
-    it('should handle case insensitive peer disconnection', () => {
-      peersRegistry.onPeerConnected('PEER1', 'world1')
-      peersRegistry.onPeerDisconnected('peer1')
-      expect(peersRegistry.getPeerWorld('peer1')).toBeUndefined()
+    it('should handle case-insensitive identity', () => {
+      peersRegistry.onPeerConnected('0xALICE', 'world-name.dcl.eth')
+      peersRegistry.onPeerDisconnected('0xalice', 'world-name.dcl.eth')
+      expect(peersRegistry.getPeerWorld('0xalice')).toBeUndefined()
+    })
+
+    it('should ignore stale disconnect from a previous world', () => {
+      peersRegistry.onPeerConnected('0xalice', 'world-first.dcl.eth')
+      peersRegistry.onPeerConnected('0xalice', 'world-second.dcl.eth')
+
+      peersRegistry.onPeerDisconnected('0xalice', 'world-first.dcl.eth')
+
+      expect(peersRegistry.getPeerWorld('0xalice')).toBe('second.dcl.eth')
+      expect(peersRegistry.getPeersInWorld('second.dcl.eth')).toEqual(['0xalice'])
+    })
+
+    it('should ignore disconnect for unknown peer', () => {
+      peersRegistry.onPeerDisconnected('0xunknown', 'world-name.dcl.eth')
+      expect(peersRegistry.getPeerWorld('0xunknown')).toBeUndefined()
     })
   })
 
-  describe('when a peer reconnects', () => {
-    it('should update peer world on reconnection', () => {
-      peersRegistry.onPeerConnected('peer1', 'world1')
-      peersRegistry.onPeerConnected('peer1', 'world2')
-      expect(peersRegistry.getPeerWorld('peer1')).toBe('world2')
+  describe('when getting peers in a world', () => {
+    it('should return all peers in the world', () => {
+      peersRegistry.onPeerConnected('0xalice', 'world-name.dcl.eth')
+      peersRegistry.onPeerConnected('0xbob', 'world-name.dcl.eth')
+      peersRegistry.onPeerConnected('0xcarol', 'world-other.dcl.eth')
+
+      const peers = peersRegistry.getPeersInWorld('name.dcl.eth')
+      expect(peers).toHaveLength(2)
+      expect(peers).toContain('0xalice')
+      expect(peers).toContain('0xbob')
     })
 
-    it('should update peer world with prefix stripping on reconnection', () => {
-      peersRegistry.onPeerConnected('peer1', 'world1')
-      peersRegistry.onPeerConnected('peer1', 'world-test-new-world')
-      expect(peersRegistry.getPeerWorld('peer1')).toBe('new-world')
+    it('should include peers from both comms and scene rooms of the same world', () => {
+      peersRegistry.onPeerConnected('0xalice', 'world-name.dcl.eth')
+      peersRegistry.onPeerConnected('0xbob', 'world-scene-room-name.dcl.eth-scene1')
+
+      const peers = peersRegistry.getPeersInWorld('name.dcl.eth')
+      expect(peers).toHaveLength(2)
+      expect(peers).toContain('0xalice')
+      expect(peers).toContain('0xbob')
+    })
+
+    it('should be case-insensitive', () => {
+      peersRegistry.onPeerConnected('0xalice', 'world-Name.dcl.eth')
+
+      expect(peersRegistry.getPeersInWorld('name.dcl.eth')).toContain('0xalice')
+      expect(peersRegistry.getPeersInWorld('NAME.DCL.ETH')).toContain('0xalice')
+    })
+
+    it('should return empty array when no peers are in the world', () => {
+      expect(peersRegistry.getPeersInWorld('name.dcl.eth')).toEqual([])
     })
   })
 
-  describe('when querying peer world', () => {
-    it('should return undefined for unknown peer', () => {
-      expect(peersRegistry.getPeerWorld('unknown')).toBeUndefined()
+  describe('when getting peer rooms', () => {
+    describe('and a peer is in multiple rooms', () => {
+      beforeEach(() => {
+        peersRegistry.onPeerConnected('0xalice', 'world-name.dcl.eth')
+        peersRegistry.onPeerConnected('0xalice', 'world-scene-room-name.dcl.eth-scene1')
+        peersRegistry.onPeerConnected('0xalice', 'world-scene-room-name.dcl.eth-scene2')
+      })
+
+      it('should return all rooms the peer is in', () => {
+        const rooms = peersRegistry.getPeerRooms('0xalice')
+        expect(rooms).toHaveLength(3)
+        expect(rooms).toContain('world-name.dcl.eth')
+        expect(rooms).toContain('world-scene-room-name.dcl.eth-scene1')
+        expect(rooms).toContain('world-scene-room-name.dcl.eth-scene2')
+      })
+
+      it('should be case-insensitive', () => {
+        const rooms = peersRegistry.getPeerRooms('0xALICE')
+        expect(rooms).toHaveLength(3)
+      })
     })
 
-    it('should handle case insensitive queries', () => {
-      peersRegistry.onPeerConnected('PEER1', 'world1')
-      expect(peersRegistry.getPeerWorld('peer1')).toBe('world1')
-      expect(peersRegistry.getPeerWorld('PEER1')).toBe('world1')
+    describe('and a peer disconnects from one room', () => {
+      beforeEach(() => {
+        peersRegistry.onPeerConnected('0xalice', 'world-name.dcl.eth')
+        peersRegistry.onPeerConnected('0xalice', 'world-scene-room-name.dcl.eth-scene1')
+        peersRegistry.onPeerDisconnected('0xalice', 'world-scene-room-name.dcl.eth-scene1')
+      })
+
+      it('should still return the remaining rooms', () => {
+        const rooms = peersRegistry.getPeerRooms('0xalice')
+        expect(rooms).toHaveLength(1)
+        expect(rooms).toContain('world-name.dcl.eth')
+      })
+
+      it('should still show the peer in the world', () => {
+        expect(peersRegistry.getPeersInWorld('name.dcl.eth')).toContain('0xalice')
+      })
+    })
+
+    describe('and a peer disconnects from all rooms', () => {
+      beforeEach(() => {
+        peersRegistry.onPeerConnected('0xalice', 'world-name.dcl.eth')
+        peersRegistry.onPeerConnected('0xalice', 'world-scene-room-name.dcl.eth-scene1')
+        peersRegistry.onPeerDisconnected('0xalice', 'world-name.dcl.eth')
+        peersRegistry.onPeerDisconnected('0xalice', 'world-scene-room-name.dcl.eth-scene1')
+      })
+
+      it('should return empty array', () => {
+        expect(peersRegistry.getPeerRooms('0xalice')).toEqual([])
+      })
+
+      it('should remove the peer from the world', () => {
+        expect(peersRegistry.getPeersInWorld('name.dcl.eth')).not.toContain('0xalice')
+      })
+    })
+
+    describe('and a peer is not connected', () => {
+      it('should return empty array', () => {
+        expect(peersRegistry.getPeerRooms('0xunknown')).toEqual([])
+      })
     })
   })
 })

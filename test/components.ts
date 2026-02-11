@@ -39,6 +39,10 @@ import { createMockPeersRegistry } from './mocks/peers-registry-mock'
 import { IPublisherComponent } from '@dcl/sns-component'
 import { createAuthenticatedLocalFetchComponent } from './components/local-auth-fetch'
 import { createMockSocialService } from './mocks/social-service-mock'
+import { createAccessChangeHandler } from '../src/logic/access-change-handler'
+import { createAccessCheckerComponent } from '../src/logic/access-checker'
+import { createParticipantKicker } from '../src/logic/participant-kicker'
+import { createMockQueueConsumer } from './mocks/queue-consumer-mock'
 
 /**
  * Behaves like Jest "describe" function, used to describe a test for a
@@ -117,7 +121,25 @@ async function initComponents(): Promise<TestComponents> {
 
   const permissions = await createPermissionsComponent({ config, permissionsManager, snsClient, worldsManager })
   const socialService = createMockSocialService()
-  const access = await createAccessComponent({ config, socialService, worldsManager })
+  const peersRegistry = createMockPeersRegistry()
+  const participantKicker = await createParticipantKicker({ peersRegistry, commsAdapter, logs, config })
+  const accessChecker = await createAccessCheckerComponent({ worldsManager, socialService })
+  const accessChangeHandler = createAccessChangeHandler({
+    peersRegistry,
+    participantKicker,
+    logs,
+    accessChecker,
+    permissionsManager
+  })
+  const access = await createAccessComponent({
+    config,
+    socialService,
+    worldsManager,
+    commsAdapter,
+    logs,
+    accessChangeHandler,
+    accessChecker
+  })
 
   const entityDeployer = createEntityDeployer({
     config,
@@ -163,6 +185,8 @@ async function initComponents(): Promise<TestComponents> {
     config
   })
 
+  const queueConsumer = createMockQueueConsumer()
+
   return {
     ...components,
     access,
@@ -181,7 +205,8 @@ async function initComponents(): Promise<TestComponents> {
     namePermissionChecker,
     nats: createMockNatsComponent(),
     permissionsManager,
-    peersRegistry: createMockPeersRegistry(),
+    peersRegistry,
+    queueConsumer,
     search,
     settings,
     snsClient,

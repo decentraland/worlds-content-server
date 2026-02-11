@@ -1,0 +1,1 @@
+export const DEFAULT_KICK_BATCH_SIZE = 20

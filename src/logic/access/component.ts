@@ -9,78 +9,21 @@ import {
   NotAllowListAccessError,
   UnauthorizedCommunityError
 } from './errors'
-import { ISocialServiceComponent } from '../../adapters/social-service'
-
-type CheckingFunction = (ethAddress: EthAddress, extras?: any) => Promise<boolean>
-
-function createUnrestrictedChecker(): CheckingFunction {
-  return (_ethAddress: EthAddress, _extras?: any): Promise<boolean> => {
-    return Promise.resolve(true)
-  }
-}
-
-function createSharedSecretChecker(hashedSharedSecret: string): CheckingFunction {
-  return (_ethAddress: EthAddress, plainTextSecret: string): Promise<boolean> => {
-    return bcrypt.compare(plainTextSecret, hashedSharedSecret)
-  }
-}
-
-function createNftOwnershipChecker(_requiredNft: string): CheckingFunction {
-  return (_ethAddress: EthAddress): Promise<boolean> => {
-    // TODO Check NFT ownership in the blockchain
-    return Promise.resolve(false)
-  }
-}
-
-/**
- * Creates an allow-list checker factory that captures the socialService dependency.
- * This avoids passing socialService through multiple layers.
- */
-function createAllowListCheckerFactory(socialService: ISocialServiceComponent) {
-  return (allowList: string[], communities: string[]): CheckingFunction => {
-    const lowerCasedAllowList = allowList.map((ethAddress) => ethAddress.toLowerCase())
-
-    return async (ethAddress: EthAddress, _extras?: any): Promise<boolean> => {
-      // Check wallets first (faster, local)
-      if (lowerCasedAllowList.includes(ethAddress.toLowerCase())) {
-        return true
-      }
-
-      // Check communities if defined (batch check)
-      if (communities.length > 0) {
-        const { communities: memberCommunities } = await socialService.getMemberCommunities(ethAddress, communities)
-        return memberCommunities.length > 0
-      }
-
-      return false
-    }
-  }
-}
 
 export async function createAccessComponent({
   config,
   socialService,
-  worldsManager
-}: Pick<AppComponents, 'config' | 'socialService' | 'worldsManager'>): Promise<IAccessComponent> {
+  worldsManager,
+  accessChangeHandler,
+  accessChecker,
+  commsAdapter: _commsAdapter,
+  logs: _logs
+}: Pick<
+  AppComponents,
+  'config' | 'socialService' | 'worldsManager' | 'accessChangeHandler' | 'accessChecker' | 'commsAdapter' | 'logs'
+>): Promise<IAccessComponent> {
   const maxCommunities = (await config.getNumber('ACCESS_MAX_COMMUNITIES')) ?? DEFAULT_MAX_COMMUNITIES
   const maxWallets = (await config.getNumber('ACCESS_MAX_WALLETS')) ?? DEFAULT_MAX_WALLETS
-
-  const createAllowListChecker = createAllowListCheckerFactory(socialService)
-
-  function createAccessCheckerFrom(accessSetting: AccessSetting): CheckingFunction {
-    switch (accessSetting.type) {
-      case AccessType.Unrestricted:
-        return createUnrestrictedChecker()
-      case AccessType.SharedSecret:
-        return createSharedSecretChecker(accessSetting.secret)
-      case AccessType.NFTOwnership:
-        return createNftOwnershipChecker(accessSetting.nft)
-      case AccessType.AllowList:
-        return createAllowListChecker(accessSetting.wallets, accessSetting.communities)
-      default:
-        throw new Error(`Invalid access type.`)
-    }
-  }
 
   /**
    * Gets the access setting for a world using the faster getRawWorldRecords method.
@@ -97,21 +40,22 @@ export async function createAccessComponent({
     return records[0].access || defaultAccess()
   }
 
-  async function checkAccess(worldName: string, ethAddress: EthAddress, extras?: any): Promise<boolean> {
-    const access = await getAccessForWorld(worldName)
-
-    const accessChecker = createAccessCheckerFrom(access)
-    return accessChecker(ethAddress, extras)
+  function checkAccess(worldName: string, ethAddress: EthAddress, extras?: any): Promise<boolean> {
+    return accessChecker.checkAccess(worldName, ethAddress, extras)
   }
 
   /**
    * Set access settings for a world with validation.
    * Validates the access type and constructs the appropriate AccessSetting.
    * For AllowList with communities, validates that the signer is a member of all communities.
+   * After storing the new access, handles the access change (e.g. kicks participants when required).
    */
   async function setAccess(worldName: string, signer: EthAddress, input: AccessInput): Promise<void> {
     const { type, wallets, communities, nft, secret } = input
     let accessSetting: AccessSetting
+
+    // Capture previous access before making changes
+    const previousAccess = await getAccessForWorld(worldName)
 
     switch (type) {
       case AccessType.AllowList: {
@@ -121,10 +65,9 @@ export async function createAccessComponent({
           )
         }
 
-        const walletList = wallets || []
-        if (walletList.length > maxWallets) {
+        if (wallets && wallets.length > maxWallets) {
           throw new InvalidAllowListSettingError(
-            `Too many wallets in allow-list. Maximum allowed is ${maxWallets}, but ${walletList.length} were provided.`
+            `Too many wallets in allow-list. Maximum allowed is ${maxWallets}, but ${wallets.length} were provided.`
           )
         }
 
@@ -141,7 +84,7 @@ export async function createAccessComponent({
 
         accessSetting = {
           type: AccessType.AllowList,
-          wallets: walletList,
+          wallets: wallets || [],
           communities: communities || []
         }
         break
@@ -174,6 +117,7 @@ export async function createAccessComponent({
 
     await worldsManager.createBasicWorldIfNotExists(worldName, signer)
     await worldsManager.storeAccess(worldName, accessSetting)
+    await accessChangeHandler.handleAccessChange(worldName, previousAccess, accessSetting)
   }
 
   /**
@@ -245,6 +189,7 @@ export async function createAccessComponent({
     }
 
     await worldsManager.storeAccess(worldName, updatedAccess)
+    await accessChangeHandler.handleAccessChange(worldName, access, updatedAccess)
   }
 
   /**
@@ -317,6 +262,7 @@ export async function createAccessComponent({
     }
 
     await worldsManager.storeAccess(worldName, updatedAccess)
+    await accessChangeHandler.handleAccessChange(worldName, access, updatedAccess)
   }
 
   return {

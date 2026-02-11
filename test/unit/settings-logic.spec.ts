@@ -12,7 +12,7 @@ import {
   NoDeployedScenesError
 } from '../../src/types'
 import { createMockedNamePermissionChecker } from '../mocks/dcl-name-checker-mock'
-import { createMockedWorldsManager } from '../mocks/world-manager-mock'
+import { createMockedWorldsManager } from '../mocks/worlds-manager-mock'
 import { createCoordinatesComponent, ICoordinatesComponent } from '../../src/logic/coordinates'
 import { createSnsClientMock } from '../mocks/sns-client-mock'
 

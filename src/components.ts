@@ -44,10 +44,20 @@ import { createSettingsComponent } from './logic/settings'
 import { createCoordinatesComponent } from './logic/coordinates'
 import { createPermissionsComponent } from './logic/permissions'
 import { createAccessComponent } from './logic/access'
+import { createAccessCheckerComponent } from './logic/access-checker'
+import { createAccessChangeHandler } from './logic/access-change-handler'
+import { createParticipantKicker } from './logic/participant-kicker'
 import { createSearchComponent } from './adapters/search'
 import { createCommsComponent } from './logic/comms'
 import { createWorldsComponent } from './logic/worlds'
 import { createSocialServiceComponent } from './adapters/social-service'
+import { createSqsComponent } from '@dcl/sqs-component'
+import { createQueueConsumerComponent } from '@dcl/queue-consumer-component'
+import {
+  createCommunityMemberRemovedHandler,
+  COMMUNITY_MEMBER_REMOVED_EVENT_SUBTYPES
+} from './controllers/handlers/community-member-removed-handler'
+import { Events } from '@dcl/schemas'
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
@@ -138,7 +148,25 @@ export async function initComponents(): Promise<AppComponents> {
   const permissionsManager = await createPermissionsManagerComponent({ database, worldsManager })
   const permissions = await createPermissionsComponent({ config, permissionsManager, snsClient, worldsManager })
   const socialService = await createSocialServiceComponent({ config, fetch, logs })
-  const access = await createAccessComponent({ config, socialService, worldsManager })
+  const peersRegistry = await createPeersRegistry({ config })
+  const participantKicker = await createParticipantKicker({ peersRegistry, commsAdapter, logs, config })
+  const accessChecker = await createAccessCheckerComponent({ worldsManager, socialService })
+  const accessChangeHandler = createAccessChangeHandler({
+    peersRegistry,
+    participantKicker,
+    logs,
+    accessChecker,
+    permissionsManager
+  })
+  const access = await createAccessComponent({
+    config,
+    socialService,
+    worldsManager,
+    accessChangeHandler,
+    accessChecker,
+    commsAdapter,
+    logs
+  })
 
   const entityDeployer = createEntityDeployer({
     config,
@@ -173,7 +201,6 @@ export async function initComponents(): Promise<AppComponents> {
     walletStats
   })
 
-  const peersRegistry = await createPeersRegistry({ config })
   const settings = await createSettingsComponent({
     config,
     coordinates,
@@ -194,13 +221,27 @@ export async function initComponents(): Promise<AppComponents> {
     config
   })
 
+  const sqs = await createSqsComponent(config)
+  const queueConsumer = createQueueConsumerComponent({ sqs, logs })
+
+  const communityMemberRemovedHandler = createCommunityMemberRemovedHandler({
+    peersRegistry,
+    accessChecker,
+    participantKicker,
+    logs
+  })
+
+  // Register community member removed event handlers
+  for (const subType of COMMUNITY_MEMBER_REMOVED_EVENT_SUBTYPES) {
+    queueConsumer.addMessageHandler(Events.Type.COMMUNITY, subType, communityMemberRemovedHandler.handle)
+  }
+
   return {
-    worlds,
-    comms,
     access,
+    accessChecker,
+    accessChangeHandler,
     awsConfig,
-    schemaValidator,
-    settings,
+    comms,
     commsAdapter,
     config,
     coordinates,
@@ -214,16 +255,20 @@ export async function initComponents(): Promise<AppComponents> {
     marketplaceSubGraph,
     metrics,
     migrationExecutor,
-    nats,
     nameDenyListChecker,
     nameOwnership,
     namePermissionChecker,
+    nats,
     notificationService,
+    participantKicker,
+    peersRegistry,
     permissions,
     permissionsManager,
-    peersRegistry,
+    queueConsumer,
+    schemaValidator,
     search,
     server,
+    settings,
     snsClient,
     socialService,
     status,
@@ -232,6 +277,7 @@ export async function initComponents(): Promise<AppComponents> {
     updateOwnerJob,
     validator,
     walletStats,
+    worlds,
     worldsIndexer,
     worldsManager
   }

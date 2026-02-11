@@ -5,13 +5,15 @@ import { createConfigComponent } from '@well-known-components/env-config-provide
 import { LivekitClient } from '../../src/types'
 
 const mockListRooms = jest.fn()
+const mockRemoveParticipant = jest.fn()
 
 jest.mock('livekit-server-sdk', () => {
   const actual = jest.requireActual<typeof import('livekit-server-sdk')>('livekit-server-sdk')
   return {
     ...actual,
     RoomServiceClient: jest.fn().mockImplementation(() => ({
-      listRooms: mockListRooms
+      listRooms: mockListRooms,
+      removeParticipant: mockRemoveParticipant
     })),
     AccessToken: actual.AccessToken
   }
@@ -166,6 +168,25 @@ describe('LivekitClient', () => {
       const token = await livekitClient.createConnectionToken('0xUser', grant)
 
       expect(token).toMatch(/^livekit:wss:\/\/livekit\.example\.com\?access_token=/)
+    })
+  })
+
+  describe('removeParticipant', () => {
+    it('should call roomService.removeParticipant with roomName and identity', async () => {
+      mockRemoveParticipant.mockResolvedValue(undefined)
+
+      await livekitClient.removeParticipant('world-sample.dcl.eth', '0xuser123')
+
+      expect(mockRemoveParticipant).toHaveBeenCalledWith('world-sample.dcl.eth', '0xuser123')
+    })
+
+    it('should propagate errors from roomService', async () => {
+      const error = new Error('Room not found')
+      mockRemoveParticipant.mockRejectedValue(error)
+
+      await expect(livekitClient.removeParticipant('world-nonexistent.dcl.eth', '0xuser123')).rejects.toThrow(
+        'Room not found'
+      )
     })
   })
 })
