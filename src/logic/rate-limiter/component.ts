@@ -30,6 +30,19 @@ export async function createRateLimiterComponent({
     return `${LOCK_KEY_PREFIX}:${worldName.toLowerCase()}:${subject.toLowerCase()}`
   }
 
+  async function isRateLimited(worldName: string, subject: string): Promise<boolean> {
+    try {
+      const attemptsKey = buildAttemptsKey(worldName, subject)
+      const now = Date.now()
+      const windowStart = now - RATE_LIMIT_WINDOW_SECONDS * 1000
+      const stored = await redis.get<StoredAttempts>(attemptsKey)
+      const recentAttempts = stored ? stored.attempts.filter((ts) => ts > windowStart) : []
+      return recentAttempts.length >= maxAttempts
+    } catch {
+      return false // fail-open
+    }
+  }
+
   async function recordFailedAttempt(worldName: string, subject: string): Promise<RateLimitResult> {
     const attemptsKey = buildAttemptsKey(worldName, subject)
     const lockKey = buildLockKey(worldName, subject)
@@ -68,6 +81,7 @@ export async function createRateLimiterComponent({
   }
 
   return {
+    isRateLimited,
     recordFailedAttempt,
     clearAttempts
   }

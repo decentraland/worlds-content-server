@@ -24,6 +24,68 @@ describe('RateLimiterComponent', () => {
     jest.resetAllMocks()
   })
 
+  describe('isRateLimited', () => {
+    describe('when there are no attempts', () => {
+      it('should return false', async () => {
+        redis.get.mockResolvedValue(undefined)
+
+        const result = await rateLimiter.isRateLimited(worldName, subject)
+
+        expect(result).toBe(false)
+      })
+    })
+
+    describe('when attempts are below the limit', () => {
+      beforeEach(() => {
+        const now = Date.now()
+        redis.get.mockResolvedValue({
+          attempts: [now - 10000, now - 20000]
+        })
+      })
+
+      it('should return false', async () => {
+        const result = await rateLimiter.isRateLimited(worldName, subject)
+
+        expect(result).toBe(false)
+      })
+    })
+
+    describe('when attempts have reached the limit', () => {
+      beforeEach(() => {
+        const now = Date.now()
+        redis.get.mockResolvedValue({
+          attempts: [now - 10000, now - 20000, now - 30000]
+        })
+      })
+
+      it('should return true', async () => {
+        const result = await rateLimiter.isRateLimited(worldName, subject)
+
+        expect(result).toBe(true)
+      })
+    })
+
+    describe('when Redis get fails', () => {
+      beforeEach(() => {
+        redis.get.mockRejectedValue(new Error('Redis error'))
+      })
+
+      it('should return false (fail-open)', async () => {
+        const result = await rateLimiter.isRateLimited(worldName, subject)
+
+        expect(result).toBe(false)
+      })
+    })
+
+    it('should use lowercase world name and subject in the key', async () => {
+      redis.get.mockResolvedValue(undefined)
+
+      await rateLimiter.isRateLimited('MyWorld', 'AbCdEf')
+
+      expect(redis.get).toHaveBeenCalledWith(expect.stringContaining('myworld:abcdef'))
+    })
+  })
+
   describe('recordFailedAttempt', () => {
     describe('when there are no prior attempts', () => {
       it('should record the attempt and return not rate-limited', async () => {

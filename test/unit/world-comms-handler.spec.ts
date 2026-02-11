@@ -38,6 +38,7 @@ describe('worldCommsHandler', () => {
     }
 
     rateLimiter = {
+      isRateLimited: jest.fn().mockResolvedValue(false),
       recordFailedAttempt: jest.fn().mockResolvedValue({ rateLimited: false }),
       clearAttempts: jest.fn().mockResolvedValue(undefined)
     }
@@ -322,10 +323,11 @@ describe('worldCommsHandler', () => {
         comms.getWorldRoomConnectionString.mockResolvedValueOnce(connectionString)
       })
 
-      it('should clear attempts on successful connection', async () => {
+      it('should check rate limit first, then clear attempts on successful connection', async () => {
         const response = await worldCommsHandler(context)
 
         expect(response.status).toBe(200)
+        expect(rateLimiter.isRateLimited).toHaveBeenCalledWith(worldName, clientIp)
         expect(rateLimiter.clearAttempts).toHaveBeenCalledWith(worldName, clientIp)
       })
     })
@@ -335,30 +337,47 @@ describe('worldCommsHandler', () => {
         comms.getWorldRoomConnectionString.mockRejectedValueOnce(new InvalidAccessError(worldName))
       })
 
-      it('should return 403 and record the failed attempt', async () => {
+      it('should return 403 and record the failed attempt when under the limit', async () => {
+        rateLimiter.recordFailedAttempt.mockResolvedValue({ rateLimited: false })
+
         const response = await worldCommsHandler(context)
 
         expect(response.status).toBe(403)
+        expect(response.body).toEqual({ error: expect.stringContaining(worldName) })
+        expect(rateLimiter.isRateLimited).toHaveBeenCalledWith(worldName, clientIp)
         expect(rateLimiter.recordFailedAttempt).toHaveBeenCalledWith(worldName, clientIp)
       })
-    })
 
-    describe('and the rate limiter reports the subject is rate-limited', () => {
-      beforeEach(() => {
-        comms.getWorldRoomConnectionString.mockRejectedValueOnce(new InvalidAccessError(worldName))
+      it('should return 429 with Retry-After when the failed attempt crosses the rate limit threshold', async () => {
         rateLimiter.recordFailedAttempt.mockResolvedValue({ rateLimited: true })
-      })
 
-      it('should return 429 with Retry-After header', async () => {
         const response = await worldCommsHandler(context)
 
         expect(response.status).toBe(429)
         expect(response.headers).toEqual(expect.objectContaining({ 'Retry-After': '60' }))
         expect(response.body).toEqual({ error: 'Too many shared-secret attempts. Try again later.' })
+        expect(rateLimiter.recordFailedAttempt).toHaveBeenCalledWith(worldName, clientIp)
       })
     })
 
-    describe('and no cf-connecting-ip header is present', () => {
+    describe('and the subject is already rate-limited', () => {
+      beforeEach(() => {
+        rateLimiter.isRateLimited.mockResolvedValue(true)
+      })
+
+      it('should return 429 before calling comms and not record a failed attempt', async () => {
+        const response = await worldCommsHandler(context)
+
+        expect(response.status).toBe(429)
+        expect(response.headers).toEqual(expect.objectContaining({ 'Retry-After': '60' }))
+        expect(response.body).toEqual({ error: 'Too many shared-secret attempts. Try again later.' })
+        expect(rateLimiter.isRateLimited).toHaveBeenCalledWith(worldName, clientIp)
+        expect(comms.getWorldRoomConnectionString).not.toHaveBeenCalled()
+        expect(rateLimiter.recordFailedAttempt).not.toHaveBeenCalled()
+      })
+    })
+
+    describe('and only x-forwarded-for is present (no cf-connecting-ip)', () => {
       beforeEach(() => {
         context = {
           components: { access, comms, rateLimiter },
@@ -375,10 +394,11 @@ describe('worldCommsHandler', () => {
         comms.getWorldRoomConnectionString.mockRejectedValueOnce(new InvalidAccessError(worldName))
       })
 
-      it('should use the first IP from x-forwarded-for as the subject', async () => {
+      it('should use wallet identity as the subject since x-forwarded-for is not trusted', async () => {
         await worldCommsHandler(context)
 
-        expect(rateLimiter.recordFailedAttempt).toHaveBeenCalledWith(worldName, '5.6.7.8')
+        expect(rateLimiter.isRateLimited).toHaveBeenCalledWith(worldName, identity)
+        expect(rateLimiter.recordFailedAttempt).toHaveBeenCalledWith(worldName, identity)
       })
     })
 
@@ -432,6 +452,7 @@ describe('worldCommsHandler', () => {
       const response = await worldCommsHandler(context)
 
       expect(response.status).toBe(200)
+      expect(rateLimiter.isRateLimited).not.toHaveBeenCalled()
       expect(rateLimiter.recordFailedAttempt).not.toHaveBeenCalled()
       expect(rateLimiter.clearAttempts).not.toHaveBeenCalled()
     })

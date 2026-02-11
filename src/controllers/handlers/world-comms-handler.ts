@@ -4,24 +4,14 @@ import { DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
 import { InvalidRequestError } from '@dcl/http-commons'
 import { InvalidAccessError, InvalidWorldError, SceneNotFoundError, WorldAtCapacityError } from '../../logic/comms'
 import { AccessType } from '../../logic/access'
-import { RATE_LIMIT_WINDOW_SECONDS } from '../../logic/rate-limiter'
+import { RATE_LIMIT_WINDOW_SECONDS, RateLimitedError } from '../../logic/rate-limiter'
 
 type CommsMetadata = {
   secret?: string
 }
 
 function extractClientIp(request: IHttpServerComponent.IRequest): string | undefined {
-  const cfIp = request.headers.get('cf-connecting-ip')
-  if (cfIp) {
-    return cfIp
-  }
-
-  const xForwardedFor = request.headers.get('x-forwarded-for')
-  if (xForwardedFor) {
-    return xForwardedFor.split(',')[0].trim()
-  }
-
-  return undefined
+  return request.headers.get('cf-connecting-ip') ?? undefined
 }
 
 function extractSubject(context: HandlerContext): string {
@@ -54,6 +44,13 @@ export async function worldCommsHandler(context: HandlerContext): Promise<IHttpS
   const isSharedSecret = accessSetting.type === AccessType.SharedSecret
 
   try {
+    if (isSharedSecret) {
+      const rateLimited = await rateLimiter.isRateLimited(worldName, extractSubject(context))
+      if (rateLimited) {
+        throw new RateLimitedError(worldName)
+      }
+    }
+
     let fixedAdapter: string
     if (sceneId) {
       fixedAdapter = await comms.getWorldSceneRoomConnectionString(identity, worldName, sceneId, accessOptions)
@@ -72,19 +69,20 @@ export async function worldCommsHandler(context: HandlerContext): Promise<IHttpS
       }
     }
   } catch (error) {
-    if (error instanceof InvalidAccessError) {
-      if (isSharedSecret) {
-        const { rateLimited } = await rateLimiter.recordFailedAttempt(worldName, extractSubject(context))
-
-        if (rateLimited) {
-          return {
-            status: 429,
-            headers: { 'Retry-After': String(RATE_LIMIT_WINDOW_SECONDS) },
-            body: { error: 'Too many shared-secret attempts. Try again later.' }
-          }
+    if (error instanceof InvalidAccessError && isSharedSecret) {
+      const { rateLimited } = await rateLimiter.recordFailedAttempt(worldName, extractSubject(context))
+      if (rateLimited) {
+        return {
+          status: 429,
+          headers: { 'Retry-After': String(RATE_LIMIT_WINDOW_SECONDS) },
+          body: { error: 'Too many shared-secret attempts. Try again later.' }
         }
       }
-
+      return {
+        status: 403,
+        body: { error: error.message }
+      }
+    } else if (error instanceof InvalidAccessError) {
       return {
         status: 403,
         body: { error: error.message }
@@ -98,6 +96,12 @@ export async function worldCommsHandler(context: HandlerContext): Promise<IHttpS
       return {
         status: 503,
         body: { error: error.message }
+      }
+    } else if (error instanceof RateLimitedError) {
+      return {
+        status: 429,
+        headers: { 'Retry-After': String(RATE_LIMIT_WINDOW_SECONDS) },
+        body: { error: 'Too many shared-secret attempts. Try again later.' }
       }
     }
 
