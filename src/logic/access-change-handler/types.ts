@@ -1,7 +1,11 @@
 import type { AccessSetting } from '../access/types'
 
 /** Action to take when access type changes from one value to another. */
-export type AccessChangeAction = 'noKick' | 'kickAll' | 'kickWithoutAccess'
+export enum AccessChangeAction {
+  NoKick = 'noKick',
+  KickAll = 'kickAll',
+  KickWithoutAccess = 'kickWithoutAccess'
+}
 
 /** Resolver: same-type transitions that depend on previous/new settings (e.g. secret or allow-list diff). */
 export type AccessChangeResolver = (previousAccess: AccessSetting, newAccess: AccessSetting) => AccessChangeAction

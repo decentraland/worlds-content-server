@@ -1,5 +1,5 @@
 import { AccessType } from '../access/types'
-import { type AccessChangeResolver } from './types'
+import { AccessChangeAction, type AccessChangeResolver } from './types'
 import { secretChanged, allowListUnchanged } from './utils'
 
 /**
@@ -10,27 +10,29 @@ import { secretChanged, allowListUnchanged } from './utils'
  */
 export const TRANSITION_MATRIX: Record<AccessType, Record<AccessType, AccessChangeResolver>> = {
   [AccessType.Unrestricted]: {
-    [AccessType.Unrestricted]: () => 'noKick',
-    [AccessType.SharedSecret]: () => 'kickAll',
-    [AccessType.NFTOwnership]: () => 'kickAll',
-    [AccessType.AllowList]: () => 'kickAll'
+    [AccessType.Unrestricted]: () => AccessChangeAction.NoKick,
+    [AccessType.SharedSecret]: () => AccessChangeAction.KickAll,
+    [AccessType.NFTOwnership]: () => AccessChangeAction.KickAll,
+    [AccessType.AllowList]: () => AccessChangeAction.KickAll
   },
   [AccessType.SharedSecret]: {
-    [AccessType.Unrestricted]: () => 'kickAll',
-    [AccessType.SharedSecret]: (prev, current) => (secretChanged(prev, current) ? 'kickAll' : 'noKick'),
-    [AccessType.NFTOwnership]: () => 'kickAll',
-    [AccessType.AllowList]: () => 'kickAll'
+    [AccessType.Unrestricted]: () => AccessChangeAction.KickAll,
+    [AccessType.SharedSecret]: (prev, current) =>
+      secretChanged(prev, current) ? AccessChangeAction.KickAll : AccessChangeAction.NoKick,
+    [AccessType.NFTOwnership]: () => AccessChangeAction.KickAll,
+    [AccessType.AllowList]: () => AccessChangeAction.KickAll
   },
   [AccessType.NFTOwnership]: {
-    [AccessType.Unrestricted]: () => 'kickAll',
-    [AccessType.SharedSecret]: () => 'kickAll',
-    [AccessType.NFTOwnership]: () => 'noKick',
-    [AccessType.AllowList]: () => 'kickAll'
+    [AccessType.Unrestricted]: () => AccessChangeAction.KickAll,
+    [AccessType.SharedSecret]: () => AccessChangeAction.KickAll,
+    [AccessType.NFTOwnership]: () => AccessChangeAction.NoKick,
+    [AccessType.AllowList]: () => AccessChangeAction.KickAll
   },
   [AccessType.AllowList]: {
-    [AccessType.Unrestricted]: () => 'kickAll',
-    [AccessType.SharedSecret]: () => 'kickAll',
-    [AccessType.NFTOwnership]: () => 'kickAll',
-    [AccessType.AllowList]: (prev, current) => (allowListUnchanged(prev, current) ? 'noKick' : 'kickWithoutAccess')
+    [AccessType.Unrestricted]: () => AccessChangeAction.KickAll,
+    [AccessType.SharedSecret]: () => AccessChangeAction.KickAll,
+    [AccessType.NFTOwnership]: () => AccessChangeAction.KickAll,
+    [AccessType.AllowList]: (prev, current) =>
+      allowListUnchanged(prev, current) ? AccessChangeAction.NoKick : AccessChangeAction.KickWithoutAccess
   }
 }

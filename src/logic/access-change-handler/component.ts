@@ -96,9 +96,9 @@ export function createAccessChangeHandler({
 }: Pick<AppComponents, 'peersRegistry' | 'participantKicker' | 'logs' | 'accessChecker'>): IAccessChangeHandler {
   const logger = logs.getLogger('access-change-handler')
   const reactions: Record<AccessChangeAction, AccessChangeReaction> = {
-    noKick: createNoKickReaction({ logs }),
-    kickAll: createKickAllReaction({ participantKicker, logs }),
-    kickWithoutAccess: createKickWithoutAccessReaction({ participantKicker, logs })
+    [AccessChangeAction.NoKick]: createNoKickReaction({ logs }),
+    [AccessChangeAction.KickAll]: createKickAllReaction({ participantKicker, logs }),
+    [AccessChangeAction.KickWithoutAccess]: createKickWithoutAccessReaction({ participantKicker, logs })
   }
 
   return {
@@ -114,7 +114,8 @@ export function createAccessChangeHandler({
       }
 
       const action: AccessChangeAction =
-        TRANSITION_MATRIX[previousAccess.type]?.[newAccess.type]?.(previousAccess, newAccess) ?? 'kickAll'
+        TRANSITION_MATRIX[previousAccess.type]?.[newAccess.type]?.(previousAccess, newAccess) ??
+        AccessChangeAction.KickAll
 
       try {
         await reactions[action].apply(worldName, identities, accessChecker)
