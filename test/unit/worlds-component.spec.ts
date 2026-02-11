@@ -1,19 +1,28 @@
 import { createWorldsComponent } from '../../src/logic/worlds/component'
 import { IWorldsComponent } from '../../src/logic/worlds/types'
 import { IWorldsManager, TWO_DAYS_IN_MS } from '../../src/types'
-import { EntityType } from '@dcl/schemas'
+import { EntityType, Events } from '@dcl/schemas'
+import { IPublisherComponent } from '@dcl/sns-component'
 
 describe('WorldsComponent', () => {
   let worldsComponent: IWorldsComponent
   let worldsManager: jest.Mocked<IWorldsManager>
+  let snsClient: jest.Mocked<IPublisherComponent>
 
   beforeEach(() => {
     worldsManager = {
       getRawWorldRecords: jest.fn(),
-      getWorldScenes: jest.fn()
+      getWorldScenes: jest.fn(),
+      undeployWorld: jest.fn(),
+      undeployScene: jest.fn()
     } as unknown as jest.Mocked<IWorldsManager>
 
-    worldsComponent = createWorldsComponent({ worldsManager })
+    snsClient = {
+      publishMessage: jest.fn(),
+      publishMessages: jest.fn()
+    } as jest.Mocked<IPublisherComponent>
+
+    worldsComponent = createWorldsComponent({ worldsManager, snsClient })
   })
 
   afterEach(() => {
@@ -218,6 +227,148 @@ describe('WorldsComponent', () => {
       it('should return false', async () => {
         const result = await worldsComponent.hasWorldScene('test-world', 'non-existent-scene')
         expect(result).toBe(false)
+      })
+    })
+  })
+
+  describe('when undeploying an entire world', () => {
+    beforeEach(() => {
+      worldsManager.undeployWorld.mockResolvedValue(undefined)
+      snsClient.publishMessages.mockResolvedValue({
+        Successful: [{ Id: 'id', MessageId: 'msg-id', SequenceNumber: '1' }],
+        Failed: [],
+        $metadata: {}
+      } as any)
+    })
+
+    it('should undeploy the world with the given name', async () => {
+      await worldsComponent.undeployWorld('my-world')
+
+      expect(worldsManager.undeployWorld).toHaveBeenCalledWith('my-world')
+    })
+
+    it('should publish a WorldUndeploymentEvent with the world name', async () => {
+      await worldsComponent.undeployWorld('my-world')
+
+      expect(snsClient.publishMessages).toHaveBeenCalledWith([
+        expect.objectContaining({
+          type: Events.Type.WORLD,
+          subType: Events.SubType.Worlds.WORLD_UNDEPLOYMENT,
+          key: 'my-world',
+          timestamp: expect.any(Number),
+          metadata: {
+            worldName: 'my-world'
+          }
+        })
+      ])
+    })
+  })
+
+  describe('when undeploying specific scenes from a world', () => {
+    describe('and there are matching scenes', () => {
+      beforeEach(() => {
+        worldsManager.getWorldScenes.mockResolvedValueOnce({
+          scenes: [
+            {
+              worldName: 'test-world',
+              entityId: 'entity-1',
+              deployer: '0x1234',
+              deploymentAuthChain: [],
+              entity: {
+                id: 'entity-1',
+                version: 'v3',
+                type: EntityType.SCENE,
+                pointers: ['0,0', '1,0'],
+                timestamp: Date.now(),
+                content: []
+              },
+              parcels: ['0,0', '1,0'],
+              size: BigInt(1000),
+              createdAt: new Date()
+            },
+            {
+              worldName: 'test-world',
+              entityId: 'entity-2',
+              deployer: '0x1234',
+              deploymentAuthChain: [],
+              entity: {
+                id: 'entity-2',
+                version: 'v3',
+                type: EntityType.SCENE,
+                pointers: ['5,5'],
+                timestamp: Date.now(),
+                content: []
+              },
+              parcels: ['5,5'],
+              size: BigInt(500),
+              createdAt: new Date()
+            }
+          ],
+          total: 2
+        })
+        worldsManager.undeployScene.mockResolvedValue(undefined)
+        snsClient.publishMessages.mockResolvedValue({
+          Successful: [{ Id: 'id', MessageId: 'msg-id', SequenceNumber: '1' }],
+          Failed: [],
+          $metadata: {}
+        } as any)
+      })
+
+      it('should query the affected scenes by world name and coordinates', async () => {
+        await worldsComponent.undeployWorldScenes('test-world', ['0,0', '5,5'])
+
+        expect(worldsManager.getWorldScenes).toHaveBeenCalledWith({
+          worldName: 'test-world',
+          coordinates: ['0,0', '5,5']
+        })
+      })
+
+      it('should undeploy the scenes for the given parcels', async () => {
+        await worldsComponent.undeployWorldScenes('test-world', ['0,0', '5,5'])
+
+        expect(worldsManager.undeployScene).toHaveBeenCalledWith('test-world', ['0,0', '5,5'])
+      })
+
+      it('should publish a WorldScenesUndeploymentEvent with entity IDs and base parcels', async () => {
+        await worldsComponent.undeployWorldScenes('test-world', ['0,0', '5,5'])
+
+        expect(snsClient.publishMessages).toHaveBeenCalledWith([
+          expect.objectContaining({
+            type: Events.Type.WORLD,
+            subType: Events.SubType.Worlds.WORLD_SCENES_UNDEPLOYMENT,
+            key: 'test-world',
+            timestamp: expect.any(Number),
+            metadata: {
+              worldName: 'test-world',
+              scenes: [
+                { entityId: 'entity-1', baseParcel: '0,0' },
+                { entityId: 'entity-2', baseParcel: '5,5' }
+              ]
+            }
+          })
+        ])
+      })
+    })
+
+    describe('and there are no matching scenes', () => {
+      beforeEach(() => {
+        worldsManager.getWorldScenes.mockResolvedValueOnce({
+          scenes: [],
+          total: 0
+        })
+        worldsManager.undeployScene.mockResolvedValue(undefined)
+      })
+
+      it('should still undeploy the given parcels', async () => {
+        await worldsComponent.undeployWorldScenes('test-world', ['99,99'])
+
+        expect(worldsManager.undeployScene).toHaveBeenCalledWith('test-world', ['99,99'])
+      })
+
+      it('should not publish any event', async () => {
+        await worldsComponent.undeployWorldScenes('test-world', ['99,99'])
+
+        expect(snsClient.publishMessages).not.toHaveBeenCalled()
       })
     })
   })

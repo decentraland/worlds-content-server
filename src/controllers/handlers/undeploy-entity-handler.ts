@@ -5,9 +5,9 @@ import { DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
 
 export async function undeployEntity({
   params,
-  components: { logs, namePermissionChecker, permissions, worldsManager },
+  components: { logs, namePermissionChecker, permissions, worlds },
   verification
-}: HandlerContextWithPath<'logs' | 'namePermissionChecker' | 'permissions' | 'worldsManager', '/entities/:world_name'> &
+}: HandlerContextWithPath<'logs' | 'namePermissionChecker' | 'permissions' | 'worlds', '/entities/:world_name'> &
   DecentralandSignatureContext<any>): Promise<IHttpServerComponent.IResponse> {
   const logger = logs.getLogger('worlds-manager')
 
@@ -29,7 +29,7 @@ export async function undeployEntity({
   }
 
   logger.info(`Un-deploying world ${params.world_name}`)
-  await worldsManager.undeployWorld(params.world_name)
+  await worlds.undeployWorld(params.world_name)
 
   return {
     status: 200,
