@@ -162,6 +162,7 @@ export type WorldInfo = {
   thumbnailHash: string | null
   lastDeployedAt: Date | null
   blockedSince: Date | null
+  deployedScenes: number
 }
 
 export type GetWorldsFilters = {

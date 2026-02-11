@@ -786,7 +786,7 @@ export async function createWorldsManagerComponent({
     `
 
     // Build the main query
-    // Join with world_scenes to get last deployment time and bounding rectangle
+    // Join with world_scenes to get last deployment time, bounding rectangle, and scene count
     const mainQuery = SQL`
       WITH world_stats AS (
         SELECT 
@@ -797,6 +797,11 @@ export async function createWorldsManagerComponent({
           MIN(SPLIT_PART(parcel, ',', 2)::integer) as min_y,
           MAX(SPLIT_PART(parcel, ',', 2)::integer) as max_y
         FROM world_scenes, UNNEST(parcels) as parcel
+        GROUP BY world_name
+      ),
+      scene_counts AS (
+        SELECT world_name, COUNT(*)::integer as scene_count
+        FROM world_scenes
         GROUP BY world_name
       )
       SELECT 
@@ -816,9 +821,11 @@ export async function createWorldsManagerComponent({
         ws.max_x,
         ws.min_y,
         ws.max_y,
-        b.created_at as blocked_since
+        b.created_at as blocked_since,
+        COALESCE(sc.scene_count, 0) as deployed_scenes
       FROM worlds w
       LEFT JOIN world_stats ws ON w.name = ws.world_name
+      LEFT JOIN scene_counts sc ON w.name = sc.world_name
       LEFT JOIN blocked b ON w.owner = b.wallet
       WHERE 1=1
     `
@@ -900,6 +907,7 @@ export async function createWorldsManagerComponent({
       min_y: number | null
       max_y: number | null
       blocked_since: Date | null
+      deployed_scenes: number
     }
 
     // Execute both queries concurrently
@@ -932,7 +940,8 @@ export async function createWorldsManagerComponent({
             }
           : null,
       lastDeployedAt: row.last_deployed_at,
-      blockedSince: row.blocked_since
+      blockedSince: row.blocked_since,
+      deployedScenes: row.deployed_scenes
     }))
 
     return { worlds, total }
