@@ -128,7 +128,8 @@ async function initComponents(): Promise<TestComponents> {
     peersRegistry,
     participantKicker,
     logs,
-    accessChecker
+    accessChecker,
+    permissionsManager
   })
   const access = await createAccessComponent({
     config,

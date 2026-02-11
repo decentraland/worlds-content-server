@@ -15,6 +15,7 @@ import { ISocialServiceComponent } from '../../src/adapters/social-service'
 import { createMockedConfig } from '../mocks/config-mock'
 import { createMockPeersRegistry } from '../mocks/peers-registry-mock'
 import { createMockCommsAdapterComponent } from '../mocks/comms-adapter-mock'
+import { createMockedPermissionsManager } from '../mocks/permissions-manager-mock'
 import { ILoggerComponent } from '@well-known-components/interfaces'
 import bcrypt from 'bcrypt'
 
@@ -82,11 +83,16 @@ describe('AccessComponent', () => {
 
     const participantKicker = await createParticipantKicker({ peersRegistry, commsAdapter, logs, config })
     const accessChecker = await createAccessCheckerComponent({ worldsManager, socialService })
+    const permissionsManager = createMockedPermissionsManager({
+      getOwner: jest.fn().mockResolvedValue(undefined),
+      getWorldPermissionRecords: jest.fn().mockResolvedValue([])
+    })
     const accessChangeHandler = createAccessChangeHandler({
       peersRegistry,
       participantKicker,
       logs,
-      accessChecker
+      accessChecker,
+      permissionsManager
     })
     accessComponent = await createAccessComponent({
       config,
@@ -503,11 +509,16 @@ describe('AccessComponent', () => {
             config: configWithLowLimit
           })
           const accessCheckerWithLowLimit = await createAccessCheckerComponent({ worldsManager, socialService })
+          const permissionsManagerWithLowLimit = createMockedPermissionsManager({
+            getOwner: jest.fn().mockResolvedValue(undefined),
+            getWorldPermissionRecords: jest.fn().mockResolvedValue([])
+          })
           const accessChangeHandlerWithLowLimit = createAccessChangeHandler({
             peersRegistry,
             participantKicker: participantKickerWithLowLimit,
             logs,
-            accessChecker: accessCheckerWithLowLimit
+            accessChecker: accessCheckerWithLowLimit,
+            permissionsManager: permissionsManagerWithLowLimit
           })
           accessComponent = await createAccessComponent({
             config: configWithLowLimit,
@@ -1425,11 +1436,16 @@ describe('AccessComponent', () => {
           config: configWithSmallBatch
         })
         const accessCheckerWithSmallBatch = await createAccessCheckerComponent({ worldsManager, socialService })
+        const permissionsManagerWithSmallBatch = createMockedPermissionsManager({
+          getOwner: jest.fn().mockResolvedValue(undefined),
+          getWorldPermissionRecords: jest.fn().mockResolvedValue([])
+        })
         const accessChangeHandlerWithSmallBatch = createAccessChangeHandler({
           peersRegistry,
           participantKicker: participantKickerWithSmallBatch,
           logs,
-          accessChecker: accessCheckerWithSmallBatch
+          accessChecker: accessCheckerWithSmallBatch,
+          permissionsManager: permissionsManagerWithSmallBatch
         })
         accessComponent = await createAccessComponent({
           config: configWithSmallBatch,

@@ -104,19 +104,43 @@ function createKickWithoutAccessReaction({
  * Creates the access change handler. Selects the reaction from the transition
  * matrix (entries may be direct actions or resolvers for same-type transitions)
  * and applies it. Requires accessChecker so kickWithoutAccess can run when
- * AllowList lists change.
+ * AllowList lists change. World owners and deployers are never kicked
+ * regardless of the access change.
  */
 export function createAccessChangeHandler({
   peersRegistry,
   participantKicker,
   logs,
-  accessChecker
-}: Pick<AppComponents, 'peersRegistry' | 'participantKicker' | 'logs' | 'accessChecker'>): IAccessChangeHandler {
+  accessChecker,
+  permissionsManager
+}: Pick<
+  AppComponents,
+  'peersRegistry' | 'participantKicker' | 'logs' | 'accessChecker' | 'permissionsManager'
+>): IAccessChangeHandler {
   const logger = logs.getLogger('access-change-handler')
   const reactions: Record<AccessChangeAction, AccessChangeReaction> = {
     [AccessChangeAction.NoKick]: createNoKickReaction({ logs }),
     [AccessChangeAction.KickAll]: createKickAllReaction({ participantKicker, logs }),
     [AccessChangeAction.KickWithoutAccess]: createKickWithoutAccessReaction({ participantKicker, logs })
+  }
+
+  /**
+   * Filters out identities that should never be kicked: the world owner
+   * and addresses with deployment permission.
+   */
+  async function filterOutPrivilegedUsers(worldName: string, identities: string[]): Promise<string[]> {
+    const [owner, permissionRecords] = await Promise.all([
+      permissionsManager.getOwner(worldName),
+      permissionsManager.getWorldPermissionRecords(worldName)
+    ])
+
+    const deployers = permissionRecords
+      .filter((record) => record.permissionType === 'deployment')
+      .map((record) => record.address.toLowerCase())
+
+    const privileged = new Set([...(owner ? [owner.toLowerCase()] : []), ...deployers])
+
+    return identities.filter((identity) => !privileged.has(identity.toLowerCase()))
   }
 
   return {
@@ -125,8 +149,8 @@ export function createAccessChangeHandler({
       previousAccess: AccessSetting,
       newAccess: AccessSetting
     ): Promise<void> {
-      const identities = peersRegistry.getPeersInWorld(worldName) ?? []
-      if (identities.length === 0) {
+      const allIdentities = peersRegistry.getPeersInWorld(worldName) ?? []
+      if (allIdentities.length === 0) {
         logger.debug(`No participants in world, skipping access change reaction`, { worldName })
         return
       }
@@ -134,6 +158,15 @@ export function createAccessChangeHandler({
       const action: AccessChangeAction =
         TRANSITION_MATRIX[previousAccess.type]?.[newAccess.type]?.(previousAccess, newAccess) ??
         AccessChangeAction.KickAll
+
+      // For actions that involve kicking, filter out the owner and deployers first
+      const identities =
+        action === AccessChangeAction.NoKick ? allIdentities : await filterOutPrivilegedUsers(worldName, allIdentities)
+
+      if (identities.length === 0) {
+        logger.debug(`All participants are privileged users, no kicks needed`, { worldName })
+        return
+      }
 
       try {
         await reactions[action].apply(worldName, identities, accessChecker)

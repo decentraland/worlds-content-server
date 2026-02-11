@@ -155,7 +155,8 @@ export async function initComponents(): Promise<AppComponents> {
     peersRegistry,
     participantKicker,
     logs,
-    accessChecker
+    accessChecker,
+    permissionsManager
   })
   const access = await createAccessComponent({
     config,
