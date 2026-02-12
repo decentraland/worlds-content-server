@@ -115,7 +115,7 @@ async function initComponents(): Promise<TestComponents> {
 
   const worldsIndexer = await createWorldsIndexerComponent({ worldsManager })
 
-  const permissionsManager = await createPermissionsManagerComponent({ database, worldsManager })
+  const permissionsManager = await createPermissionsManagerComponent({ database, logs, nameOwnership, worldsManager })
 
   const snsClient: IPublisherComponent = createSnsClientMock()
 

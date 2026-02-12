@@ -5,12 +5,26 @@ import SQL from 'sql-template-strings'
 
 export async function createPermissionsManagerComponent({
   database,
+  logs,
+  nameOwnership,
   worldsManager
-}: Pick<AppComponents, 'database' | 'worldsManager'>): Promise<IPermissionsManager> {
+}: Pick<AppComponents, 'database' | 'logs' | 'nameOwnership' | 'worldsManager'>): Promise<IPermissionsManager> {
+  const logger = logs.getLogger('permissions-manager')
+
   async function getOwner(worldName: string): Promise<EthAddress | undefined> {
     const metadata = await worldsManager.getMetadataForWorld(worldName)
 
-    return metadata?.owner
+    if (metadata?.owner) {
+      return metadata.owner
+    }
+
+    try {
+      const owners = await nameOwnership.findOwners([worldName])
+      return owners.get(worldName)
+    } catch (error: any) {
+      logger.warn(`Failed to resolve owner for world ${worldName} via nameOwnership: ${error.message}`)
+      return undefined
+    }
   }
 
   /**

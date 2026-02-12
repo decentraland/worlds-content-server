@@ -44,15 +44,68 @@ test('GET /world/:world_name/permissions', ({ components, stubComponents }) => {
       nonExistentWorldName = worldCreator.randomWorldName()
     })
 
-    it('should respond with 200 and default permissions', async () => {
-      const response = await localFetch.fetch(`/world/${nonExistentWorldName}/permissions`)
+    describe('and the name has an owner via nameOwnership', () => {
+      let ownerAddress: string
 
-      expect(response.status).toBe(200)
-      const body = await response.json()
-      expect(body.permissions).toMatchObject({
-        deployment: defaultPermissions().deployment,
-        streaming: defaultPermissions().streaming,
-        access: { type: AccessType.Unrestricted }
+      beforeEach(() => {
+        ownerAddress = '0xD9370c94253f080272BA1c28E216146ecE806d33'.toLowerCase()
+
+        stubComponents.nameOwnership.findOwners
+          .withArgs([nonExistentWorldName])
+          .resolves(new Map([[nonExistentWorldName, ownerAddress]]))
+      })
+
+      it('should respond with 200, default permissions, and the owner from nameOwnership', async () => {
+        const response = await localFetch.fetch(`/world/${nonExistentWorldName}/permissions`)
+
+        expect(response.status).toBe(200)
+        const body = await response.json()
+        expect(body.owner).toBe(ownerAddress)
+        expect(body.permissions).toMatchObject({
+          deployment: defaultPermissions().deployment,
+          streaming: defaultPermissions().streaming,
+          access: { type: AccessType.Unrestricted }
+        })
+      })
+    })
+
+    describe('and the name does not have an owner', () => {
+      beforeEach(() => {
+        stubComponents.nameOwnership.findOwners.withArgs([nonExistentWorldName]).resolves(new Map())
+      })
+
+      it('should respond with 200 and default permissions and no owner', async () => {
+        const response = await localFetch.fetch(`/world/${nonExistentWorldName}/permissions`)
+
+        expect(response.status).toBe(200)
+        const body = await response.json()
+        expect(body.owner).toBeUndefined()
+        expect(body.permissions).toMatchObject({
+          deployment: defaultPermissions().deployment,
+          streaming: defaultPermissions().streaming,
+          access: { type: AccessType.Unrestricted }
+        })
+      })
+    })
+
+    describe('and the nameOwnership lookup fails', () => {
+      beforeEach(() => {
+        stubComponents.nameOwnership.findOwners
+          .withArgs([nonExistentWorldName])
+          .rejects(new Error('Service unavailable'))
+      })
+
+      it('should respond with 200, default permissions and no owner', async () => {
+        const response = await localFetch.fetch(`/world/${nonExistentWorldName}/permissions`)
+
+        expect(response.status).toBe(200)
+        const body = await response.json()
+        expect(body.owner).toBeUndefined()
+        expect(body.permissions).toMatchObject({
+          deployment: defaultPermissions().deployment,
+          streaming: defaultPermissions().streaming,
+          access: { type: AccessType.Unrestricted }
+        })
       })
     })
   })
