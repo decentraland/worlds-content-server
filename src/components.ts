@@ -58,6 +58,8 @@ import {
   COMMUNITY_MEMBER_REMOVED_EVENT_SUBTYPES
 } from './controllers/handlers/community-member-removed-handler'
 import { Events } from '@dcl/schemas'
+import { createRedisComponent } from '@dcl/redis-component'
+import { createRateLimiterComponent } from './logic/rate-limiter'
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
@@ -84,6 +86,9 @@ export async function initComponents(): Promise<AppComponents> {
   await instrumentHttpServerWithPromClientRegistry({ metrics, server, config, registry: metrics.registry! })
 
   const nats = await createNatsComponent({ config, logs })
+
+  const redisUrl = await config.requireString('REDIS_HOST')
+  const redis = await createRedisComponent(redisUrl, { logs })
 
   const livekitClient = await createLivekitClient({ config })
   const commsAdapter: ICommsAdapter = await createCommsAdapterComponent({ config, fetch, logs, livekitClient })
@@ -235,11 +240,12 @@ export async function initComponents(): Promise<AppComponents> {
   for (const subType of COMMUNITY_MEMBER_REMOVED_EVENT_SUBTYPES) {
     queueConsumer.addMessageHandler(Events.Type.COMMUNITY, subType, communityMemberRemovedHandler.handle)
   }
+  const rateLimiter = await createRateLimiterComponent({ config, redis })
 
   return {
     access,
-    accessChecker,
     accessChangeHandler,
+    accessChecker,
     awsConfig,
     comms,
     commsAdapter,
@@ -265,6 +271,8 @@ export async function initComponents(): Promise<AppComponents> {
     permissions,
     permissionsManager,
     queueConsumer,
+    rateLimiter,
+    redis,
     schemaValidator,
     search,
     server,
