@@ -125,6 +125,7 @@ export async function createAccessComponent({
       key: `${worldName}-${timestamp}`,
       timestamp,
       metadata: {
+        worldName,
         accessType: type
       }
     }

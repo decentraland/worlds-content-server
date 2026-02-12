@@ -24,7 +24,7 @@
     "@dcl/queue-consumer-component": "^2.0.0",
     "@dcl/redis-component": "^3.0.1",
     "@dcl/schema-validator-component": "^0.2.2",
-    "@dcl/schemas": "^24.1.0",
+    "@dcl/schemas": "^25.0.0",
     "@dcl/sns-component": "^3.0.2",
     "@ensdomains/eth-ens-namehash": "^2.0.15",
     "@types/busboy": "^1.5.3",

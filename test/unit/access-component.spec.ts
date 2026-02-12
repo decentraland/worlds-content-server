@@ -443,6 +443,7 @@ describe('AccessComponent', () => {
           key: 'test-world-1234567890',
           timestamp: 1234567890,
           metadata: {
+            worldName: 'test-world',
             accessType: AccessType.Unrestricted
           }
         } satisfies WorldSettingsChangedEvent)
@@ -456,7 +457,7 @@ describe('AccessComponent', () => {
 
         expect(snsClient.publishMessage).toHaveBeenCalledWith(
           expect.objectContaining({
-            metadata: { accessType: AccessType.AllowList }
+            metadata: { worldName: 'test-world', accessType: AccessType.AllowList }
           })
         )
       })

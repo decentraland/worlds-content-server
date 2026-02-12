@@ -934,10 +934,10 @@
     ajv-keywords "^5.1.0"
     mitt "^3.0.1"
 
-"@dcl/schemas@^24.1.0":
-  version "24.1.0"
-  resolved "https://registry.yarnpkg.com/@dcl/schemas/-/schemas-24.1.0.tgz#393b7e4d34ae2d3b249c84e94b75c2499f336a13"
-  integrity sha512-5EHgbDijyqWPA5ZD/3B/3R4gurqZRIYmLKPx3myM+xDpQKIpl25zwDWi2tMS4NYUiWfXGkxz99gM/7+opG38wg==
+"@dcl/schemas@^25.0.0":
+  version "25.0.0"
+  resolved "https://registry.yarnpkg.com/@dcl/schemas/-/schemas-25.0.0.tgz#68e6e85acfe5e04afd88f9c0c002fe5f4f51bb8f"
+  integrity sha512-EtXXmPTgCDdVP7q2/5xkhSUBvVh+3bniH/Z7S5Vq/wdO3jQC5MZJNkvAZRkmgUUoydvp0z7Ur9Zy6zsgrDanqw==
   dependencies:
     ajv "^8.11.0"
     ajv-errors "^3.0.0"
