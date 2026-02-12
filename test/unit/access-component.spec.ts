@@ -16,7 +16,10 @@ import { createMockedConfig } from '../mocks/config-mock'
 import { createMockPeersRegistry } from '../mocks/peers-registry-mock'
 import { createMockCommsAdapterComponent } from '../mocks/comms-adapter-mock'
 import { createMockedPermissionsManager } from '../mocks/permissions-manager-mock'
+import { createMockedSnsClient } from '../mocks/sns-client-mock'
 import { ILoggerComponent } from '@well-known-components/interfaces'
+import { Events } from '@dcl/schemas'
+import { IPublisherComponent } from '@dcl/sns-component'
 import bcrypt from 'bcrypt'
 
 const TEST_SIGNER = '0xSigner'
@@ -38,6 +41,7 @@ describe('AccessComponent', () => {
   let accessComponent: IAccessComponent
   let worldsManager: jest.Mocked<IWorldsManager>
   let socialService: jest.Mocked<ISocialServiceComponent>
+  let snsClient: jest.Mocked<IPublisherComponent>
   let config: ReturnType<typeof createMockedConfig>
   let peersRegistry: ReturnType<typeof createMockPeersRegistry>
   let commsAdapter: jest.Mocked<ICommsAdapter>
@@ -66,6 +70,8 @@ describe('AccessComponent', () => {
       ),
       requireString: jest.fn((key: string) => Promise.resolve(key === 'COMMS_ROOM_PREFIX' ? 'world-' : 'unknown'))
     })
+
+    snsClient = createMockedSnsClient()
 
     peersRegistry = createMockPeersRegistry()
     commsAdapter = createMockCommsAdapterComponent() as jest.Mocked<ICommsAdapter>
@@ -100,8 +106,7 @@ describe('AccessComponent', () => {
       worldsManager,
       accessChangeHandler,
       accessChecker,
-      commsAdapter,
-      logs
+      snsClient
     })
   })
 
@@ -121,6 +126,18 @@ describe('AccessComponent', () => {
         expect(worldsManager.storeAccess).toHaveBeenCalledWith('test-world', {
           type: AccessType.Unrestricted
         })
+      })
+
+      it('should publish a world settings changed event', async () => {
+        await accessComponent.setAccess('test-world', TEST_SIGNER, { type: AccessType.Unrestricted })
+
+        expect(snsClient.publishMessage).toHaveBeenCalledWith(
+          expect.objectContaining({
+            type: Events.Type.WORLD,
+            subType: Events.SubType.Worlds.WORLD_SETTINGS_CHANGED,
+            metadata: { worldName: 'test-world', accessType: AccessType.Unrestricted }
+          })
+        )
       })
     })
 
@@ -142,6 +159,21 @@ describe('AccessComponent', () => {
             wallets: ['0x1234', '0x5678'],
             communities: []
           })
+        })
+
+        it('should publish a world settings changed event', async () => {
+          await accessComponent.setAccess('test-world', TEST_SIGNER, {
+            type: AccessType.AllowList,
+            wallets: ['0x1234', '0x5678']
+          })
+
+          expect(snsClient.publishMessage).toHaveBeenCalledWith(
+            expect.objectContaining({
+              type: Events.Type.WORLD,
+              subType: Events.SubType.Worlds.WORLD_SETTINGS_CHANGED,
+              metadata: { worldName: 'test-world', accessType: AccessType.AllowList }
+            })
+          )
         })
       })
 
@@ -179,6 +211,22 @@ describe('AccessComponent', () => {
             })
           })
 
+          it('should publish a world settings changed event', async () => {
+            await accessComponent.setAccess('test-world', TEST_SIGNER, {
+              type: AccessType.AllowList,
+              wallets: ['0x1234'],
+              communities: ['community-1', 'community-2']
+            })
+
+            expect(snsClient.publishMessage).toHaveBeenCalledWith(
+              expect.objectContaining({
+                type: Events.Type.WORLD,
+                subType: Events.SubType.Worlds.WORLD_SETTINGS_CHANGED,
+                metadata: { worldName: 'test-world', accessType: AccessType.AllowList }
+              })
+            )
+          })
+
           it('should validate community membership with the signer address', async () => {
             await accessComponent.setAccess('test-world', TEST_SIGNER, {
               type: AccessType.AllowList,
@@ -207,6 +255,18 @@ describe('AccessComponent', () => {
             ).rejects.toThrow(UnauthorizedCommunityError)
           })
 
+          it('should not publish any event', async () => {
+            await expect(
+              accessComponent.setAccess('test-world', TEST_SIGNER, {
+                type: AccessType.AllowList,
+                wallets: ['0x1234'],
+                communities: ['community-1', 'community-2']
+              })
+            ).rejects.toThrow()
+
+            expect(snsClient.publishMessage).not.toHaveBeenCalled()
+          })
+
           it('should include the unauthorized communities in the error message', async () => {
             await expect(
               accessComponent.setAccess('test-world', TEST_SIGNER, {
@@ -231,6 +291,18 @@ describe('AccessComponent', () => {
                 communities: ['community-1', 'community-2']
               })
             ).rejects.toThrow('community-1, community-2')
+          })
+
+          it('should not publish any event', async () => {
+            await expect(
+              accessComponent.setAccess('test-world', TEST_SIGNER, {
+                type: AccessType.AllowList,
+                wallets: ['0x1234'],
+                communities: ['community-1', 'community-2']
+              })
+            ).rejects.toThrow()
+
+            expect(snsClient.publishMessage).not.toHaveBeenCalled()
           })
         })
       })
@@ -278,6 +350,18 @@ describe('AccessComponent', () => {
           ).rejects.toThrow(InvalidAllowListSettingError)
         })
 
+        it('should not publish any event', async () => {
+          await expect(
+            accessComponent.setAccess('test-world', TEST_SIGNER, {
+              type: AccessType.AllowList,
+              wallets: ['0x1234'],
+              communities: tooManyCommunities
+            })
+          ).rejects.toThrow()
+
+          expect(snsClient.publishMessage).not.toHaveBeenCalled()
+        })
+
         it('should include the limit in the error message', async () => {
           await expect(
             accessComponent.setAccess('test-world', TEST_SIGNER, {
@@ -304,6 +388,18 @@ describe('AccessComponent', () => {
               communities: []
             })
           ).rejects.toThrow(InvalidAllowListSettingError)
+        })
+
+        it('should not publish any event', async () => {
+          await expect(
+            accessComponent.setAccess('test-world', TEST_SIGNER, {
+              type: AccessType.AllowList,
+              wallets: tooManyWallets,
+              communities: []
+            })
+          ).rejects.toThrow()
+
+          expect(snsClient.publishMessage).not.toHaveBeenCalled()
         })
 
         it('should include the wallet limit in the error message', async () => {
@@ -364,6 +460,16 @@ describe('AccessComponent', () => {
           expect(storedAccess.type).toBe(AccessType.SharedSecret)
         })
 
+        it('should publish a world settings changed event', () => {
+          expect(snsClient.publishMessage).toHaveBeenCalledWith(
+            expect.objectContaining({
+              type: Events.Type.WORLD,
+              subType: Events.SubType.Worlds.WORLD_SETTINGS_CHANGED,
+              metadata: { worldName: 'test-world', accessType: AccessType.SharedSecret }
+            })
+          )
+        })
+
         it('should store a hashed secret that matches the original', () => {
           expect('secret' in storedAccess && bcrypt.compareSync('my-secret', storedAccess.secret)).toBe(true)
         })
@@ -374,6 +480,14 @@ describe('AccessComponent', () => {
           await expect(
             accessComponent.setAccess('test-world', TEST_SIGNER, { type: AccessType.SharedSecret })
           ).rejects.toThrow(InvalidAccessTypeError)
+        })
+
+        it('should not publish any event', async () => {
+          await expect(
+            accessComponent.setAccess('test-world', TEST_SIGNER, { type: AccessType.SharedSecret })
+          ).rejects.toThrow()
+
+          expect(snsClient.publishMessage).not.toHaveBeenCalled()
         })
       })
     })
@@ -396,6 +510,21 @@ describe('AccessComponent', () => {
             nft: 'some-nft-address'
           })
         })
+
+        it('should publish a world settings changed event', async () => {
+          await accessComponent.setAccess('test-world', TEST_SIGNER, {
+            type: AccessType.NFTOwnership,
+            nft: 'some-nft-address'
+          })
+
+          expect(snsClient.publishMessage).toHaveBeenCalledWith(
+            expect.objectContaining({
+              type: Events.Type.WORLD,
+              subType: Events.SubType.Worlds.WORLD_SETTINGS_CHANGED,
+              metadata: { worldName: 'test-world', accessType: AccessType.NFTOwnership }
+            })
+          )
+        })
       })
 
       describe('and an nft is not provided', () => {
@@ -403,6 +532,14 @@ describe('AccessComponent', () => {
           await expect(
             accessComponent.setAccess('test-world', TEST_SIGNER, { type: AccessType.NFTOwnership })
           ).rejects.toThrow(InvalidAccessTypeError)
+        })
+
+        it('should not publish any event', async () => {
+          await expect(
+            accessComponent.setAccess('test-world', TEST_SIGNER, { type: AccessType.NFTOwnership })
+          ).rejects.toThrow()
+
+          expect(snsClient.publishMessage).not.toHaveBeenCalled()
         })
       })
     })
@@ -416,6 +553,12 @@ describe('AccessComponent', () => {
         await expect(accessComponent.setAccess('test-world', TEST_SIGNER, { type: 'invalid-type' })).rejects.toThrow(
           InvalidAccessTypeError
         )
+      })
+
+      it('should not publish any event', async () => {
+        await expect(accessComponent.setAccess('test-world', TEST_SIGNER, { type: 'invalid-type' })).rejects.toThrow()
+
+        expect(snsClient.publishMessage).not.toHaveBeenCalled()
       })
     })
   })
@@ -526,8 +669,7 @@ describe('AccessComponent', () => {
             worldsManager,
             accessChangeHandler: accessChangeHandlerWithLowLimit,
             accessChecker: accessCheckerWithLowLimit,
-            commsAdapter,
-            logs
+            snsClient
           })
           worldsManager.getRawWorldRecords.mockResolvedValueOnce(
             mockRawWorldRecords({
@@ -1451,8 +1593,7 @@ describe('AccessComponent', () => {
           worldsManager,
           accessChangeHandler: accessChangeHandlerWithSmallBatch,
           accessChecker: accessCheckerWithSmallBatch,
-          commsAdapter,
-          logs
+          snsClient
         })
 
         worldsManager.getRawWorldRecords.mockResolvedValueOnce(mockRawWorldRecords({ type: AccessType.Unrestricted }))

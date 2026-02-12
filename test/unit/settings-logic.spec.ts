@@ -133,7 +133,9 @@ describe('SettingsComponent', () => {
               type: Events.Type.WORLD,
               subType: Events.SubType.Worlds.WORLD_SETTINGS_CHANGED,
               key: expect.stringContaining(worldName),
-              metadata: expect.objectContaining({})
+              metadata: expect.objectContaining({
+                worldName
+              })
             }),
             expect.objectContaining({
               type: Events.Type.WORLD,
@@ -172,6 +174,7 @@ describe('SettingsComponent', () => {
             subType: Events.SubType.Worlds.WORLD_SETTINGS_CHANGED,
             key: expect.stringContaining(worldName),
             metadata: expect.objectContaining({
+              worldName,
               title: 'Updated Title'
             })
           })

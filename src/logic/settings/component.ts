@@ -115,6 +115,7 @@ export async function createSettingsComponent(
       key: `${worldName}-${timestamp}`,
       timestamp,
       metadata: {
+        worldName,
         title: settings.title,
         description: settings.description,
         contentRating: settings.contentRating,
