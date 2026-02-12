@@ -878,9 +878,11 @@ export async function createWorldsManagerComponent({
     // Add ordering
     // Using safe string interpolation since orderBy and orderDirection are enum values
     if (orderBy === WorldsOrderBy.LastDeployedAt) {
-      // Put worlds without deployments last when sorting by last_deployed_at
+      // 1. IS NULL ASC ensures worlds without deployments are always at the end regardless of sort direction
+      // 2. Non-null last_deployed_at values are sorted by the requested direction
+      // 3. Null last_deployed_at worlds are then sorted by name ASC for deterministic ordering
       mainQuery.append(
-        ` ORDER BY ws.last_deployed_at IS NULL ${orderDirection === OrderDirection.Asc ? 'ASC' : 'DESC'}, ws.last_deployed_at ${orderDirection.toUpperCase()}`
+        ` ORDER BY ws.last_deployed_at IS NULL ASC, ws.last_deployed_at ${orderDirection.toUpperCase()}, w.name ASC`
       )
     } else {
       mainQuery.append(` ORDER BY w.name ${orderDirection.toUpperCase()}`)
