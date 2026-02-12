@@ -137,10 +137,9 @@ async function initComponents(): Promise<TestComponents> {
     config,
     socialService,
     worldsManager,
-    commsAdapter,
-    logs,
     accessChangeHandler,
-    accessChecker
+    accessChecker,
+    snsClient
   })
 
   const entityDeployer = createEntityDeployer({

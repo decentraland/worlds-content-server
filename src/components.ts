@@ -169,8 +169,7 @@ export async function initComponents(): Promise<AppComponents> {
     worldsManager,
     accessChangeHandler,
     accessChecker,
-    commsAdapter,
-    logs
+    snsClient
   })
 
   const entityDeployer = createEntityDeployer({
