@@ -80,7 +80,7 @@ export async function getScenesHandler(
 
 export async function undeploySceneHandler(
   ctx: HandlerContextWithPath<
-    'namePermissionChecker' | 'permissions' | 'worldsManager',
+    'namePermissionChecker' | 'permissions' | 'worlds',
     '/world/:world_name/scenes/:coordinate'
   > &
     DecentralandSignatureContext<any>
@@ -108,7 +108,7 @@ export async function undeploySceneHandler(
     }
   }
 
-  await ctx.components.worldsManager.undeployScene(world_name, [coordinate])
+  await ctx.components.worlds.undeployWorldScenes(world_name, [coordinate])
 
   return {
     status: 200,

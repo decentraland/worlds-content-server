@@ -1,19 +1,23 @@
+import { Events, WorldScenesUndeploymentEvent, WorldUndeploymentEvent } from '@dcl/schemas'
 import { AppComponents, TWO_DAYS_IN_MS, WorldManifest } from '../../types'
 import { IWorldsComponent } from './types'
 
 /**
  * Creates the Worlds component
  *
- * Orchestrates world validation and data operations:
+ * Orchestrates world validation, data operations, and undeployment flows:
  * 1. Checks if a world exists and has deployed scenes
  * 2. Validates blocked status and grace period
  * 3. Composes world manifest from parcels and settings
+ * 4. Handles world and scene undeployment with event publishing
  *
- * @param components Required components: worldsManager
+ * @param components Required components: worldsManager, snsClient
  * @returns IWorldsComponent implementation
  */
-export const createWorldsComponent = (components: Pick<AppComponents, 'worldsManager'>): IWorldsComponent => {
-  const { worldsManager } = components
+export const createWorldsComponent = (
+  components: Pick<AppComponents, 'worldsManager' | 'snsClient'>
+): IWorldsComponent => {
+  const { worldsManager, snsClient } = components
 
   /**
    * Checks if a world is blocked and beyond the grace period
@@ -98,10 +102,67 @@ export const createWorldsComponent = (components: Pick<AppComponents, 'worldsMan
     }
   }
 
+  /**
+   * Undeploys an entire world by removing all its scenes and publishing a WorldUndeploymentEvent
+   *
+   * @param worldName - The name of the world to undeploy
+   */
+  async function undeployWorld(worldName: string): Promise<void> {
+    await worldsManager.undeployWorld(worldName)
+
+    const event: WorldUndeploymentEvent = {
+      type: Events.Type.WORLD,
+      subType: Events.SubType.Worlds.WORLD_UNDEPLOYMENT,
+      key: worldName,
+      timestamp: Date.now(),
+      metadata: {
+        worldName
+      }
+    }
+
+    await snsClient.publishMessages([event])
+  }
+
+  /**
+   * Undeploys specific scenes from a world by parcels and publishes a WorldScenesUndeploymentEvent
+   *
+   * Queries affected scenes before deletion to capture entity IDs and base parcels
+   * for the event payload.
+   *
+   * @param worldName - The name of the world
+   * @param parcels - The parcel coordinates of the scenes to undeploy
+   */
+  async function undeployWorldScenes(worldName: string, parcels: string[]): Promise<void> {
+    // Query affected scenes before deletion to get entity IDs and base parcels
+    const { scenes } = await worldsManager.getWorldScenes({ worldName, coordinates: parcels })
+
+    await worldsManager.undeployScene(worldName, parcels)
+
+    if (scenes.length > 0) {
+      const event: WorldScenesUndeploymentEvent = {
+        type: Events.Type.WORLD,
+        subType: Events.SubType.Worlds.WORLD_SCENES_UNDEPLOYMENT,
+        key: worldName,
+        timestamp: Date.now(),
+        metadata: {
+          worldName,
+          scenes: scenes.map((scene) => ({
+            entityId: scene.entityId,
+            baseParcel: scene.parcels[0]
+          }))
+        }
+      }
+
+      await snsClient.publishMessages([event])
+    }
+  }
+
   return {
     isWorldValid,
     isWorldBlocked,
     hasWorldScene,
-    getWorldManifest
+    getWorldManifest,
+    undeployWorld,
+    undeployWorldScenes
   }
 }

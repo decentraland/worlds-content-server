@@ -33,4 +33,19 @@ export interface IWorldsComponent {
    * @returns WorldManifest with parcels and spawnCoordinates, or undefined if no scenes exist
    */
   getWorldManifest(worldName: string): Promise<WorldManifest | undefined>
+
+  /**
+   * Undeploys an entire world by removing all its scenes and publishing a WorldUndeploymentEvent
+   *
+   * @param worldName - The name of the world to undeploy
+   */
+  undeployWorld(worldName: string): Promise<void>
+
+  /**
+   * Undeploys specific scenes from a world by parcels and publishes a WorldScenesUndeploymentEvent
+   *
+   * @param worldName - The name of the world
+   * @param parcels - The parcel coordinates of the scenes to undeploy
+   */
+  undeployWorldScenes(worldName: string, parcels: string[]): Promise<void>
 }

@@ -211,7 +211,7 @@ export async function initComponents(): Promise<AppComponents> {
   })
   const schemaValidator = createSchemaValidatorComponent()
 
-  const worlds = createWorldsComponent({ worldsManager })
+  const worlds = createWorldsComponent({ worldsManager, snsClient })
 
   const comms = await createCommsComponent({
     namePermissionChecker,

@@ -175,7 +175,7 @@ async function initComponents(): Promise<TestComponents> {
     worldsManager
   })
 
-  const worlds = createWorldsComponent({ worldsManager })
+  const worlds = createWorldsComponent({ worldsManager, snsClient })
 
   const comms = await createCommsComponent({
     namePermissionChecker,
