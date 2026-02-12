@@ -1,6 +1,6 @@
 import { AppComponents } from '../../types'
 import { AccessInput, AccessSetting, AccessType, IAccessComponent } from './types'
-import { EthAddress } from '@dcl/schemas'
+import { EthAddress, Events, WorldSettingsChangedEvent } from '@dcl/schemas'
 import bcrypt from 'bcrypt'
 import { defaultAccess, DEFAULT_MAX_COMMUNITIES, DEFAULT_MAX_WALLETS, SALT_ROUNDS } from './constants'
 import {
@@ -16,11 +16,10 @@ export async function createAccessComponent({
   worldsManager,
   accessChangeHandler,
   accessChecker,
-  commsAdapter: _commsAdapter,
-  logs: _logs
+  snsClient
 }: Pick<
   AppComponents,
-  'config' | 'socialService' | 'worldsManager' | 'accessChangeHandler' | 'accessChecker' | 'commsAdapter' | 'logs'
+  'config' | 'socialService' | 'worldsManager' | 'accessChangeHandler' | 'accessChecker' | 'snsClient'
 >): Promise<IAccessComponent> {
   const maxCommunities = (await config.getNumber('ACCESS_MAX_COMMUNITIES')) ?? DEFAULT_MAX_COMMUNITIES
   const maxWallets = (await config.getNumber('ACCESS_MAX_WALLETS')) ?? DEFAULT_MAX_WALLETS
@@ -118,6 +117,18 @@ export async function createAccessComponent({
     await worldsManager.createBasicWorldIfNotExists(worldName, signer)
     await worldsManager.storeAccess(worldName, accessSetting)
     await accessChangeHandler.handleAccessChange(worldName, previousAccess, accessSetting)
+
+    const timestamp = Date.now()
+    const worldSettingsChangedEvent: WorldSettingsChangedEvent = {
+      type: Events.Type.WORLD,
+      subType: Events.SubType.Worlds.WORLD_SETTINGS_CHANGED,
+      key: `${worldName}-${timestamp}`,
+      timestamp,
+      metadata: {
+        accessType: type
+      }
+    }
+    await snsClient.publishMessage(worldSettingsChangedEvent)
   }
 
   /**

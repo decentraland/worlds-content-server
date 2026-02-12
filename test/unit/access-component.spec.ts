@@ -16,7 +16,10 @@ import { createMockedConfig } from '../mocks/config-mock'
 import { createMockPeersRegistry } from '../mocks/peers-registry-mock'
 import { createMockCommsAdapterComponent } from '../mocks/comms-adapter-mock'
 import { createMockedPermissionsManager } from '../mocks/permissions-manager-mock'
+import { createMockedSnsClient } from '../mocks/sns-client-mock'
 import { ILoggerComponent } from '@well-known-components/interfaces'
+import { Events, WorldSettingsChangedEvent } from '@dcl/schemas'
+import { IPublisherComponent } from '@dcl/sns-component'
 import bcrypt from 'bcrypt'
 
 const TEST_SIGNER = '0xSigner'
@@ -38,6 +41,7 @@ describe('AccessComponent', () => {
   let accessComponent: IAccessComponent
   let worldsManager: jest.Mocked<IWorldsManager>
   let socialService: jest.Mocked<ISocialServiceComponent>
+  let snsClient: jest.Mocked<IPublisherComponent>
   let config: ReturnType<typeof createMockedConfig>
   let peersRegistry: ReturnType<typeof createMockPeersRegistry>
   let commsAdapter: jest.Mocked<ICommsAdapter>
@@ -66,6 +70,8 @@ describe('AccessComponent', () => {
       ),
       requireString: jest.fn((key: string) => Promise.resolve(key === 'COMMS_ROOM_PREFIX' ? 'world-' : 'unknown'))
     })
+
+    snsClient = createMockedSnsClient()
 
     peersRegistry = createMockPeersRegistry()
     commsAdapter = createMockCommsAdapterComponent() as jest.Mocked<ICommsAdapter>
@@ -100,8 +106,7 @@ describe('AccessComponent', () => {
       worldsManager,
       accessChangeHandler,
       accessChecker,
-      commsAdapter,
-      logs
+      snsClient
     })
   })
 
@@ -418,6 +423,54 @@ describe('AccessComponent', () => {
         )
       })
     })
+
+    describe('and publishing the world settings changed event', () => {
+      beforeEach(() => {
+        worldsManager.getRawWorldRecords.mockResolvedValue(mockRawWorldRecords())
+        jest.spyOn(Date, 'now').mockReturnValue(1234567890)
+      })
+
+      afterEach(() => {
+        jest.restoreAllMocks()
+      })
+
+      it('should publish a WorldSettingsChangedEvent via SNS', async () => {
+        await accessComponent.setAccess('test-world', TEST_SIGNER, { type: AccessType.Unrestricted })
+
+        expect(snsClient.publishMessage).toHaveBeenCalledWith({
+          type: Events.Type.WORLD,
+          subType: Events.SubType.Worlds.WORLD_SETTINGS_CHANGED,
+          key: 'test-world-1234567890',
+          timestamp: 1234567890,
+          metadata: {
+            accessType: AccessType.Unrestricted
+          }
+        } satisfies WorldSettingsChangedEvent)
+      })
+
+      it('should include the access type in the event metadata', async () => {
+        await accessComponent.setAccess('test-world', TEST_SIGNER, {
+          type: AccessType.AllowList,
+          wallets: ['0x1234']
+        })
+
+        expect(snsClient.publishMessage).toHaveBeenCalledWith(
+          expect.objectContaining({
+            metadata: { accessType: AccessType.AllowList }
+          })
+        )
+      })
+
+      it('should use the world name and timestamp as the event key', async () => {
+        await accessComponent.setAccess('my-world.dcl.eth', TEST_SIGNER, { type: AccessType.Unrestricted })
+
+        expect(snsClient.publishMessage).toHaveBeenCalledWith(
+          expect.objectContaining({
+            key: 'my-world.dcl.eth-1234567890'
+          })
+        )
+      })
+    })
   })
 
   describe('when adding a wallet to access allow list', () => {
@@ -526,8 +579,7 @@ describe('AccessComponent', () => {
             worldsManager,
             accessChangeHandler: accessChangeHandlerWithLowLimit,
             accessChecker: accessCheckerWithLowLimit,
-            commsAdapter,
-            logs
+            snsClient
           })
           worldsManager.getRawWorldRecords.mockResolvedValueOnce(
             mockRawWorldRecords({
@@ -1451,8 +1503,7 @@ describe('AccessComponent', () => {
           worldsManager,
           accessChangeHandler: accessChangeHandlerWithSmallBatch,
           accessChecker: accessCheckerWithSmallBatch,
-          commsAdapter,
-          logs
+          snsClient
         })
 
         worldsManager.getRawWorldRecords.mockResolvedValueOnce(mockRawWorldRecords({ type: AccessType.Unrestricted }))
