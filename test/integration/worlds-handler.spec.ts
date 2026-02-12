@@ -204,15 +204,54 @@ test('WorldsHandler GET /worlds', function ({ components }) {
       })
 
       describe('and sort by last_deployed_at', function () {
-        it('should return worlds sorted by deployment time', async () => {
-          const { localFetch } = components
+        let undeployedWorldName1: string
+        let undeployedWorldName2: string
 
-          const response = await localFetch.fetch('/worlds?sort=last_deployed_at&order=asc')
+        beforeEach(async () => {
+          const { worldCreator, worldsManager } = components
 
-          expect(response.status).toBe(200)
-          const body = await response.json()
-          expect(body.worlds).toHaveLength(3)
-          expect(body.total).toBe(3)
+          // Create two worlds and undeploy them so they have null last_deployed_at
+          // Named to verify alphabetical ordering among null worlds: delta < epsilon
+          undeployedWorldName1 = 'delta-world.dcl.eth'
+          undeployedWorldName2 = 'epsilon-world.dcl.eth'
+
+          await worldCreator.createWorldWithScene({ worldName: undeployedWorldName1 })
+          await worldsManager.undeployWorld(undeployedWorldName1)
+
+          await worldCreator.createWorldWithScene({ worldName: undeployedWorldName2 })
+          await worldsManager.undeployWorld(undeployedWorldName2)
+        })
+
+        describe('and order is ascending', function () {
+          it('should return deployed worlds sorted by deployment time ascending followed by undeployed worlds sorted by name ascending', async () => {
+            const { localFetch } = components
+
+            const response = await localFetch.fetch('/worlds?sort=last_deployed_at&order=asc')
+
+            expect(response.status).toBe(200)
+            const body = await response.json()
+            const names = body.worlds.map((w: { name: string }) => w.name)
+            // Deployed worlds first (ascending by deployment time: alpha, beta, gamma)
+            // Then undeployed worlds sorted by name ascending (delta, epsilon)
+            expect(names).toEqual([worldName1, worldName2, worldName3, undeployedWorldName1, undeployedWorldName2])
+            expect(body.total).toBe(5)
+          })
+        })
+
+        describe('and order is descending', function () {
+          it('should return deployed worlds sorted by deployment time descending followed by undeployed worlds sorted by name ascending', async () => {
+            const { localFetch } = components
+
+            const response = await localFetch.fetch('/worlds?sort=last_deployed_at&order=desc')
+
+            expect(response.status).toBe(200)
+            const body = await response.json()
+            const names = body.worlds.map((w: { name: string }) => w.name)
+            // Deployed worlds first (descending by deployment time: gamma, beta, alpha)
+            // Then undeployed worlds sorted by name ascending (delta, epsilon)
+            expect(names).toEqual([worldName3, worldName2, worldName1, undeployedWorldName1, undeployedWorldName2])
+            expect(body.total).toBe(5)
+          })
         })
       })
 
