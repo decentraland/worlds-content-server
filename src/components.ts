@@ -60,6 +60,8 @@ import {
 import { Events } from '@dcl/schemas'
 import { createRedisComponent } from '@dcl/redis-component'
 import { createRateLimiterComponent } from './logic/rate-limiter'
+import { createDenyListComponent } from './logic/denylist'
+import { createBansComponent } from './adapters/bans-adapter'
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
@@ -217,12 +219,17 @@ export async function initComponents(): Promise<AppComponents> {
 
   const worlds = createWorldsComponent({ worldsManager, snsClient })
 
+  const denyList = await createDenyListComponent({ config, fetch, logs })
+  const bans = await createBansComponent({ config, fetch, logs })
+
   const comms = await createCommsComponent({
     namePermissionChecker,
     access,
     commsAdapter,
     worlds,
-    config
+    config,
+    denyList,
+    bans
   })
 
   const sqs = await createSqsComponent(config)
@@ -251,6 +258,7 @@ export async function initComponents(): Promise<AppComponents> {
     config,
     coordinates,
     database,
+    denyList,
     entityDeployer,
     ethereumProvider,
     fetch,
@@ -284,6 +292,7 @@ export async function initComponents(): Promise<AppComponents> {
     updateOwnerJob,
     validator,
     walletStats,
+    bans,
     worlds,
     worldsIndexer,
     worldsManager

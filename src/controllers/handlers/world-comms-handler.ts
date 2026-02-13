@@ -2,7 +2,14 @@ import { HandlerContextWithPath } from '../../types'
 import { IHttpServerComponent } from '@well-known-components/interfaces'
 import { DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
 import { InvalidRequestError } from '@dcl/http-commons'
-import { InvalidAccessError, InvalidWorldError, SceneNotFoundError, WorldAtCapacityError } from '../../logic/comms'
+import {
+  InvalidAccessError,
+  InvalidWorldError,
+  SceneNotFoundError,
+  WorldAtCapacityError,
+  UserDenylistedError,
+  UserBannedFromWorldError
+} from '../../logic/comms'
 import { AccessType } from '../../logic/access'
 import { RATE_LIMIT_WINDOW_SECONDS, RateLimitedError } from '../../logic/rate-limiter'
 
@@ -82,7 +89,11 @@ export async function worldCommsHandler(context: HandlerContext): Promise<IHttpS
         status: 403,
         body: { error: error.message }
       }
-    } else if (error instanceof InvalidAccessError) {
+    } else if (
+      error instanceof InvalidAccessError ||
+      error instanceof UserDenylistedError ||
+      error instanceof UserBannedFromWorldError
+    ) {
       return {
         status: 403,
         body: { error: error.message }

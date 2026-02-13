@@ -32,3 +32,17 @@ export class WorldAtCapacityError extends Error {
     this.name = 'WorldAtCapacityError'
   }
 }
+
+export class UserDenylistedError extends Error {
+  constructor() {
+    super('Access denied, deny-listed wallet.')
+    this.name = 'UserDenylistedError'
+  }
+}
+
+export class UserBannedFromWorldError extends Error {
+  constructor(worldName: string) {
+    super(`You are banned from world "${worldName}".`)
+    this.name = 'UserBannedFromWorldError'
+  }
+}

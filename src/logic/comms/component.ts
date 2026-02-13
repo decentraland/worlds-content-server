@@ -1,14 +1,39 @@
 import { EthAddress } from '@dcl/crypto'
 import { AppComponents } from '../../types'
-import { InvalidWorldError, InvalidAccessError, SceneNotFoundError, WorldAtCapacityError } from './errors'
+import {
+  InvalidWorldError,
+  InvalidAccessError,
+  SceneNotFoundError,
+  WorldAtCapacityError,
+  UserDenylistedError,
+  UserBannedFromWorldError
+} from './errors'
 import { DEFAULT_MAX_USERS_PER_WORLD } from './constants'
 import { ICommsComponent } from './types'
 
 export const createCommsComponent = async (
-  components: Pick<AppComponents, 'namePermissionChecker' | 'access' | 'worlds' | 'commsAdapter' | 'config'>
+  components: Pick<
+    AppComponents,
+    'namePermissionChecker' | 'access' | 'worlds' | 'commsAdapter' | 'config' | 'denyList' | 'bans'
+  >
 ): Promise<ICommsComponent> => {
-  const { namePermissionChecker, access, worlds, commsAdapter, config } = components
+  const { namePermissionChecker, access, worlds, commsAdapter, config, denyList, bans } = components
   const maxUsersPerWorld = (await config.getNumber('MAX_USERS_PER_WORLD')) ?? DEFAULT_MAX_USERS_PER_WORLD
+
+  async function assertUserNotRestricted(userAddress: EthAddress, worldName: string): Promise<void> {
+    const [isDenylisted, isBanned] = await Promise.all([
+      denyList.isDenylisted(userAddress),
+      bans.isUserBannedFromWorld(userAddress, worldName)
+    ])
+
+    if (isDenylisted) {
+      throw new UserDenylistedError()
+    }
+
+    if (isBanned) {
+      throw new UserBannedFromWorldError(worldName)
+    }
+  }
 
   async function assertWorldAccess(
     userAddress: EthAddress,
@@ -35,6 +60,7 @@ export const createCommsComponent = async (
     sceneId: string,
     accessOptions?: { secret?: string }
   ): Promise<string> {
+    await assertUserNotRestricted(userAddress, worldName)
     await assertWorldAccess(userAddress, worldName, accessOptions)
 
     if (!(await worlds.hasWorldScene(worldName, sceneId))) {
@@ -54,6 +80,7 @@ export const createCommsComponent = async (
     worldName: string,
     accessOptions?: { secret?: string }
   ): Promise<string> {
+    await assertUserNotRestricted(userAddress, worldName)
     await assertWorldAccess(userAddress, worldName, accessOptions)
 
     const participantCount = await commsAdapter.getWorldRoomParticipantCount(worldName)
