@@ -12,7 +12,7 @@ import { ICommsAdapter, IWorldNamePermissionChecker } from '../../src/types'
 import { IAccessComponent } from '../../src/logic/access/types'
 import { IWorldsComponent } from '../../src/logic/worlds/types'
 import { IDenyListComponent } from '../../src/logic/denylist/types'
-import { IWorldBanCheckerComponent } from '../../src/adapters/world-ban-checker'
+import { IBansComponent } from '../../src/adapters/bans-adapter'
 import { IConfigComponent } from '@well-known-components/interfaces'
 import { createMockedNamePermissionChecker } from '../mocks/dcl-name-checker-mock'
 import { createMockAccess } from '../mocks/access-mock'
@@ -20,7 +20,7 @@ import { createMockWorlds } from '../mocks/worlds-mock'
 import { createMockCommsAdapter } from '../mocks/comms-adapter-jest-mock'
 import { createMockedConfig } from '../mocks/config-mock'
 import { createMockDenyList } from '../mocks/denylist-mock'
-import { createMockWorldBanChecker } from '../mocks/world-ban-checker-mock'
+import { createMockBans } from '../mocks/bans-mock'
 
 describe('CommsComponent', () => {
   let commsComponent: ICommsComponent
@@ -30,7 +30,7 @@ describe('CommsComponent', () => {
   let commsAdapter: jest.Mocked<ICommsAdapter>
   let config: jest.Mocked<IConfigComponent>
   let denyList: jest.Mocked<IDenyListComponent>
-  let worldBanChecker: jest.Mocked<IWorldBanCheckerComponent>
+  let bans: jest.Mocked<IBansComponent>
 
   beforeEach(async () => {
     namePermissionChecker = createMockedNamePermissionChecker()
@@ -39,7 +39,7 @@ describe('CommsComponent', () => {
     commsAdapter = createMockCommsAdapter()
     config = createMockedConfig({ getNumber: jest.fn().mockResolvedValue(undefined) })
     denyList = createMockDenyList()
-    worldBanChecker = createMockWorldBanChecker()
+    bans = createMockBans()
 
     commsComponent = await createCommsComponent({
       namePermissionChecker,
@@ -48,7 +48,7 @@ describe('CommsComponent', () => {
       commsAdapter,
       config,
       denyList,
-      worldBanChecker
+      bans
     })
   })
 
@@ -481,7 +481,7 @@ describe('CommsComponent', () => {
 
     describe('and getting the world room connection string', () => {
       beforeEach(() => {
-        worldBanChecker.isUserBannedFromWorld.mockResolvedValueOnce(true)
+        bans.isUserBannedFromWorld.mockResolvedValueOnce(true)
       })
 
       it('should throw UserBannedFromWorldError', async () => {
@@ -512,7 +512,7 @@ describe('CommsComponent', () => {
 
     describe('and getting the scene room connection string', () => {
       beforeEach(() => {
-        worldBanChecker.isUserBannedFromWorld.mockResolvedValueOnce(true)
+        bans.isUserBannedFromWorld.mockResolvedValueOnce(true)
       })
 
       it('should throw UserBannedFromWorldError', async () => {
@@ -560,7 +560,7 @@ describe('CommsComponent', () => {
       describe('and getting the world room connection string', () => {
         beforeEach(() => {
           denyList.isDenylisted.mockResolvedValueOnce(true)
-          worldBanChecker.isUserBannedFromWorld.mockResolvedValueOnce(true)
+          bans.isUserBannedFromWorld.mockResolvedValueOnce(true)
         })
 
         it('should throw UserDenylistedError (denylist takes priority)', async () => {
@@ -573,7 +573,7 @@ describe('CommsComponent', () => {
       describe('and getting the scene room connection string', () => {
         beforeEach(() => {
           denyList.isDenylisted.mockResolvedValueOnce(true)
-          worldBanChecker.isUserBannedFromWorld.mockResolvedValueOnce(true)
+          bans.isUserBannedFromWorld.mockResolvedValueOnce(true)
         })
 
         it('should throw UserDenylistedError (denylist takes priority)', async () => {
@@ -588,7 +588,7 @@ describe('CommsComponent', () => {
       describe('and getting the world room connection string', () => {
         beforeEach(() => {
           denyList.isDenylisted.mockResolvedValueOnce(false)
-          worldBanChecker.isUserBannedFromWorld.mockResolvedValueOnce(false)
+          bans.isUserBannedFromWorld.mockResolvedValueOnce(false)
           worlds.isWorldValid.mockResolvedValueOnce(true)
           namePermissionChecker.checkPermission.mockResolvedValueOnce(true)
           access.checkAccess.mockResolvedValueOnce(true)
@@ -604,7 +604,7 @@ describe('CommsComponent', () => {
         it('should call both denylist and ban checker', async () => {
           await commsComponent.getWorldRoomConnectionString(userAddress, worldName)
           expect(denyList.isDenylisted).toHaveBeenCalledWith(userAddress)
-          expect(worldBanChecker.isUserBannedFromWorld).toHaveBeenCalledWith(userAddress, worldName)
+          expect(bans.isUserBannedFromWorld).toHaveBeenCalledWith(userAddress, worldName)
         })
       })
 
@@ -614,7 +614,7 @@ describe('CommsComponent', () => {
         beforeEach(() => {
           sceneId = 'scene-123'
           denyList.isDenylisted.mockResolvedValueOnce(false)
-          worldBanChecker.isUserBannedFromWorld.mockResolvedValueOnce(false)
+          bans.isUserBannedFromWorld.mockResolvedValueOnce(false)
           worlds.isWorldValid.mockResolvedValueOnce(true)
           namePermissionChecker.checkPermission.mockResolvedValueOnce(true)
           access.checkAccess.mockResolvedValueOnce(true)
@@ -631,7 +631,7 @@ describe('CommsComponent', () => {
         it('should call both denylist and ban checker', async () => {
           await commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, sceneId)
           expect(denyList.isDenylisted).toHaveBeenCalledWith(userAddress)
-          expect(worldBanChecker.isUserBannedFromWorld).toHaveBeenCalledWith(userAddress, worldName)
+          expect(bans.isUserBannedFromWorld).toHaveBeenCalledWith(userAddress, worldName)
         })
       })
     })

@@ -1,15 +1,15 @@
-import { createWorldBanCheckerComponent, IWorldBanCheckerComponent } from '../../src/adapters/world-ban-checker'
+import { createBansComponent, IBansComponent } from '../../src/adapters/bans-adapter'
 import { IFetchComponent } from '@well-known-components/interfaces'
 import { Response } from 'node-fetch'
 import { createMockedConfig } from '../mocks/config-mock'
 import { createMockFetch } from '../mocks/fetch-mock'
 import { createMockLogs } from '../mocks/logs-mock'
 
-describe('WorldBanCheckerComponent', () => {
+describe('BansComponent', () => {
   const commsGatekeeperUrl = 'https://comms-gatekeeper.example.com'
   const authToken = 'test-auth-token'
 
-  let worldBanChecker: IWorldBanCheckerComponent
+  let bans: IBansComponent
   let fetch: jest.Mocked<IFetchComponent>
 
   beforeEach(async () => {
@@ -20,7 +20,7 @@ describe('WorldBanCheckerComponent', () => {
       json: jest.fn().mockResolvedValue({ isBanned: false })
     } as unknown as Response)
 
-    worldBanChecker = await createWorldBanCheckerComponent({
+    bans = await createBansComponent({
       config: createMockedConfig({
         requireString: jest.fn().mockImplementation((key: string) => {
           if (key === 'COMMS_GATEKEEPER_URL') return Promise.resolve(commsGatekeeperUrl)
@@ -50,12 +50,12 @@ describe('WorldBanCheckerComponent', () => {
       })
 
       it('should return true', async () => {
-        const result = await worldBanChecker.isUserBannedFromWorld(address, worldName)
+        const result = await bans.isUserBannedFromWorld(address, worldName)
         expect(result).toBe(true)
       })
 
       it('should call the comms-gatekeeper with correct URL and bearer token', async () => {
-        await worldBanChecker.isUserBannedFromWorld(address, worldName)
+        await bans.isUserBannedFromWorld(address, worldName)
         expect(fetch.fetch).toHaveBeenCalledWith(
           `${commsGatekeeperUrl}/worlds/${encodeURIComponent(worldName)}/users/${encodeURIComponent(address)}/ban-status`,
           {
@@ -70,7 +70,7 @@ describe('WorldBanCheckerComponent', () => {
 
     describe('and the user is not banned', () => {
       it('should return false', async () => {
-        const result = await worldBanChecker.isUserBannedFromWorld(address, worldName)
+        const result = await bans.isUserBannedFromWorld(address, worldName)
         expect(result).toBe(false)
       })
     })
@@ -85,7 +85,7 @@ describe('WorldBanCheckerComponent', () => {
       })
 
       it('should return false (fail open)', async () => {
-        const result = await worldBanChecker.isUserBannedFromWorld(address, worldName)
+        const result = await bans.isUserBannedFromWorld(address, worldName)
         expect(result).toBe(false)
       })
     })
@@ -96,7 +96,7 @@ describe('WorldBanCheckerComponent', () => {
       })
 
       it('should return false (fail open)', async () => {
-        const result = await worldBanChecker.isUserBannedFromWorld(address, worldName)
+        const result = await bans.isUserBannedFromWorld(address, worldName)
         expect(result).toBe(false)
       })
     })
@@ -110,7 +110,7 @@ describe('WorldBanCheckerComponent', () => {
       })
 
       it('should return false (fail open)', async () => {
-        const result = await worldBanChecker.isUserBannedFromWorld(address, worldName)
+        const result = await bans.isUserBannedFromWorld(address, worldName)
         expect(result).toBe(false)
       })
     })

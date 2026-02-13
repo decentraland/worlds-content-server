@@ -14,16 +14,16 @@ import { ICommsComponent } from './types'
 export const createCommsComponent = async (
   components: Pick<
     AppComponents,
-    'namePermissionChecker' | 'access' | 'worlds' | 'commsAdapter' | 'config' | 'denyList' | 'worldBanChecker'
+    'namePermissionChecker' | 'access' | 'worlds' | 'commsAdapter' | 'config' | 'denyList' | 'bans'
   >
 ): Promise<ICommsComponent> => {
-  const { namePermissionChecker, access, worlds, commsAdapter, config, denyList, worldBanChecker } = components
+  const { namePermissionChecker, access, worlds, commsAdapter, config, denyList, bans } = components
   const maxUsersPerWorld = (await config.getNumber('MAX_USERS_PER_WORLD')) ?? DEFAULT_MAX_USERS_PER_WORLD
 
   async function assertUserNotRestricted(userAddress: EthAddress, worldName: string): Promise<void> {
     const [isDenylisted, isBanned] = await Promise.all([
       denyList.isDenylisted(userAddress),
-      worldBanChecker.isUserBannedFromWorld(userAddress, worldName)
+      bans.isUserBannedFromWorld(userAddress, worldName)
     ])
 
     if (isDenylisted) {

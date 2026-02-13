@@ -61,7 +61,7 @@ import { Events } from '@dcl/schemas'
 import { createRedisComponent } from '@dcl/redis-component'
 import { createRateLimiterComponent } from './logic/rate-limiter'
 import { createDenyListComponent } from './logic/denylist'
-import { createWorldBanCheckerComponent } from './adapters/world-ban-checker'
+import { createBansComponent } from './adapters/bans-adapter'
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
@@ -220,7 +220,7 @@ export async function initComponents(): Promise<AppComponents> {
   const worlds = createWorldsComponent({ worldsManager, snsClient })
 
   const denyList = await createDenyListComponent({ config, fetch, logs })
-  const worldBanChecker = await createWorldBanCheckerComponent({ config, fetch, logs })
+  const bans = await createBansComponent({ config, fetch, logs })
 
   const comms = await createCommsComponent({
     namePermissionChecker,
@@ -229,7 +229,7 @@ export async function initComponents(): Promise<AppComponents> {
     worlds,
     config,
     denyList,
-    worldBanChecker
+    bans
   })
 
   const sqs = await createSqsComponent(config)
@@ -292,7 +292,7 @@ export async function initComponents(): Promise<AppComponents> {
     updateOwnerJob,
     validator,
     walletStats,
-    worldBanChecker,
+    bans,
     worlds,
     worldsIndexer,
     worldsManager

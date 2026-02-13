@@ -40,7 +40,7 @@ import { IParticipantKicker } from './logic/participant-kicker'
 import { IQueueConsumerComponent } from '@dcl/queue-consumer-component'
 import { ICacheStorageComponent } from '@dcl/core-commons'
 import { IDenyListComponent } from './logic/denylist/types'
-import { IWorldBanCheckerComponent } from './adapters/world-ban-checker'
+import { IBansComponent } from './adapters/bans-adapter'
 
 export type GlobalContext = {
   components: BaseComponents
@@ -530,7 +530,7 @@ export type BaseComponents = {
   denyList: IDenyListComponent
   rateLimiter: IRateLimiterComponent
   redis: ICacheStorageComponent
-  worldBanChecker: IWorldBanCheckerComponent
+  bans: IBansComponent
   worlds: IWorldsComponent
 }
 

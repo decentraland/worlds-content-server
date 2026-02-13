@@ -46,7 +46,7 @@ import { createMockQueueConsumer } from './mocks/queue-consumer-mock'
 import { createRedisMock } from './mocks/redis-mock'
 import { createRateLimiterComponent } from '../src/logic/rate-limiter'
 import { createMockDenyList } from './mocks/denylist-mock'
-import { createMockWorldBanChecker } from './mocks/world-ban-checker-mock'
+import { createMockBans } from './mocks/bans-mock'
 
 /**
  * Behaves like Jest "describe" function, used to describe a test for a
@@ -183,7 +183,7 @@ async function initComponents(): Promise<TestComponents> {
   const rateLimiter = await createRateLimiterComponent({ config, redis })
 
   const denyList = createMockDenyList()
-  const worldBanChecker = createMockWorldBanChecker()
+  const bans = createMockBans()
 
   const comms = await createCommsComponent({
     namePermissionChecker,
@@ -192,7 +192,7 @@ async function initComponents(): Promise<TestComponents> {
     commsAdapter,
     config,
     denyList,
-    worldBanChecker
+    bans
   })
 
   const queueConsumer = createMockQueueConsumer()

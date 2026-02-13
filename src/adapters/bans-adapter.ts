@@ -3,7 +3,7 @@ import { AppComponents } from '../types'
 /**
  * Component interface for checking if a user is banned from a world.
  */
-export type IWorldBanCheckerComponent = {
+export type IBansComponent = {
   /**
    * Checks if the given address is banned from the specified world
    * by querying the comms-gatekeeper service.
@@ -16,7 +16,7 @@ export type IWorldBanCheckerComponent = {
 }
 
 /**
- * Creates the WorldBanChecker adapter.
+ * Creates the Bans adapter.
  *
  * Calls the comms-gatekeeper's GET /worlds/:worldName/users/:address/ban-status
  * endpoint to determine if a user is banned from a world. Authenticates using
@@ -24,13 +24,13 @@ export type IWorldBanCheckerComponent = {
  * world connections when the comms-gatekeeper is unavailable.
  *
  * @param components Required components: config, fetch, logs
- * @returns IWorldBanCheckerComponent implementation
+ * @returns IBansComponent implementation
  */
-export async function createWorldBanCheckerComponent(
+export async function createBansComponent(
   components: Pick<AppComponents, 'config' | 'fetch' | 'logs'>
-): Promise<IWorldBanCheckerComponent> {
+): Promise<IBansComponent> {
   const { config, fetch, logs } = components
-  const logger = logs.getLogger('world-ban-checker')
+  const logger = logs.getLogger('bans')
 
   const commsGatekeeperUrl = await config.requireString('COMMS_GATEKEEPER_URL')
   const authToken = await config.requireString('COMMS_GATEKEEPER_AUTH_TOKEN')
