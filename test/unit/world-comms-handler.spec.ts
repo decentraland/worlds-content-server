@@ -4,7 +4,9 @@ import {
   InvalidAccessError,
   InvalidWorldError,
   SceneNotFoundError,
-  WorldAtCapacityError
+  WorldAtCapacityError,
+  UserDenylistedError,
+  UserBannedFromWorldError
 } from '../../src/logic/comms/errors'
 import { HandlerContextWithPath } from '../../src/types'
 import { DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
@@ -455,6 +457,58 @@ describe('worldCommsHandler', () => {
       expect(rateLimiter.isRateLimited).not.toHaveBeenCalled()
       expect(rateLimiter.recordFailedAttempt).not.toHaveBeenCalled()
       expect(rateLimiter.clearAttempts).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('when the comms component throws UserDenylistedError', () => {
+    const worldName = 'test-world'
+    const identity = '0x1234567890abcdef'
+
+    beforeEach(() => {
+      context = {
+        components: { access, comms, rateLimiter },
+        params: { worldName },
+        request: { headers: new Map() },
+        verification: {
+          auth: identity,
+          authMetadata: {}
+        }
+      } as unknown as HandlerContext
+
+      comms.getWorldRoomConnectionString.mockRejectedValueOnce(new UserDenylistedError())
+    })
+
+    it('should return 403 with the deny-listed error message', async () => {
+      const response = await worldCommsHandler(context)
+
+      expect(response.status).toBe(403)
+      expect(response.body).toEqual({ error: 'Access denied, deny-listed wallet.' })
+    })
+  })
+
+  describe('when the comms component throws UserBannedFromWorldError', () => {
+    const worldName = 'test-world'
+    const identity = '0x1234567890abcdef'
+
+    beforeEach(() => {
+      context = {
+        components: { access, comms, rateLimiter },
+        params: { worldName },
+        request: { headers: new Map() },
+        verification: {
+          auth: identity,
+          authMetadata: {}
+        }
+      } as unknown as HandlerContext
+
+      comms.getWorldRoomConnectionString.mockRejectedValueOnce(new UserBannedFromWorldError(worldName))
+    })
+
+    it('should return 403 with the banned error message', async () => {
+      const response = await worldCommsHandler(context)
+
+      expect(response.status).toBe(403)
+      expect(response.body).toEqual({ error: `You are banned from world "${worldName}".` })
     })
   })
 })
