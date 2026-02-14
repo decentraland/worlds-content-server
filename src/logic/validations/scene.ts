@@ -1,5 +1,5 @@
 import { DeploymentToValidate, Validation, ValidationResult, ValidatorComponents } from '../../types'
-import { Entity, Scene } from '@dcl/schemas'
+import { Entity, EthAddress, Scene } from '@dcl/schemas'
 import { createValidationResult, OK } from './utils'
 import { ContentMapping } from '@dcl/schemas/dist/misc/content-mapping'
 
@@ -220,4 +220,20 @@ export const validateSkyboxTextures: Validation = async (
   }
 
   return createValidationResult(errors)
+}
+
+export const validateCreatorIsValidEthAddress: Validation = async (
+  deployment: DeploymentToValidate
+): Promise<ValidationResult> => {
+  const creator = deployment.entity.metadata?.creator
+
+  if (!creator) {
+    return OK
+  }
+
+  if (!EthAddress.validate(creator)) {
+    return createValidationResult([`Scene creator wallet '${creator}' is not a valid Ethereum address.`])
+  }
+
+  return OK
 }
