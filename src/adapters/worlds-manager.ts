@@ -152,6 +152,15 @@ export async function createWorldsManagerComponent({
     // Build runtime metadata from scenes
     const runtimeMetadata = buildWorldRuntimeMetadata(worldName, scenes)
 
+    // Override with world settings from DB
+    if (row.skybox_time !== null) {
+      runtimeMetadata.skyboxFixedTime = row.skybox_time
+    }
+
+    if (row.single_player) {
+      runtimeMetadata.fixedAdapter = 'offline:offline'
+    }
+
     const metadata: WorldMetadata = {
       access: row.access,
       spawnCoordinates: row.spawn_coordinates,

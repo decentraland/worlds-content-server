@@ -366,6 +366,134 @@ test('world about handler /world/:world_name/about', function ({ components, stu
       })
     })
 
+    describe('and it has skyboxTime set in world settings', () => {
+      let worldName: string
+
+      beforeEach(async () => {
+        const { worldCreator, worldsManager } = components
+
+        worldName = worldCreator.randomWorldName()
+        const created = await worldCreator.createWorldWithScene({
+          worldName: worldName,
+          metadata: {
+            main: 'abc.txt',
+            scene: {
+              base: '20,24',
+              parcels: ['20,24']
+            },
+            worldConfiguration: {
+              name: worldName
+            }
+          }
+        })
+
+        const owner = created.owner.authChain[0].payload
+        await worldsManager.updateWorldSettings(worldName, owner, { skyboxTime: 12000 })
+      })
+
+      it('should respond with 200 and the skybox fixedHour from world settings', async () => {
+        const { localFetch } = components
+
+        const r = await localFetch.fetch(`/world/${worldName}/about`)
+
+        expect(r.status).toEqual(200)
+        expect(await r.json()).toMatchObject({
+          configurations: {
+            skybox: {
+              fixedHour: 12000,
+              textures: []
+            }
+          }
+        })
+      })
+    })
+
+    describe('and it has skyboxTime in both world settings and scene config', () => {
+      let worldName: string
+
+      beforeEach(async () => {
+        const { worldCreator, worldsManager } = components
+
+        worldName = worldCreator.randomWorldName()
+        const created = await worldCreator.createWorldWithScene({
+          worldName: worldName,
+          metadata: {
+            main: 'abc.txt',
+            scene: {
+              base: '20,24',
+              parcels: ['20,24']
+            },
+            worldConfiguration: {
+              name: worldName,
+              skyboxConfig: {
+                fixedTime: 36000
+              }
+            }
+          }
+        })
+
+        const owner = created.owner.authChain[0].payload
+        await worldsManager.updateWorldSettings(worldName, owner, { skyboxTime: 12000 })
+      })
+
+      it('should respond with 200 and the skybox fixedHour from world settings overriding scene config', async () => {
+        const { localFetch } = components
+
+        const r = await localFetch.fetch(`/world/${worldName}/about`)
+
+        expect(r.status).toEqual(200)
+        expect(await r.json()).toMatchObject({
+          configurations: {
+            skybox: {
+              fixedHour: 12000,
+              textures: []
+            }
+          }
+        })
+      })
+    })
+
+    describe('and it is set as single player in world settings', () => {
+      let worldName: string
+
+      beforeEach(async () => {
+        const { worldCreator, worldsManager } = components
+
+        worldName = worldCreator.randomWorldName()
+        const created = await worldCreator.createWorldWithScene({
+          worldName: worldName,
+          metadata: {
+            main: 'abc.txt',
+            scene: {
+              base: '20,24',
+              parcels: ['20,24']
+            },
+            worldConfiguration: {
+              name: worldName
+            }
+          }
+        })
+
+        const owner = created.owner.authChain[0].payload
+        await worldsManager.updateWorldSettings(worldName, owner, { singlePlayer: true })
+      })
+
+      it('should respond with 200 and offline comms adapter configuration', async () => {
+        const { localFetch } = components
+
+        const r = await localFetch.fetch(`/world/${worldName}/about`)
+
+        expect(r.status).toEqual(200)
+        expect(await r.json()).toMatchObject({
+          comms: {
+            healthy: true,
+            protocol: 'v3',
+            adapter: 'fixed-adapter:offline:offline'
+          }
+        })
+      })
+    })
+
     describe('and it has multiple scenes deployed at different parcels', () => {
       let worldName: string
       let lastDeployedEntityId: string
