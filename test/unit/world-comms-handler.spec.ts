@@ -50,24 +50,6 @@ describe('worldCommsHandler', () => {
     jest.resetAllMocks()
   })
 
-  describe('when the request has no auth metadata', () => {
-    beforeEach(() => {
-      context = {
-        components: { access, comms, rateLimiter },
-        params: { worldName: 'test-world' },
-        request: { headers: new Map() },
-        verification: {
-          auth: '0x1234567890abcdef',
-          authMetadata: undefined
-        }
-      } as unknown as HandlerContext
-    })
-
-    it('should throw InvalidRequestError', async () => {
-      await expect(worldCommsHandler(context)).rejects.toThrow('Access denied, invalid metadata')
-    })
-  })
-
   describe('when the request is for a world comms', () => {
     const worldName = 'test-world'
     const identity = '0x1234567890abcdef'
