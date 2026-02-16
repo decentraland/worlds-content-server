@@ -1,7 +1,6 @@
 import { HandlerContextWithPath } from '../../types'
 import { IHttpServerComponent } from '@well-known-components/interfaces'
 import { DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
-import { InvalidRequestError } from '@dcl/http-commons'
 import {
   InvalidAccessError,
   InvalidWorldError,
@@ -39,13 +38,9 @@ export async function worldCommsHandler(context: HandlerContext): Promise<IHttpS
   const { worldName } = context.params
   const sceneId = 'sceneId' in context.params ? context.params.sceneId : undefined
 
-  const authMetadata = context.verification?.authMetadata
-  if (!authMetadata) {
-    throw new InvalidRequestError('Access denied, invalid metadata')
-  }
+  const { auth: identity, authMetadata } = context.verification!
 
-  const identity = context.verification!.auth
-  const accessOptions = { secret: authMetadata.secret }
+  const accessOptions = { secret: authMetadata?.secret }
 
   const accessSetting = await access.getAccessForWorld(worldName)
   const isSharedSecret = accessSetting.type === AccessType.SharedSecret
