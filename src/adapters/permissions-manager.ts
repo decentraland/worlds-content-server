@@ -435,10 +435,8 @@ export async function createPermissionsManagerComponent({
   ): Promise<PaginatedResult<string>> {
     const lowerCaseWorldName = worldName.toLowerCase()
 
-    const cte = SQL`
-      WITH matched AS (
-        SELECT wp.address
-        FROM world_permissions wp
+    function buildWhereClause() {
+      return SQL`
         WHERE wp.world_name = ${lowerCaseWorldName}
           AND wp.permission_type = ${permission}
           AND (
@@ -450,11 +448,15 @@ export async function createPermissionsManagerComponent({
               WHERE wpp.permission_id = wp.id AND wpp.parcel = ANY(${parcels})
             )
           )
-      )
-    `
+      `
+    }
 
-    const countQuery = SQL`${cte} SELECT COUNT(*)::text as count FROM matched`
-    const addressQuery = SQL`${cte} SELECT address FROM matched ORDER BY address`
+    const countQuery = SQL`SELECT COUNT(*)::text as count FROM world_permissions wp`
+    countQuery.append(buildWhereClause())
+
+    const addressQuery = SQL`SELECT wp.address FROM world_permissions wp`
+    addressQuery.append(buildWhereClause())
+    addressQuery.append(SQL` ORDER BY wp.address`)
 
     if (limit !== undefined) {
       addressQuery.append(SQL` LIMIT ${limit}`)
