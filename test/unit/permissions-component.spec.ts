@@ -593,7 +593,7 @@ describe('PermissionsComponent', () => {
   })
 
   describe('when getting addresses for a parcel permission', () => {
-    describe('and there are addresses with permission for the parcel', () => {
+    describe('and there are addresses with permission for the parcels', () => {
       beforeEach(() => {
         permissionsManager.getAddressesForParcelPermission.mockResolvedValueOnce({
           total: 2,
@@ -602,7 +602,10 @@ describe('PermissionsComponent', () => {
       })
 
       it('should return the addresses', async () => {
-        const result = await permissionsComponent.getAddressesForParcelPermission('test-world', 'deployment', '0,0')
+        const result = await permissionsComponent.getAddressesForParcelPermission('test-world', 'deployment', [
+          '0,0',
+          '1,0'
+        ])
 
         expect(result).toEqual({
           total: 2,
@@ -611,19 +614,19 @@ describe('PermissionsComponent', () => {
       })
 
       it('should pass the parameters to the manager', async () => {
-        await permissionsComponent.getAddressesForParcelPermission('test-world', 'deployment', '0,0', 10, 5)
+        await permissionsComponent.getAddressesForParcelPermission('test-world', 'deployment', ['0,0', '1,0'], 10, 5)
 
         expect(permissionsManager.getAddressesForParcelPermission).toHaveBeenCalledWith(
           'test-world',
           'deployment',
-          '0,0',
+          ['0,0', '1,0'],
           10,
           5
         )
       })
     })
 
-    describe('and there are no addresses with permission for the parcel', () => {
+    describe('and there are no addresses with permission for the parcels', () => {
       beforeEach(() => {
         permissionsManager.getAddressesForParcelPermission.mockResolvedValueOnce({
           total: 0,
@@ -632,7 +635,7 @@ describe('PermissionsComponent', () => {
       })
 
       it('should return an empty result', async () => {
-        const result = await permissionsComponent.getAddressesForParcelPermission('test-world', 'deployment', '0,0')
+        const result = await permissionsComponent.getAddressesForParcelPermission('test-world', 'deployment', ['0,0'])
 
         expect(result).toEqual({
           total: 0,

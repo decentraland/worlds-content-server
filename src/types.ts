@@ -410,7 +410,7 @@ export type IPermissionsManager = {
   getAddressesForParcelPermission(
     worldName: string,
     permission: AllowListPermission,
-    parcel: string,
+    parcels: string[],
     limit?: number,
     offset?: number
   ): Promise<PaginatedResult<string>>

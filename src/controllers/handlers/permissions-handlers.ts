@@ -366,14 +366,14 @@ export async function getAllowedParcelsForPermissionHandler(
 }
 
 /**
- * Get addresses that have a specific permission for a given parcel with pagination.
+ * Get addresses that have a specific permission for any of the given parcels, with pagination.
  * Includes addresses with world-wide permission and parcel-specific permission.
  */
 export async function getAddressesForParcelPermissionHandler(
-  ctx: HandlerContextWithPath<'permissions', '/world/:world_name/permissions/:permission_name/parcels/:parcel'>
+  ctx: HandlerContextWithPath<'permissions', '/world/:world_name/permissions/:permission_name/parcels'>
 ): Promise<IHttpServerComponent.IResponse> {
   const { permissions } = ctx.components
-  const { world_name: worldName, permission_name: permissionName, parcel } = ctx.params
+  const { world_name: worldName, permission_name: permissionName } = ctx.params
 
   if (!isAllowListPermission(permissionName)) {
     throw new InvalidRequestError(
@@ -382,8 +382,9 @@ export async function getAddressesForParcelPermissionHandler(
   }
 
   const { limit, offset } = getPaginationParams(ctx.url.searchParams)
+  const { parcels } = (await ctx.request.json()) as PermissionParcelsInput
 
-  const result = await permissions.getAddressesForParcelPermission(worldName, permissionName, parcel, limit, offset)
+  const result = await permissions.getAddressesForParcelPermission(worldName, permissionName, parcels, limit, offset)
 
   return {
     status: 200,

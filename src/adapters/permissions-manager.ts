@@ -422,14 +422,14 @@ export async function createPermissionsManagerComponent({
   }
 
   /**
-   * Get paginated addresses that have a given permission for a specific parcel.
+   * Get paginated addresses that have a given permission for any of the specified parcels.
    * An address qualifies if it has world-wide permission (no parcel rows) or
-   * has the specific parcel in world_permission_parcels.
+   * has at least one of the parcels in world_permission_parcels.
    */
   async function getAddressesForParcelPermission(
     worldName: string,
     permission: AllowListPermission,
-    parcel: string,
+    parcels: string[],
     limit?: number,
     offset?: number
   ): Promise<PaginatedResult<string>> {
@@ -447,7 +447,7 @@ export async function createPermissionsManagerComponent({
             )
             OR EXISTS (
               SELECT 1 FROM world_permission_parcels wpp
-              WHERE wpp.permission_id = wp.id AND wpp.parcel = ${parcel}
+              WHERE wpp.permission_id = wp.id AND wpp.parcel = ANY(${parcels})
             )
           )
       )

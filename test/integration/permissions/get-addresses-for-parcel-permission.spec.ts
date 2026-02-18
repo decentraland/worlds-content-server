@@ -4,7 +4,7 @@ import { IAuthenticatedFetchComponent } from '../../components/local-auth-fetch'
 import { IPermissionsManager, IWorldCreator } from '../../../src/types'
 import { IPermissionsComponent } from '../../../src/logic/permissions'
 
-test('GET /world/:world_name/permissions/:permission_name/parcels/:parcel', ({ components, stubComponents }) => {
+test('POST /world/:world_name/permissions/:permission_name/parcels', ({ components, stubComponents }) => {
   let localFetch: IAuthenticatedFetchComponent
   let worldCreator: IWorldCreator
   let permissions: IPermissionsComponent
@@ -35,7 +35,11 @@ test('GET /world/:world_name/permissions/:permission_name/parcels/:parcel', ({ c
 
   describe('when the permission name is invalid', () => {
     it('should respond with a 400 and the error', async () => {
-      const response = await localFetch.fetch(`/world/${worldName}/permissions/invalid/parcels/0,0`)
+      const response = await localFetch.fetch(`/world/${worldName}/permissions/invalid/parcels`, {
+        method: 'POST',
+        body: JSON.stringify({ parcels: ['0,0'] }),
+        headers: { 'Content-Type': 'application/json' }
+      })
 
       expect(response.status).toBe(400)
       const body = await response.json()
@@ -45,7 +49,11 @@ test('GET /world/:world_name/permissions/:permission_name/parcels/:parcel', ({ c
 
   describe('when the permission name is "access"', () => {
     it('should respond with a 400 and the error', async () => {
-      const response = await localFetch.fetch(`/world/${worldName}/permissions/access/parcels/0,0`)
+      const response = await localFetch.fetch(`/world/${worldName}/permissions/access/parcels`, {
+        method: 'POST',
+        body: JSON.stringify({ parcels: ['0,0'] }),
+        headers: { 'Content-Type': 'application/json' }
+      })
 
       expect(response.status).toBe(400)
       const body = await response.json()
@@ -53,9 +61,13 @@ test('GET /world/:world_name/permissions/:permission_name/parcels/:parcel', ({ c
     })
   })
 
-  describe('when there are no addresses with permission for the parcel', () => {
+  describe('when there are no addresses with permission for the parcels', () => {
     it('should respond with 200, an empty list and total 0', async () => {
-      const response = await localFetch.fetch(`/world/${worldName}/permissions/deployment/parcels/0,0`)
+      const response = await localFetch.fetch(`/world/${worldName}/permissions/deployment/parcels`, {
+        method: 'POST',
+        body: JSON.stringify({ parcels: ['0,0'] }),
+        headers: { 'Content-Type': 'application/json' }
+      })
 
       expect(response.status).toBe(200)
       const body = await response.json()
@@ -72,7 +84,11 @@ test('GET /world/:world_name/permissions/:permission_name/parcels/:parcel', ({ c
     })
 
     it('should include the world-wide deployer for any parcel', async () => {
-      const response = await localFetch.fetch(`/world/${worldName}/permissions/deployment/parcels/99,99`)
+      const response = await localFetch.fetch(`/world/${worldName}/permissions/deployment/parcels`, {
+        method: 'POST',
+        body: JSON.stringify({ parcels: ['99,99'] }),
+        headers: { 'Content-Type': 'application/json' }
+      })
 
       expect(response.status).toBe(200)
       const body = await response.json()
@@ -89,9 +105,13 @@ test('GET /world/:world_name/permissions/:permission_name/parcels/:parcel', ({ c
       await permissionsManager.addParcelsToPermission(worldName, 'deployment', parcelWallet, ['0,0', '1,0'])
     })
 
-    describe('and the queried parcel matches', () => {
+    describe('and one of the queried parcels matches', () => {
       it('should include the parcel-specific deployer', async () => {
-        const response = await localFetch.fetch(`/world/${worldName}/permissions/deployment/parcels/0,0`)
+        const response = await localFetch.fetch(`/world/${worldName}/permissions/deployment/parcels`, {
+          method: 'POST',
+          body: JSON.stringify({ parcels: ['0,0', '99,99'] }),
+          headers: { 'Content-Type': 'application/json' }
+        })
 
         expect(response.status).toBe(200)
         const body = await response.json()
@@ -100,9 +120,13 @@ test('GET /world/:world_name/permissions/:permission_name/parcels/:parcel', ({ c
       })
     })
 
-    describe('and the queried parcel does not match', () => {
+    describe('and none of the queried parcels match', () => {
       it('should not include the parcel-specific deployer', async () => {
-        const response = await localFetch.fetch(`/world/${worldName}/permissions/deployment/parcels/99,99`)
+        const response = await localFetch.fetch(`/world/${worldName}/permissions/deployment/parcels`, {
+          method: 'POST',
+          body: JSON.stringify({ parcels: ['99,99'] }),
+          headers: { 'Content-Type': 'application/json' }
+        })
 
         expect(response.status).toBe(200)
         const body = await response.json()
@@ -125,7 +149,11 @@ test('GET /world/:world_name/permissions/:permission_name/parcels/:parcel', ({ c
     })
 
     it('should include both addresses for a matching parcel', async () => {
-      const response = await localFetch.fetch(`/world/${worldName}/permissions/deployment/parcels/0,0`)
+      const response = await localFetch.fetch(`/world/${worldName}/permissions/deployment/parcels`, {
+        method: 'POST',
+        body: JSON.stringify({ parcels: ['0,0'] }),
+        headers: { 'Content-Type': 'application/json' }
+      })
 
       expect(response.status).toBe(200)
       const body = await response.json()
@@ -136,7 +164,11 @@ test('GET /world/:world_name/permissions/:permission_name/parcels/:parcel', ({ c
     })
 
     it('should include only the world-wide address for a non-matching parcel', async () => {
-      const response = await localFetch.fetch(`/world/${worldName}/permissions/deployment/parcels/99,99`)
+      const response = await localFetch.fetch(`/world/${worldName}/permissions/deployment/parcels`, {
+        method: 'POST',
+        body: JSON.stringify({ parcels: ['99,99'] }),
+        headers: { 'Content-Type': 'application/json' }
+      })
 
       expect(response.status).toBe(200)
       const body = await response.json()
@@ -162,7 +194,11 @@ test('GET /world/:world_name/permissions/:permission_name/parcels/:parcel', ({ c
 
     describe('and a limit is provided', () => {
       it('should return at most that many addresses', async () => {
-        const response = await localFetch.fetch(`/world/${worldName}/permissions/deployment/parcels/0,0?limit=2`)
+        const response = await localFetch.fetch(`/world/${worldName}/permissions/deployment/parcels?limit=2`, {
+          method: 'POST',
+          body: JSON.stringify({ parcels: ['0,0'] }),
+          headers: { 'Content-Type': 'application/json' }
+        })
 
         expect(response.status).toBe(200)
         const body = await response.json()
@@ -173,9 +209,11 @@ test('GET /world/:world_name/permissions/:permission_name/parcels/:parcel', ({ c
 
     describe('and a limit with an offset are provided', () => {
       it('should return the remaining addresses after the offset', async () => {
-        const response = await localFetch.fetch(
-          `/world/${worldName}/permissions/deployment/parcels/0,0?limit=2&offset=2`
-        )
+        const response = await localFetch.fetch(`/world/${worldName}/permissions/deployment/parcels?limit=2&offset=2`, {
+          method: 'POST',
+          body: JSON.stringify({ parcels: ['0,0'] }),
+          headers: { 'Content-Type': 'application/json' }
+        })
 
         expect(response.status).toBe(200)
         const body = await response.json()
@@ -194,7 +232,11 @@ test('GET /world/:world_name/permissions/:permission_name/parcels/:parcel', ({ c
     })
 
     it('should return addresses for streaming permission', async () => {
-      const response = await localFetch.fetch(`/world/${worldName}/permissions/streaming/parcels/5,5`)
+      const response = await localFetch.fetch(`/world/${worldName}/permissions/streaming/parcels`, {
+        method: 'POST',
+        body: JSON.stringify({ parcels: ['5,5'] }),
+        headers: { 'Content-Type': 'application/json' }
+      })
 
       expect(response.status).toBe(200)
       const body = await response.json()

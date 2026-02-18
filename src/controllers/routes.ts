@@ -119,8 +119,12 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
     deletePermissionParcelsHandler
   )
 
-  // Parcel-specific: paginated addresses with a given permission for a parcel
-  router.get('/world/:world_name/permissions/:permission_name/parcels/:parcel', getAddressesForParcelPermissionHandler)
+  // Parcel-specific: paginated addresses with a given permission for the provided parcels
+  router.post(
+    '/world/:world_name/permissions/:permission_name/parcels',
+    schemaValidator.withSchemaValidatorMiddleware(permissionParcelsSchema),
+    getAddressesForParcelPermissionHandler
+  )
 
   // Access allow-list: add/remove single community (world must have allow-list access)
   // Registered before :permission_name/:address so /access/communities/:id is matched first

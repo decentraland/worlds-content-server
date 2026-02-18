@@ -104,7 +104,7 @@ export type IPermissionsComponent = {
   getAddressesForParcelPermission(
     worldName: string,
     permission: AllowListPermission,
-    parcel: string,
+    parcels: string[],
     limit?: number,
     offset?: number
   ): Promise<{ total: number; results: string[] }>
