@@ -37,9 +37,10 @@ describe('BansComponent', () => {
     jest.resetAllMocks()
   })
 
-  describe('when checking if a user is banned from a world', () => {
+  describe('when checking if a user is banned from a scene', () => {
     const address = '0x1234567890abcdef'
     const worldName = 'my-world.eth'
+    const sceneBaseParcel = '0,0'
 
     describe('and the user is banned', () => {
       beforeEach(() => {
@@ -50,14 +51,14 @@ describe('BansComponent', () => {
       })
 
       it('should return true', async () => {
-        const result = await bans.isUserBannedFromWorld(address, worldName)
+        const result = await bans.isUserBannedFromScene(address, worldName, sceneBaseParcel)
         expect(result).toBe(true)
       })
 
       it('should call the comms-gatekeeper with correct URL and bearer token', async () => {
-        await bans.isUserBannedFromWorld(address, worldName)
+        await bans.isUserBannedFromScene(address, worldName, sceneBaseParcel)
         expect(fetch.fetch).toHaveBeenCalledWith(
-          `${commsGatekeeperUrl}/worlds/${encodeURIComponent(worldName)}/users/${encodeURIComponent(address)}/ban-status`,
+          `${commsGatekeeperUrl}/worlds/${encodeURIComponent(worldName)}/parcels/${encodeURIComponent(sceneBaseParcel)}/users/${encodeURIComponent(address)}/ban-status`,
           {
             method: 'GET',
             headers: {
@@ -70,7 +71,7 @@ describe('BansComponent', () => {
 
     describe('and the user is not banned', () => {
       it('should return false', async () => {
-        const result = await bans.isUserBannedFromWorld(address, worldName)
+        const result = await bans.isUserBannedFromScene(address, worldName, sceneBaseParcel)
         expect(result).toBe(false)
       })
     })
@@ -85,7 +86,7 @@ describe('BansComponent', () => {
       })
 
       it('should return false (fail open)', async () => {
-        const result = await bans.isUserBannedFromWorld(address, worldName)
+        const result = await bans.isUserBannedFromScene(address, worldName, sceneBaseParcel)
         expect(result).toBe(false)
       })
     })
@@ -96,7 +97,7 @@ describe('BansComponent', () => {
       })
 
       it('should return false (fail open)', async () => {
-        const result = await bans.isUserBannedFromWorld(address, worldName)
+        const result = await bans.isUserBannedFromScene(address, worldName, sceneBaseParcel)
         expect(result).toBe(false)
       })
     })
@@ -110,7 +111,7 @@ describe('BansComponent', () => {
       })
 
       it('should return false (fail open)', async () => {
-        const result = await bans.isUserBannedFromWorld(address, worldName)
+        const result = await bans.isUserBannedFromScene(address, worldName, sceneBaseParcel)
         expect(result).toBe(false)
       })
     })

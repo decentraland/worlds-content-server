@@ -20,16 +20,19 @@ export const createCommsComponent = async (
   const { namePermissionChecker, access, worlds, commsAdapter, config, denyList, bans } = components
   const maxUsersPerWorld = (await config.getNumber('MAX_USERS_PER_WORLD')) ?? DEFAULT_MAX_USERS_PER_WORLD
 
-  async function assertUserNotRestricted(userAddress: EthAddress, worldName: string): Promise<void> {
-    const [isDenylisted, isBanned] = await Promise.all([
-      denyList.isDenylisted(userAddress),
-      bans.isUserBannedFromWorld(userAddress, worldName)
-    ])
-
+  async function assertUserNotDenylisted(userAddress: EthAddress): Promise<void> {
+    const isDenylisted = await denyList.isDenylisted(userAddress)
     if (isDenylisted) {
       throw new UserDenylistedError()
     }
+  }
 
+  async function assertUserNotBannedFromScene(
+    userAddress: EthAddress,
+    worldName: string,
+    sceneBaseParcel: string
+  ): Promise<void> {
+    const isBanned = await bans.isUserBannedFromScene(userAddress, worldName, sceneBaseParcel)
     if (isBanned) {
       throw new UserBannedFromWorldError(worldName)
     }
@@ -60,12 +63,15 @@ export const createCommsComponent = async (
     sceneId: string,
     accessOptions?: { secret?: string }
   ): Promise<string> {
-    await assertUserNotRestricted(userAddress, worldName)
+    await assertUserNotDenylisted(userAddress)
     await assertWorldAccess(userAddress, worldName, accessOptions)
 
-    if (!(await worlds.hasWorldScene(worldName, sceneId))) {
+    const sceneBaseParcel = await worlds.getWorldSceneBaseParcel(worldName, sceneId)
+    if (!sceneBaseParcel) {
       throw new SceneNotFoundError(worldName, sceneId)
     }
+
+    await assertUserNotBannedFromScene(userAddress, worldName, sceneBaseParcel)
 
     const participantCount = await commsAdapter.getWorldSceneRoomsParticipantCount(worldName)
     if (participantCount >= maxUsersPerWorld) {
@@ -80,7 +86,7 @@ export const createCommsComponent = async (
     worldName: string,
     accessOptions?: { secret?: string }
   ): Promise<string> {
-    await assertUserNotRestricted(userAddress, worldName)
+    await assertUserNotDenylisted(userAddress)
     await assertWorldAccess(userAddress, worldName, accessOptions)
 
     const participantCount = await commsAdapter.getWorldRoomParticipantCount(worldName)

@@ -27,6 +27,15 @@ export interface IWorldsComponent {
   hasWorldScene(worldName: string, sceneId: string): Promise<boolean>
 
   /**
+   * Gets the base parcel of a scene in a world by its entity ID.
+   *
+   * @param worldName - The name of the world
+   * @param sceneId - The entity ID of the scene
+   * @returns The base parcel coordinate (e.g. '0,0') if found, undefined otherwise
+   */
+  getWorldSceneBaseParcel(worldName: string, sceneId: string): Promise<string | undefined>
+
+  /**
    * Gets the world manifest containing all occupied parcels and spawn coordinates
    *
    * @param worldName - The name of the world
