@@ -1,4 +1,4 @@
-import { AppComponents, IPermissionsManager, ParcelsResult } from '../types'
+import { AppComponents, IPermissionsManager, PaginatedResult, ParcelsResult } from '../types'
 import { AllowListPermission, WorldPermissionRecord, WorldPermissionRecordForChecking } from '../logic/permissions'
 import { EthAddress } from '@dcl/schemas'
 import SQL from 'sql-template-strings'
@@ -421,6 +421,60 @@ export async function createPermissionsManagerComponent({
     }
   }
 
+  /**
+   * Get paginated addresses that have a given permission for a specific parcel.
+   * An address qualifies if it has world-wide permission (no parcel rows) or
+   * has the specific parcel in world_permission_parcels.
+   */
+  async function getAddressesForParcelPermission(
+    worldName: string,
+    permission: AllowListPermission,
+    parcel: string,
+    limit?: number,
+    offset?: number
+  ): Promise<PaginatedResult<string>> {
+    const lowerCaseWorldName = worldName.toLowerCase()
+
+    const cte = SQL`
+      WITH matched AS (
+        SELECT wp.address
+        FROM world_permissions wp
+        WHERE wp.world_name = ${lowerCaseWorldName}
+          AND wp.permission_type = ${permission}
+          AND (
+            NOT EXISTS (
+              SELECT 1 FROM world_permission_parcels wpp WHERE wpp.permission_id = wp.id
+            )
+            OR EXISTS (
+              SELECT 1 FROM world_permission_parcels wpp
+              WHERE wpp.permission_id = wp.id AND wpp.parcel = ${parcel}
+            )
+          )
+      )
+    `
+
+    const countQuery = SQL`${cte} SELECT COUNT(*)::text as count FROM matched`
+    const addressQuery = SQL`${cte} SELECT address FROM matched ORDER BY address`
+
+    if (limit !== undefined) {
+      addressQuery.append(SQL` LIMIT ${limit}`)
+    }
+
+    if (offset !== undefined) {
+      addressQuery.append(SQL` OFFSET ${offset}`)
+    }
+
+    const [countResult, addressResult] = await Promise.all([
+      database.query<{ count: string }>(countQuery),
+      database.query<{ address: string }>(addressQuery)
+    ])
+
+    return {
+      total: parseInt(countResult.rows[0].count, 10),
+      results: addressResult.rows.map((r) => r.address)
+    }
+  }
+
   return {
     getOwner,
     grantAddressesWorldWidePermission,
@@ -431,6 +485,7 @@ export async function createPermissionsManagerComponent({
     checkParcelsAllowed,
     hasPermissionEntries,
     addParcelsToPermission,
-    removeParcelsFromPermission
+    removeParcelsFromPermission,
+    getAddressesForParcelPermission
   }
 }

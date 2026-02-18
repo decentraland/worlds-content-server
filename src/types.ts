@@ -407,6 +407,13 @@ export type IPermissionsManager = {
     parcels: string[]
   ): Promise<{ created: boolean }>
   removeParcelsFromPermission(permissionId: number, parcels: string[]): Promise<void>
+  getAddressesForParcelPermission(
+    worldName: string,
+    permission: AllowListPermission,
+    parcel: string,
+    limit?: number,
+    offset?: number
+  ): Promise<PaginatedResult<string>>
 }
 
 export type INotificationService = {

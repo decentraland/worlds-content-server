@@ -101,5 +101,12 @@ export type IPermissionsComponent = {
     offset?: number,
     boundingBox?: { x1: number; y1: number; x2: number; y2: number }
   ): Promise<{ total: number; results: string[] }>
+  getAddressesForParcelPermission(
+    worldName: string,
+    permission: AllowListPermission,
+    parcel: string,
+    limit?: number,
+    offset?: number
+  ): Promise<{ total: number; results: string[] }>
   getPermissionsSummary(worldName: string): Promise<WorldPermissionsSummary>
 }

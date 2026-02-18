@@ -15,6 +15,7 @@ import {
   deletePermissionsAccessCommunityHandler,
   deletePermissionsAddressHandler,
   deletePermissionParcelsHandler,
+  getAddressesForParcelPermissionHandler,
   getAllowedParcelsForPermissionHandler,
   getPermissionsHandler,
   postPermissionsHandler,
@@ -117,6 +118,9 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
     schemaValidator.withSchemaValidatorMiddleware(permissionParcelsSchema),
     deletePermissionParcelsHandler
   )
+
+  // Parcel-specific: paginated addresses with a given permission for a parcel
+  router.get('/world/:world_name/permissions/:permission_name/parcels/:parcel', getAddressesForParcelPermissionHandler)
 
   // Access allow-list: add/remove single community (world must have allow-list access)
   // Registered before :permission_name/:address so /access/communities/:id is matched first

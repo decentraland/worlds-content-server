@@ -391,6 +391,27 @@ export async function createPermissionsComponent({
   }
 
   /**
+   * Gets a paginated list of addresses that have a specific permission for a given parcel.
+   * Includes addresses with world-wide permission as well as parcel-specific ones.
+   *
+   * @param worldName - The name of the world
+   * @param permission - The type of permission ('deployment' or 'streaming')
+   * @param parcel - The parcel coordinate to query (e.g. '0,0')
+   * @param limit - Maximum number of addresses to return
+   * @param offset - Number of addresses to skip
+   * @returns Paginated result with total count and address array
+   */
+  async function getAddressesForParcelPermission(
+    worldName: string,
+    permission: AllowListPermission,
+    parcel: string,
+    limit?: number,
+    offset?: number
+  ): Promise<{ total: number; results: string[] }> {
+    return permissionsManager.getAddressesForParcelPermission(worldName, permission, parcel, limit, offset)
+  }
+
+  /**
    * Gets a summary of all permissions for a world, grouped by address.
    * Each address has an array of permissions with their type and scope (world-wide or parcel count).
    *
@@ -427,6 +448,7 @@ export async function createPermissionsComponent({
     addParcelsToPermission,
     removeParcelsFromPermission,
     getAllowedParcelsForPermission,
+    getAddressesForParcelPermission,
     getPermissionsSummary
   }
 }

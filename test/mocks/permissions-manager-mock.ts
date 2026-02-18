@@ -14,6 +14,7 @@ export function createMockedPermissionsManager(
     removeParcelsFromPermission: jest.fn(),
     getParcelsForPermission: jest.fn(),
     hasPermissionEntries: jest.fn(),
+    getAddressesForParcelPermission: jest.fn(),
     ...overrides
   } as jest.Mocked<IPermissionsManager>
 }
