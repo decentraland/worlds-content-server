@@ -1,6 +1,6 @@
 import { createLogComponent } from '@well-known-components/logger'
 import { ILoggerComponent } from '@well-known-components/interfaces'
-import { IPgComponent } from '@well-known-components/pg-component'
+import { IPgComponent } from '@dcl/pg-component'
 import { createSearchComponent, ISearchComponent } from '../../src/adapters/search'
 
 describe('SearchComponent', () => {

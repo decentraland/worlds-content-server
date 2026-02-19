@@ -45,11 +45,7 @@ export async function createPermissionsManagerComponent({
     const lowerCaseAddresses = addresses.map((a) => a.toLowerCase())
     const now = new Date()
 
-    const client = await database.getPool().connect()
-
-    try {
-      await client.query('BEGIN')
-
+    return await database.withAsyncContextTransaction(async () => {
       // Build batch insert query (skips existing, returns only newly inserted)
       const insertQuery = SQL`
         INSERT INTO world_permissions (world_name, permission_type, address, created_at, updated_at)
@@ -67,12 +63,12 @@ export async function createPermissionsManagerComponent({
         RETURNING address
       `)
 
-      const insertResult = await client.query<{ address: string }>(insertQuery)
+      const insertResult = await database.query<{ address: string }>(insertQuery)
       const newlyAddedAddresses = insertResult.rows.map((r) => r.address)
 
       // Delete any existing parcels for ALL addresses (making them world-wide)
       // This affects both new and existing addresses
-      await client.query(SQL`
+      await database.query(SQL`
         DELETE FROM world_permission_parcels
         WHERE permission_id IN (
           SELECT id FROM world_permissions
@@ -82,15 +78,8 @@ export async function createPermissionsManagerComponent({
         )
       `)
 
-      await client.query('COMMIT')
-
       return newlyAddedAddresses
-    } catch (error) {
-      await client.query('ROLLBACK')
-      throw error
-    } finally {
-      client.release()
-    }
+    })
   }
 
   /**
@@ -323,13 +312,9 @@ export async function createPermissionsManagerComponent({
     const lowerCaseAddress = address.toLowerCase()
     const now = new Date()
 
-    const client = await database.getPool().connect()
-
-    try {
-      await client.query('BEGIN')
-
+    return await database.withAsyncContextTransaction(async () => {
       // Check if permission exists
-      const existingResult = await client.query<{ id: number }>(SQL`
+      const existingResult = await database.query<{ id: number }>(SQL`
         SELECT id FROM world_permissions
         WHERE world_name = ${lowerCaseWorldName}
           AND permission_type = ${permission}
@@ -341,7 +326,7 @@ export async function createPermissionsManagerComponent({
 
       if (existingResult.rowCount === 0) {
         // Create new permission
-        const insertResult = await client.query<{ id: number }>(SQL`
+        const insertResult = await database.query<{ id: number }>(SQL`
           INSERT INTO world_permissions (world_name, permission_type, address, created_at, updated_at)
           VALUES (${lowerCaseWorldName}, ${permission}, ${lowerCaseAddress}, ${now}, ${now})
           RETURNING id
@@ -351,7 +336,7 @@ export async function createPermissionsManagerComponent({
       } else {
         permissionId = existingResult.rows[0].id
         // Update timestamp
-        await client.query(SQL`
+        await database.query(SQL`
           UPDATE world_permissions 
           SET updated_at = ${now} 
           WHERE id = ${permissionId}
@@ -373,17 +358,11 @@ export async function createPermissionsManagerComponent({
 
         insertQuery.append(SQL` ON CONFLICT DO NOTHING`)
 
-        await client.query(insertQuery)
+        await database.query(insertQuery)
       }
 
-      await client.query('COMMIT')
       return { created }
-    } catch (error) {
-      await client.query('ROLLBACK')
-      throw error
-    } finally {
-      client.release()
-    }
+    })
   }
 
   /**
@@ -394,31 +373,20 @@ export async function createPermissionsManagerComponent({
       return
     }
 
-    const client = await database.getPool().connect()
-
-    try {
-      await client.query('BEGIN')
-
-      await client.query(SQL`
+    await database.withAsyncContextTransaction(async () => {
+      await database.query(SQL`
         DELETE FROM world_permission_parcels 
         WHERE permission_id = ${permissionId} 
           AND parcel = ANY(${parcels})
       `)
 
       // Update the permission's updated_at timestamp
-      await client.query(SQL`
+      await database.query(SQL`
         UPDATE world_permissions 
         SET updated_at = ${new Date()} 
         WHERE id = ${permissionId}
       `)
-
-      await client.query('COMMIT')
-    } catch (error) {
-      await client.query('ROLLBACK')
-      throw error
-    } finally {
-      client.release()
-    }
+    })
   }
 
   return {
