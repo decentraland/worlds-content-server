@@ -353,6 +353,11 @@ export class NoDeployedScenesError extends Error {
   }
 }
 
+export type AccessModificationResult = {
+  previousAccess: AccessSetting
+  updatedAccess: AccessSetting
+}
+
 export type IWorldsManager = {
   getRawWorldRecords(
     filters?: GetRawWorldRecordsFilters,
@@ -364,6 +369,10 @@ export type IWorldsManager = {
   deployScene(worldName: string, scene: Entity, owner: EthAddress): Promise<void>
   undeployScene(worldName: string, parcels: string[]): Promise<void>
   storeAccess(worldName: string, access: AccessSetting): Promise<void>
+  modifyAccessAtomically(
+    worldName: string,
+    modifier: (currentAccess: AccessSetting) => AccessSetting
+  ): Promise<AccessModificationResult>
   undeployWorld(worldName: string): Promise<void>
   getContributableDomains(address: string): Promise<{ domains: ContributorDomain[]; count: number }>
   getWorldScenes(filters?: GetWorldScenesFilters, options?: GetWorldScenesOptions): Promise<GetWorldScenesResult>
