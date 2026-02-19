@@ -700,9 +700,7 @@ export async function createWorldsManagerComponent({
    * @param worldName - The name of the world
    * @returns The bounding rectangle, or undefined if no parcels exist
    */
-  async function getWorldBoundingRectangle(
-    worldName: string
-  ): Promise<WorldBoundingRectangle | undefined> {
+  async function getWorldBoundingRectangle(worldName: string): Promise<WorldBoundingRectangle | undefined> {
     const query = SQL`
       SELECT 
         MIN(SPLIT_PART(parcel, ',', 1)::integer) as min_x,
