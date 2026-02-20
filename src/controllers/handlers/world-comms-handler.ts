@@ -11,9 +11,12 @@ import {
 } from '../../logic/comms'
 import { AccessType } from '../../logic/access'
 import { RATE_LIMIT_WINDOW_SECONDS, RateLimitedError } from '../../logic/rate-limiter'
+import { InvalidRequestError } from '@dcl/http-commons'
 
 type CommsMetadata = {
   secret?: string
+  realmName?: string
+  sceneId?: string
 }
 
 function extractClientIp(request: IHttpServerComponent.IRequest): string | undefined {
@@ -36,16 +39,30 @@ export async function worldCommsHandler(context: HandlerContext): Promise<IHttpS
   } = context
 
   const { worldName } = context.params
-  const sceneId = 'sceneId' in context.params ? context.params.sceneId : undefined
-
-  const { auth: identity, authMetadata } = context.verification!
-
-  const accessOptions = { secret: authMetadata?.secret }
 
   const accessSetting = await access.getAccessForWorld(worldName)
   const isSharedSecret = accessSetting.type === AccessType.SharedSecret
 
   try {
+    if ('sceneId' in context.params) {
+      const sceneIdIsEmpty = context.params.sceneId === ''
+      const sceneIdDoesNotMatchMetadata =
+        context.verification?.authMetadata?.sceneId?.toLowerCase() !== context.params.sceneId?.toLowerCase()
+      if (sceneIdIsEmpty || sceneIdDoesNotMatchMetadata) {
+        throw new InvalidRequestError('Invalid scene id')
+      }
+    }
+
+    if (worldName === '' || worldName.toLowerCase() !== context.verification?.authMetadata?.realmName?.toLowerCase()) {
+      throw new InvalidRequestError('Invalid world name')
+    }
+
+    const sceneId = 'sceneId' in context.params ? context.params.sceneId : undefined
+
+    const { auth: identity, authMetadata } = context.verification!
+
+    const accessOptions = { secret: authMetadata?.secret }
+
     if (isSharedSecret) {
       const rateLimited = await rateLimiter.isRateLimited(worldName, extractSubject(context))
       if (rateLimited) {

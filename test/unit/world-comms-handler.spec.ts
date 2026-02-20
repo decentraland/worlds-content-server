@@ -12,9 +12,12 @@ import { HandlerContextWithPath } from '../../src/types'
 import { DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
 import { IAccessComponent, AccessType } from '../../src/logic/access'
 import { IRateLimiterComponent } from '../../src/logic/rate-limiter'
+import { InvalidRequestError } from '@dcl/http-commons'
 
 type CommsMetadata = {
   secret?: string
+  realmName?: string
+  sceneId?: string
 }
 
 type HandlerContext = HandlerContextWithPath<
@@ -62,7 +65,7 @@ describe('worldCommsHandler', () => {
         request: { headers: new Map() },
         verification: {
           auth: identity,
-          authMetadata: {}
+          authMetadata: { realmName: worldName }
         }
       } as unknown as HandlerContext
     })
@@ -94,7 +97,7 @@ describe('worldCommsHandler', () => {
           request: { headers: new Map() },
           verification: {
             auth: identity,
-            authMetadata: { secret: 'my-secret' }
+            authMetadata: { realmName: worldName, secret: 'my-secret' }
           }
         } as unknown as HandlerContext
 
@@ -171,7 +174,7 @@ describe('worldCommsHandler', () => {
         request: { headers: new Map() },
         verification: {
           auth: identity,
-          authMetadata: {}
+          authMetadata: { realmName: worldName, sceneId }
         }
       } as unknown as HandlerContext
     })
@@ -211,7 +214,7 @@ describe('worldCommsHandler', () => {
           request: { headers: new Map() },
           verification: {
             auth: identity,
-            authMetadata: { secret: 'my-secret' }
+            authMetadata: { realmName: worldName, sceneId, secret: 'my-secret' }
           }
         } as unknown as HandlerContext
 
@@ -297,7 +300,7 @@ describe('worldCommsHandler', () => {
         },
         verification: {
           auth: identity,
-          authMetadata: { secret: 'my-secret' }
+          authMetadata: { realmName: worldName, secret: 'my-secret' }
         }
       } as unknown as HandlerContext
     })
@@ -371,7 +374,7 @@ describe('worldCommsHandler', () => {
           },
           verification: {
             auth: identity,
-            authMetadata: { secret: 'my-secret' }
+            authMetadata: { realmName: worldName, secret: 'my-secret' }
           }
         } as unknown as HandlerContext
 
@@ -396,7 +399,7 @@ describe('worldCommsHandler', () => {
           },
           verification: {
             auth: identity,
-            authMetadata: { secret: 'my-secret' }
+            authMetadata: { realmName: worldName, secret: 'my-secret' }
           }
         } as unknown as HandlerContext
 
@@ -425,7 +428,7 @@ describe('worldCommsHandler', () => {
         request: { headers: new Map() },
         verification: {
           auth: identity,
-          authMetadata: {}
+          authMetadata: { realmName: worldName }
         }
       } as unknown as HandlerContext
 
@@ -453,7 +456,7 @@ describe('worldCommsHandler', () => {
         request: { headers: new Map() },
         verification: {
           auth: identity,
-          authMetadata: {}
+          authMetadata: { realmName: worldName }
         }
       } as unknown as HandlerContext
 
@@ -479,7 +482,7 @@ describe('worldCommsHandler', () => {
         request: { headers: new Map() },
         verification: {
           auth: identity,
-          authMetadata: {}
+          authMetadata: { realmName: worldName }
         }
       } as unknown as HandlerContext
 
@@ -491,6 +494,87 @@ describe('worldCommsHandler', () => {
 
       expect(response.status).toBe(403)
       expect(response.body).toEqual({ error: `You are banned from world "${worldName}".` })
+    })
+  })
+
+  describe('when world name is invalid', () => {
+    const identity = '0x1234567890abcdef'
+
+    describe('and worldName is empty', () => {
+      beforeEach(() => {
+        context = {
+          components: { access, comms, rateLimiter },
+          params: { worldName: '' },
+          request: { headers: new Map() },
+          verification: {
+            auth: identity,
+            authMetadata: { realmName: 'some-realm' }
+          }
+        } as unknown as HandlerContext
+      })
+
+      it('should throw InvalidRequestError with message Invalid world name', async () => {
+        await expect(worldCommsHandler(context)).rejects.toThrow(new InvalidRequestError('Invalid world name'))
+      })
+    })
+
+    describe('and worldName does not match auth metadata realmName', () => {
+      beforeEach(() => {
+        context = {
+          components: { access, comms, rateLimiter },
+          params: { worldName: 'world-a' },
+          request: { headers: new Map() },
+          verification: {
+            auth: identity,
+            authMetadata: { realmName: 'world-b' }
+          }
+        } as unknown as HandlerContext
+      })
+
+      it('should throw InvalidRequestError with message Invalid world name', async () => {
+        await expect(worldCommsHandler(context)).rejects.toThrow(new InvalidRequestError('Invalid world name'))
+      })
+    })
+  })
+
+  describe('when scene id is invalid', () => {
+    const worldName = 'test-world'
+    const identity = '0x1234567890abcdef'
+
+    describe('and sceneId is empty', () => {
+      beforeEach(() => {
+        context = {
+          components: { access, comms, rateLimiter },
+          params: { worldName, sceneId: '' },
+          request: { headers: new Map() },
+          verification: {
+            auth: identity,
+            authMetadata: { realmName: worldName, sceneId: 'scene-123' }
+          }
+        } as unknown as HandlerContext
+      })
+
+      it('should throw InvalidRequestError with message Invalid scene id', async () => {
+        await expect(worldCommsHandler(context)).rejects.toThrow(new InvalidRequestError('Invalid scene id'))
+      })
+    })
+
+    describe('and sceneId does not match auth metadata sceneId', () => {
+      beforeEach(() => {
+        context = {
+          components: { access, comms, rateLimiter },
+          params: { worldName, sceneId: 'scene-1' },
+          request: { headers: new Map() },
+          verification: {
+            auth: identity,
+            authMetadata: { realmName: worldName, sceneId: 'scene-2' }
+          }
+        } as unknown as HandlerContext
+      })
+
+      it('should throw InvalidRequestError with message Invalid scene id', async () => {
+        await expect(worldCommsHandler(context)).rejects.toThrow(new InvalidRequestError('Invalid scene id'))
+      })
     })
   })
 })
