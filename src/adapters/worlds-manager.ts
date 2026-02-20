@@ -1,4 +1,5 @@
 import {
+  AccessModificationResult,
   AppComponents,
   IWorldsManager,
   WorldMetadata,
@@ -291,6 +292,26 @@ export async function createWorldsManagerComponent({
                                 updated_at = ${new Date()}
     `
     await database.query(sql)
+  }
+
+  async function modifyAccessAtomically(
+    worldName: string,
+    modifier: (currentAccess: AccessSetting) => AccessSetting
+  ): Promise<AccessModificationResult> {
+    return await database.withAsyncContextTransaction(async () => {
+      const result = await database.query<{ access: AccessSetting }>(
+        SQL`SELECT access FROM worlds WHERE name = ${worldName.toLowerCase()} FOR UPDATE`
+      )
+      const previousAccess = result.rows[0]?.access || defaultAccess()
+
+      const updatedAccess = modifier(previousAccess)
+
+      if (updatedAccess !== previousAccess) {
+        await storeAccess(worldName, updatedAccess)
+      }
+
+      return { previousAccess, updatedAccess }
+    })
   }
 
   async function getDeployedWorldCount(): Promise<{ ens: number; dcl: number }> {
@@ -1018,6 +1039,7 @@ export async function createWorldsManagerComponent({
     deployScene,
     undeployScene,
     storeAccess,
+    modifyAccessAtomically,
     undeployWorld,
     getContributableDomains,
     getWorldScenes,
