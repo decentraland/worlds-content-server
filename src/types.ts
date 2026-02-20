@@ -13,7 +13,7 @@ import { ISubgraphComponent } from '@well-known-components/thegraph-component'
 import { IStatusComponent } from './adapters/status'
 import { AuthChain, AuthLink, Entity, EthAddress, IPFSv2 } from '@dcl/schemas'
 import { MigrationExecutor } from './adapters/migration-executor'
-import { IPgComponent } from '@well-known-components/pg-component'
+import { IPgComponent } from '@dcl/pg-component'
 import { AuthIdentity } from '@dcl/crypto'
 import { IFetchComponent } from '@well-known-components/interfaces'
 import { INatsComponent } from '@well-known-components/nats-component/dist/types'
@@ -353,6 +353,11 @@ export class NoDeployedScenesError extends Error {
   }
 }
 
+export type AccessModificationResult = {
+  previousAccess: AccessSetting
+  updatedAccess: AccessSetting
+}
+
 export type IWorldsManager = {
   getRawWorldRecords(
     filters?: GetRawWorldRecordsFilters,
@@ -364,6 +369,10 @@ export type IWorldsManager = {
   deployScene(worldName: string, scene: Entity, owner: EthAddress): Promise<void>
   undeployScene(worldName: string, parcels: string[]): Promise<void>
   storeAccess(worldName: string, access: AccessSetting): Promise<void>
+  modifyAccessAtomically(
+    worldName: string,
+    modifier: (currentAccess: AccessSetting) => AccessSetting
+  ): Promise<AccessModificationResult>
   undeployWorld(worldName: string): Promise<void>
   getContributableDomains(address: string): Promise<{ domains: ContributorDomain[]; count: number }>
   getWorldScenes(filters?: GetWorldScenesFilters, options?: GetWorldScenesOptions): Promise<GetWorldScenesResult>
@@ -407,6 +416,13 @@ export type IPermissionsManager = {
     parcels: string[]
   ): Promise<{ created: boolean }>
   removeParcelsFromPermission(permissionId: number, parcels: string[]): Promise<void>
+  getAddressesForParcelPermission(
+    worldName: string,
+    permission: AllowListPermission,
+    parcels: string[],
+    limit?: number,
+    offset?: number
+  ): Promise<PaginatedResult<string>>
 }
 
 export type INotificationService = {

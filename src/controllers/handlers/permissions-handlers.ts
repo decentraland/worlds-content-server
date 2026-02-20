@@ -366,6 +366,36 @@ export async function getAllowedParcelsForPermissionHandler(
 }
 
 /**
+ * Get addresses that have a specific permission for any of the given parcels, with pagination.
+ * Includes addresses with world-wide permission and parcel-specific permission.
+ */
+export async function getAddressesForParcelPermissionHandler(
+  ctx: HandlerContextWithPath<'permissions', '/world/:world_name/permissions/:permission_name/parcels'>
+): Promise<IHttpServerComponent.IResponse> {
+  const { permissions } = ctx.components
+  const { world_name: worldName, permission_name: permissionName } = ctx.params
+
+  if (!isAllowListPermission(permissionName)) {
+    throw new InvalidRequestError(
+      `Permission '${permissionName}' does not support allow-list. Only 'deployment' and 'streaming' do.`
+    )
+  }
+
+  const { limit, offset } = getPaginationParams(ctx.url.searchParams)
+  const { parcels } = (await ctx.request.json()) as PermissionParcelsInput
+
+  const result = await permissions.getAddressesForParcelPermission(worldName, permissionName, parcels, limit, offset)
+
+  return {
+    status: 200,
+    body: {
+      total: result.total,
+      addresses: result.results
+    }
+  }
+}
+
+/**
  * Delete permission for an address
  * For deployment/streaming: revokes the permission from the address
  * For access: removes the wallet from the access allow-list

@@ -5,7 +5,7 @@ import { IContentStorageComponent } from '@dcl/catalyst-storage'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { AuthChain } from '@dcl/schemas'
 import { AUTH_CHAIN_HEADER_PREFIX, AUTH_METADATA_HEADER, AUTH_TIMESTAMP_HEADER } from '@dcl/platform-crypto-middleware'
-import { IPgComponent } from '@well-known-components/pg-component'
+import { IPgComponent } from '@dcl/pg-component'
 
 export type Identity = { authChain: AuthIdentity; realAccount: IdentityType; ephemeralIdentity: IdentityType }
 

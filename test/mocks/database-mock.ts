@@ -1,6 +1,5 @@
-import { IPgComponent } from '@well-known-components/pg-component'
-import { IDatabase } from '@well-known-components/interfaces'
-import { Pool } from 'pg'
+import { IPgComponent, QueryResult } from '@dcl/pg-component'
+import { Pool, PoolClient } from 'pg'
 import { SQLStatement } from 'sql-template-strings'
 
 export function createDatabaseMock(queryResults: any[] = []): IPgComponent {
@@ -9,11 +8,12 @@ export function createDatabaseMock(queryResults: any[] = []): IPgComponent {
     query<T extends Record<string, any>>(
       _sql: string | SQLStatement,
       _durationQueryNameLabel?: string
-    ): Promise<IDatabase.IQueryResult<T>> {
+    ): Promise<QueryResult<T>> {
       if (i >= queryResults.length) {
         throw new Error('No more queryResults mocked.')
       }
-      return queryResults[i++]
+      const result = queryResults[i++]
+      return Promise.resolve({ ...result, notices: result?.notices ?? [] })
     },
     getPool(): Pool {
       return undefined
@@ -26,6 +26,12 @@ export function createDatabaseMock(queryResults: any[] = []): IPgComponent {
     },
     streamQuery<T = any>(_sql: SQLStatement, _config?: { batchSize?: number }): AsyncGenerator<T> {
       return undefined
+    },
+    withTransaction<T>(_callback: (client: PoolClient) => Promise<T>): Promise<T> {
+      throw new Error('Not mocked')
+    },
+    withAsyncContextTransaction<T>(callback: () => Promise<T>): Promise<T> {
+      return callback()
     }
   }
 }
