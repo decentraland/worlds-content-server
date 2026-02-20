@@ -1,4 +1,5 @@
 import {
+  AccessModificationResult,
   AppComponents,
   IWorldsManager,
   WorldMetadata,
@@ -28,7 +29,6 @@ import {
 import { streamToBuffer } from '@dcl/catalyst-storage'
 import { Entity, EthAddress } from '@dcl/schemas'
 import SQL from 'sql-template-strings'
-import { PoolClient } from 'pg'
 import { buildWorldRuntimeMetadata } from '../logic/world-runtime-metadata-utils'
 import { AccessSetting, defaultAccess } from '../logic/access'
 
@@ -206,8 +206,6 @@ export async function createWorldsManagerComponent({
     const fileInfos = await storage.fileInfoMultiple(scene.content?.map((c) => c.hash) || [])
     const size = scene.content?.reduce((acc, c) => acc + (fileInfos.get(c.hash)?.size || 0), 0) || 0
 
-    // Use a transaction to ensure atomicity
-    const client = await database.getPool().connect()
     const spawnCoordinates = extractSpawnCoordinates(scene)
 
     // Extract settings from scene metadata for first deployment
@@ -225,13 +223,11 @@ export async function createWorldsManagerComponent({
     const thumbnailContent = navmapThumbnail ? scene.content?.find((c) => c.file === navmapThumbnail) : null
     const thumbnailHash = thumbnailContent?.hash || null
 
-    try {
-      await client.query('BEGIN')
-
+    await database.withAsyncContextTransaction(async () => {
       // Ensure world record exists, update if it does
       // On first deployment (INSERT), set settings from scene metadata
       // On subsequent deployments (UPDATE), preserve existing settings
-      await client.query(SQL`
+      await database.query(SQL`
         INSERT INTO worlds (
           name, owner, access, spawn_coordinates, 
           title, description, content_rating, skybox_time, categories,
@@ -261,14 +257,14 @@ export async function createWorldsManagerComponent({
       `)
 
       // Delete any existing scenes on these parcels
-      await client.query(SQL`
+      await database.query(SQL`
         DELETE FROM world_scenes 
         WHERE world_name = ${worldName.toLowerCase()} 
         AND parcels && ${parcels}::text[]
       `)
 
       // Insert new scene
-      await client.query(SQL`
+      await database.query(SQL`
         INSERT INTO world_scenes (
           world_name, entity_id, deployer, deployment_auth_chain, 
           entity, parcels, size, created_at
@@ -283,14 +279,7 @@ export async function createWorldsManagerComponent({
           ${new Date()}
         )
       `)
-
-      await client.query('COMMIT')
-    } catch (error) {
-      await client.query('ROLLBACK')
-      throw error
-    } finally {
-      client.release()
-    }
+    })
   }
 
   async function storeAccess(worldName: string, access: AccessSetting): Promise<void> {
@@ -303,6 +292,26 @@ export async function createWorldsManagerComponent({
                                 updated_at = ${new Date()}
     `
     await database.query(sql)
+  }
+
+  async function modifyAccessAtomically(
+    worldName: string,
+    modifier: (currentAccess: AccessSetting) => AccessSetting
+  ): Promise<AccessModificationResult> {
+    return await database.withAsyncContextTransaction(async () => {
+      const result = await database.query<{ access: AccessSetting }>(
+        SQL`SELECT access FROM worlds WHERE name = ${worldName.toLowerCase()} FOR UPDATE`
+      )
+      const previousAccess = result.rows[0]?.access || defaultAccess()
+
+      const updatedAccess = modifier(previousAccess)
+
+      if (updatedAccess !== previousAccess) {
+        await storeAccess(worldName, updatedAccess)
+      }
+
+      return { previousAccess, updatedAccess }
+    })
   }
 
   async function getDeployedWorldCount(): Promise<{ ens: number; dcl: number }> {
@@ -370,24 +379,13 @@ export async function createWorldsManagerComponent({
   async function undeployWorld(worldName: string): Promise<void> {
     const normalizedWorldName = worldName.toLowerCase()
 
-    const client = await database.getPool().connect()
-
-    try {
-      await client.query('BEGIN')
-
+    await database.withAsyncContextTransaction(async () => {
       // Delete all scenes for the world
-      await client.query(SQL`DELETE FROM world_scenes WHERE world_name = ${normalizedWorldName}`)
+      await database.query(SQL`DELETE FROM world_scenes WHERE world_name = ${normalizedWorldName}`)
 
       // Set spawn_coordinates to null since there are no more scenes
-      await client.query(SQL`UPDATE worlds SET spawn_coordinates = NULL WHERE name = ${normalizedWorldName}`)
-
-      await client.query('COMMIT')
-    } catch (error) {
-      await client.query('ROLLBACK')
-      throw error
-    } finally {
-      client.release()
-    }
+      await database.query(SQL`UPDATE worlds SET spawn_coordinates = NULL WHERE name = ${normalizedWorldName}`)
+    })
   }
 
   async function getContributableDomains(address: string): Promise<{ domains: ContributorDomain[]; count: number }> {
@@ -555,26 +553,22 @@ export async function createWorldsManagerComponent({
   async function undeployScene(worldName: string, parcels: string[]): Promise<void> {
     const normalizedWorldName = worldName.toLowerCase()
 
-    const client = await database.getPool().connect()
-
-    try {
-      await client.query('BEGIN')
-
+    await database.withAsyncContextTransaction(async () => {
       // Get current spawn_coordinates before deletion
-      const worldResult = await client.query<{ spawn_coordinates: string | null }>(
+      const worldResult = await database.query<{ spawn_coordinates: string | null }>(
         SQL`SELECT spawn_coordinates FROM worlds WHERE name = ${normalizedWorldName}`
       )
       const currentSpawnCoordinates = worldResult.rows[0]?.spawn_coordinates
 
       // Delete the scene(s) matching the parcels
-      await client.query(SQL`
+      await database.query(SQL`
         DELETE FROM world_scenes 
         WHERE world_name = ${normalizedWorldName} 
         AND parcels && ${parcels}::text[]
       `)
 
       // Calculate new bounding rectangle (after deletion) using the shared function
-      const boundingRectangle = await getWorldBoundingRectangle(normalizedWorldName, client)
+      const boundingRectangle = await getWorldBoundingRectangle(normalizedWorldName)
 
       // Check if we need to update spawn_coordinates
       let newSpawnCoordinates: string | null = currentSpawnCoordinates
@@ -595,18 +589,11 @@ export async function createWorldsManagerComponent({
       }
 
       if (newSpawnCoordinates !== currentSpawnCoordinates) {
-        await client.query(SQL`
+        await database.query(SQL`
           UPDATE worlds SET spawn_coordinates = ${newSpawnCoordinates} WHERE name = ${normalizedWorldName}
         `)
       }
-
-      await client.query('COMMIT')
-    } catch (error) {
-      await client.query('ROLLBACK')
-      throw error
-    } finally {
-      client.release()
-    }
+    })
   }
 
   async function updateWorldSettings(
@@ -614,20 +601,16 @@ export async function createWorldsManagerComponent({
     owner: EthAddress,
     settings: WorldSettings
   ): Promise<UpdateWorldSettingsResult> {
-    const client = await database.getPool().connect()
-
-    try {
-      await client.query('BEGIN')
-
+    return await database.withAsyncContextTransaction(async () => {
       // Get old spawn coordinates atomically
-      const oldSettingsResult = await client.query<{ spawn_coordinates: string | null }>(SQL`
+      const oldSettingsResult = await database.query<{ spawn_coordinates: string | null }>(SQL`
         SELECT spawn_coordinates FROM worlds WHERE name = ${worldName.toLowerCase()}
       `)
       const oldSpawnCoordinates = oldSettingsResult.rows[0]?.spawn_coordinates || null
 
       // If spawn coordinates are being set, validate against bounding rectangle
       if (settings.spawnCoordinates) {
-        const boundingRectangle = await getWorldBoundingRectangle(worldName, client)
+        const boundingRectangle = await getWorldBoundingRectangle(worldName)
 
         if (!boundingRectangle) {
           throw new NoDeployedScenesError(worldName)
@@ -649,7 +632,7 @@ export async function createWorldsManagerComponent({
       const categoriesValue = settings.categories === null ? [] : (settings.categories ?? null)
 
       // Perform the upsert
-      const result = await client.query<WorldRecord>(SQL`
+      const result = await database.query<WorldRecord>(SQL`
         INSERT INTO worlds (
           name, owner, access,
           title, description, content_rating, spawn_coordinates, 
@@ -686,18 +669,11 @@ export async function createWorldsManagerComponent({
         RETURNING *
       `)
 
-      await client.query('COMMIT')
-
       return {
         settings: mapWorldRecordToSettings(result.rows[0]),
         oldSpawnCoordinates
       }
-    } catch (error) {
-      await client.query('ROLLBACK')
-      throw error
-    } finally {
-      client.release()
-    }
+    })
   }
 
   async function getWorldSettings(worldName: string): Promise<WorldSettings | undefined> {
@@ -743,13 +719,9 @@ export async function createWorldsManagerComponent({
    * Computed directly in SQL to avoid fetching all parcels
    *
    * @param worldName - The name of the world
-   * @param client - Optional database client to use (for transactions)
    * @returns The bounding rectangle, or undefined if no parcels exist
    */
-  async function getWorldBoundingRectangle(
-    worldName: string,
-    client?: PoolClient
-  ): Promise<WorldBoundingRectangle | undefined> {
+  async function getWorldBoundingRectangle(worldName: string): Promise<WorldBoundingRectangle | undefined> {
     const query = SQL`
       SELECT 
         MIN(SPLIT_PART(parcel, ',', 1)::integer) as min_x,
@@ -760,10 +732,10 @@ export async function createWorldsManagerComponent({
       WHERE world_name = ${worldName.toLowerCase()}
     `
 
-    const { rows } = client ? await client.query<BoundingRow>(query) : await database.query<BoundingRow>(query)
+    const { rows } = await database.query<BoundingRow>(query)
 
     const row = rows[0]
-    if (row.min_x === null || row.max_x === null || row.min_y === null || row.max_y === null) {
+    if (!row || row.min_x === null || row.max_x === null || row.min_y === null || row.max_y === null) {
       return undefined
     }
 
@@ -1067,6 +1039,7 @@ export async function createWorldsManagerComponent({
     deployScene,
     undeployScene,
     storeAccess,
+    modifyAccessAtomically,
     undeployWorld,
     getContributableDomains,
     getWorldScenes,

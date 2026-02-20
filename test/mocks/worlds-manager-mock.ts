@@ -11,7 +11,8 @@ import {
   WorldSettings,
   WorldBoundingRectangle,
   OrderDirection,
-  UpdateWorldSettingsResult
+  UpdateWorldSettingsResult,
+  AccessModificationResult
 } from '../../src/types'
 import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage'
 import { Entity, EthAddress } from '@dcl/schemas'
@@ -306,6 +307,22 @@ export async function createWorldsManagerMockComponent({
     return []
   }
 
+  async function modifyAccessAtomically(
+    worldName: string,
+    modifier: (currentAccess: AccessSetting) => AccessSetting
+  ): Promise<AccessModificationResult> {
+    const metadata = await getMetadataForWorld(worldName)
+    const previousAccess = metadata?.access || defaultAccess()
+
+    const updatedAccess = modifier(previousAccess)
+
+    if (updatedAccess !== previousAccess) {
+      await storeWorldMetadata(worldName, { access: updatedAccess })
+    }
+
+    return { previousAccess, updatedAccess }
+  }
+
   return {
     getContributableDomains,
     getRawWorldRecords,
@@ -325,7 +342,8 @@ export async function createWorldsManagerMockComponent({
     getOccupiedParcels,
     createBasicWorldIfNotExists,
     worldExists,
-    getWorldNamesByCommunityId
+    getWorldNamesByCommunityId,
+    modifyAccessAtomically
   }
 }
 
@@ -350,6 +368,7 @@ export function createMockedWorldsManager(
     createBasicWorldIfNotExists: jest.fn(),
     worldExists: jest.fn(),
     getWorldNamesByCommunityId: jest.fn(),
+    modifyAccessAtomically: jest.fn(),
     ...overrides
   } as jest.Mocked<IWorldsManager>
 }
