@@ -69,6 +69,18 @@ export const createWorldsComponent = (
   }
 
   /**
+   * Gets the base parcel of a scene in a world by its entity ID.
+   *
+   * @param worldName - The name of the world
+   * @param sceneId - The entity ID of the scene
+   * @returns The base parcel coordinate (e.g. '0,0') if found, undefined otherwise
+   */
+  async function getWorldSceneBaseParcel(worldName: string, sceneId: string): Promise<string | undefined> {
+    const { scenes } = await worldsManager.getWorldScenes({ worldName, entityId: sceneId }, { limit: 1 })
+    return scenes.length > 0 ? scenes[0].parcels[0] : undefined
+  }
+
+  /**
    * Gets the world manifest containing occupied parcels and spawn coordinates
    *
    * This method combines getOccupiedParcels and getWorldSettings for efficiency:
@@ -161,6 +173,7 @@ export const createWorldsComponent = (
     isWorldValid,
     isWorldBlocked,
     hasWorldScene,
+    getWorldSceneBaseParcel,
     getWorldManifest,
     undeployWorld,
     undeployWorldScenes

@@ -231,6 +231,62 @@ describe('WorldsComponent', () => {
     })
   })
 
+  describe('when getting the base parcel of a scene', () => {
+    describe('and the scene exists', () => {
+      beforeEach(() => {
+        worldsManager.getWorldScenes.mockResolvedValueOnce({
+          scenes: [
+            {
+              worldName: 'test-world',
+              entityId: 'scene-123',
+              deployer: '0x1234',
+              deploymentAuthChain: [],
+              entity: {
+                id: 'scene-123',
+                version: 'v3',
+                type: EntityType.SCENE,
+                pointers: ['5,10', '6,10'],
+                timestamp: Date.now(),
+                content: []
+              },
+              parcels: ['5,10', '6,10'],
+              size: BigInt(1000),
+              createdAt: new Date()
+            }
+          ],
+          total: 1
+        })
+      })
+
+      it('should return the base parcel', async () => {
+        const result = await worldsComponent.getWorldSceneBaseParcel('test-world', 'scene-123')
+        expect(result).toBe('5,10')
+      })
+
+      it('should query with the correct parameters', async () => {
+        await worldsComponent.getWorldSceneBaseParcel('test-world', 'scene-123')
+        expect(worldsManager.getWorldScenes).toHaveBeenCalledWith(
+          { worldName: 'test-world', entityId: 'scene-123' },
+          { limit: 1 }
+        )
+      })
+    })
+
+    describe('and the scene does not exist', () => {
+      beforeEach(() => {
+        worldsManager.getWorldScenes.mockResolvedValueOnce({
+          scenes: [],
+          total: 0
+        })
+      })
+
+      it('should return undefined', async () => {
+        const result = await worldsComponent.getWorldSceneBaseParcel('test-world', 'non-existent-scene')
+        expect(result).toBeUndefined()
+      })
+    })
+  })
+
   describe('when undeploying an entire world', () => {
     beforeEach(() => {
       worldsManager.undeployWorld.mockResolvedValue(undefined)
