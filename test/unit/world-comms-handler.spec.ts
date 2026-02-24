@@ -113,10 +113,10 @@ describe('worldCommsHandler', () => {
         comms.getWorldRoomConnectionString.mockRejectedValueOnce(new InvalidAccessError(worldName))
       })
 
-      it('should return 403 with the error message', async () => {
+      it('should return 401 with the error message', async () => {
         const response = await worldCommsHandler(context)
 
-        expect(response.status).toBe(403)
+        expect(response.status).toBe(401)
         expect(response.body).toEqual({ error: expect.stringContaining(worldName) })
       })
     })
@@ -232,10 +232,10 @@ describe('worldCommsHandler', () => {
         comms.getWorldSceneRoomConnectionString.mockRejectedValueOnce(new InvalidAccessError(worldName))
       })
 
-      it('should return 403 with the error message', async () => {
+      it('should return 401 with the error message', async () => {
         const response = await worldCommsHandler(context)
 
-        expect(response.status).toBe(403)
+        expect(response.status).toBe(401)
         expect(response.body).toEqual({ error: expect.stringContaining(worldName) })
       })
     })
@@ -460,10 +460,10 @@ describe('worldCommsHandler', () => {
       comms.getWorldRoomConnectionString.mockRejectedValueOnce(new UserDenylistedError())
     })
 
-    it('should return 403 with the deny-listed error message', async () => {
+    it('should return 401 with the deny-listed error message', async () => {
       const response = await worldCommsHandler(context)
 
-      expect(response.status).toBe(403)
+      expect(response.status).toBe(401)
       expect(response.body).toEqual({ error: 'Access denied, deny-listed wallet.' })
     })
   })
@@ -486,10 +486,10 @@ describe('worldCommsHandler', () => {
       comms.getWorldRoomConnectionString.mockRejectedValueOnce(new UserBannedFromWorldError(worldName))
     })
 
-    it('should return 403 with the banned error message', async () => {
+    it('should return 401 with the banned error message', async () => {
       const response = await worldCommsHandler(context)
 
-      expect(response.status).toBe(403)
+      expect(response.status).toBe(401)
       expect(response.body).toEqual({ error: `You are banned from world "${worldName}".` })
     })
   })

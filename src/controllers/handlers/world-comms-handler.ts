@@ -90,7 +90,7 @@ export async function worldCommsHandler(context: HandlerContext): Promise<IHttpS
       error instanceof UserBannedFromWorldError
     ) {
       return {
-        status: 403,
+        status: 401,
         body: { error: error.message }
       }
     } else if (error instanceof InvalidWorldError || error instanceof SceneNotFoundError) {
