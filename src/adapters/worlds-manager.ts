@@ -753,7 +753,7 @@ export async function createWorldsManagerComponent({
    * @returns Paginated list of worlds with total count
    */
   async function getWorlds(filters: GetWorldsFilters = {}, options: GetWorldsOptions = {}): Promise<GetWorldsResult> {
-    const { search: searchTerm, authorized_deployer } = filters
+    const { search: searchTerm, authorized_deployer, has_deployed_scenes } = filters
     const { limit = 100, offset = 0, orderBy = WorldsOrderBy.Name, orderDirection = OrderDirection.Asc } = options
 
     // Get banned names to exclude from query
@@ -833,6 +833,19 @@ export async function createWorldsManagerComponent({
       )`
       countQuery.append(deployerFilter)
       mainQuery.append(deployerFilter)
+    }
+
+    // Apply has_deployed_scenes filter
+    if (has_deployed_scenes !== undefined) {
+      if (has_deployed_scenes) {
+        const hasDeployedFilter = SQL` AND EXISTS (SELECT 1 FROM world_scenes ws2 WHERE ws2.world_name = w.name)`
+        countQuery.append(hasDeployedFilter)
+        mainQuery.append(hasDeployedFilter)
+      } else {
+        const noDeployedFilter = SQL` AND NOT EXISTS (SELECT 1 FROM world_scenes ws2 WHERE ws2.world_name = w.name)`
+        countQuery.append(noDeployedFilter)
+        mainQuery.append(noDeployedFilter)
+      }
     }
 
     // Apply combined full-text search and trigram search filter to both queries
