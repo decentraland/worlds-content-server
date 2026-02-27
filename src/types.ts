@@ -172,6 +172,7 @@ export type WorldInfo = {
 export type GetWorldsFilters = {
   authorized_deployer?: string // address to filter worlds by (owner or has deployment permission)
   search?: string
+  has_deployed_scenes?: boolean
 }
 
 export enum WorldsOrderBy {
