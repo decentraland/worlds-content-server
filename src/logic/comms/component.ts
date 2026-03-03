@@ -1,7 +1,7 @@
 import { EthAddress } from '@dcl/crypto'
 import { AppComponents } from '../../types'
 import {
-  InvalidWorldError,
+  // InvalidWorldError,
   InvalidAccessError,
   SceneNotFoundError,
   WorldAtCapacityError,
