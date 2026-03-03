@@ -43,9 +43,9 @@ export const createCommsComponent = async (
     worldName: string,
     accessOptions?: { secret?: string }
   ): Promise<void> {
-    if (!(await worlds.isWorldValid(worldName))) {
-      throw new InvalidWorldError(worldName)
-    }
+    // if (!(await worlds.isWorldValid(worldName))) {
+    //   throw new InvalidWorldError(worldName)
+    // }
 
     const [hasPermission, hasAccess] = await Promise.all([
       namePermissionChecker.checkPermission(userAddress, worldName),
