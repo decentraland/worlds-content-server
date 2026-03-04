@@ -629,5 +629,4 @@ test('WorldManagerAdapter', function ({ components }) {
       expect(result.parcels).not.toContain('0,0')
     })
   })
-
 })
