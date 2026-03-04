@@ -79,7 +79,7 @@ describe('CommsComponent', () => {
           expect(result).toBe(connectionString)
         })
 
-        it.skip('should check world validity', async () => {
+        it('should check world validity', async () => {
           await commsComponent.getWorldRoomConnectionString(userAddress, worldName)
           expect(worlds.isWorldValid).toHaveBeenCalledWith(worldName)
         })
@@ -185,7 +185,7 @@ describe('CommsComponent', () => {
       })
     })
 
-    describe.skip('and the world is not valid', () => {
+    describe('and the world is not valid', () => {
       beforeEach(() => {
         worlds.isWorldValid.mockResolvedValueOnce(false)
       })
@@ -237,7 +237,7 @@ describe('CommsComponent', () => {
 
         describe('and the scene exists', () => {
           beforeEach(() => {
-            worlds.getWorldSceneBaseParcel.mockResolvedValueOnce(sceneBaseParcel)
+            worlds.getWorldSceneBaseParcelIncludingUndeployed.mockResolvedValueOnce(sceneBaseParcel)
             commsAdapter.getWorldSceneRoomsParticipantCount.mockResolvedValueOnce(0)
             commsAdapter.getSceneRoomConnectionString.mockResolvedValueOnce(connectionString)
           })
@@ -249,7 +249,7 @@ describe('CommsComponent', () => {
 
           it('should check scene ban with the base parcel', async () => {
             await commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, sceneId)
-            expect(worlds.getWorldSceneBaseParcel).toHaveBeenCalledWith(worldName, sceneId)
+            expect(worlds.getWorldSceneBaseParcelIncludingUndeployed).toHaveBeenCalledWith(worldName, sceneId)
             expect(bans.isUserBannedFromScene).toHaveBeenCalledWith(userAddress, worldName, sceneBaseParcel)
           })
 
@@ -262,7 +262,7 @@ describe('CommsComponent', () => {
 
         describe('and the world scene rooms are at capacity', () => {
           beforeEach(() => {
-            worlds.getWorldSceneBaseParcel.mockResolvedValueOnce(sceneBaseParcel)
+            worlds.getWorldSceneBaseParcelIncludingUndeployed.mockResolvedValueOnce(sceneBaseParcel)
             commsAdapter.getWorldSceneRoomsParticipantCount.mockResolvedValueOnce(100)
           })
 
@@ -284,7 +284,7 @@ describe('CommsComponent', () => {
 
         describe('and the scene does not exist', () => {
           beforeEach(() => {
-            worlds.getWorldSceneBaseParcel.mockResolvedValueOnce(undefined)
+            worlds.getWorldSceneBaseParcelIncludingUndeployed.mockResolvedValueOnce(undefined)
           })
 
           it('should throw SceneNotFoundError', async () => {
@@ -317,7 +317,7 @@ describe('CommsComponent', () => {
         beforeEach(() => {
           namePermissionChecker.checkPermission.mockResolvedValueOnce(true)
           access.checkAccess.mockResolvedValueOnce(true)
-          worlds.getWorldSceneBaseParcel.mockResolvedValueOnce(sceneBaseParcel)
+          worlds.getWorldSceneBaseParcelIncludingUndeployed.mockResolvedValueOnce(sceneBaseParcel)
           commsAdapter.getWorldSceneRoomsParticipantCount.mockResolvedValueOnce(0)
           commsAdapter.getSceneRoomConnectionString.mockResolvedValueOnce(connectionString)
         })
@@ -334,7 +334,7 @@ describe('CommsComponent', () => {
         beforeEach(() => {
           namePermissionChecker.checkPermission.mockResolvedValueOnce(false)
           access.checkAccess.mockResolvedValueOnce(true)
-          worlds.getWorldSceneBaseParcel.mockResolvedValueOnce(sceneBaseParcel)
+          worlds.getWorldSceneBaseParcelIncludingUndeployed.mockResolvedValueOnce(sceneBaseParcel)
           commsAdapter.getWorldSceneRoomsParticipantCount.mockResolvedValueOnce(0)
           commsAdapter.getSceneRoomConnectionString.mockResolvedValueOnce(connectionString)
         })
@@ -349,7 +349,7 @@ describe('CommsComponent', () => {
         beforeEach(() => {
           namePermissionChecker.checkPermission.mockResolvedValueOnce(true)
           access.checkAccess.mockResolvedValueOnce(false)
-          worlds.getWorldSceneBaseParcel.mockResolvedValueOnce(sceneBaseParcel)
+          worlds.getWorldSceneBaseParcelIncludingUndeployed.mockResolvedValueOnce(sceneBaseParcel)
           commsAdapter.getWorldSceneRoomsParticipantCount.mockResolvedValueOnce(0)
           commsAdapter.getSceneRoomConnectionString.mockResolvedValueOnce(connectionString)
         })
@@ -374,7 +374,7 @@ describe('CommsComponent', () => {
       })
     })
 
-    describe.skip('and the world is not valid', () => {
+    describe('and the world is not valid', () => {
       beforeEach(() => {
         worlds.isWorldValid.mockResolvedValueOnce(false)
       })
@@ -401,7 +401,7 @@ describe('CommsComponent', () => {
         } catch {
           // Expected to throw
         }
-        expect(worlds.getWorldSceneBaseParcel).not.toHaveBeenCalled()
+        expect(worlds.getWorldSceneBaseParcelIncludingUndeployed).not.toHaveBeenCalled()
       })
 
       it('should not call the adapter', async () => {
@@ -486,7 +486,7 @@ describe('CommsComponent', () => {
         } catch {
           // Expected to throw
         }
-        expect(worlds.getWorldSceneBaseParcel).not.toHaveBeenCalled()
+        expect(worlds.getWorldSceneBaseParcelIncludingUndeployed).not.toHaveBeenCalled()
       })
     })
   })
@@ -502,7 +502,7 @@ describe('CommsComponent', () => {
         worlds.isWorldValid.mockResolvedValueOnce(true)
         namePermissionChecker.checkPermission.mockResolvedValueOnce(true)
         access.checkAccess.mockResolvedValueOnce(true)
-        worlds.getWorldSceneBaseParcel.mockResolvedValueOnce(sceneBaseParcel)
+        worlds.getWorldSceneBaseParcelIncludingUndeployed.mockResolvedValueOnce(sceneBaseParcel)
         bans.isUserBannedFromScene.mockResolvedValueOnce(true)
       })
 
@@ -592,7 +592,7 @@ describe('CommsComponent', () => {
           worlds.isWorldValid.mockResolvedValueOnce(true)
           namePermissionChecker.checkPermission.mockResolvedValueOnce(true)
           access.checkAccess.mockResolvedValueOnce(true)
-          worlds.getWorldSceneBaseParcel.mockResolvedValueOnce(sceneBaseParcel)
+          worlds.getWorldSceneBaseParcelIncludingUndeployed.mockResolvedValueOnce(sceneBaseParcel)
           bans.isUserBannedFromScene.mockResolvedValueOnce(false)
           commsAdapter.getWorldSceneRoomsParticipantCount.mockResolvedValueOnce(0)
           commsAdapter.getSceneRoomConnectionString.mockResolvedValueOnce(connectionString)

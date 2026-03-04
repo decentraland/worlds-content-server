@@ -12,7 +12,8 @@ import {
   WorldBoundingRectangle,
   OrderDirection,
   UpdateWorldSettingsResult,
-  AccessModificationResult
+  AccessModificationResult,
+  SceneDeploymentStatus
 } from '../../src/types'
 import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage'
 import { Entity, EthAddress } from '@dcl/schemas'
@@ -125,7 +126,9 @@ export async function createWorldsManagerMockComponent({
       entity: scene,
       parcels,
       size: 0n,
-      createdAt: new Date()
+      status: SceneDeploymentStatus.Deployed,
+      createdAt: new Date(),
+      updatedAt: new Date()
     }
 
     // Filter out existing scenes on these parcels and add the new scene
@@ -307,6 +310,10 @@ export async function createWorldsManagerMockComponent({
     return []
   }
 
+  async function evictUndeployedScenes(_olderThanMs: number): Promise<number> {
+    return 0
+  }
+
   async function modifyAccessAtomically(
     worldName: string,
     modifier: (currentAccess: AccessSetting) => AccessSetting
@@ -343,7 +350,8 @@ export async function createWorldsManagerMockComponent({
     createBasicWorldIfNotExists,
     worldExists,
     getWorldNamesByCommunityId,
-    modifyAccessAtomically
+    modifyAccessAtomically,
+    evictUndeployedScenes
   }
 }
 
@@ -369,6 +377,7 @@ export function createMockedWorldsManager(
     worldExists: jest.fn(),
     getWorldNamesByCommunityId: jest.fn(),
     modifyAccessAtomically: jest.fn(),
+    evictUndeployedScenes: jest.fn(),
     ...overrides
   } as jest.Mocked<IWorldsManager>
 }

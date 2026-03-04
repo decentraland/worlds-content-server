@@ -137,7 +137,7 @@ export async function createUpdateOwnerJob(
     const records = await components.database.query<WorldData>(`
       SELECT w.name, w.owner, COALESCE(SUM(ws.size), 0)::text as size
       FROM worlds w
-      INNER JOIN world_scenes ws ON w.name = ws.world_name
+      INNER JOIN world_scenes ws ON w.name = ws.world_name AND ws.status = 'DEPLOYED'
       GROUP BY w.name, w.owner
     `)
     const onlyDclNameRecords = records.rows

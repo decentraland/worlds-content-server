@@ -57,4 +57,21 @@ export interface IWorldsComponent {
    * @param parcels - The parcel coordinates of the scenes to undeploy
    */
   undeployWorldScenes(worldName: string, parcels: string[]): Promise<void>
+
+  /**
+   * Gets the base parcel of a scene in a world by its entity ID, including undeployed scenes
+   *
+   * @param worldName - The name of the world
+   * @param sceneId - The entity ID of the scene
+   * @returns The base parcel coordinate (e.g. '0,0') if found, undefined otherwise
+   */
+  getWorldSceneBaseParcelIncludingUndeployed(worldName: string, sceneId: string): Promise<string | undefined>
+
+  /**
+   * Permanently deletes undeployed scenes older than the given threshold
+   *
+   * @param olderThanMs - Age threshold in milliseconds
+   * @returns Number of scenes evicted
+   */
+  evictUndeployedWorlds(olderThanMs: number): Promise<number>
 }

@@ -37,6 +37,7 @@ import { ICommsComponent } from './logic/comms'
 import { IRateLimiterComponent } from './logic/rate-limiter'
 import { IWorldsComponent } from './logic/worlds'
 import { IParticipantKicker } from './logic/participant-kicker'
+import { IJobComponent } from '@dcl/job-component'
 import { IQueueConsumerComponent } from '@dcl/queue-consumer-component'
 import { ICacheStorageComponent } from '@dcl/core-commons'
 import { IDenyListComponent } from './logic/denylist/types'
@@ -99,6 +100,11 @@ export type WorldSettingsInput = {
   thumbnail?: Buffer
 }
 
+export enum SceneDeploymentStatus {
+  Deployed = 'DEPLOYED',
+  Undeployed = 'UNDEPLOYED'
+}
+
 export type WorldScene = {
   worldName: string
   deployer: string
@@ -107,7 +113,9 @@ export type WorldScene = {
   entityId: IPFSv2
   parcels: string[]
   size: bigint
+  status: SceneDeploymentStatus
   createdAt: Date
+  updatedAt: Date
 }
 
 export type BoundingBox = {
@@ -123,6 +131,7 @@ export type GetWorldScenesFilters = {
   coordinates?: string[]
   boundingBox?: BoundingBox
   authorized_deployer?: string // address to filter scenes by (world owner or has deployment permission)
+  includeUndeployed?: boolean
 }
 
 export enum SceneOrderBy {
@@ -386,6 +395,7 @@ export type IWorldsManager = {
   createBasicWorldIfNotExists(worldName: string, owner: EthAddress): Promise<void>
   worldExists(worldName: string): Promise<boolean>
   getWorldNamesByCommunityId(communityId: string): Promise<string[]>
+  evictUndeployedScenes(olderThanMs: number): Promise<number>
 }
 
 export type IPermissionsManager = {
@@ -513,6 +523,7 @@ export type BaseComponents = {
   database: IPgComponent
   entityDeployer: IEntityDeployer
   ethereumProvider: HTTPProvider
+  evictionJob: IJobComponent
   fetch: IFetchComponent
   limitsManager: ILimitsManager
   livekitClient: LivekitClient

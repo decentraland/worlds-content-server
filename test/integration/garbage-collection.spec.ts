@@ -6,6 +6,13 @@ import { bufferToStream } from '@dcl/catalyst-storage'
 import { createHash } from 'crypto'
 
 test('when performing garbage collection through /gc', function ({ components }) {
+  let authSecret: string
+
+  beforeEach(async () => {
+    const { config } = components
+    authSecret = await config.requireString('AUTH_SECRET')
+  })
+
   afterEach(async () => {
     jest.resetAllMocks()
 
@@ -19,6 +26,16 @@ test('when performing garbage collection through /gc', function ({ components })
       await storage.delete(fileIds)
     }
   })
+
+  async function triggerGC() {
+    const { localFetch } = components
+    return localFetch.fetch('/gc', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${authSecret}`
+      }
+    })
+  }
 
   describe('and there are unused files from a previous deployment', () => {
     let oldEntityId: IPFSv2
@@ -93,52 +110,75 @@ test('when performing garbage collection through /gc', function ({ components })
     })
 
     describe('and garbage collection is triggered', () => {
-      it('should respond with 200 and remove exactly 4 unused keys', async () => {
-        const { localFetch } = components
+      it('should respond with 200 and keep soft-deleted scene content', async () => {
+        const response = await triggerGC()
 
-        const response = await localFetch.fetch('/gc', {
-          method: 'POST',
-          headers: {
-            Authorization: 'Bearer setup_some_secret_here'
-          }
-        })
-
+        // Soft-deleted (UNDEPLOYED) scenes still keep their content in storage until eviction,
+        // so GC should not remove any keys
         expect(response.status).toEqual(200)
         expect(await response.json()).toMatchObject({
-          message: 'Garbage collection removed 4 unused keys.'
+          message: 'Garbage collection removed 0 unused keys.'
         })
       })
 
-      it('should remove the old entity files from storage', async () => {
-        const { localFetch, storage } = components
+      it('should keep the soft-deleted scene entity files in storage', async () => {
+        const { storage } = components
 
-        await localFetch.fetch('/gc', {
-          method: 'POST',
-          headers: {
-            Authorization: 'Bearer setup_some_secret_here'
-          }
-        })
+        await triggerGC()
 
-        expect(await storage.exist(oldEntityId)).toBeFalsy()
-        expect(await storage.exist(`${oldEntityId}.auth`)).toBeFalsy()
-        expect(await storage.exist(oldEntity.content![0].hash)).toBeFalsy()
-        expect(await storage.exist(oldEntity.content![1].hash)).toBeFalsy()
+        // Old scene is soft-deleted (UNDEPLOYED) but content is preserved until eviction
+        expect(await storage.exist(oldEntityId)).toBeTruthy()
+        expect(await storage.exist(`${oldEntityId}.auth`)).toBeTruthy()
+        expect(await storage.exist(oldEntity.content![0].hash)).toBeTruthy()
+        expect(await storage.exist(oldEntity.content![1].hash)).toBeTruthy()
       })
 
       it('should keep the active entity files in storage', async () => {
-        const { localFetch, storage } = components
+        const { storage } = components
 
-        await localFetch.fetch('/gc', {
-          method: 'POST',
-          headers: {
-            Authorization: 'Bearer setup_some_secret_here'
-          }
-        })
+        await triggerGC()
 
         expect(await storage.exist(newEntityId)).toBeTruthy()
         expect(await storage.exist(`${newEntityId}.auth`)).toBeTruthy()
         expect(await storage.exist(newEntity.content![0].hash)).toBeTruthy()
         expect(await storage.exist(newEntity.content![1].hash)).toBeTruthy()
+      })
+    })
+
+    describe('and the old scene has been evicted', () => {
+      beforeEach(async () => {
+        const { worldsManager, database } = components
+
+        // Backdate the undeployed scene so it's past TTL
+        await database.query(`
+          UPDATE world_scenes SET updated_at = NOW() - INTERVAL '1 day'
+          WHERE status = 'UNDEPLOYED'
+        `)
+
+        // Evict the undeployed scene (permanently delete from DB)
+        await worldsManager.evictUndeployedScenes(60 * 60 * 1000)
+      })
+
+      describe('and garbage collection is triggered', () => {
+        it('should clean up the evicted scene entity files', async () => {
+          const { storage } = components
+
+          await triggerGC()
+
+          expect(await storage.exist(oldEntityId)).toBeFalsy()
+          expect(await storage.exist(`${oldEntityId}.auth`)).toBeFalsy()
+        })
+
+        it('should keep the active entity files in storage', async () => {
+          const { storage } = components
+
+          await triggerGC()
+
+          expect(await storage.exist(newEntityId)).toBeTruthy()
+          expect(await storage.exist(`${newEntityId}.auth`)).toBeTruthy()
+          expect(await storage.exist(newEntity.content![0].hash)).toBeTruthy()
+          expect(await storage.exist(newEntity.content![1].hash)).toBeTruthy()
+        })
       })
     })
   })
@@ -168,14 +208,7 @@ test('when performing garbage collection through /gc', function ({ components })
     })
 
     it('should respond with 200 and report no removed keys', async () => {
-      const { localFetch } = components
-
-      const response = await localFetch.fetch('/gc', {
-        method: 'POST',
-        headers: {
-          Authorization: 'Bearer setup_some_secret_here'
-        }
-      })
+      const response = await triggerGC()
 
       expect(response.status).toEqual(200)
       expect(await response.json()).toMatchObject({
@@ -220,14 +253,9 @@ test('when performing garbage collection through /gc', function ({ components })
       })
 
       it('should keep the thumbnail in storage', async () => {
-        const { localFetch, storage } = components
+        const { storage } = components
 
-        await localFetch.fetch('/gc', {
-          method: 'POST',
-          headers: {
-            Authorization: 'Bearer setup_some_secret_here'
-          }
-        })
+        await triggerGC()
 
         expect(await storage.exist(thumbnailHash)).toBeTruthy()
       })
@@ -275,27 +303,17 @@ test('when performing garbage collection through /gc', function ({ components })
       })
 
       it('should remove the orphaned thumbnail from storage', async () => {
-        const { localFetch, storage } = components
+        const { storage } = components
 
-        await localFetch.fetch('/gc', {
-          method: 'POST',
-          headers: {
-            Authorization: 'Bearer setup_some_secret_here'
-          }
-        })
+        await triggerGC()
 
         expect(await storage.exist(oldThumbnailHash)).toBeFalsy()
       })
 
       it('should keep the active thumbnail in storage', async () => {
-        const { localFetch, storage } = components
+        const { storage } = components
 
-        await localFetch.fetch('/gc', {
-          method: 'POST',
-          headers: {
-            Authorization: 'Bearer setup_some_secret_here'
-          }
-        })
+        await triggerGC()
 
         expect(await storage.exist(newThumbnailHash)).toBeTruthy()
       })
@@ -345,14 +363,9 @@ test('when performing garbage collection through /gc', function ({ components })
       })
 
       it('should keep the shared thumbnail in storage', async () => {
-        const { localFetch, storage } = components
+        const { storage } = components
 
-        await localFetch.fetch('/gc', {
-          method: 'POST',
-          headers: {
-            Authorization: 'Bearer setup_some_secret_here'
-          }
-        })
+        await triggerGC()
 
         expect(await storage.exist(sharedThumbnailHash)).toBeTruthy()
       })
