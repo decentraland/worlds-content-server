@@ -169,6 +169,29 @@ export const createWorldsComponent = (
     }
   }
 
+  async function hasWorldSceneIncludingUndeployed(worldName: string, sceneId: string): Promise<boolean> {
+    const { scenes } = await worldsManager.getWorldScenes(
+      { worldName, entityId: sceneId, includeUndeployed: true },
+      { limit: 1 }
+    )
+    return scenes.length > 0
+  }
+
+  async function getWorldSceneBaseParcelIncludingUndeployed(
+    worldName: string,
+    sceneId: string
+  ): Promise<string | undefined> {
+    const { scenes } = await worldsManager.getWorldScenes(
+      { worldName, entityId: sceneId, includeUndeployed: true },
+      { limit: 1 }
+    )
+    return scenes.length > 0 ? scenes[0].parcels[0] : undefined
+  }
+
+  async function evictUndeployedWorlds(olderThanMs: number): Promise<number> {
+    return worldsManager.evictUndeployedScenes(olderThanMs)
+  }
+
   return {
     isWorldValid,
     isWorldBlocked,
@@ -176,6 +199,9 @@ export const createWorldsComponent = (
     getWorldSceneBaseParcel,
     getWorldManifest,
     undeployWorld,
-    undeployWorldScenes
+    undeployWorldScenes,
+    hasWorldSceneIncludingUndeployed,
+    getWorldSceneBaseParcelIncludingUndeployed,
+    evictUndeployedWorlds
   }
 }

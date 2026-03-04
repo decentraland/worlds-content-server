@@ -62,6 +62,7 @@ import { createRedisComponent } from '@dcl/redis-component'
 import { createRateLimiterComponent } from './logic/rate-limiter'
 import { createDenyListComponent } from './logic/denylist'
 import { createBansComponent } from './adapters/bans-adapter'
+import { createEvictionJob } from './adapters/eviction-job'
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
@@ -219,6 +220,8 @@ export async function initComponents(): Promise<AppComponents> {
 
   const worlds = createWorldsComponent({ worldsManager, snsClient })
 
+  const evictionJob = await createEvictionJob({ config, logs, worlds })
+
   const denyList = await createDenyListComponent({ config, fetch, logs })
   const bans = await createBansComponent({ config, fetch, logs })
 
@@ -261,6 +264,7 @@ export async function initComponents(): Promise<AppComponents> {
     denyList,
     entityDeployer,
     ethereumProvider,
+    evictionJob,
     fetch,
     limitsManager,
     livekitClient,

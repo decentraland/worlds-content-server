@@ -179,6 +179,9 @@ async function initComponents(): Promise<TestComponents> {
   })
 
   const worlds = createWorldsComponent({ worldsManager, snsClient })
+
+  const evictionJob = { start: jest.fn(), stop: jest.fn() }
+
   const redis = createRedisMock()
   const rateLimiter = await createRateLimiterComponent({ config, redis })
 
@@ -200,11 +203,14 @@ async function initComponents(): Promise<TestComponents> {
   return {
     ...components,
     access,
+    bans,
     comms,
     config,
     commsAdapter,
     coordinates,
+    denyList,
     entityDeployer,
+    evictionJob,
     fetch,
     limitsManager,
     localFetch: await createAuthenticatedLocalFetchComponent(config),

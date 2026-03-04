@@ -1,7 +1,7 @@
 import { EthAddress } from '@dcl/crypto'
 import { AppComponents } from '../../types'
 import {
-  // InvalidWorldError,
+  InvalidWorldError,
   InvalidAccessError,
   SceneNotFoundError,
   WorldAtCapacityError,
@@ -43,9 +43,9 @@ export const createCommsComponent = async (
     worldName: string,
     accessOptions?: { secret?: string }
   ): Promise<void> {
-    // if (!(await worlds.isWorldValid(worldName))) {
-    //   throw new InvalidWorldError(worldName)
-    // }
+    if (!(await worlds.isWorldValid(worldName))) {
+      throw new InvalidWorldError(worldName)
+    }
 
     const [hasPermission, hasAccess] = await Promise.all([
       namePermissionChecker.checkPermission(userAddress, worldName),
@@ -66,7 +66,7 @@ export const createCommsComponent = async (
     await assertUserNotDenylisted(userAddress)
     await assertWorldAccess(userAddress, worldName, accessOptions)
 
-    const sceneBaseParcel = await worlds.getWorldSceneBaseParcel(worldName, sceneId)
+    const sceneBaseParcel = await worlds.getWorldSceneBaseParcelIncludingUndeployed(worldName, sceneId)
     if (!sceneBaseParcel) {
       throw new SceneNotFoundError(worldName, sceneId)
     }

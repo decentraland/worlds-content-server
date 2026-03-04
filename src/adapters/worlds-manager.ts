@@ -24,7 +24,8 @@ import {
   GetRawWorldRecordsOptions,
   GetRawWorldRecordsResult,
   GetOccupiedParcelsOptions,
-  GetOccupiedParcelsResult
+  GetOccupiedParcelsResult,
+  SceneDeploymentStatus
 } from '../types'
 import { streamToBuffer } from '@dcl/catalyst-storage'
 import { Entity, EthAddress } from '@dcl/schemas'
@@ -256,26 +257,29 @@ export async function createWorldsManagerComponent({
           updated_at = ${new Date()}
       `)
 
-      // Delete any existing scenes on these parcels
+      // Soft-delete any existing deployed scenes on these parcels
       await database.query(SQL`
-        DELETE FROM world_scenes 
-        WHERE world_name = ${worldName.toLowerCase()} 
+        UPDATE world_scenes SET status = 'UNDEPLOYED', updated_at = NOW()
+        WHERE world_name = ${worldName.toLowerCase()}
         AND parcels && ${parcels}::text[]
+        AND status = 'DEPLOYED'
       `)
 
       // Insert new scene
       await database.query(SQL`
         INSERT INTO world_scenes (
-          world_name, entity_id, deployer, deployment_auth_chain, 
-          entity, parcels, size, created_at
+          world_name, entity_id, deployer, deployment_auth_chain,
+          entity, parcels, size, status, created_at, updated_at
         ) VALUES (
-          ${worldName.toLowerCase()}, 
+          ${worldName.toLowerCase()},
           ${scene.id},
-          ${deployer}, 
+          ${deployer},
           ${deploymentAuthChainString}::json,
           ${scene}::jsonb,
           ${parcels}::text[],
           ${size},
+          'DEPLOYED',
+          ${new Date()},
           ${new Date()}
         )
       `)
@@ -317,9 +321,9 @@ export async function createWorldsManagerComponent({
   async function getDeployedWorldCount(): Promise<{ ens: number; dcl: number }> {
     // Count worlds that have at least one scene deployed
     const result = await database.query<{ name: string }>(`
-      SELECT w.name 
-      FROM worlds w 
-      WHERE EXISTS (SELECT 1 FROM world_scenes ws WHERE ws.world_name = w.name)
+      SELECT w.name
+      FROM worlds w
+      WHERE EXISTS (SELECT 1 FROM world_scenes ws WHERE ws.world_name = w.name AND ws.status = 'DEPLOYED')
     `)
     return result.rows.reduce(
       (acc, row) => {
@@ -360,7 +364,7 @@ export async function createWorldsManagerComponent({
       SQL`
         SELECT DISTINCT ON (ws.world_name) ws.world_name, ws.entity_id, ws.entity, w.owner
         FROM worlds w
-        INNER JOIN world_scenes ws ON ws.world_name = w.name
+        INNER JOIN world_scenes ws ON ws.world_name = w.name AND ws.status = 'DEPLOYED'
         WHERE w.name = ANY(${allowedNames})
         ORDER BY ws.world_name, ws.created_at DESC
       `
@@ -380,10 +384,13 @@ export async function createWorldsManagerComponent({
     const normalizedWorldName = worldName.toLowerCase()
 
     await database.withAsyncContextTransaction(async () => {
-      // Delete all scenes for the world
-      await database.query(SQL`DELETE FROM world_scenes WHERE world_name = ${normalizedWorldName}`)
+      // Soft-delete all scenes for the world
+      await database.query(SQL`
+        UPDATE world_scenes SET status = 'UNDEPLOYED', updated_at = NOW()
+        WHERE world_name = ${normalizedWorldName} AND status = 'DEPLOYED'
+      `)
 
-      // Set spawn_coordinates to null since there are no more scenes
+      // Set spawn_coordinates to null since there are no more deployed scenes
       await database.query(SQL`UPDATE worlds SET spawn_coordinates = NULL WHERE name = ${normalizedWorldName}`)
     })
   }
@@ -412,6 +419,7 @@ export async function createWorldsManagerComponent({
       LEFT JOIN (
         SELECT world_name, SUM(size) as total_size
         FROM world_scenes
+        WHERE status = 'DEPLOYED'
         GROUP BY world_name
       ) AS sizes ON w.name = sizes.world_name
       LEFT JOIN (
@@ -442,6 +450,13 @@ export async function createWorldsManagerComponent({
     // Build base queries
     const countQuery = SQL`SELECT COUNT(*) as total FROM world_scenes WHERE 1=1`
     const mainQuery = SQL`SELECT * FROM world_scenes WHERE 1=1`
+
+    // By default, only return DEPLOYED scenes
+    if (!filters?.includeUndeployed) {
+      const statusFilter = SQL` AND status = 'DEPLOYED'`
+      countQuery.append(statusFilter)
+      mainQuery.append(statusFilter)
+    }
 
     // Apply worldName filter
     if (filters?.worldName) {
@@ -530,7 +545,9 @@ export async function createWorldsManagerComponent({
         entity: any
         parcels: string[]
         size: string
+        status: string
         created_at: Date
+        updated_at: Date
       }>(mainQuery)
     ])
 
@@ -544,7 +561,9 @@ export async function createWorldsManagerComponent({
       entity: row.entity,
       parcels: row.parcels,
       size: BigInt(row.size),
-      createdAt: row.created_at
+      status: row.status as SceneDeploymentStatus,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
     }))
 
     return { scenes, total }
@@ -560,11 +579,12 @@ export async function createWorldsManagerComponent({
       )
       const currentSpawnCoordinates = worldResult.rows[0]?.spawn_coordinates
 
-      // Delete the scene(s) matching the parcels
+      // Soft-delete the scene(s) matching the parcels
       await database.query(SQL`
-        DELETE FROM world_scenes 
-        WHERE world_name = ${normalizedWorldName} 
+        UPDATE world_scenes SET status = 'UNDEPLOYED', updated_at = NOW()
+        WHERE world_name = ${normalizedWorldName}
         AND parcels && ${parcels}::text[]
+        AND status = 'DEPLOYED'
       `)
 
       // Calculate new bounding rectangle (after deletion) using the shared function
@@ -706,9 +726,10 @@ export async function createWorldsManagerComponent({
 
   async function getTotalWorldSize(worldName: string): Promise<bigint> {
     const result = await database.query<{ total_size: string }>(SQL`
-      SELECT COALESCE(SUM(size), 0) as total_size 
-      FROM world_scenes 
+      SELECT COALESCE(SUM(size), 0) as total_size
+      FROM world_scenes
       WHERE world_name = ${worldName.toLowerCase()}
+      AND status = 'DEPLOYED'
     `)
 
     return BigInt(result.rows[0]?.total_size || 0)
@@ -730,6 +751,7 @@ export async function createWorldsManagerComponent({
         MAX(SPLIT_PART(parcel, ',', 2)::integer) as max_y
       FROM world_scenes, UNNEST(parcels) as parcel
       WHERE world_name = ${worldName.toLowerCase()}
+      AND status = 'DEPLOYED'
     `
 
     const { rows } = await database.query<BoundingRow>(query)
@@ -770,7 +792,7 @@ export async function createWorldsManagerComponent({
     // Join with world_scenes to get last deployment time, bounding rectangle, and scene count
     const mainQuery = SQL`
       WITH world_stats AS (
-        SELECT 
+        SELECT
           world_name,
           MAX(created_at) as last_deployed_at,
           MIN(SPLIT_PART(parcel, ',', 1)::integer) as min_x,
@@ -778,11 +800,13 @@ export async function createWorldsManagerComponent({
           MIN(SPLIT_PART(parcel, ',', 2)::integer) as min_y,
           MAX(SPLIT_PART(parcel, ',', 2)::integer) as max_y
         FROM world_scenes, UNNEST(parcels) as parcel
+        WHERE status = 'DEPLOYED'
         GROUP BY world_name
       ),
       scene_counts AS (
         SELECT world_name, COUNT(*)::integer as scene_count
         FROM world_scenes
+        WHERE status = 'DEPLOYED'
         GROUP BY world_name
       )
       SELECT 
@@ -838,11 +862,11 @@ export async function createWorldsManagerComponent({
     // Apply has_deployed_scenes filter
     if (has_deployed_scenes !== undefined) {
       if (has_deployed_scenes) {
-        const hasDeployedFilter = SQL` AND EXISTS (SELECT 1 FROM world_scenes ws2 WHERE ws2.world_name = w.name)`
+        const hasDeployedFilter = SQL` AND EXISTS (SELECT 1 FROM world_scenes ws2 WHERE ws2.world_name = w.name AND ws2.status = 'DEPLOYED')`
         countQuery.append(hasDeployedFilter)
         mainQuery.append(hasDeployedFilter)
       } else {
-        const noDeployedFilter = SQL` AND NOT EXISTS (SELECT 1 FROM world_scenes ws2 WHERE ws2.world_name = w.name)`
+        const noDeployedFilter = SQL` AND NOT EXISTS (SELECT 1 FROM world_scenes ws2 WHERE ws2.world_name = w.name AND ws2.status = 'DEPLOYED')`
         countQuery.append(noDeployedFilter)
         mainQuery.append(noDeployedFilter)
       }
@@ -968,6 +992,7 @@ export async function createWorldsManagerComponent({
       FROM world_scenes ws
       CROSS JOIN UNNEST(ws.parcels) as parcel
       WHERE ws.world_name = ${normalizedWorldName}
+      AND ws.status = 'DEPLOYED'
     `
 
     // Build main query for parcels
@@ -978,6 +1003,7 @@ export async function createWorldsManagerComponent({
         FROM world_scenes ws
         CROSS JOIN UNNEST(ws.parcels) as parcel
         WHERE ws.world_name = ${normalizedWorldName}
+        AND ws.status = 'DEPLOYED'
       ) unique_parcels
       ORDER BY 
         SPLIT_PART(parcel, ',', 1)::integer,
@@ -1035,6 +1061,15 @@ export async function createWorldsManagerComponent({
    * @param communityId - The community ID to search for
    * @returns Array of world names that reference this community
    */
+  async function evictUndeployedScenes(olderThanMs: number): Promise<number> {
+    const cutoff = new Date(Date.now() - olderThanMs)
+    const result = await database.query(SQL`
+      DELETE FROM world_scenes
+      WHERE status = 'UNDEPLOYED' AND updated_at < ${cutoff}
+    `)
+    return result.rowCount ?? 0
+  }
+
   async function getWorldNamesByCommunityId(communityId: string): Promise<string[]> {
     const result = await database.query<{ name: string }>(SQL`
       SELECT name FROM worlds
@@ -1064,6 +1099,7 @@ export async function createWorldsManagerComponent({
     getOccupiedParcels,
     createBasicWorldIfNotExists,
     worldExists,
-    getWorldNamesByCommunityId
+    getWorldNamesByCommunityId,
+    evictUndeployedScenes
   }
 }
