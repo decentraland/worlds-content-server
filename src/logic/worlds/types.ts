@@ -59,15 +59,6 @@ export interface IWorldsComponent {
   undeployWorldScenes(worldName: string, parcels: string[]): Promise<void>
 
   /**
-   * Checks if a world has a scene, including undeployed scenes
-   *
-   * @param worldName - The name of the world to check
-   * @param sceneId - The ID of the scene to check
-   * @returns true if the world has the scene (deployed or undeployed), false otherwise
-   */
-  hasWorldSceneIncludingUndeployed(worldName: string, sceneId: string): Promise<boolean>
-
-  /**
    * Gets the base parcel of a scene in a world by its entity ID, including undeployed scenes
    *
    * @param worldName - The name of the world

@@ -169,14 +169,6 @@ export const createWorldsComponent = (
     }
   }
 
-  async function hasWorldSceneIncludingUndeployed(worldName: string, sceneId: string): Promise<boolean> {
-    const { scenes } = await worldsManager.getWorldScenes(
-      { worldName, entityId: sceneId, includeUndeployed: true },
-      { limit: 1 }
-    )
-    return scenes.length > 0
-  }
-
   async function getWorldSceneBaseParcelIncludingUndeployed(
     worldName: string,
     sceneId: string
@@ -200,7 +192,6 @@ export const createWorldsComponent = (
     getWorldManifest,
     undeployWorld,
     undeployWorldScenes,
-    hasWorldSceneIncludingUndeployed,
     getWorldSceneBaseParcelIncludingUndeployed,
     evictUndeployedWorlds
   }

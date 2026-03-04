@@ -438,64 +438,6 @@ describe('WorldsComponent', () => {
     })
   })
 
-  describe('when checking if a world has a scene including undeployed', () => {
-    describe('and the scene exists', () => {
-      beforeEach(() => {
-        worldsManager.getWorldScenes.mockResolvedValueOnce({
-          scenes: [
-            {
-              worldName: 'test-world',
-              entityId: 'scene-123',
-              deployer: '0x1234',
-              deploymentAuthChain: [],
-              entity: {
-                id: 'scene-123',
-                version: 'v3',
-                type: EntityType.SCENE,
-                pointers: ['0,0'],
-                timestamp: Date.now(),
-                content: []
-              },
-              parcels: ['0,0'],
-              size: BigInt(1000),
-              status: SceneDeploymentStatus.Undeployed,
-              createdAt: new Date(),
-              updatedAt: new Date()
-            }
-          ],
-          total: 1
-        })
-      })
-
-      it('should return true', async () => {
-        const result = await worldsComponent.hasWorldSceneIncludingUndeployed('test-world', 'scene-123')
-        expect(result).toBe(true)
-      })
-
-      it('should query with includeUndeployed flag', async () => {
-        await worldsComponent.hasWorldSceneIncludingUndeployed('test-world', 'scene-123')
-        expect(worldsManager.getWorldScenes).toHaveBeenCalledWith(
-          { worldName: 'test-world', entityId: 'scene-123', includeUndeployed: true },
-          { limit: 1 }
-        )
-      })
-    })
-
-    describe('and the scene does not exist', () => {
-      beforeEach(() => {
-        worldsManager.getWorldScenes.mockResolvedValueOnce({
-          scenes: [],
-          total: 0
-        })
-      })
-
-      it('should return false', async () => {
-        const result = await worldsComponent.hasWorldSceneIncludingUndeployed('test-world', 'non-existent-scene')
-        expect(result).toBe(false)
-      })
-    })
-  })
-
   describe('when getting the base parcel of a scene including undeployed', () => {
     describe('and the scene exists', () => {
       beforeEach(() => {

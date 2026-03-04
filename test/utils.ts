@@ -6,6 +6,7 @@ import { stringToUtf8Bytes } from 'eth-connect'
 import { AuthChain } from '@dcl/schemas'
 import { AUTH_CHAIN_HEADER_PREFIX, AUTH_METADATA_HEADER, AUTH_TIMESTAMP_HEADER } from '@dcl/platform-crypto-middleware'
 import { IPgComponent } from '@dcl/pg-component'
+import { IWorldsManager } from '../src/types'
 
 export type Identity = { authChain: AuthIdentity; realAccount: IdentityType; ephemeralIdentity: IdentityType }
 
@@ -77,6 +78,18 @@ export function getAuthHeaders(
   headers[AUTH_METADATA_HEADER] = metadataJSON
 
   return headers
+}
+
+export async function hasWorldSceneIncludingUndeployed(
+  worldsManager: IWorldsManager,
+  worldName: string,
+  sceneId: string
+): Promise<boolean> {
+  const { scenes } = await worldsManager.getWorldScenes(
+    { worldName, entityId: sceneId, includeUndeployed: true },
+    { limit: 1 }
+  )
+  return scenes.length > 0
 }
 
 export function makeid(length: number) {
