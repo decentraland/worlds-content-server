@@ -2,6 +2,7 @@ import { ISocialServiceComponent, MemberCommunitiesResponse } from '../../src/ad
 
 export function createMockSocialService(): jest.Mocked<ISocialServiceComponent> {
   return {
-    getMemberCommunities: jest.fn().mockResolvedValue({ communities: [] } as MemberCommunitiesResponse)
+    getMemberCommunities: jest.fn().mockResolvedValue({ communities: [] } as MemberCommunitiesResponse),
+    isPlayerBanned: jest.fn().mockResolvedValue(false)
   }
 }

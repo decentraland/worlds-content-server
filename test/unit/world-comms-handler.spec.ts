@@ -6,7 +6,8 @@ import {
   SceneNotFoundError,
   WorldAtCapacityError,
   UserDenylistedError,
-  UserBannedFromWorldError
+  UserBannedFromWorldError,
+  UserPlatformBannedError
 } from '../../src/logic/comms/errors'
 import { HandlerContextWithPath } from '../../src/types'
 import { DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
@@ -176,6 +177,19 @@ describe('worldCommsHandler', () => {
 
         expect(response.status).toBe(401)
         expect(response.body).toEqual({ error: `You are banned from world "${worldName}".` })
+      })
+    })
+
+    describe('and the comms component throws UserPlatformBannedError', () => {
+      beforeEach(() => {
+        comms.getWorldRoomConnectionString.mockRejectedValueOnce(new UserPlatformBannedError())
+      })
+
+      it('should respond with 401 and the platform-banned message', async () => {
+        const response = await worldCommsHandler(context)
+
+        expect(response.status).toBe(401)
+        expect(response.body).toEqual({ error: 'Access denied, platform-banned user.' })
       })
     })
 

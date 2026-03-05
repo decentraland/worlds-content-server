@@ -232,7 +232,8 @@ export async function initComponents(): Promise<AppComponents> {
     worlds,
     config,
     denyList,
-    bans
+    bans,
+    socialService
   })
 
   const sqs = await createSqsComponent(config)
