@@ -6,7 +6,7 @@ import { extractAuthChain } from '../../logic/extract-auth-chain'
 import { InvalidRequestError } from '@dcl/http-commons'
 
 export function requireString(val: string | null | undefined): string {
-  if (typeof val !== 'string') throw new Error('A string was expected')
+  if (typeof val !== 'string') throw new InvalidRequestError('A string was expected')
   return val
 }
 
