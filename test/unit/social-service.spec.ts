@@ -66,7 +66,7 @@ describe('SocialServiceComponent', () => {
         mockFetch.fetch.mockResolvedValueOnce(
           mockResponse({
             ok: true,
-            json: jest.fn().mockResolvedValueOnce({ isBanned: true })
+            json: jest.fn().mockResolvedValueOnce({ data: { isBanned: true } })
           })
         )
       })
@@ -82,7 +82,7 @@ describe('SocialServiceComponent', () => {
         mockFetch.fetch.mockResolvedValueOnce(
           mockResponse({
             ok: true,
-            json: jest.fn().mockResolvedValueOnce({ isBanned: false })
+            json: jest.fn().mockResolvedValueOnce({ data: { isBanned: false } })
           })
         )
       })

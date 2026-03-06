@@ -5,7 +5,9 @@ export type MemberCommunitiesResponse = {
 }
 
 export type PlayerBanResponse = {
-  isBanned: boolean
+  data: {
+    isBanned: boolean
+  }
 }
 
 export interface ISocialServiceComponent {

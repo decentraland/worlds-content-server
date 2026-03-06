@@ -64,7 +64,7 @@ export async function createSocialServiceComponent({
       }
 
       const body: PlayerBanResponse = await response.json()
-      return body.isBanned === true
+      return body.data.isBanned === true
     } catch (error) {
       logger.warn('Error checking player ban status, allowing user through', {
         error: error instanceof Error ? error.message : String(error),
