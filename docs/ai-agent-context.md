@@ -34,6 +34,16 @@
 - **Global Portable Experience**: Experiences loaded for all users (via GLOBAL_PX query parameter)
 - **Single Scene**: Load a specific scene instead of Genesis City (via SPACE query parameter)
 
+**Worlds vs Genesis City Realms:**
+
+A World realm is fundamentally different from a Genesis City realm:
+
+- **Isolation**: A World is a fully isolated realm. Users connected to a World can only see and interact with other players within that same World. There is no cross-realm visibility — players in a World are completely separate from players in Genesis City or any other World.
+- **Full Realm**: The Worlds Content Server functions as a complete, self-contained realm. It directly serves the `/world/{name}/about` endpoint that clients use to connect, provides content URLs, and configures the comms adapter. It is not a thin description layer — it is the actual realm implementation for Worlds.
+- **LiveKit Gatekeeper for Worlds**: The Worlds Content Server acts as a LiveKit gatekeeper for World scenes. It controls who is allowed to access and connect to a World's comms room, governing which players can interact with each other inside that World. This is enforced via the World's ACL (`access` and `streaming` settings in the `worlds.permissions` JSON column). This is distinct from Genesis City, where comms-gatekeeper handles that role.
+- **Separate LiveKit Infrastructure**: At the infrastructure level, Worlds and Genesis City may use different LiveKit accounts or clusters. The comms infrastructure is not necessarily shared between them.
+- **Content is Always Public**: While comms access can be restricted by the World owner (controlling who can enter and interact), the scene content files itself are always publicly accessible. The Worlds Content Server is a public content server — anyone can fetch scene files by content hash regardless of comms access restrictions.
+
 **Deployment Requirements:**
 
 - Deployer wallet must own the DCL name specified in scene.json
