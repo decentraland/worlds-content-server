@@ -22,9 +22,6 @@ import { createMockCommsAdapter } from '../mocks/comms-adapter-jest-mock'
 import { createMockedConfig } from '../mocks/config-mock'
 import { createMockDenyList } from '../mocks/denylist-mock'
 import { createMockBans } from '../mocks/bans-mock'
-import { createMockSocialService } from '../mocks/social-service-mock'
-import { ISocialServiceComponent } from '../../src/adapters/social-service'
-
 describe('CommsComponent', () => {
   let commsComponent: ICommsComponent
   let namePermissionChecker: jest.Mocked<IWorldNamePermissionChecker>
@@ -34,7 +31,6 @@ describe('CommsComponent', () => {
   let config: jest.Mocked<IConfigComponent>
   let denyList: jest.Mocked<IDenyListComponent>
   let bans: jest.Mocked<IBansComponent>
-  let socialService: jest.Mocked<ISocialServiceComponent>
 
   beforeEach(async () => {
     namePermissionChecker = createMockedNamePermissionChecker()
@@ -44,7 +40,6 @@ describe('CommsComponent', () => {
     config = createMockedConfig({ getNumber: jest.fn().mockResolvedValue(undefined) })
     denyList = createMockDenyList()
     bans = createMockBans()
-    socialService = createMockSocialService()
 
     commsComponent = await createCommsComponent({
       namePermissionChecker,
@@ -53,8 +48,7 @@ describe('CommsComponent', () => {
       commsAdapter,
       config,
       denyList,
-      bans,
-      socialService
+      bans
     })
   })
 
@@ -427,7 +421,7 @@ describe('CommsComponent', () => {
 
     describe('and getting the world room connection string', () => {
       beforeEach(() => {
-        socialService.isPlayerBanned.mockResolvedValueOnce(true)
+        bans.isPlayerBanned.mockResolvedValueOnce(true)
       })
 
       it('should throw UserPlatformBannedError', async () => {
@@ -457,7 +451,7 @@ describe('CommsComponent', () => {
 
     describe('and getting the scene room connection string', () => {
       beforeEach(() => {
-        socialService.isPlayerBanned.mockResolvedValueOnce(true)
+        bans.isPlayerBanned.mockResolvedValueOnce(true)
       })
 
       it('should throw UserPlatformBannedError', async () => {

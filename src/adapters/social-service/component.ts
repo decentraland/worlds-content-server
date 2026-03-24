@@ -1,6 +1,6 @@
 import { EthAddress } from '@dcl/schemas'
 import { AppComponents } from '../../types'
-import { ISocialServiceComponent, MemberCommunitiesResponse, PlayerBanResponse } from './types'
+import { ISocialServiceComponent, MemberCommunitiesResponse } from './types'
 
 export async function createSocialServiceComponent({
   config,
@@ -55,28 +55,7 @@ export async function createSocialServiceComponent({
     }
   }
 
-  async function isPlayerBanned(address: string): Promise<boolean> {
-    try {
-      const response = await fetch.fetch(`${socialServiceUrl}/v1/moderation/users/${address.toLowerCase()}/bans`)
-
-      if (!response.ok) {
-        throw new Error(`Failed to check player ban status: ${response.status} ${response.statusText}`)
-      }
-
-      const body: PlayerBanResponse = await response.json()
-      return body.data.isBanned === true
-    } catch (error) {
-      logger.warn('Error checking player ban status, allowing user through', {
-        error: error instanceof Error ? error.message : String(error),
-        address
-      })
-
-      return false
-    }
-  }
-
   return {
-    getMemberCommunities,
-    isPlayerBanned
+    getMemberCommunities
   }
 }

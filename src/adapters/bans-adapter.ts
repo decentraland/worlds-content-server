@@ -14,6 +14,15 @@ export type IBansComponent = {
    * @returns True if the user is banned, false otherwise.
    */
   isUserBannedFromScene: (address: string, worldName: string, sceneBaseParcel: string) => Promise<boolean>
+
+  /**
+   * Checks if the given address is platform-banned by querying
+   * the comms-gatekeeper service.
+   *
+   * @param address - The wallet address to check.
+   * @returns True if the user is platform-banned, false otherwise.
+   */
+  isPlayerBanned: (address: string) => Promise<boolean>
 }
 
 /**
@@ -70,7 +79,34 @@ export async function createBansComponent(
     }
   }
 
+  async function isPlayerBanned(address: string): Promise<boolean> {
+    try {
+      const url = `${commsGatekeeperUrl}/moderation/users/${address.toLowerCase()}/bans`
+      const response = await fetch.fetch(url, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${authToken}`
+        }
+      })
+
+      if (!response.ok) {
+        logger.warn(`Unexpected response from comms-gatekeeper platform ban check: ${response.status}`)
+        return false
+      }
+
+      const body: { data: { isBanned: boolean } } = await response.json()
+      return body.data.isBanned === true
+    } catch (error) {
+      logger.warn('Error checking player ban status, allowing user through', {
+        error: error instanceof Error ? error.message : String(error),
+        address
+      })
+      return false
+    }
+  }
+
   return {
-    isUserBannedFromScene
+    isUserBannedFromScene,
+    isPlayerBanned
   }
 }

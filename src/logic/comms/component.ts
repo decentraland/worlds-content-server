@@ -15,14 +15,14 @@ import { ICommsComponent } from './types'
 export const createCommsComponent = async (
   components: Pick<
     AppComponents,
-    'namePermissionChecker' | 'access' | 'worlds' | 'commsAdapter' | 'config' | 'denyList' | 'bans' | 'socialService'
+    'namePermissionChecker' | 'access' | 'worlds' | 'commsAdapter' | 'config' | 'denyList' | 'bans'
   >
 ): Promise<ICommsComponent> => {
-  const { namePermissionChecker, access, worlds, commsAdapter, config, denyList, bans, socialService } = components
+  const { namePermissionChecker, access, worlds, commsAdapter, config, denyList, bans } = components
   const maxUsersPerWorld = (await config.getNumber('MAX_USERS_PER_WORLD')) ?? DEFAULT_MAX_USERS_PER_WORLD
 
   async function assertUserNotPlatformBanned(userAddress: EthAddress): Promise<void> {
-    const isBanned = await socialService.isPlayerBanned(userAddress)
+    const isBanned = await bans.isPlayerBanned(userAddress)
     if (isBanned) {
       throw new UserPlatformBannedError()
     }

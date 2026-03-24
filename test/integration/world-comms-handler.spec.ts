@@ -160,8 +160,8 @@ test('world comms handler', function ({ components, stubComponents }) {
 
     describe('and the user is platform-banned', () => {
       beforeEach(() => {
-        const { socialService } = stubComponents
-        socialService.isPlayerBanned.resolves(true)
+        const { bans } = stubComponents as any
+        bans.isPlayerBanned.resolves(true)
       })
 
       it('should respond with 401 and the platform-banned error', async () => {
@@ -342,8 +342,8 @@ test('world comms handler', function ({ components, stubComponents }) {
 
     describe('and the user is platform-banned', () => {
       beforeEach(() => {
-        const { socialService } = stubComponents as any
-        socialService.isPlayerBanned.resolves(true)
+        const { bans } = stubComponents as any
+        bans.isPlayerBanned.resolves(true)
       })
 
       it('should respond with 401 and the platform-banned error', async () => {

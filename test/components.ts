@@ -195,8 +195,7 @@ async function initComponents(): Promise<TestComponents> {
     commsAdapter,
     config,
     denyList,
-    bans,
-    socialService
+    bans
   })
 
   const queueConsumer = createMockQueueConsumer()
