@@ -55,6 +55,13 @@ describe('BansComponent', () => {
     })
 
     describe('and the user is not banned', () => {
+      beforeEach(() => {
+        fetch.fetch.mockResolvedValue({
+          ok: true,
+          json: jest.fn().mockResolvedValue({ data: { isBanned: false } })
+        } as unknown as Response)
+      })
+
       it('should return false', async () => {
         const result = await bans.isPlayerBanned(address)
         expect(result).toBe(false)
