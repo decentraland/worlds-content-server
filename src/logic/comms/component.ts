@@ -6,7 +6,8 @@ import {
   SceneNotFoundError,
   WorldAtCapacityError,
   UserDenylistedError,
-  UserBannedFromWorldError
+  UserBannedFromWorldError,
+  UserPlatformBannedError
 } from './errors'
 import { DEFAULT_MAX_USERS_PER_WORLD } from './constants'
 import { ICommsComponent } from './types'
@@ -19,6 +20,13 @@ export const createCommsComponent = async (
 ): Promise<ICommsComponent> => {
   const { namePermissionChecker, access, worlds, commsAdapter, config, denyList, bans } = components
   const maxUsersPerWorld = (await config.getNumber('MAX_USERS_PER_WORLD')) ?? DEFAULT_MAX_USERS_PER_WORLD
+
+  async function assertUserNotPlatformBanned(userAddress: EthAddress): Promise<void> {
+    const isBanned = await bans.isPlayerBanned(userAddress)
+    if (isBanned) {
+      throw new UserPlatformBannedError()
+    }
+  }
 
   async function assertUserNotDenylisted(userAddress: EthAddress): Promise<void> {
     const isDenylisted = await denyList.isDenylisted(userAddress)
@@ -63,6 +71,7 @@ export const createCommsComponent = async (
     sceneId: string,
     accessOptions?: { secret?: string }
   ): Promise<string> {
+    await assertUserNotPlatformBanned(userAddress)
     await assertUserNotDenylisted(userAddress)
     await assertWorldAccess(userAddress, worldName, accessOptions)
 
@@ -86,6 +95,7 @@ export const createCommsComponent = async (
     worldName: string,
     accessOptions?: { secret?: string }
   ): Promise<string> {
+    await assertUserNotPlatformBanned(userAddress)
     await assertUserNotDenylisted(userAddress)
     await assertWorldAccess(userAddress, worldName, accessOptions)
 

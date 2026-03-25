@@ -158,6 +158,25 @@ test('world comms handler', function ({ components, stubComponents }) {
       })
     })
 
+    describe('and the user is platform-banned', () => {
+      beforeEach(() => {
+        const { bans } = stubComponents as any
+        bans.isPlayerBanned.resolves(true)
+      })
+
+      it('should respond with 401 and the platform-banned error', async () => {
+        const r = await localFetch.fetch(`/worlds/${worldName}/comms`, {
+          method: 'POST',
+          identity,
+          metadata: EXPLORER_METADATA
+        })
+
+        expect(r.status).toEqual(401)
+        const body = await r.json()
+        expect(body.error).toContain('platform-banned')
+      })
+    })
+
     describe('and the world has been undeployed but the world record still exists', () => {
       beforeEach(async () => {
         await worldsManager.undeployWorld(worldName)
@@ -318,6 +337,25 @@ test('world comms handler', function ({ components, stubComponents }) {
         expect(r.status).toEqual(401)
         const body = await r.json()
         expect(body.error).toContain('banned')
+      })
+    })
+
+    describe('and the user is platform-banned', () => {
+      beforeEach(() => {
+        const { bans } = stubComponents as any
+        bans.isPlayerBanned.resolves(true)
+      })
+
+      it('should respond with 401 and the platform-banned error', async () => {
+        const r = await localFetch.fetch(`/worlds/${worldName}/scenes/${entityId}/comms`, {
+          method: 'POST',
+          identity,
+          metadata: EXPLORER_METADATA
+        })
+
+        expect(r.status).toEqual(401)
+        const body = await r.json()
+        expect(body.error).toContain('platform-banned')
       })
     })
 

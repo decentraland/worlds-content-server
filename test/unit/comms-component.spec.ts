@@ -6,7 +6,8 @@ import {
   SceneNotFoundError,
   WorldAtCapacityError,
   UserDenylistedError,
-  UserBannedFromWorldError
+  UserBannedFromWorldError,
+  UserPlatformBannedError
 } from '../../src/logic/comms/errors'
 import { ICommsAdapter, IWorldNamePermissionChecker } from '../../src/types'
 import { IAccessComponent } from '../../src/logic/access/types'
@@ -21,7 +22,6 @@ import { createMockCommsAdapter } from '../mocks/comms-adapter-jest-mock'
 import { createMockedConfig } from '../mocks/config-mock'
 import { createMockDenyList } from '../mocks/denylist-mock'
 import { createMockBans } from '../mocks/bans-mock'
-
 describe('CommsComponent', () => {
   let commsComponent: ICommsComponent
   let namePermissionChecker: jest.Mocked<IWorldNamePermissionChecker>
@@ -411,6 +411,62 @@ describe('CommsComponent', () => {
           // Expected to throw
         }
         expect(commsAdapter.getSceneRoomConnectionString).not.toHaveBeenCalled()
+      })
+    })
+  })
+
+  describe('when the user is platform-banned', () => {
+    const userAddress = '0x1234'
+    const worldName = 'test-world'
+
+    describe('and getting the world room connection string', () => {
+      beforeEach(() => {
+        bans.isPlayerBanned.mockResolvedValueOnce(true)
+      })
+
+      it('should throw UserPlatformBannedError', async () => {
+        await expect(commsComponent.getWorldRoomConnectionString(userAddress, worldName)).rejects.toThrow(
+          UserPlatformBannedError
+        )
+      })
+
+      it('should not check the denylist', async () => {
+        try {
+          await commsComponent.getWorldRoomConnectionString(userAddress, worldName)
+        } catch {
+          // Expected to throw
+        }
+        expect(denyList.isDenylisted).not.toHaveBeenCalled()
+      })
+
+      it('should not check world validity', async () => {
+        try {
+          await commsComponent.getWorldRoomConnectionString(userAddress, worldName)
+        } catch {
+          // Expected to throw
+        }
+        expect(worlds.isWorldValid).not.toHaveBeenCalled()
+      })
+    })
+
+    describe('and getting the scene room connection string', () => {
+      beforeEach(() => {
+        bans.isPlayerBanned.mockResolvedValueOnce(true)
+      })
+
+      it('should throw UserPlatformBannedError', async () => {
+        await expect(
+          commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, 'scene-123')
+        ).rejects.toThrow(UserPlatformBannedError)
+      })
+
+      it('should not check the denylist', async () => {
+        try {
+          await commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, 'scene-123')
+        } catch {
+          // Expected to throw
+        }
+        expect(denyList.isDenylisted).not.toHaveBeenCalled()
       })
     })
   })
