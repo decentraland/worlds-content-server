@@ -81,7 +81,7 @@ export async function createBansComponent(
 
   async function isPlayerBanned(address: string): Promise<boolean> {
     try {
-      const url = `${commsGatekeeperUrl}/moderation/users/${address.toLowerCase()}/bans`
+      const url = `${commsGatekeeperUrl}/users/${address.toLowerCase()}/bans`
       const response = await fetch.fetch(url, {
         method: 'GET',
         headers: {
