@@ -8,13 +8,11 @@ export const migration: Migration = {
 
     logger.info('Adding spawn_coordinates column, migrating data, and dropping deprecated columns (atomic transaction)')
 
-    await database.query('BEGIN')
-
-    try {
+    await database.withAsyncContextTransaction(async () => {
       // Step 1: Add spawn_coordinates column to worlds table
       logger.info('Adding spawn_coordinates column to worlds table')
       await database.query(`
-        ALTER TABLE worlds 
+        ALTER TABLE worlds
         ADD COLUMN IF NOT EXISTS spawn_coordinates VARCHAR;
       `)
 
@@ -22,7 +20,7 @@ export const migration: Migration = {
       logger.info('Migrating spawn_coordinates from entity metadata')
       const migrateResult = await database.query(`
         UPDATE worlds
-        SET 
+        SET
           spawn_coordinates = COALESCE(
             entity->'metadata'->'scene'->>'base',
             entity->'metadata'->'scene'->'parcels'->>0
@@ -41,15 +39,10 @@ export const migration: Migration = {
         DROP COLUMN IF EXISTS size;
       `)
 
-      await database.query('COMMIT')
       logger.info(
         `Successfully added spawn_coordinates column, updated ${migrateResult.rowCount} rows, ` +
           `and dropped deprecated columns (transaction committed)`
       )
-    } catch (error: any) {
-      await database.query('ROLLBACK')
-      logger.error(`Migration failed, rolled back: ${error.message}`)
-      throw error
-    }
+    })
   }
 }

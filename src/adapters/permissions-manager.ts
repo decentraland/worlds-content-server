@@ -45,11 +45,7 @@ export async function createPermissionsManagerComponent({
     const lowerCaseAddresses = addresses.map((a) => a.toLowerCase())
     const now = new Date()
 
-    const client = await database.getPool().connect()
-
-    try {
-      await client.query('BEGIN')
-
+    return await database.withTransaction(async (client) => {
       // Build batch insert query (skips existing, returns only newly inserted)
       const insertQuery = SQL`
         INSERT INTO world_permissions (world_name, permission_type, address, created_at, updated_at)
@@ -82,15 +78,8 @@ export async function createPermissionsManagerComponent({
         )
       `)
 
-      await client.query('COMMIT')
-
       return newlyAddedAddresses
-    } catch (error) {
-      await client.query('ROLLBACK')
-      throw error
-    } finally {
-      client.release()
-    }
+    })
   }
 
   /**
@@ -323,11 +312,7 @@ export async function createPermissionsManagerComponent({
     const lowerCaseAddress = address.toLowerCase()
     const now = new Date()
 
-    const client = await database.getPool().connect()
-
-    try {
-      await client.query('BEGIN')
-
+    return await database.withTransaction(async (client) => {
       // Check if permission exists
       const existingResult = await client.query<{ id: number }>(SQL`
         SELECT id FROM world_permissions
@@ -352,8 +337,8 @@ export async function createPermissionsManagerComponent({
         permissionId = existingResult.rows[0].id
         // Update timestamp
         await client.query(SQL`
-          UPDATE world_permissions 
-          SET updated_at = ${now} 
+          UPDATE world_permissions
+          SET updated_at = ${now}
           WHERE id = ${permissionId}
         `)
       }
@@ -376,14 +361,8 @@ export async function createPermissionsManagerComponent({
         await client.query(insertQuery)
       }
 
-      await client.query('COMMIT')
       return { created }
-    } catch (error) {
-      await client.query('ROLLBACK')
-      throw error
-    } finally {
-      client.release()
-    }
+    })
   }
 
   /**
@@ -394,31 +373,20 @@ export async function createPermissionsManagerComponent({
       return
     }
 
-    const client = await database.getPool().connect()
-
-    try {
-      await client.query('BEGIN')
-
+    await database.withTransaction(async (client) => {
       await client.query(SQL`
-        DELETE FROM world_permission_parcels 
-        WHERE permission_id = ${permissionId} 
+        DELETE FROM world_permission_parcels
+        WHERE permission_id = ${permissionId}
           AND parcel = ANY(${parcels})
       `)
 
       // Update the permission's updated_at timestamp
       await client.query(SQL`
-        UPDATE world_permissions 
-        SET updated_at = ${new Date()} 
+        UPDATE world_permissions
+        SET updated_at = ${new Date()}
         WHERE id = ${permissionId}
       `)
-
-      await client.query('COMMIT')
-    } catch (error) {
-      await client.query('ROLLBACK')
-      throw error
-    } finally {
-      client.release()
-    }
+    })
   }
 
   return {

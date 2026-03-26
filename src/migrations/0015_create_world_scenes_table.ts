@@ -8,9 +8,7 @@ export const migration: Migration = {
 
     logger.info('Creating world_scenes table and migrating scene data (atomic transaction)')
 
-    await database.query('BEGIN')
-
-    try {
+    await database.withAsyncContextTransaction(async () => {
       // Step 1: Create the world_scenes table
       logger.info('Creating world_scenes table')
       await database.query(`
@@ -50,10 +48,10 @@ export const migration: Migration = {
 
       const scenesResult = await database.query(`
         INSERT INTO world_scenes (
-          world_name, entity_id, entity, deployment_auth_chain, 
+          world_name, entity_id, entity, deployment_auth_chain,
           deployer, parcels, size, created_at
         )
-        SELECT 
+        SELECT
           name,
           entity_id,
           entity::jsonb,
@@ -70,14 +68,9 @@ export const migration: Migration = {
         ON CONFLICT (world_name, entity_id) DO NOTHING
       `)
 
-      await database.query('COMMIT')
       logger.info(
         `Successfully created world_scenes table and migrated ${scenesResult.rowCount} scenes (transaction committed)`
       )
-    } catch (error: any) {
-      await database.query('ROLLBACK')
-      logger.error(`Migration failed, rolled back: ${error.message}`)
-      throw error
-    }
+    })
   }
 }

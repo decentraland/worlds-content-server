@@ -3,7 +3,7 @@ import { metricDeclarations as logMetricDeclarations } from '@well-known-compone
 import { getDefaultHttpMetrics } from '@well-known-components/http-server'
 import { validateMetricsDeclaration } from '@well-known-components/metrics'
 import { metricDeclarations as theGraphMetricDeclarations } from '@well-known-components/thegraph-component'
-import { metricDeclarations as pgMetricDeclarations } from '@well-known-components/pg-component'
+import { metricDeclarations as pgMetricDeclarations } from '@dcl/pg-component'
 
 export const metricDeclarations = {
   ...getDefaultHttpMetrics(),
