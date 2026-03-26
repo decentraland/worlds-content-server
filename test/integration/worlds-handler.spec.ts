@@ -530,6 +530,74 @@ test('WorldsHandler GET /worlds', function ({ components }) {
     })
   })
 
+  describe('when has_deployed_scenes filter is provided', function () {
+    let deployedWorldName: string
+    let undeployedWorldName: string
+
+    beforeEach(async () => {
+      const { worldCreator, worldsManager } = components
+
+      deployedWorldName = 'deployed-world.dcl.eth'
+      undeployedWorldName = 'undeployed-world.dcl.eth'
+
+      await worldCreator.createWorldWithScene({
+        worldName: deployedWorldName,
+        metadata: {
+          main: 'abc.txt',
+          scene: { base: '0,0', parcels: ['0,0'] },
+          worldConfiguration: { name: deployedWorldName },
+          display: { title: 'Deployed World' }
+        }
+      })
+
+      await worldCreator.createWorldWithScene({ worldName: undeployedWorldName })
+      await worldsManager.undeployWorld(undeployedWorldName)
+    })
+
+    describe('and has_deployed_scenes is true', function () {
+      it('should return only worlds with deployed scenes', async () => {
+        const { localFetch } = components
+
+        const response = await localFetch.fetch('/worlds?has_deployed_scenes=true')
+
+        expect(response.status).toBe(200)
+        const body = await response.json()
+        expect(body.worlds).toHaveLength(1)
+        expect(body.total).toBe(1)
+        expect(body.worlds[0].name).toBe(deployedWorldName)
+        expect(body.worlds[0].deployed_scenes).toBeGreaterThan(0)
+      })
+    })
+
+    describe('and has_deployed_scenes is false', function () {
+      it('should return only worlds without deployed scenes', async () => {
+        const { localFetch } = components
+
+        const response = await localFetch.fetch('/worlds?has_deployed_scenes=false')
+
+        expect(response.status).toBe(200)
+        const body = await response.json()
+        expect(body.worlds).toHaveLength(1)
+        expect(body.total).toBe(1)
+        expect(body.worlds[0].name).toBe(undeployedWorldName)
+        expect(body.worlds[0].deployed_scenes).toBe(0)
+      })
+    })
+
+    describe('and has_deployed_scenes is not provided', function () {
+      it('should return all worlds regardless of deployment status', async () => {
+        const { localFetch } = components
+
+        const response = await localFetch.fetch('/worlds')
+
+        expect(response.status).toBe(200)
+        const body = await response.json()
+        expect(body.worlds).toHaveLength(2)
+        expect(body.total).toBe(2)
+      })
+    })
+  })
+
   describe('when a world owner is blocked', function () {
     let worldName: string
     let blockedSince: Date

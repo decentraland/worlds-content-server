@@ -21,6 +21,7 @@ import { migration as migration_0019 } from './0019_add_trigram_search'
 import { migration as migration_0020 } from './0020_create_world_permissions_table'
 import { migration as migration_0021 } from './0021_migrate_permissions_to_world_permissions'
 import { migration as migration_0022 } from './0022_normalize_permission_parcels'
+import { migration as migration_0023 } from './0023_add_scene_deployment_status'
 
 export const allMigrations: Migration[] = [
   migration_0001,
@@ -44,5 +45,6 @@ export const allMigrations: Migration[] = [
   migration_0019,
   migration_0020,
   migration_0021,
-  migration_0022
+  migration_0022,
+  migration_0023
 ]

@@ -1,4 +1,4 @@
-import { AppComponents, IPermissionsManager, ParcelsResult } from '../types'
+import { AppComponents, IPermissionsManager, PaginatedResult, ParcelsResult } from '../types'
 import { AllowListPermission, WorldPermissionRecord, WorldPermissionRecordForChecking } from '../logic/permissions'
 import { EthAddress } from '@dcl/schemas'
 import SQL from 'sql-template-strings'
@@ -45,7 +45,7 @@ export async function createPermissionsManagerComponent({
     const lowerCaseAddresses = addresses.map((a) => a.toLowerCase())
     const now = new Date()
 
-    return await database.withTransaction(async (client) => {
+    return await database.withAsyncContextTransaction(async () => {
       // Build batch insert query (skips existing, returns only newly inserted)
       const insertQuery = SQL`
         INSERT INTO world_permissions (world_name, permission_type, address, created_at, updated_at)
@@ -63,12 +63,12 @@ export async function createPermissionsManagerComponent({
         RETURNING address
       `)
 
-      const insertResult = await client.query<{ address: string }>(insertQuery)
+      const insertResult = await database.query<{ address: string }>(insertQuery)
       const newlyAddedAddresses = insertResult.rows.map((r) => r.address)
 
       // Delete any existing parcels for ALL addresses (making them world-wide)
       // This affects both new and existing addresses
-      await client.query(SQL`
+      await database.query(SQL`
         DELETE FROM world_permission_parcels
         WHERE permission_id IN (
           SELECT id FROM world_permissions
@@ -312,9 +312,9 @@ export async function createPermissionsManagerComponent({
     const lowerCaseAddress = address.toLowerCase()
     const now = new Date()
 
-    return await database.withTransaction(async (client) => {
+    return await database.withAsyncContextTransaction(async () => {
       // Check if permission exists
-      const existingResult = await client.query<{ id: number }>(SQL`
+      const existingResult = await database.query<{ id: number }>(SQL`
         SELECT id FROM world_permissions
         WHERE world_name = ${lowerCaseWorldName}
           AND permission_type = ${permission}
@@ -326,7 +326,7 @@ export async function createPermissionsManagerComponent({
 
       if (existingResult.rowCount === 0) {
         // Create new permission
-        const insertResult = await client.query<{ id: number }>(SQL`
+        const insertResult = await database.query<{ id: number }>(SQL`
           INSERT INTO world_permissions (world_name, permission_type, address, created_at, updated_at)
           VALUES (${lowerCaseWorldName}, ${permission}, ${lowerCaseAddress}, ${now}, ${now})
           RETURNING id
@@ -336,9 +336,9 @@ export async function createPermissionsManagerComponent({
       } else {
         permissionId = existingResult.rows[0].id
         // Update timestamp
-        await client.query(SQL`
-          UPDATE world_permissions
-          SET updated_at = ${now}
+        await database.query(SQL`
+          UPDATE world_permissions 
+          SET updated_at = ${now} 
           WHERE id = ${permissionId}
         `)
       }
@@ -358,7 +358,7 @@ export async function createPermissionsManagerComponent({
 
         insertQuery.append(SQL` ON CONFLICT DO NOTHING`)
 
-        await client.query(insertQuery)
+        await database.query(insertQuery)
       }
 
       return { created }
@@ -373,20 +373,76 @@ export async function createPermissionsManagerComponent({
       return
     }
 
-    await database.withTransaction(async (client) => {
-      await client.query(SQL`
-        DELETE FROM world_permission_parcels
-        WHERE permission_id = ${permissionId}
+    await database.withAsyncContextTransaction(async () => {
+      await database.query(SQL`
+        DELETE FROM world_permission_parcels 
+        WHERE permission_id = ${permissionId} 
           AND parcel = ANY(${parcels})
       `)
 
       // Update the permission's updated_at timestamp
-      await client.query(SQL`
-        UPDATE world_permissions
-        SET updated_at = ${new Date()}
+      await database.query(SQL`
+        UPDATE world_permissions 
+        SET updated_at = ${new Date()} 
         WHERE id = ${permissionId}
       `)
     })
+  }
+
+  /**
+   * Get paginated addresses that have a given permission for any of the specified parcels.
+   * An address qualifies if it has world-wide permission (no parcel rows) or
+   * has at least one of the parcels in world_permission_parcels.
+   */
+  async function getAddressesForParcelPermission(
+    worldName: string,
+    permission: AllowListPermission,
+    parcels: string[],
+    limit?: number,
+    offset?: number
+  ): Promise<PaginatedResult<string>> {
+    const lowerCaseWorldName = worldName.toLowerCase()
+
+    function buildWhereClause() {
+      return SQL`
+        WHERE wp.world_name = ${lowerCaseWorldName}
+          AND wp.permission_type = ${permission}
+          AND (
+            NOT EXISTS (
+              SELECT 1 FROM world_permission_parcels wpp WHERE wpp.permission_id = wp.id
+            )
+            OR EXISTS (
+              SELECT 1 FROM world_permission_parcels wpp
+              WHERE wpp.permission_id = wp.id AND wpp.parcel = ANY(${parcels})
+            )
+          )
+      `
+    }
+
+    const countQuery = SQL`SELECT COUNT(*)::text as count FROM world_permissions wp`
+    countQuery.append(buildWhereClause())
+
+    const addressQuery = SQL`SELECT wp.address FROM world_permissions wp`
+    addressQuery.append(buildWhereClause())
+    addressQuery.append(SQL` ORDER BY wp.address`)
+
+    if (limit !== undefined) {
+      addressQuery.append(SQL` LIMIT ${limit}`)
+    }
+
+    if (offset !== undefined) {
+      addressQuery.append(SQL` OFFSET ${offset}`)
+    }
+
+    const [countResult, addressResult] = await Promise.all([
+      database.query<{ count: string }>(countQuery),
+      database.query<{ address: string }>(addressQuery)
+    ])
+
+    return {
+      total: parseInt(countResult.rows[0].count, 10),
+      results: addressResult.rows.map((r) => r.address)
+    }
   }
 
   return {
@@ -399,6 +455,7 @@ export async function createPermissionsManagerComponent({
     checkParcelsAllowed,
     hasPermissionEntries,
     addParcelsToPermission,
-    removeParcelsFromPermission
+    removeParcelsFromPermission,
+    getAddressesForParcelPermission
   }
 }

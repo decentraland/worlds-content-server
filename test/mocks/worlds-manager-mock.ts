@@ -11,7 +11,9 @@ import {
   WorldSettings,
   WorldBoundingRectangle,
   OrderDirection,
-  UpdateWorldSettingsResult
+  UpdateWorldSettingsResult,
+  AccessModificationResult,
+  SceneDeploymentStatus
 } from '../../src/types'
 import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage'
 import { Entity, EthAddress } from '@dcl/schemas'
@@ -124,7 +126,9 @@ export async function createWorldsManagerMockComponent({
       entity: scene,
       parcels,
       size: 0n,
-      createdAt: new Date()
+      status: SceneDeploymentStatus.Deployed,
+      createdAt: new Date(),
+      updatedAt: new Date()
     }
 
     // Filter out existing scenes on these parcels and add the new scene
@@ -306,6 +310,26 @@ export async function createWorldsManagerMockComponent({
     return []
   }
 
+  async function evictUndeployedScenes(_olderThanMs: number): Promise<number> {
+    return 0
+  }
+
+  async function modifyAccessAtomically(
+    worldName: string,
+    modifier: (currentAccess: AccessSetting) => AccessSetting
+  ): Promise<AccessModificationResult> {
+    const metadata = await getMetadataForWorld(worldName)
+    const previousAccess = metadata?.access || defaultAccess()
+
+    const updatedAccess = modifier(previousAccess)
+
+    if (updatedAccess !== previousAccess) {
+      await storeWorldMetadata(worldName, { access: updatedAccess })
+    }
+
+    return { previousAccess, updatedAccess }
+  }
+
   return {
     getContributableDomains,
     getRawWorldRecords,
@@ -325,7 +349,9 @@ export async function createWorldsManagerMockComponent({
     getOccupiedParcels,
     createBasicWorldIfNotExists,
     worldExists,
-    getWorldNamesByCommunityId
+    getWorldNamesByCommunityId,
+    modifyAccessAtomically,
+    evictUndeployedScenes
   }
 }
 
@@ -350,6 +376,8 @@ export function createMockedWorldsManager(
     createBasicWorldIfNotExists: jest.fn(),
     worldExists: jest.fn(),
     getWorldNamesByCommunityId: jest.fn(),
+    modifyAccessAtomically: jest.fn(),
+    evictUndeployedScenes: jest.fn(),
     ...overrides
   } as jest.Mocked<IWorldsManager>
 }

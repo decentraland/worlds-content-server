@@ -145,33 +145,27 @@ export async function createAccessComponent({
   async function addWalletToAccessAllowList(worldName: string, owner: EthAddress, wallet: EthAddress): Promise<void> {
     await worldsManager.createBasicWorldIfNotExists(worldName, owner)
 
-    const access = await getAccessForWorld(worldName)
+    await worldsManager.modifyAccessAtomically(worldName, (access) => {
+      if (access.type !== AccessType.AllowList) {
+        throw new NotAllowListAccessError(worldName)
+      }
 
-    if (access.type !== AccessType.AllowList) {
-      throw new NotAllowListAccessError(worldName)
-    }
+      const lowerWallet = wallet.toLowerCase()
+      const existingWallets = access.wallets || []
 
-    const lowerWallet = wallet.toLowerCase()
-    const existingWallets = access.wallets || []
+      if (existingWallets.some((w) => w.toLowerCase() === lowerWallet)) {
+        return access
+      }
 
-    // Check if wallet is already in the list (case-insensitive)
-    if (existingWallets.some((w) => w.toLowerCase() === lowerWallet)) {
-      return // Already in the list, idempotent operation
-    }
+      const updatedWallets = [...existingWallets, lowerWallet]
+      if (updatedWallets.length > maxWallets) {
+        throw new InvalidAllowListSettingError(
+          `Cannot add wallet: allow-list would exceed the maximum of ${maxWallets} wallets.`
+        )
+      }
 
-    const updatedWallets = [...existingWallets, lowerWallet]
-    if (updatedWallets.length > maxWallets) {
-      throw new InvalidAllowListSettingError(
-        `Cannot add wallet: allow-list would exceed the maximum of ${maxWallets} wallets.`
-      )
-    }
-
-    const updatedAccess: AccessSetting = {
-      ...access,
-      wallets: updatedWallets
-    }
-
-    await worldsManager.storeAccess(worldName, updatedAccess)
+      return { ...access, wallets: updatedWallets }
+    })
   }
 
   /**
@@ -183,25 +177,16 @@ export async function createAccessComponent({
    * @throws {NotAllowListAccessError} If the world does not have allow-list access type
    */
   async function removeWalletFromAccessAllowList(worldName: string, wallet: EthAddress): Promise<void> {
-    const access = await getAccessForWorld(worldName)
+    const { previousAccess, updatedAccess } = await worldsManager.modifyAccessAtomically(worldName, (access) => {
+      if (access.type !== AccessType.AllowList) {
+        throw new NotAllowListAccessError(worldName)
+      }
 
-    if (access.type !== AccessType.AllowList) {
-      throw new NotAllowListAccessError(worldName)
-    }
+      const lowerWallet = wallet.toLowerCase()
+      return { ...access, wallets: (access.wallets || []).filter((w) => w.toLowerCase() !== lowerWallet) }
+    })
 
-    const lowerWallet = wallet.toLowerCase()
-    const existingWallets = access.wallets || []
-
-    // Filter out the wallet (case-insensitive)
-    const updatedWallets = existingWallets.filter((w) => w.toLowerCase() !== lowerWallet)
-
-    const updatedAccess: AccessSetting = {
-      ...access,
-      wallets: updatedWallets
-    }
-
-    await worldsManager.storeAccess(worldName, updatedAccess)
-    await accessChangeHandler.handleAccessChange(worldName, access, updatedAccess)
+    await accessChangeHandler.handleAccessChange(worldName, previousAccess, updatedAccess)
   }
 
   /**
@@ -219,35 +204,30 @@ export async function createAccessComponent({
     signer: EthAddress,
     communityId: string
   ): Promise<void> {
-    const access = await getAccessForWorld(worldName)
-
-    if (access.type !== AccessType.AllowList) {
-      throw new NotAllowListAccessError(worldName)
-    }
-
     const { communities: memberCommunities } = await socialService.getMemberCommunities(signer, [communityId])
     const isMember = memberCommunities.some((c: { id: string }) => c.id === communityId)
     if (!isMember) {
       throw new UnauthorizedCommunityError([communityId])
     }
 
-    const existingCommunities = access.communities || []
-    if (existingCommunities.includes(communityId)) {
-      return
-    }
+    await worldsManager.modifyAccessAtomically(worldName, (access) => {
+      if (access.type !== AccessType.AllowList) {
+        throw new NotAllowListAccessError(worldName)
+      }
 
-    if (existingCommunities.length >= maxCommunities) {
-      throw new InvalidAllowListSettingError(
-        `Too many communities. Maximum allowed is ${maxCommunities}, cannot add more.`
-      )
-    }
+      const existingCommunities = access.communities || []
+      if (existingCommunities.includes(communityId)) {
+        return access
+      }
 
-    const updatedAccess: AccessSetting = {
-      ...access,
-      communities: [...existingCommunities, communityId]
-    }
+      if (existingCommunities.length >= maxCommunities) {
+        throw new InvalidAllowListSettingError(
+          `Too many communities. Maximum allowed is ${maxCommunities}, cannot add more.`
+        )
+      }
 
-    await worldsManager.storeAccess(worldName, updatedAccess)
+      return { ...access, communities: [...existingCommunities, communityId] }
+    })
   }
 
   /**
@@ -259,22 +239,15 @@ export async function createAccessComponent({
    * @throws {NotAllowListAccessError} If the world does not have allow-list access type
    */
   async function removeCommunityFromAccessAllowList(worldName: string, communityId: string): Promise<void> {
-    const access = await getAccessForWorld(worldName)
+    const { previousAccess, updatedAccess } = await worldsManager.modifyAccessAtomically(worldName, (access) => {
+      if (access.type !== AccessType.AllowList) {
+        throw new NotAllowListAccessError(worldName)
+      }
 
-    if (access.type !== AccessType.AllowList) {
-      throw new NotAllowListAccessError(worldName)
-    }
+      return { ...access, communities: (access.communities || []).filter((id) => id !== communityId) }
+    })
 
-    const existingCommunities = access.communities || []
-    const updatedCommunities = existingCommunities.filter((id) => id !== communityId)
-
-    const updatedAccess: AccessSetting = {
-      ...access,
-      communities: updatedCommunities
-    }
-
-    await worldsManager.storeAccess(worldName, updatedAccess)
-    await accessChangeHandler.handleAccessChange(worldName, access, updatedAccess)
+    await accessChangeHandler.handleAccessChange(worldName, previousAccess, updatedAccess)
   }
 
   return {

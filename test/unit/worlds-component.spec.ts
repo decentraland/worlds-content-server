@@ -1,6 +1,6 @@
 import { createWorldsComponent } from '../../src/logic/worlds/component'
 import { IWorldsComponent } from '../../src/logic/worlds/types'
-import { IWorldsManager, TWO_DAYS_IN_MS } from '../../src/types'
+import { IWorldsManager, TWO_DAYS_IN_MS, SceneDeploymentStatus } from '../../src/types'
 import { EntityType, Events } from '@dcl/schemas'
 import { IPublisherComponent } from '@dcl/sns-component'
 
@@ -14,7 +14,8 @@ describe('WorldsComponent', () => {
       getRawWorldRecords: jest.fn(),
       getWorldScenes: jest.fn(),
       undeployWorld: jest.fn(),
-      undeployScene: jest.fn()
+      undeployScene: jest.fn(),
+      evictUndeployedScenes: jest.fn()
     } as unknown as jest.Mocked<IWorldsManager>
 
     snsClient = {
@@ -195,7 +196,9 @@ describe('WorldsComponent', () => {
               },
               parcels: ['0,0'],
               size: BigInt(1000),
-              createdAt: new Date()
+              status: SceneDeploymentStatus.Deployed,
+              createdAt: new Date(),
+              updatedAt: new Date()
             }
           ],
           total: 1
@@ -227,6 +230,64 @@ describe('WorldsComponent', () => {
       it('should return false', async () => {
         const result = await worldsComponent.hasWorldScene('test-world', 'non-existent-scene')
         expect(result).toBe(false)
+      })
+    })
+  })
+
+  describe('when getting the base parcel of a scene', () => {
+    describe('and the scene exists', () => {
+      beforeEach(() => {
+        worldsManager.getWorldScenes.mockResolvedValueOnce({
+          scenes: [
+            {
+              worldName: 'test-world',
+              entityId: 'scene-123',
+              deployer: '0x1234',
+              deploymentAuthChain: [],
+              entity: {
+                id: 'scene-123',
+                version: 'v3',
+                type: EntityType.SCENE,
+                pointers: ['5,10', '6,10'],
+                timestamp: Date.now(),
+                content: []
+              },
+              parcels: ['5,10', '6,10'],
+              size: BigInt(1000),
+              status: SceneDeploymentStatus.Deployed,
+              createdAt: new Date(),
+              updatedAt: new Date()
+            }
+          ],
+          total: 1
+        })
+      })
+
+      it('should return the base parcel', async () => {
+        const result = await worldsComponent.getWorldSceneBaseParcel('test-world', 'scene-123')
+        expect(result).toBe('5,10')
+      })
+
+      it('should query with the correct parameters', async () => {
+        await worldsComponent.getWorldSceneBaseParcel('test-world', 'scene-123')
+        expect(worldsManager.getWorldScenes).toHaveBeenCalledWith(
+          { worldName: 'test-world', entityId: 'scene-123' },
+          { limit: 1 }
+        )
+      })
+    })
+
+    describe('and the scene does not exist', () => {
+      beforeEach(() => {
+        worldsManager.getWorldScenes.mockResolvedValueOnce({
+          scenes: [],
+          total: 0
+        })
+      })
+
+      it('should return undefined', async () => {
+        const result = await worldsComponent.getWorldSceneBaseParcel('test-world', 'non-existent-scene')
+        expect(result).toBeUndefined()
       })
     })
   })
@@ -284,7 +345,9 @@ describe('WorldsComponent', () => {
               },
               parcels: ['0,0', '1,0'],
               size: BigInt(1000),
-              createdAt: new Date()
+              status: SceneDeploymentStatus.Deployed,
+              createdAt: new Date(),
+              updatedAt: new Date()
             },
             {
               worldName: 'test-world',
@@ -301,7 +364,9 @@ describe('WorldsComponent', () => {
               },
               parcels: ['5,5'],
               size: BigInt(500),
-              createdAt: new Date()
+              status: SceneDeploymentStatus.Deployed,
+              createdAt: new Date(),
+              updatedAt: new Date()
             }
           ],
           total: 2
@@ -370,6 +435,79 @@ describe('WorldsComponent', () => {
 
         expect(snsClient.publishMessages).not.toHaveBeenCalled()
       })
+    })
+  })
+
+  describe('when getting the base parcel of a scene including undeployed', () => {
+    describe('and the scene exists', () => {
+      beforeEach(() => {
+        worldsManager.getWorldScenes.mockResolvedValueOnce({
+          scenes: [
+            {
+              worldName: 'test-world',
+              entityId: 'scene-123',
+              deployer: '0x1234',
+              deploymentAuthChain: [],
+              entity: {
+                id: 'scene-123',
+                version: 'v3',
+                type: EntityType.SCENE,
+                pointers: ['5,10', '6,10'],
+                timestamp: Date.now(),
+                content: []
+              },
+              parcels: ['5,10', '6,10'],
+              size: BigInt(1000),
+              status: SceneDeploymentStatus.Undeployed,
+              createdAt: new Date(),
+              updatedAt: new Date()
+            }
+          ],
+          total: 1
+        })
+      })
+
+      it('should return the base parcel', async () => {
+        const result = await worldsComponent.getWorldSceneBaseParcelIncludingUndeployed('test-world', 'scene-123')
+        expect(result).toBe('5,10')
+      })
+
+      it('should query with includeUndeployed flag', async () => {
+        await worldsComponent.getWorldSceneBaseParcelIncludingUndeployed('test-world', 'scene-123')
+        expect(worldsManager.getWorldScenes).toHaveBeenCalledWith(
+          { worldName: 'test-world', entityId: 'scene-123', includeUndeployed: true },
+          { limit: 1 }
+        )
+      })
+    })
+
+    describe('and the scene does not exist', () => {
+      beforeEach(() => {
+        worldsManager.getWorldScenes.mockResolvedValueOnce({
+          scenes: [],
+          total: 0
+        })
+      })
+
+      it('should return undefined', async () => {
+        const result = await worldsComponent.getWorldSceneBaseParcelIncludingUndeployed(
+          'test-world',
+          'non-existent-scene'
+        )
+        expect(result).toBeUndefined()
+      })
+    })
+  })
+
+  describe('when evicting undeployed worlds', () => {
+    beforeEach(() => {
+      worldsManager.evictUndeployedScenes.mockResolvedValueOnce(5)
+    })
+
+    it('should delegate to worldsManager.evictUndeployedScenes', async () => {
+      const result = await worldsComponent.evictUndeployedWorlds(86400000)
+      expect(worldsManager.evictUndeployedScenes).toHaveBeenCalledWith(86400000)
+      expect(result).toBe(5)
     })
   })
 })

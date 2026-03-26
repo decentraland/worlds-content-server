@@ -7,7 +7,8 @@ import {
   SceneNotFoundError,
   WorldAtCapacityError,
   UserDenylistedError,
-  UserBannedFromWorldError
+  UserBannedFromWorldError,
+  UserPlatformBannedError
 } from '../../logic/comms'
 import { AccessType } from '../../logic/access'
 import { RATE_LIMIT_WINDOW_SECONDS, RateLimitedError } from '../../logic/rate-limiter'
@@ -87,10 +88,11 @@ export async function worldCommsHandler(context: HandlerContext): Promise<IHttpS
     } else if (
       error instanceof InvalidAccessError ||
       error instanceof UserDenylistedError ||
-      error instanceof UserBannedFromWorldError
+      error instanceof UserBannedFromWorldError ||
+      error instanceof UserPlatformBannedError
     ) {
       return {
-        status: 403,
+        status: 401,
         body: { error: error.message }
       }
     } else if (error instanceof InvalidWorldError || error instanceof SceneNotFoundError) {

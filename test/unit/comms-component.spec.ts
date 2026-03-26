@@ -6,7 +6,8 @@ import {
   SceneNotFoundError,
   WorldAtCapacityError,
   UserDenylistedError,
-  UserBannedFromWorldError
+  UserBannedFromWorldError,
+  UserPlatformBannedError
 } from '../../src/logic/comms/errors'
 import { ICommsAdapter, IWorldNamePermissionChecker } from '../../src/types'
 import { IAccessComponent } from '../../src/logic/access/types'
@@ -21,7 +22,6 @@ import { createMockCommsAdapter } from '../mocks/comms-adapter-jest-mock'
 import { createMockedConfig } from '../mocks/config-mock'
 import { createMockDenyList } from '../mocks/denylist-mock'
 import { createMockBans } from '../mocks/bans-mock'
-
 describe('CommsComponent', () => {
   let commsComponent: ICommsComponent
   let namePermissionChecker: jest.Mocked<IWorldNamePermissionChecker>
@@ -98,6 +98,11 @@ describe('CommsComponent', () => {
           await commsComponent.getWorldRoomConnectionString(userAddress, worldName)
           expect(commsAdapter.getWorldRoomParticipantCount).toHaveBeenCalledWith(worldName)
           expect(commsAdapter.getWorldRoomConnectionString).toHaveBeenCalledWith(userAddress, worldName)
+        })
+
+        it('should not check scene bans', async () => {
+          await commsComponent.getWorldRoomConnectionString(userAddress, worldName)
+          expect(bans.isUserBannedFromScene).not.toHaveBeenCalled()
         })
       })
 
@@ -216,6 +221,7 @@ describe('CommsComponent', () => {
     const userAddress = '0x1234'
     const worldName = 'test-world'
     const sceneId = 'scene-123'
+    const sceneBaseParcel = '0,0'
     const connectionString = 'livekit:wss://host?access_token=abc123'
 
     describe('and the world is valid', () => {
@@ -231,7 +237,7 @@ describe('CommsComponent', () => {
 
         describe('and the scene exists', () => {
           beforeEach(() => {
-            worlds.hasWorldScene.mockResolvedValueOnce(true)
+            worlds.getWorldSceneBaseParcelIncludingUndeployed.mockResolvedValueOnce(sceneBaseParcel)
             commsAdapter.getWorldSceneRoomsParticipantCount.mockResolvedValueOnce(0)
             commsAdapter.getSceneRoomConnectionString.mockResolvedValueOnce(connectionString)
           })
@@ -241,9 +247,10 @@ describe('CommsComponent', () => {
             expect(result).toBe(connectionString)
           })
 
-          it('should check if the scene exists', async () => {
+          it('should check scene ban with the base parcel', async () => {
             await commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, sceneId)
-            expect(worlds.hasWorldScene).toHaveBeenCalledWith(worldName, sceneId)
+            expect(worlds.getWorldSceneBaseParcelIncludingUndeployed).toHaveBeenCalledWith(worldName, sceneId)
+            expect(bans.isUserBannedFromScene).toHaveBeenCalledWith(userAddress, worldName, sceneBaseParcel)
           })
 
           it('should call getWorldSceneRoomsParticipantCount and the adapter with correct parameters', async () => {
@@ -255,7 +262,7 @@ describe('CommsComponent', () => {
 
         describe('and the world scene rooms are at capacity', () => {
           beforeEach(() => {
-            worlds.hasWorldScene.mockResolvedValueOnce(true)
+            worlds.getWorldSceneBaseParcelIncludingUndeployed.mockResolvedValueOnce(sceneBaseParcel)
             commsAdapter.getWorldSceneRoomsParticipantCount.mockResolvedValueOnce(100)
           })
 
@@ -277,13 +284,22 @@ describe('CommsComponent', () => {
 
         describe('and the scene does not exist', () => {
           beforeEach(() => {
-            worlds.hasWorldScene.mockResolvedValueOnce(false)
+            worlds.getWorldSceneBaseParcelIncludingUndeployed.mockResolvedValueOnce(undefined)
           })
 
           it('should throw SceneNotFoundError', async () => {
             await expect(
               commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, sceneId)
             ).rejects.toThrow(SceneNotFoundError)
+          })
+
+          it('should not check scene ban', async () => {
+            try {
+              await commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, sceneId)
+            } catch {
+              // Expected to throw
+            }
+            expect(bans.isUserBannedFromScene).not.toHaveBeenCalled()
           })
 
           it('should not call the adapter', async () => {
@@ -301,7 +317,7 @@ describe('CommsComponent', () => {
         beforeEach(() => {
           namePermissionChecker.checkPermission.mockResolvedValueOnce(true)
           access.checkAccess.mockResolvedValueOnce(true)
-          worlds.hasWorldScene.mockResolvedValueOnce(true)
+          worlds.getWorldSceneBaseParcelIncludingUndeployed.mockResolvedValueOnce(sceneBaseParcel)
           commsAdapter.getWorldSceneRoomsParticipantCount.mockResolvedValueOnce(0)
           commsAdapter.getSceneRoomConnectionString.mockResolvedValueOnce(connectionString)
         })
@@ -318,7 +334,7 @@ describe('CommsComponent', () => {
         beforeEach(() => {
           namePermissionChecker.checkPermission.mockResolvedValueOnce(false)
           access.checkAccess.mockResolvedValueOnce(true)
-          worlds.hasWorldScene.mockResolvedValueOnce(true)
+          worlds.getWorldSceneBaseParcelIncludingUndeployed.mockResolvedValueOnce(sceneBaseParcel)
           commsAdapter.getWorldSceneRoomsParticipantCount.mockResolvedValueOnce(0)
           commsAdapter.getSceneRoomConnectionString.mockResolvedValueOnce(connectionString)
         })
@@ -333,7 +349,7 @@ describe('CommsComponent', () => {
         beforeEach(() => {
           namePermissionChecker.checkPermission.mockResolvedValueOnce(true)
           access.checkAccess.mockResolvedValueOnce(false)
-          worlds.hasWorldScene.mockResolvedValueOnce(true)
+          worlds.getWorldSceneBaseParcelIncludingUndeployed.mockResolvedValueOnce(sceneBaseParcel)
           commsAdapter.getWorldSceneRoomsParticipantCount.mockResolvedValueOnce(0)
           commsAdapter.getSceneRoomConnectionString.mockResolvedValueOnce(connectionString)
         })
@@ -379,13 +395,13 @@ describe('CommsComponent', () => {
         expect(access.checkAccess).not.toHaveBeenCalled()
       })
 
-      it('should not check if scene exists', async () => {
+      it('should not resolve the scene base parcel', async () => {
         try {
           await commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, sceneId)
         } catch {
           // Expected to throw
         }
-        expect(worlds.hasWorldScene).not.toHaveBeenCalled()
+        expect(worlds.getWorldSceneBaseParcelIncludingUndeployed).not.toHaveBeenCalled()
       })
 
       it('should not call the adapter', async () => {
@@ -395,6 +411,62 @@ describe('CommsComponent', () => {
           // Expected to throw
         }
         expect(commsAdapter.getSceneRoomConnectionString).not.toHaveBeenCalled()
+      })
+    })
+  })
+
+  describe('when the user is platform-banned', () => {
+    const userAddress = '0x1234'
+    const worldName = 'test-world'
+
+    describe('and getting the world room connection string', () => {
+      beforeEach(() => {
+        bans.isPlayerBanned.mockResolvedValueOnce(true)
+      })
+
+      it('should throw UserPlatformBannedError', async () => {
+        await expect(commsComponent.getWorldRoomConnectionString(userAddress, worldName)).rejects.toThrow(
+          UserPlatformBannedError
+        )
+      })
+
+      it('should not check the denylist', async () => {
+        try {
+          await commsComponent.getWorldRoomConnectionString(userAddress, worldName)
+        } catch {
+          // Expected to throw
+        }
+        expect(denyList.isDenylisted).not.toHaveBeenCalled()
+      })
+
+      it('should not check world validity', async () => {
+        try {
+          await commsComponent.getWorldRoomConnectionString(userAddress, worldName)
+        } catch {
+          // Expected to throw
+        }
+        expect(worlds.isWorldValid).not.toHaveBeenCalled()
+      })
+    })
+
+    describe('and getting the scene room connection string', () => {
+      beforeEach(() => {
+        bans.isPlayerBanned.mockResolvedValueOnce(true)
+      })
+
+      it('should throw UserPlatformBannedError', async () => {
+        await expect(
+          commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, 'scene-123')
+        ).rejects.toThrow(UserPlatformBannedError)
+      })
+
+      it('should not check the denylist', async () => {
+        try {
+          await commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, 'scene-123')
+        } catch {
+          // Expected to throw
+        }
+        expect(denyList.isDenylisted).not.toHaveBeenCalled()
       })
     })
   })
@@ -464,122 +536,85 @@ describe('CommsComponent', () => {
         expect(access.checkAccess).not.toHaveBeenCalled()
       })
 
-      it('should not check if scene exists', async () => {
+      it('should not check if the scene exists', async () => {
         try {
           await commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, 'scene-123')
         } catch {
           // Expected to throw
         }
-        expect(worlds.hasWorldScene).not.toHaveBeenCalled()
+        expect(worlds.getWorldSceneBaseParcelIncludingUndeployed).not.toHaveBeenCalled()
       })
     })
   })
 
-  describe('when the user is banned from the world', () => {
+  describe('when the user is banned from the world scene', () => {
     const userAddress = '0x1234'
     const worldName = 'test-world'
+    const sceneId = 'scene-123'
+    const sceneBaseParcel = '0,0'
 
-    describe('and getting the world room connection string', () => {
+    describe('and getting the scene room connection string', () => {
       beforeEach(() => {
-        bans.isUserBannedFromWorld.mockResolvedValueOnce(true)
+        worlds.isWorldValid.mockResolvedValueOnce(true)
+        namePermissionChecker.checkPermission.mockResolvedValueOnce(true)
+        access.checkAccess.mockResolvedValueOnce(true)
+        worlds.getWorldSceneBaseParcelIncludingUndeployed.mockResolvedValueOnce(sceneBaseParcel)
+        bans.isUserBannedFromScene.mockResolvedValueOnce(true)
       })
 
       it('should throw UserBannedFromWorldError', async () => {
-        await expect(commsComponent.getWorldRoomConnectionString(userAddress, worldName)).rejects.toThrow(
+        await expect(commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, sceneId)).rejects.toThrow(
           UserBannedFromWorldError
         )
       })
 
-      it('should not check world validity', async () => {
+      it('should not check participant count', async () => {
         try {
-          await commsComponent.getWorldRoomConnectionString(userAddress, worldName)
+          await commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, sceneId)
         } catch {
           // Expected to throw
         }
-        expect(worlds.isWorldValid).not.toHaveBeenCalled()
+        expect(commsAdapter.getWorldSceneRoomsParticipantCount).not.toHaveBeenCalled()
       })
 
-      it('should not check permissions', async () => {
+      it('should not call the adapter for connection string', async () => {
         try {
-          await commsComponent.getWorldRoomConnectionString(userAddress, worldName)
+          await commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, sceneId)
         } catch {
           // Expected to throw
         }
-        expect(namePermissionChecker.checkPermission).not.toHaveBeenCalled()
-        expect(access.checkAccess).not.toHaveBeenCalled()
-      })
-    })
-
-    describe('and getting the scene room connection string', () => {
-      beforeEach(() => {
-        bans.isUserBannedFromWorld.mockResolvedValueOnce(true)
+        expect(commsAdapter.getSceneRoomConnectionString).not.toHaveBeenCalled()
       })
 
-      it('should throw UserBannedFromWorldError', async () => {
-        await expect(
-          commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, 'scene-123')
-        ).rejects.toThrow(UserBannedFromWorldError)
-      })
-
-      it('should not check world validity', async () => {
+      it('should check ban with the resolved base parcel', async () => {
         try {
-          await commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, 'scene-123')
+          await commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, sceneId)
         } catch {
           // Expected to throw
         }
-        expect(worlds.isWorldValid).not.toHaveBeenCalled()
-      })
-
-      it('should not check permissions', async () => {
-        try {
-          await commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, 'scene-123')
-        } catch {
-          // Expected to throw
-        }
-        expect(namePermissionChecker.checkPermission).not.toHaveBeenCalled()
-        expect(access.checkAccess).not.toHaveBeenCalled()
-      })
-
-      it('should not check if scene exists', async () => {
-        try {
-          await commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, 'scene-123')
-        } catch {
-          // Expected to throw
-        }
-        expect(worlds.hasWorldScene).not.toHaveBeenCalled()
+        expect(bans.isUserBannedFromScene).toHaveBeenCalledWith(userAddress, worldName, sceneBaseParcel)
       })
     })
   })
 
-  describe('when both denylist and ban checks are performed concurrently', () => {
+  describe('when both denylist and ban checks are relevant', () => {
     const userAddress = '0x1234'
     const worldName = 'test-world'
+    const sceneId = 'scene-123'
+    const sceneBaseParcel = '0,0'
     const connectionString = 'livekit:wss://host?access_token=abc123'
 
-    describe('and the user is both denylisted and banned', () => {
-      describe('and getting the world room connection string', () => {
-        beforeEach(() => {
-          denyList.isDenylisted.mockResolvedValueOnce(true)
-          bans.isUserBannedFromWorld.mockResolvedValueOnce(true)
-        })
-
-        it('should throw UserDenylistedError (denylist takes priority)', async () => {
-          await expect(commsComponent.getWorldRoomConnectionString(userAddress, worldName)).rejects.toThrow(
-            UserDenylistedError
-          )
-        })
-      })
-
+    describe('and the user is denylisted', () => {
       describe('and getting the scene room connection string', () => {
         beforeEach(() => {
           denyList.isDenylisted.mockResolvedValueOnce(true)
-          bans.isUserBannedFromWorld.mockResolvedValueOnce(true)
         })
 
-        it('should throw UserDenylistedError (denylist takes priority)', async () => {
+        it('should throw UserDenylistedError before reaching ban check', async () => {
           await expect(
-            commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, 'scene-123')
+            commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, sceneId)
           ).rejects.toThrow(UserDenylistedError)
+          expect(bans.isUserBannedFromScene).not.toHaveBeenCalled()
         })
       })
     })
@@ -588,7 +623,6 @@ describe('CommsComponent', () => {
       describe('and getting the world room connection string', () => {
         beforeEach(() => {
           denyList.isDenylisted.mockResolvedValueOnce(false)
-          bans.isUserBannedFromWorld.mockResolvedValueOnce(false)
           worlds.isWorldValid.mockResolvedValueOnce(true)
           namePermissionChecker.checkPermission.mockResolvedValueOnce(true)
           access.checkAccess.mockResolvedValueOnce(true)
@@ -601,24 +635,21 @@ describe('CommsComponent', () => {
           expect(result).toBe(connectionString)
         })
 
-        it('should call both denylist and ban checker', async () => {
+        it('should call denylist checker but not scene ban checker', async () => {
           await commsComponent.getWorldRoomConnectionString(userAddress, worldName)
           expect(denyList.isDenylisted).toHaveBeenCalledWith(userAddress)
-          expect(bans.isUserBannedFromWorld).toHaveBeenCalledWith(userAddress, worldName)
+          expect(bans.isUserBannedFromScene).not.toHaveBeenCalled()
         })
       })
 
       describe('and getting the scene room connection string', () => {
-        let sceneId: string
-
         beforeEach(() => {
-          sceneId = 'scene-123'
           denyList.isDenylisted.mockResolvedValueOnce(false)
-          bans.isUserBannedFromWorld.mockResolvedValueOnce(false)
           worlds.isWorldValid.mockResolvedValueOnce(true)
           namePermissionChecker.checkPermission.mockResolvedValueOnce(true)
           access.checkAccess.mockResolvedValueOnce(true)
-          worlds.hasWorldScene.mockResolvedValueOnce(true)
+          worlds.getWorldSceneBaseParcelIncludingUndeployed.mockResolvedValueOnce(sceneBaseParcel)
+          bans.isUserBannedFromScene.mockResolvedValueOnce(false)
           commsAdapter.getWorldSceneRoomsParticipantCount.mockResolvedValueOnce(0)
           commsAdapter.getSceneRoomConnectionString.mockResolvedValueOnce(connectionString)
         })
@@ -628,10 +659,10 @@ describe('CommsComponent', () => {
           expect(result).toBe(connectionString)
         })
 
-        it('should call both denylist and ban checker', async () => {
+        it('should call both denylist and scene ban checker', async () => {
           await commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, sceneId)
           expect(denyList.isDenylisted).toHaveBeenCalledWith(userAddress)
-          expect(bans.isUserBannedFromWorld).toHaveBeenCalledWith(userAddress, worldName)
+          expect(bans.isUserBannedFromScene).toHaveBeenCalledWith(userAddress, worldName, sceneBaseParcel)
         })
       })
     })

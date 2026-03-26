@@ -13,6 +13,7 @@ export function createMockedPermissionsComponent(
     addParcelsToPermission: jest.fn().mockResolvedValue(undefined),
     removeParcelsFromPermission: jest.fn().mockResolvedValue(undefined),
     getAllowedParcelsForPermission: jest.fn().mockResolvedValue({ total: 0, results: [] }),
+    getAddressesForParcelPermission: jest.fn().mockResolvedValue({ total: 0, results: [] }),
     getPermissionsSummary: jest.fn().mockResolvedValue({}),
     ...overrides
   }

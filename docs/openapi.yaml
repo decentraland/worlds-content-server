@@ -1136,6 +1136,16 @@ paths:
             Ethereum address to filter worlds by deployment capabilities.
             Returns worlds where the specified address is either the owner
             or has been granted deployment permission.
+        - name: has_deployed_scenes
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: |
+            Filter worlds by whether they have deployed scenes.
+            When true, returns only worlds with at least one deployed scene.
+            When false, returns only worlds with no deployed scenes.
+            When not provided, returns all worlds regardless of deployment status.
       responses:
         '200':
           description: Paginated list of worlds

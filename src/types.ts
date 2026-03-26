@@ -37,6 +37,7 @@ import { ICommsComponent } from './logic/comms'
 import { IRateLimiterComponent } from './logic/rate-limiter'
 import { IWorldsComponent } from './logic/worlds'
 import { IParticipantKicker } from './logic/participant-kicker'
+import { IJobComponent } from '@dcl/job-component'
 import { IQueueConsumerComponent } from '@dcl/queue-consumer-component'
 import { ICacheStorageComponent } from '@dcl/core-commons'
 import { IDenyListComponent } from './logic/denylist/types'
@@ -99,6 +100,11 @@ export type WorldSettingsInput = {
   thumbnail?: Buffer
 }
 
+export enum SceneDeploymentStatus {
+  Deployed = 'DEPLOYED',
+  Undeployed = 'UNDEPLOYED'
+}
+
 export type WorldScene = {
   worldName: string
   deployer: string
@@ -107,7 +113,9 @@ export type WorldScene = {
   entityId: IPFSv2
   parcels: string[]
   size: bigint
+  status: SceneDeploymentStatus
   createdAt: Date
+  updatedAt: Date
 }
 
 export type BoundingBox = {
@@ -123,6 +131,7 @@ export type GetWorldScenesFilters = {
   coordinates?: string[]
   boundingBox?: BoundingBox
   authorized_deployer?: string // address to filter scenes by (world owner or has deployment permission)
+  includeUndeployed?: boolean
 }
 
 export enum SceneOrderBy {
@@ -172,6 +181,7 @@ export type WorldInfo = {
 export type GetWorldsFilters = {
   authorized_deployer?: string // address to filter worlds by (owner or has deployment permission)
   search?: string
+  has_deployed_scenes?: boolean
 }
 
 export enum WorldsOrderBy {
@@ -353,6 +363,11 @@ export class NoDeployedScenesError extends Error {
   }
 }
 
+export type AccessModificationResult = {
+  previousAccess: AccessSetting
+  updatedAccess: AccessSetting
+}
+
 export type IWorldsManager = {
   getRawWorldRecords(
     filters?: GetRawWorldRecordsFilters,
@@ -364,6 +379,10 @@ export type IWorldsManager = {
   deployScene(worldName: string, scene: Entity, owner: EthAddress): Promise<void>
   undeployScene(worldName: string, parcels: string[]): Promise<void>
   storeAccess(worldName: string, access: AccessSetting): Promise<void>
+  modifyAccessAtomically(
+    worldName: string,
+    modifier: (currentAccess: AccessSetting) => AccessSetting
+  ): Promise<AccessModificationResult>
   undeployWorld(worldName: string): Promise<void>
   getContributableDomains(address: string): Promise<{ domains: ContributorDomain[]; count: number }>
   getWorldScenes(filters?: GetWorldScenesFilters, options?: GetWorldScenesOptions): Promise<GetWorldScenesResult>
@@ -376,6 +395,7 @@ export type IWorldsManager = {
   createBasicWorldIfNotExists(worldName: string, owner: EthAddress): Promise<void>
   worldExists(worldName: string): Promise<boolean>
   getWorldNamesByCommunityId(communityId: string): Promise<string[]>
+  evictUndeployedScenes(olderThanMs: number): Promise<number>
 }
 
 export type IPermissionsManager = {
@@ -407,6 +427,13 @@ export type IPermissionsManager = {
     parcels: string[]
   ): Promise<{ created: boolean }>
   removeParcelsFromPermission(permissionId: number, parcels: string[]): Promise<void>
+  getAddressesForParcelPermission(
+    worldName: string,
+    permission: AllowListPermission,
+    parcels: string[],
+    limit?: number,
+    offset?: number
+  ): Promise<PaginatedResult<string>>
 }
 
 export type INotificationService = {
@@ -496,6 +523,7 @@ export type BaseComponents = {
   database: IPgComponent
   entityDeployer: IEntityDeployer
   ethereumProvider: HTTPProvider
+  evictionJob: IJobComponent
   fetch: IFetchComponent
   limitsManager: ILimitsManager
   livekitClient: LivekitClient

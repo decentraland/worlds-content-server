@@ -46,3 +46,10 @@ export class UserBannedFromWorldError extends Error {
     this.name = 'UserBannedFromWorldError'
   }
 }
+
+export class UserPlatformBannedError extends Error {
+  constructor() {
+    super('Access denied, platform-banned user.')
+    this.name = 'UserPlatformBannedError'
+  }
+}

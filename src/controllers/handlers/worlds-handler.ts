@@ -49,6 +49,8 @@ export async function getWorldsHandler(
   // Extract optional query parameters
   const deployer = ctx.url.searchParams.get('authorized_deployer') ?? undefined
   const search = ctx.url.searchParams.get('search') ?? undefined
+  const hasDeployedScenesParam = ctx.url.searchParams.get('has_deployed_scenes')
+  const hasDeployedScenes = hasDeployedScenesParam !== null ? hasDeployedScenesParam === 'true' : undefined
 
   // Validate authorized_deployer is a valid Ethereum address if provided
   if (deployer && !EthAddress.validate(deployer)) {
@@ -77,7 +79,7 @@ export async function getWorldsHandler(
   const orderDirection = orderParam as OrderDirection
 
   const { worlds, total } = await ctx.components.worldsManager.getWorlds(
-    { authorized_deployer: deployer, search },
+    { authorized_deployer: deployer, search, has_deployed_scenes: hasDeployedScenes },
     { limit, offset, orderBy, orderDirection }
   )
 

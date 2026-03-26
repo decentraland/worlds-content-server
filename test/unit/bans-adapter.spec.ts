@@ -15,11 +15,6 @@ describe('BansComponent', () => {
   beforeEach(async () => {
     fetch = createMockFetch()
 
-    fetch.fetch.mockResolvedValue({
-      ok: true,
-      json: jest.fn().mockResolvedValue({ isBanned: false })
-    } as unknown as Response)
-
     bans = await createBansComponent({
       config: createMockedConfig({
         requireString: jest.fn().mockImplementation((key: string) => {
@@ -37,9 +32,81 @@ describe('BansComponent', () => {
     jest.resetAllMocks()
   })
 
-  describe('when checking if a user is banned from a world', () => {
+  describe('when checking if a user is platform-banned', () => {
+    const address = '0x1234567890abcdef'
+
+    describe('and the user is banned', () => {
+      beforeEach(() => {
+        fetch.fetch.mockResolvedValue({
+          ok: true,
+          json: jest.fn().mockResolvedValue({ data: { isBanned: true } })
+        } as unknown as Response)
+      })
+
+      it('should return true', async () => {
+        const result = await bans.isPlayerBanned(address)
+        expect(result).toBe(true)
+      })
+    })
+
+    describe('and the user is not banned', () => {
+      beforeEach(() => {
+        fetch.fetch.mockResolvedValue({
+          ok: true,
+          json: jest.fn().mockResolvedValue({ data: { isBanned: false } })
+        } as unknown as Response)
+      })
+
+      it('should return false', async () => {
+        expect(await bans.isPlayerBanned(address)).toBe(false)
+      })
+    })
+
+    describe('and the comms-gatekeeper returns a non-ok response', () => {
+      beforeEach(() => {
+        fetch.fetch.mockResolvedValue({
+          ok: false,
+          status: 500,
+          json: jest.fn()
+        } as unknown as Response)
+      })
+
+      it('should return false (fail open)', async () => {
+        const result = await bans.isPlayerBanned(address)
+        expect(result).toBe(false)
+      })
+    })
+
+    describe('and the fetch throws an error', () => {
+      beforeEach(() => {
+        fetch.fetch.mockRejectedValue(new Error('Network error'))
+      })
+
+      it('should return false (fail open)', async () => {
+        const result = await bans.isPlayerBanned(address)
+        expect(result).toBe(false)
+      })
+    })
+
+    describe('and the response JSON parsing fails', () => {
+      beforeEach(() => {
+        fetch.fetch.mockResolvedValue({
+          ok: true,
+          json: jest.fn().mockRejectedValue(new Error('Invalid JSON'))
+        } as unknown as Response)
+      })
+
+      it('should return false (fail open)', async () => {
+        const result = await bans.isPlayerBanned(address)
+        expect(result).toBe(false)
+      })
+    })
+  })
+
+  describe('when checking if a user is banned from a scene', () => {
     const address = '0x1234567890abcdef'
     const worldName = 'my-world.eth'
+    const sceneBaseParcel = '0,0'
 
     describe('and the user is banned', () => {
       beforeEach(() => {
@@ -50,14 +117,14 @@ describe('BansComponent', () => {
       })
 
       it('should return true', async () => {
-        const result = await bans.isUserBannedFromWorld(address, worldName)
+        const result = await bans.isUserBannedFromScene(address, worldName, sceneBaseParcel)
         expect(result).toBe(true)
       })
 
       it('should call the comms-gatekeeper with correct URL and bearer token', async () => {
-        await bans.isUserBannedFromWorld(address, worldName)
+        await bans.isUserBannedFromScene(address, worldName, sceneBaseParcel)
         expect(fetch.fetch).toHaveBeenCalledWith(
-          `${commsGatekeeperUrl}/worlds/${encodeURIComponent(worldName)}/users/${encodeURIComponent(address)}/ban-status`,
+          `${commsGatekeeperUrl}/worlds/${encodeURIComponent(worldName)}/parcels/${encodeURIComponent(sceneBaseParcel)}/users/${encodeURIComponent(address)}/ban-status`,
           {
             method: 'GET',
             headers: {
@@ -69,8 +136,15 @@ describe('BansComponent', () => {
     })
 
     describe('and the user is not banned', () => {
+      beforeEach(() => {
+        fetch.fetch.mockResolvedValue({
+          ok: true,
+          json: jest.fn().mockResolvedValue({ isBanned: false })
+        } as unknown as Response)
+      })
+
       it('should return false', async () => {
-        const result = await bans.isUserBannedFromWorld(address, worldName)
+        const result = await bans.isUserBannedFromScene(address, worldName, sceneBaseParcel)
         expect(result).toBe(false)
       })
     })
@@ -85,7 +159,7 @@ describe('BansComponent', () => {
       })
 
       it('should return false (fail open)', async () => {
-        const result = await bans.isUserBannedFromWorld(address, worldName)
+        const result = await bans.isUserBannedFromScene(address, worldName, sceneBaseParcel)
         expect(result).toBe(false)
       })
     })
@@ -96,7 +170,7 @@ describe('BansComponent', () => {
       })
 
       it('should return false (fail open)', async () => {
-        const result = await bans.isUserBannedFromWorld(address, worldName)
+        const result = await bans.isUserBannedFromScene(address, worldName, sceneBaseParcel)
         expect(result).toBe(false)
       })
     })
@@ -110,7 +184,7 @@ describe('BansComponent', () => {
       })
 
       it('should return false (fail open)', async () => {
-        const result = await bans.isUserBannedFromWorld(address, worldName)
+        const result = await bans.isUserBannedFromScene(address, worldName, sceneBaseParcel)
         expect(result).toBe(false)
       })
     })

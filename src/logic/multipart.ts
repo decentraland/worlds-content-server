@@ -1,5 +1,6 @@
 // TODO: move this helper to well-known-components
 
+import { InvalidRequestError } from '@dcl/http-commons'
 import { IHttpServerComponent } from '@well-known-components/interfaces'
 import busboy, { FieldInfo, FileInfo } from 'busboy'
 import { Readable } from 'stream'
@@ -27,11 +28,16 @@ export function multipartParserWrapper<Ctx extends FormDataContext, T extends IH
   handler: (ctx: Ctx) => Promise<T>
 ): (ctx: IHttpServerComponent.DefaultContext) => Promise<T> {
   return async function (ctx): Promise<T> {
-    const formDataParser = busboy({
-      headers: {
-        'content-type': ctx.request.headers.get('content-type') || undefined
-      }
-    })
+    let formDataParser: busboy.Busboy
+    try {
+      formDataParser = busboy({
+        headers: {
+          'content-type': ctx.request.headers.get('content-type') || undefined
+        }
+      })
+    } catch (error: any) {
+      throw new InvalidRequestError(error.message || 'Invalid multipart form data')
+    }
 
     const fields: FormDataContext['formData']['fields'] = {}
     const files: FormDataContext['formData']['files'] = {}
@@ -63,6 +69,9 @@ export function multipartParserWrapper<Ctx extends FormDataContext, T extends IH
       stream.on('data', function (data) {
         chunks.push(data)
       })
+      stream.on('error', function () {
+        stream.resume()
+      })
       stream.on('end', function () {
         files[name] = {
           ...info,
@@ -76,7 +85,11 @@ export function multipartParserWrapper<Ctx extends FormDataContext, T extends IH
 
     const newContext: Ctx = Object.assign(Object.create(ctx), { formData: { fields, files } })
 
-    await finished
+    try {
+      await finished
+    } catch (error: any) {
+      throw new InvalidRequestError(error.message || 'Invalid multipart form data')
+    }
 
     return handler(newContext)
   }

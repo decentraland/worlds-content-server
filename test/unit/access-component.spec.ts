@@ -10,14 +10,14 @@ import {
   UnauthorizedCommunityError
 } from '../../src/logic/access/errors'
 import { DEFAULT_MAX_COMMUNITIES, DEFAULT_MAX_WALLETS } from '../../src/logic/access/constants'
-import { GetRawWorldRecordsResult, ICommsAdapter, IWorldsManager, WorldRecord } from '../../src/types'
+import { GetRawWorldRecordsResult, ICommsAdapter, IPeersRegistry, IWorldsManager, WorldRecord } from '../../src/types'
 import { ISocialServiceComponent } from '../../src/adapters/social-service'
 import { createMockedConfig } from '../mocks/config-mock'
 import { createMockPeersRegistry } from '../mocks/peers-registry-mock'
 import { createMockCommsAdapterComponent } from '../mocks/comms-adapter-mock'
 import { createMockedPermissionsManager } from '../mocks/permissions-manager-mock'
 import { createMockedSnsClient } from '../mocks/sns-client-mock'
-import { ILoggerComponent } from '@well-known-components/interfaces'
+import { IConfigComponent, ILoggerComponent } from '@well-known-components/interfaces'
 import { Events } from '@dcl/schemas'
 import { IPublisherComponent } from '@dcl/sns-component'
 import bcrypt from 'bcrypt'
@@ -42,15 +42,23 @@ describe('AccessComponent', () => {
   let worldsManager: jest.Mocked<IWorldsManager>
   let socialService: jest.Mocked<ISocialServiceComponent>
   let snsClient: jest.Mocked<IPublisherComponent>
-  let config: ReturnType<typeof createMockedConfig>
-  let peersRegistry: ReturnType<typeof createMockPeersRegistry>
+  let config: jest.Mocked<IConfigComponent>
+  let peersRegistry: jest.Mocked<IPeersRegistry>
   let commsAdapter: jest.Mocked<ICommsAdapter>
   let logs: jest.Mocked<ILoggerComponent>
+
+  function mockModifyAccessAtomically(currentAccess: AccessSetting = { type: AccessType.Unrestricted }): void {
+    worldsManager.modifyAccessAtomically.mockImplementationOnce(async (_worldName, modifier) => {
+      const updatedAccess = modifier(currentAccess)
+      return { previousAccess: currentAccess, updatedAccess }
+    })
+  }
 
   beforeEach(async () => {
     worldsManager = {
       getRawWorldRecords: jest.fn(),
       storeAccess: jest.fn(),
+      modifyAccessAtomically: jest.fn(),
       createBasicWorldIfNotExists: jest.fn()
     } as unknown as jest.Mocked<IWorldsManager>
 
@@ -567,15 +575,14 @@ describe('AccessComponent', () => {
     describe('and the world has allow-list access', () => {
       describe('and the wallet is not in the list', () => {
         beforeEach(() => {
-          worldsManager.getRawWorldRecords.mockResolvedValueOnce(
-            mockRawWorldRecords({ type: AccessType.AllowList, wallets: ['0x1234'], communities: ['community-1'] })
-          )
+          mockModifyAccessAtomically({ type: AccessType.AllowList, wallets: ['0x1234'], communities: ['community-1'] })
         })
 
         it('should add the wallet to the list', async () => {
           await accessComponent.addWalletToAccessAllowList('test-world', TEST_SIGNER, '0x5678')
 
-          expect(worldsManager.storeAccess).toHaveBeenCalledWith('test-world', {
+          const { updatedAccess } = await worldsManager.modifyAccessAtomically.mock.results[0].value
+          expect(updatedAccess).toEqual({
             type: AccessType.AllowList,
             wallets: ['0x1234', '0x5678'],
             communities: ['community-1']
@@ -584,44 +591,47 @@ describe('AccessComponent', () => {
       })
 
       describe('and the wallet is already in the list', () => {
+        let currentAccess: AccessSetting
+
         beforeEach(() => {
-          worldsManager.getRawWorldRecords.mockResolvedValueOnce(
-            mockRawWorldRecords({ type: AccessType.AllowList, wallets: ['0x1234', '0x5678'], communities: [] })
-          )
+          currentAccess = { type: AccessType.AllowList, wallets: ['0x1234', '0x5678'], communities: [] }
+          mockModifyAccessAtomically(currentAccess)
         })
 
-        it('should not add the wallet again (idempotent)', async () => {
+        it('should return the same reference (no-op)', async () => {
           await accessComponent.addWalletToAccessAllowList('test-world', TEST_SIGNER, '0x5678')
 
-          expect(worldsManager.storeAccess).not.toHaveBeenCalled()
+          const { previousAccess, updatedAccess } = await worldsManager.modifyAccessAtomically.mock.results[0].value
+          expect(updatedAccess).toBe(previousAccess)
         })
       })
 
       describe('and the wallet is already in the list with different case', () => {
+        let currentAccess: AccessSetting
+
         beforeEach(() => {
-          worldsManager.getRawWorldRecords.mockResolvedValueOnce(
-            mockRawWorldRecords({ type: AccessType.AllowList, wallets: ['0x1234', '0xABCD'], communities: [] })
-          )
+          currentAccess = { type: AccessType.AllowList, wallets: ['0x1234', '0xABCD'], communities: [] }
+          mockModifyAccessAtomically(currentAccess)
         })
 
-        it('should not add the wallet again (case insensitive)', async () => {
+        it('should return the same reference (case insensitive no-op)', async () => {
           await accessComponent.addWalletToAccessAllowList('test-world', TEST_SIGNER, '0xabcd')
 
-          expect(worldsManager.storeAccess).not.toHaveBeenCalled()
+          const { previousAccess, updatedAccess } = await worldsManager.modifyAccessAtomically.mock.results[0].value
+          expect(updatedAccess).toBe(previousAccess)
         })
       })
 
       describe('and the wallets array is empty', () => {
         beforeEach(() => {
-          worldsManager.getRawWorldRecords.mockResolvedValueOnce(
-            mockRawWorldRecords({ type: AccessType.AllowList, wallets: [], communities: [] })
-          )
+          mockModifyAccessAtomically({ type: AccessType.AllowList, wallets: [], communities: [] })
         })
 
         it('should add the wallet to the empty list', async () => {
           await accessComponent.addWalletToAccessAllowList('test-world', TEST_SIGNER, '0x5678')
 
-          expect(worldsManager.storeAccess).toHaveBeenCalledWith('test-world', {
+          const { updatedAccess } = await worldsManager.modifyAccessAtomically.mock.results[0].value
+          expect(updatedAccess).toEqual({
             type: AccessType.AllowList,
             wallets: ['0x5678'],
             communities: []
@@ -671,13 +681,11 @@ describe('AccessComponent', () => {
             accessChecker: accessCheckerWithLowLimit,
             snsClient
           })
-          worldsManager.getRawWorldRecords.mockResolvedValueOnce(
-            mockRawWorldRecords({
-              type: AccessType.AllowList,
-              wallets: ['0x1234', '0x5678'],
-              communities: []
-            })
-          )
+          mockModifyAccessAtomically({
+            type: AccessType.AllowList,
+            wallets: ['0x1234', '0x5678'],
+            communities: []
+          })
         })
 
         it('should throw InvalidAllowListSettingError', async () => {
@@ -696,7 +704,7 @@ describe('AccessComponent', () => {
 
     describe('and the world has unrestricted access', () => {
       beforeEach(() => {
-        worldsManager.getRawWorldRecords.mockResolvedValueOnce(mockRawWorldRecords({ type: AccessType.Unrestricted }))
+        mockModifyAccessAtomically({ type: AccessType.Unrestricted })
       })
 
       it('should throw NotAllowListAccessError', async () => {
@@ -714,9 +722,7 @@ describe('AccessComponent', () => {
 
     describe('and the world has shared-secret access', () => {
       beforeEach(() => {
-        worldsManager.getRawWorldRecords.mockResolvedValueOnce(
-          mockRawWorldRecords({ type: AccessType.SharedSecret, secret: 'hashed-secret' })
-        )
+        mockModifyAccessAtomically({ type: AccessType.SharedSecret, secret: 'hashed-secret' })
       })
 
       it('should throw NotAllowListAccessError', async () => {
@@ -728,9 +734,7 @@ describe('AccessComponent', () => {
 
     describe('and the world has nft-ownership access', () => {
       beforeEach(() => {
-        worldsManager.getRawWorldRecords.mockResolvedValueOnce(
-          mockRawWorldRecords({ type: AccessType.NFTOwnership, nft: 'some-nft' })
-        )
+        mockModifyAccessAtomically({ type: AccessType.NFTOwnership, nft: 'some-nft' })
       })
 
       it('should throw NotAllowListAccessError', async () => {
@@ -742,7 +746,7 @@ describe('AccessComponent', () => {
 
     describe('and the world has no metadata (no access record)', () => {
       beforeEach(() => {
-        worldsManager.getRawWorldRecords.mockResolvedValueOnce(mockRawWorldRecords())
+        mockModifyAccessAtomically()
       })
 
       it('should throw NotAllowListAccessError', async () => {
@@ -757,19 +761,18 @@ describe('AccessComponent', () => {
     describe('and the world has allow-list access', () => {
       describe('and the wallet is in the list', () => {
         beforeEach(() => {
-          worldsManager.getRawWorldRecords.mockResolvedValueOnce(
-            mockRawWorldRecords({
-              type: AccessType.AllowList,
-              wallets: ['0x1234', '0x5678'],
-              communities: ['community-1']
-            })
-          )
+          mockModifyAccessAtomically({
+            type: AccessType.AllowList,
+            wallets: ['0x1234', '0x5678'],
+            communities: ['community-1']
+          })
         })
 
         it('should remove the wallet from the list', async () => {
           await accessComponent.removeWalletFromAccessAllowList('test-world', '0x5678')
 
-          expect(worldsManager.storeAccess).toHaveBeenCalledWith('test-world', {
+          const { updatedAccess } = await worldsManager.modifyAccessAtomically.mock.results[0].value
+          expect(updatedAccess).toEqual({
             type: AccessType.AllowList,
             wallets: ['0x1234'],
             communities: ['community-1']
@@ -779,15 +782,14 @@ describe('AccessComponent', () => {
 
       describe('and the wallet is in the list with different case', () => {
         beforeEach(() => {
-          worldsManager.getRawWorldRecords.mockResolvedValueOnce(
-            mockRawWorldRecords({ type: AccessType.AllowList, wallets: ['0x1234', '0xABCD'], communities: [] })
-          )
+          mockModifyAccessAtomically({ type: AccessType.AllowList, wallets: ['0x1234', '0xABCD'], communities: [] })
         })
 
         it('should remove the wallet (case insensitive)', async () => {
           await accessComponent.removeWalletFromAccessAllowList('test-world', '0xabcd')
 
-          expect(worldsManager.storeAccess).toHaveBeenCalledWith('test-world', {
+          const { updatedAccess } = await worldsManager.modifyAccessAtomically.mock.results[0].value
+          expect(updatedAccess).toEqual({
             type: AccessType.AllowList,
             wallets: ['0x1234'],
             communities: []
@@ -797,15 +799,14 @@ describe('AccessComponent', () => {
 
       describe('and the wallet is not in the list', () => {
         beforeEach(() => {
-          worldsManager.getRawWorldRecords.mockResolvedValueOnce(
-            mockRawWorldRecords({ type: AccessType.AllowList, wallets: ['0x1234'], communities: [] })
-          )
+          mockModifyAccessAtomically({ type: AccessType.AllowList, wallets: ['0x1234'], communities: [] })
         })
 
-        it('should update the access with the same list (idempotent)', async () => {
+        it('should produce the same list (idempotent)', async () => {
           await accessComponent.removeWalletFromAccessAllowList('test-world', '0x5678')
 
-          expect(worldsManager.storeAccess).toHaveBeenCalledWith('test-world', {
+          const { updatedAccess } = await worldsManager.modifyAccessAtomically.mock.results[0].value
+          expect(updatedAccess).toEqual({
             type: AccessType.AllowList,
             wallets: ['0x1234'],
             communities: []
@@ -815,15 +816,14 @@ describe('AccessComponent', () => {
 
       describe('and it is the last wallet in the list', () => {
         beforeEach(() => {
-          worldsManager.getRawWorldRecords.mockResolvedValueOnce(
-            mockRawWorldRecords({ type: AccessType.AllowList, wallets: ['0x1234'], communities: [] })
-          )
+          mockModifyAccessAtomically({ type: AccessType.AllowList, wallets: ['0x1234'], communities: [] })
         })
 
         it('should leave an empty wallets list', async () => {
           await accessComponent.removeWalletFromAccessAllowList('test-world', '0x1234')
 
-          expect(worldsManager.storeAccess).toHaveBeenCalledWith('test-world', {
+          const { updatedAccess } = await worldsManager.modifyAccessAtomically.mock.results[0].value
+          expect(updatedAccess).toEqual({
             type: AccessType.AllowList,
             wallets: [],
             communities: []
@@ -834,7 +834,7 @@ describe('AccessComponent', () => {
 
     describe('and the world has unrestricted access', () => {
       beforeEach(() => {
-        worldsManager.getRawWorldRecords.mockResolvedValueOnce(mockRawWorldRecords({ type: AccessType.Unrestricted }))
+        mockModifyAccessAtomically({ type: AccessType.Unrestricted })
       })
 
       it('should throw NotAllowListAccessError', async () => {
@@ -852,9 +852,7 @@ describe('AccessComponent', () => {
 
     describe('and the world has shared-secret access', () => {
       beforeEach(() => {
-        worldsManager.getRawWorldRecords.mockResolvedValueOnce(
-          mockRawWorldRecords({ type: AccessType.SharedSecret, secret: 'hashed-secret' })
-        )
+        mockModifyAccessAtomically({ type: AccessType.SharedSecret, secret: 'hashed-secret' })
       })
 
       it('should throw NotAllowListAccessError', async () => {
@@ -866,9 +864,7 @@ describe('AccessComponent', () => {
 
     describe('and the world has nft-ownership access', () => {
       beforeEach(() => {
-        worldsManager.getRawWorldRecords.mockResolvedValueOnce(
-          mockRawWorldRecords({ type: AccessType.NFTOwnership, nft: 'some-nft' })
-        )
+        mockModifyAccessAtomically({ type: AccessType.NFTOwnership, nft: 'some-nft' })
       })
 
       it('should throw NotAllowListAccessError', async () => {
@@ -880,7 +876,7 @@ describe('AccessComponent', () => {
 
     describe('and the world has no metadata (no access record)', () => {
       beforeEach(() => {
-        worldsManager.getRawWorldRecords.mockResolvedValueOnce(mockRawWorldRecords())
+        mockModifyAccessAtomically()
       })
 
       it('should throw NotAllowListAccessError', async () => {
@@ -895,16 +891,15 @@ describe('AccessComponent', () => {
     describe('and the world has allow-list access', () => {
       describe('and the signer is a member of the community', () => {
         beforeEach(() => {
-          worldsManager.getRawWorldRecords.mockResolvedValueOnce(
-            mockRawWorldRecords({ type: AccessType.AllowList, wallets: [], communities: ['community-1'] })
-          )
+          mockModifyAccessAtomically({ type: AccessType.AllowList, wallets: [], communities: ['community-1'] })
           socialService.getMemberCommunities.mockResolvedValue({ communities: [{ id: 'community-2' }] })
         })
 
         it('should add the community to the list', async () => {
           await accessComponent.addCommunityToAccessAllowList('test-world', TEST_SIGNER, 'community-2')
 
-          expect(worldsManager.storeAccess).toHaveBeenCalledWith('test-world', {
+          const { updatedAccess } = await worldsManager.modifyAccessAtomically.mock.results[0].value
+          expect(updatedAccess).toEqual({
             type: AccessType.AllowList,
             wallets: [],
             communities: ['community-1', 'community-2']
@@ -913,29 +908,28 @@ describe('AccessComponent', () => {
       })
 
       describe('and the community is already in the list', () => {
+        let currentAccess: AccessSetting
+
         beforeEach(() => {
-          worldsManager.getRawWorldRecords.mockResolvedValueOnce(
-            mockRawWorldRecords({
-              type: AccessType.AllowList,
-              wallets: [],
-              communities: ['community-1', 'community-2']
-            })
-          )
+          currentAccess = {
+            type: AccessType.AllowList,
+            wallets: [],
+            communities: ['community-1', 'community-2']
+          }
+          mockModifyAccessAtomically(currentAccess)
           socialService.getMemberCommunities.mockResolvedValue({ communities: [{ id: 'community-2' }] })
         })
 
-        it('should not add the community again (idempotent)', async () => {
+        it('should return the same reference (no-op)', async () => {
           await accessComponent.addCommunityToAccessAllowList('test-world', TEST_SIGNER, 'community-2')
 
-          expect(worldsManager.storeAccess).not.toHaveBeenCalled()
+          const { previousAccess, updatedAccess } = await worldsManager.modifyAccessAtomically.mock.results[0].value
+          expect(updatedAccess).toBe(previousAccess)
         })
       })
 
       describe('and the signer is not a member of the community', () => {
         beforeEach(() => {
-          worldsManager.getRawWorldRecords.mockResolvedValueOnce(
-            mockRawWorldRecords({ type: AccessType.AllowList, wallets: [], communities: [] })
-          )
           socialService.getMemberCommunities.mockResolvedValue({ communities: [] })
         })
 
@@ -949,9 +943,7 @@ describe('AccessComponent', () => {
       describe('and the communities list is at MAX_COMMUNITIES', () => {
         beforeEach(() => {
           const fullList = Array.from({ length: DEFAULT_MAX_COMMUNITIES }, (_, i) => `community-${i}`)
-          worldsManager.getRawWorldRecords.mockResolvedValueOnce(
-            mockRawWorldRecords({ type: AccessType.AllowList, wallets: [], communities: fullList })
-          )
+          mockModifyAccessAtomically({ type: AccessType.AllowList, wallets: [], communities: fullList })
           socialService.getMemberCommunities.mockResolvedValue({ communities: [{ id: 'new-community' }] })
         })
 
@@ -965,7 +957,8 @@ describe('AccessComponent', () => {
 
     describe('and the world has unrestricted access', () => {
       beforeEach(() => {
-        worldsManager.getRawWorldRecords.mockResolvedValueOnce(mockRawWorldRecords({ type: AccessType.Unrestricted }))
+        mockModifyAccessAtomically({ type: AccessType.Unrestricted })
+        socialService.getMemberCommunities.mockResolvedValue({ communities: [{ id: 'community-1' }] })
       })
 
       it('should throw NotAllowListAccessError', async () => {
@@ -980,19 +973,18 @@ describe('AccessComponent', () => {
     describe('and the world has allow-list access', () => {
       describe('and the community is in the list', () => {
         beforeEach(() => {
-          worldsManager.getRawWorldRecords.mockResolvedValueOnce(
-            mockRawWorldRecords({
-              type: AccessType.AllowList,
-              wallets: ['0x1234'],
-              communities: ['community-1', 'community-2']
-            })
-          )
+          mockModifyAccessAtomically({
+            type: AccessType.AllowList,
+            wallets: ['0x1234'],
+            communities: ['community-1', 'community-2']
+          })
         })
 
         it('should remove the community from the list', async () => {
           await accessComponent.removeCommunityFromAccessAllowList('test-world', 'community-2')
 
-          expect(worldsManager.storeAccess).toHaveBeenCalledWith('test-world', {
+          const { updatedAccess } = await worldsManager.modifyAccessAtomically.mock.results[0].value
+          expect(updatedAccess).toEqual({
             type: AccessType.AllowList,
             wallets: ['0x1234'],
             communities: ['community-1']
@@ -1002,15 +994,14 @@ describe('AccessComponent', () => {
 
       describe('and the community is not in the list', () => {
         beforeEach(() => {
-          worldsManager.getRawWorldRecords.mockResolvedValueOnce(
-            mockRawWorldRecords({ type: AccessType.AllowList, wallets: [], communities: ['community-1'] })
-          )
+          mockModifyAccessAtomically({ type: AccessType.AllowList, wallets: [], communities: ['community-1'] })
         })
 
-        it('should update the access with the same list (idempotent)', async () => {
+        it('should produce the same list (idempotent)', async () => {
           await accessComponent.removeCommunityFromAccessAllowList('test-world', 'community-2')
 
-          expect(worldsManager.storeAccess).toHaveBeenCalledWith('test-world', {
+          const { updatedAccess } = await worldsManager.modifyAccessAtomically.mock.results[0].value
+          expect(updatedAccess).toEqual({
             type: AccessType.AllowList,
             wallets: [],
             communities: ['community-1']
@@ -1021,7 +1012,7 @@ describe('AccessComponent', () => {
 
     describe('and the world has unrestricted access', () => {
       beforeEach(() => {
-        worldsManager.getRawWorldRecords.mockResolvedValueOnce(mockRawWorldRecords({ type: AccessType.Unrestricted }))
+        mockModifyAccessAtomically({ type: AccessType.Unrestricted })
       })
 
       it('should throw NotAllowListAccessError', async () => {
