@@ -39,40 +39,63 @@ describe('UserBanHandler', () => {
     })
   })
 
+  afterEach(() => {
+    jest.resetAllMocks()
+  })
+
   describe('when the banned user is not connected to any world', () => {
+    let event: UserBanCreatedEvent
+
     beforeEach(() => {
-      mockPeersRegistry.getPeerWorld.mockReturnValue(undefined)
+      event = createUserBanCreatedEvent('0xBanned')
+      mockPeersRegistry.getPeerWorld.mockReturnValueOnce(undefined)
     })
 
-    it('should not kick anyone', async () => {
-      await handler.handle(createUserBanCreatedEvent('0xBanned'))
+    it('should check if the user is connected to a world', async () => {
+      await handler.handle(event)
 
       expect(mockPeersRegistry.getPeerWorld).toHaveBeenCalledWith('0xBanned')
+    })
+
+    it('should not call kickParticipant', async () => {
+      await handler.handle(event)
+
       expect(mockParticipantKicker.kickParticipant).not.toHaveBeenCalled()
     })
   })
 
   describe('when the banned user is connected to a world', () => {
+    let event: UserBanCreatedEvent
+
     beforeEach(() => {
-      mockPeersRegistry.getPeerWorld.mockReturnValue('world-1')
+      event = createUserBanCreatedEvent('0xBanned')
+      mockPeersRegistry.getPeerWorld.mockReturnValueOnce('world-1')
+    })
+
+    it('should check if the user is connected to a world', async () => {
+      await handler.handle(event)
+
+      expect(mockPeersRegistry.getPeerWorld).toHaveBeenCalledWith('0xBanned')
     })
 
     it('should kick the user from their world', async () => {
-      await handler.handle(createUserBanCreatedEvent('0xBanned'))
+      await handler.handle(event)
 
-      expect(mockPeersRegistry.getPeerWorld).toHaveBeenCalledWith('0xBanned')
       expect(mockParticipantKicker.kickParticipant).toHaveBeenCalledWith('world-1', '0xBanned')
     })
   })
 
   describe('when kickParticipant throws', () => {
+    let event: UserBanCreatedEvent
+
     beforeEach(() => {
-      mockPeersRegistry.getPeerWorld.mockReturnValue('world-1')
-      mockParticipantKicker.kickParticipant.mockRejectedValue(new Error('kick failed'))
+      event = createUserBanCreatedEvent('0xBanned')
+      mockPeersRegistry.getPeerWorld.mockReturnValueOnce('world-1')
+      mockParticipantKicker.kickParticipant.mockRejectedValueOnce(new Error('kick failed'))
     })
 
-    it('should not throw', async () => {
-      await expect(handler.handle(createUserBanCreatedEvent('0xBanned'))).resolves.toBeUndefined()
+    it('should resolve without throwing', async () => {
+      await expect(handler.handle(event)).resolves.toBeUndefined()
     })
   })
 })
