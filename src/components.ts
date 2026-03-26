@@ -57,6 +57,7 @@ import {
   createCommunityMemberRemovedHandler,
   COMMUNITY_MEMBER_REMOVED_EVENT_SUBTYPES
 } from './controllers/handlers/community-member-removed-handler'
+import { createUserBanHandler, USER_BAN_EVENT_SUBTYPE } from './controllers/handlers/user-ban-handler'
 import { Events } from '@dcl/schemas'
 import { createRedisComponent } from '@dcl/redis-component'
 import { createRateLimiterComponent } from './logic/rate-limiter'
@@ -249,6 +250,15 @@ export async function initComponents(): Promise<AppComponents> {
   for (const subType of COMMUNITY_MEMBER_REMOVED_EVENT_SUBTYPES) {
     queueConsumer.addMessageHandler(Events.Type.COMMUNITY, subType, communityMemberRemovedHandler.handle)
   }
+
+  // Register platform ban event handler
+  const userBanHandler = createUserBanHandler({
+    peersRegistry,
+    participantKicker,
+    logs
+  })
+  queueConsumer.addMessageHandler(Events.Type.MODERATION, USER_BAN_EVENT_SUBTYPE, userBanHandler.handle)
+
   const rateLimiter = await createRateLimiterComponent({ config, redis })
 
   return {
