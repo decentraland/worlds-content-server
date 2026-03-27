@@ -283,6 +283,9 @@ export async function createWorldsManagerComponent({
           ${new Date()}
         )
       `)
+
+      // Update denormalized scene stats
+      await recalculateWorldSceneStats(worldName.toLowerCase())
     })
   }
 
@@ -323,7 +326,7 @@ export async function createWorldsManagerComponent({
     const result = await database.query<{ name: string }>(`
       SELECT w.name
       FROM worlds w
-      WHERE EXISTS (SELECT 1 FROM world_scenes ws WHERE ws.world_name = w.name AND ws.status = 'DEPLOYED')
+      WHERE w.deployed_scene_count > 0
     `)
     return result.rows.reduce(
       (acc, row) => {
@@ -390,8 +393,19 @@ export async function createWorldsManagerComponent({
         WHERE world_name = ${normalizedWorldName} AND status = 'DEPLOYED'
       `)
 
-      // Set spawn_coordinates to null since there are no more deployed scenes
-      await database.query(SQL`UPDATE worlds SET spawn_coordinates = NULL WHERE name = ${normalizedWorldName}`)
+      // Clear spawn_coordinates and denormalized scene stats since all scenes are removed
+      await database.query(SQL`
+        UPDATE worlds SET
+          spawn_coordinates = NULL,
+          last_deployed_at = NULL,
+          deployed_scene_count = 0,
+          scene_min_x = NULL,
+          scene_max_x = NULL,
+          scene_min_y = NULL,
+          scene_max_y = NULL,
+          updated_at = NOW()
+        WHERE name = ${normalizedWorldName}
+      `)
     })
   }
 
@@ -613,6 +627,9 @@ export async function createWorldsManagerComponent({
           UPDATE worlds SET spawn_coordinates = ${newSpawnCoordinates} WHERE name = ${normalizedWorldName}
         `)
       }
+
+      // Update denormalized scene stats
+      await recalculateWorldSceneStats(normalizedWorldName)
     })
   }
 
@@ -742,6 +759,33 @@ export async function createWorldsManagerComponent({
    * @param worldName - The name of the world
    * @returns The bounding rectangle, or undefined if no parcels exist
    */
+  async function recalculateWorldSceneStats(worldName: string): Promise<void> {
+    await database.query(SQL`
+      WITH stats AS (
+        SELECT
+          MAX(ws.created_at) as last_deployed_at,
+          COUNT(DISTINCT ws.entity_id)::integer as scene_count,
+          MIN(SPLIT_PART(parcel, ',', 1)::integer) as min_x,
+          MAX(SPLIT_PART(parcel, ',', 1)::integer) as max_x,
+          MIN(SPLIT_PART(parcel, ',', 2)::integer) as min_y,
+          MAX(SPLIT_PART(parcel, ',', 2)::integer) as max_y
+        FROM world_scenes ws, UNNEST(ws.parcels) as parcel
+        WHERE ws.world_name = ${worldName}
+        AND ws.status = 'DEPLOYED'
+      )
+      UPDATE worlds SET
+        last_deployed_at = stats.last_deployed_at,
+        deployed_scene_count = COALESCE(stats.scene_count, 0),
+        scene_min_x = stats.min_x,
+        scene_max_x = stats.max_x,
+        scene_min_y = stats.min_y,
+        scene_max_y = stats.max_y,
+        updated_at = NOW()
+      FROM stats
+      WHERE worlds.name = ${worldName}
+    `)
+  }
+
   async function getWorldBoundingRectangle(worldName: string): Promise<WorldBoundingRectangle | undefined> {
     const query = SQL`
       SELECT 
@@ -788,28 +832,9 @@ export async function createWorldsManagerComponent({
       WHERE 1=1
     `
 
-    // Build the main query
-    // Join with world_scenes to get last deployment time, bounding rectangle, and scene count
+    // Build the main query using denormalized columns on worlds table
     const mainQuery = SQL`
-      WITH world_stats AS (
-        SELECT
-          world_name,
-          MAX(created_at) as last_deployed_at,
-          MIN(SPLIT_PART(parcel, ',', 1)::integer) as min_x,
-          MAX(SPLIT_PART(parcel, ',', 1)::integer) as max_x,
-          MIN(SPLIT_PART(parcel, ',', 2)::integer) as min_y,
-          MAX(SPLIT_PART(parcel, ',', 2)::integer) as max_y
-        FROM world_scenes, UNNEST(parcels) as parcel
-        WHERE status = 'DEPLOYED'
-        GROUP BY world_name
-      ),
-      scene_counts AS (
-        SELECT world_name, COUNT(*)::integer as scene_count
-        FROM world_scenes
-        WHERE status = 'DEPLOYED'
-        GROUP BY world_name
-      )
-      SELECT 
+      SELECT
         w.name,
         w.owner,
         w.title,
@@ -821,16 +846,14 @@ export async function createWorldsManagerComponent({
         w.single_player,
         w.show_in_places,
         w.thumbnail_hash,
-        ws.last_deployed_at,
-        ws.min_x,
-        ws.max_x,
-        ws.min_y,
-        ws.max_y,
+        w.last_deployed_at,
+        w.scene_min_x as min_x,
+        w.scene_max_x as max_x,
+        w.scene_min_y as min_y,
+        w.scene_max_y as max_y,
         b.created_at as blocked_since,
-        COALESCE(sc.scene_count, 0) as deployed_scenes
+        w.deployed_scene_count as deployed_scenes
       FROM worlds w
-      LEFT JOIN world_stats ws ON w.name = ws.world_name
-      LEFT JOIN scene_counts sc ON w.name = sc.world_name
       LEFT JOIN blocked b ON w.owner = b.wallet
       WHERE 1=1
     `
@@ -859,14 +882,14 @@ export async function createWorldsManagerComponent({
       mainQuery.append(deployerFilter)
     }
 
-    // Apply has_deployed_scenes filter
+    // Apply has_deployed_scenes filter using denormalized count
     if (has_deployed_scenes !== undefined) {
       if (has_deployed_scenes) {
-        const hasDeployedFilter = SQL` AND EXISTS (SELECT 1 FROM world_scenes ws2 WHERE ws2.world_name = w.name AND ws2.status = 'DEPLOYED')`
+        const hasDeployedFilter = SQL` AND w.deployed_scene_count > 0`
         countQuery.append(hasDeployedFilter)
         mainQuery.append(hasDeployedFilter)
       } else {
-        const noDeployedFilter = SQL` AND NOT EXISTS (SELECT 1 FROM world_scenes ws2 WHERE ws2.world_name = w.name AND ws2.status = 'DEPLOYED')`
+        const noDeployedFilter = SQL` AND w.deployed_scene_count = 0`
         countQuery.append(noDeployedFilter)
         mainQuery.append(noDeployedFilter)
       }
@@ -900,7 +923,7 @@ export async function createWorldsManagerComponent({
       // 2. Non-null last_deployed_at values are sorted by the requested direction
       // 3. Null last_deployed_at worlds are then sorted by name ASC for deterministic ordering
       mainQuery.append(
-        ` ORDER BY ws.last_deployed_at IS NULL ASC, ws.last_deployed_at ${orderDirection.toUpperCase()}, w.name ASC`
+        ` ORDER BY w.last_deployed_at IS NULL ASC, w.last_deployed_at ${orderDirection.toUpperCase()}, w.name ASC`
       )
     } else {
       mainQuery.append(` ORDER BY w.name ${orderDirection.toUpperCase()}`)

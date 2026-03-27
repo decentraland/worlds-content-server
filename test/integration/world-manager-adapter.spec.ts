@@ -2,6 +2,7 @@ import { test } from '../components'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { makeid } from '../utils'
 import { defaultAccess } from '../../src/logic/access'
+import SQL from 'sql-template-strings'
 
 test('WorldManagerAdapter', function ({ components }) {
   afterEach(() => {
@@ -627,6 +628,382 @@ test('WorldManagerAdapter', function ({ components }) {
       expect(result.parcels).toContain('1,0')
       expect(result.parcels).toContain('2,0')
       expect(result.parcels).not.toContain('0,0')
+    })
+  })
+
+  describe('when checking denormalized scene stats on the worlds table', function () {
+    type WorldStatsRow = {
+      last_deployed_at: Date | null
+      deployed_scene_count: number
+      scene_min_x: number | null
+      scene_max_x: number | null
+      scene_min_y: number | null
+      scene_max_y: number | null
+    }
+
+    async function getWorldStats(worldName: string): Promise<WorldStatsRow> {
+      const { database } = components
+      const result = await database.query<WorldStatsRow>(
+        SQL`SELECT last_deployed_at, deployed_scene_count, scene_min_x, scene_max_x, scene_min_y, scene_max_y
+            FROM worlds WHERE name = ${worldName.toLowerCase()}`
+      )
+      return result.rows[0]
+    }
+
+    describe('when deploying a single scene', function () {
+      let worldName: string
+
+      beforeEach(async () => {
+        const { worldCreator } = components
+
+        worldName = worldCreator.randomWorldName()
+
+        const files = new Map<string, Uint8Array>()
+        files.set('abc.txt', stringToUtf8Bytes(makeid(100)))
+
+        await worldCreator.createWorldWithScene({
+          worldName,
+          metadata: {
+            main: 'abc.txt',
+            scene: { base: '0,0', parcels: ['0,0', '1,0'] },
+            worldConfiguration: { name: worldName }
+          },
+          files
+        })
+      })
+
+      it('should set the denormalized stats correctly', async () => {
+        const stats = await getWorldStats(worldName)
+
+        expect(stats.deployed_scene_count).toBe(1)
+        expect(stats.last_deployed_at).not.toBeNull()
+        expect(stats.scene_min_x).toBe(0)
+        expect(stats.scene_max_x).toBe(1)
+        expect(stats.scene_min_y).toBe(0)
+        expect(stats.scene_max_y).toBe(0)
+      })
+    })
+
+    describe('when deploying multiple scenes to the same world', function () {
+      let worldName: string
+
+      beforeEach(async () => {
+        const { worldCreator } = components
+
+        worldName = worldCreator.randomWorldName()
+
+        const files = new Map<string, Uint8Array>()
+        files.set('abc.txt', stringToUtf8Bytes(makeid(100)))
+
+        await worldCreator.createWorldWithScene({
+          worldName,
+          metadata: {
+            main: 'abc.txt',
+            scene: { base: '0,0', parcels: ['0,0'] },
+            worldConfiguration: { name: worldName }
+          },
+          files
+        })
+
+        await worldCreator.createWorldWithScene({
+          worldName,
+          metadata: {
+            main: 'abc.txt',
+            scene: { base: '5,3', parcels: ['5,3'] },
+            worldConfiguration: { name: worldName }
+          },
+          files
+        })
+      })
+
+      it('should reflect the combined stats of all deployed scenes', async () => {
+        const stats = await getWorldStats(worldName)
+
+        expect(stats.deployed_scene_count).toBe(2)
+        expect(stats.last_deployed_at).not.toBeNull()
+        expect(stats.scene_min_x).toBe(0)
+        expect(stats.scene_max_x).toBe(5)
+        expect(stats.scene_min_y).toBe(0)
+        expect(stats.scene_max_y).toBe(3)
+      })
+    })
+
+    describe('when deploying over an existing scene on the same parcels', function () {
+      let worldName: string
+
+      beforeEach(async () => {
+        const { worldCreator } = components
+
+        worldName = worldCreator.randomWorldName()
+
+        const files = new Map<string, Uint8Array>()
+        files.set('abc.txt', stringToUtf8Bytes(makeid(100)))
+
+        await worldCreator.createWorldWithScene({
+          worldName,
+          metadata: {
+            main: 'abc.txt',
+            scene: { base: '0,0', parcels: ['0,0', '1,0'] },
+            worldConfiguration: { name: worldName }
+          },
+          files
+        })
+
+        // Redeploy on the same parcels
+        await worldCreator.createWorldWithScene({
+          worldName,
+          metadata: {
+            main: 'abc.txt',
+            scene: { base: '0,0', parcels: ['0,0', '1,0'] },
+            worldConfiguration: { name: worldName }
+          },
+          files
+        })
+      })
+
+      it('should still count only one deployed scene', async () => {
+        const stats = await getWorldStats(worldName)
+
+        expect(stats.deployed_scene_count).toBe(1)
+        expect(stats.scene_min_x).toBe(0)
+        expect(stats.scene_max_x).toBe(1)
+        expect(stats.scene_min_y).toBe(0)
+        expect(stats.scene_max_y).toBe(0)
+      })
+    })
+
+    describe('when undeploying a world', function () {
+      let worldName: string
+
+      beforeEach(async () => {
+        const { worldCreator, worldsManager } = components
+
+        worldName = worldCreator.randomWorldName()
+
+        const files = new Map<string, Uint8Array>()
+        files.set('abc.txt', stringToUtf8Bytes(makeid(100)))
+
+        await worldCreator.createWorldWithScene({
+          worldName,
+          metadata: {
+            main: 'abc.txt',
+            scene: { base: '0,0', parcels: ['0,0', '1,0'] },
+            worldConfiguration: { name: worldName }
+          },
+          files
+        })
+
+        await worldsManager.undeployWorld(worldName)
+      })
+
+      it('should reset all denormalized stats to null/zero', async () => {
+        const stats = await getWorldStats(worldName)
+
+        expect(stats.deployed_scene_count).toBe(0)
+        expect(stats.last_deployed_at).toBeNull()
+        expect(stats.scene_min_x).toBeNull()
+        expect(stats.scene_max_x).toBeNull()
+        expect(stats.scene_min_y).toBeNull()
+        expect(stats.scene_max_y).toBeNull()
+      })
+    })
+
+    describe('when undeploying a single scene from a multi-scene world', function () {
+      let worldName: string
+
+      beforeEach(async () => {
+        const { worldCreator, worldsManager } = components
+
+        worldName = worldCreator.randomWorldName()
+
+        const files = new Map<string, Uint8Array>()
+        files.set('abc.txt', stringToUtf8Bytes(makeid(100)))
+
+        await worldCreator.createWorldWithScene({
+          worldName,
+          metadata: {
+            main: 'abc.txt',
+            scene: { base: '0,0', parcels: ['0,0'] },
+            worldConfiguration: { name: worldName }
+          },
+          files
+        })
+
+        await worldCreator.createWorldWithScene({
+          worldName,
+          metadata: {
+            main: 'abc.txt',
+            scene: { base: '5,3', parcels: ['5,3'] },
+            worldConfiguration: { name: worldName }
+          },
+          files
+        })
+
+        // Undeploy only the second scene
+        await worldsManager.undeployScene(worldName, ['5,3'])
+      })
+
+      it('should recalculate stats to reflect only the remaining deployed scene', async () => {
+        const stats = await getWorldStats(worldName)
+
+        expect(stats.deployed_scene_count).toBe(1)
+        expect(stats.last_deployed_at).not.toBeNull()
+        expect(stats.scene_min_x).toBe(0)
+        expect(stats.scene_max_x).toBe(0)
+        expect(stats.scene_min_y).toBe(0)
+        expect(stats.scene_max_y).toBe(0)
+      })
+    })
+
+    describe('when undeploying the last scene from a world', function () {
+      let worldName: string
+
+      beforeEach(async () => {
+        const { worldCreator, worldsManager } = components
+
+        worldName = worldCreator.randomWorldName()
+
+        const files = new Map<string, Uint8Array>()
+        files.set('abc.txt', stringToUtf8Bytes(makeid(100)))
+
+        await worldCreator.createWorldWithScene({
+          worldName,
+          metadata: {
+            main: 'abc.txt',
+            scene: { base: '0,0', parcels: ['0,0'] },
+            worldConfiguration: { name: worldName }
+          },
+          files
+        })
+
+        await worldsManager.undeployScene(worldName, ['0,0'])
+      })
+
+      it('should reset all denormalized stats to null/zero', async () => {
+        const stats = await getWorldStats(worldName)
+
+        expect(stats.deployed_scene_count).toBe(0)
+        expect(stats.last_deployed_at).toBeNull()
+        expect(stats.scene_min_x).toBeNull()
+        expect(stats.scene_max_x).toBeNull()
+        expect(stats.scene_min_y).toBeNull()
+        expect(stats.scene_max_y).toBeNull()
+      })
+    })
+
+    describe('when deploying a scene with partial parcel overlap', function () {
+      let worldName: string
+
+      beforeEach(async () => {
+        const { worldCreator } = components
+
+        worldName = worldCreator.randomWorldName()
+
+        const files = new Map<string, Uint8Array>()
+        files.set('abc.txt', stringToUtf8Bytes(makeid(100)))
+
+        // Deploy scene A on parcels [0,0] and [1,0]
+        await worldCreator.createWorldWithScene({
+          worldName,
+          metadata: {
+            main: 'abc.txt',
+            scene: { base: '0,0', parcels: ['0,0', '1,0'] },
+            worldConfiguration: { name: worldName }
+          },
+          files
+        })
+
+        // Deploy scene B on parcels [1,0] and [2,0] — overlaps on [1,0], soft-deletes scene A
+        await worldCreator.createWorldWithScene({
+          worldName,
+          metadata: {
+            main: 'abc.txt',
+            scene: { base: '1,0', parcels: ['1,0', '2,0'] },
+            worldConfiguration: { name: worldName }
+          },
+          files
+        })
+      })
+
+      it('should reflect only the remaining deployed scene in the stats', async () => {
+        const stats = await getWorldStats(worldName)
+
+        expect(stats.deployed_scene_count).toBe(1)
+        expect(stats.scene_min_x).toBe(1)
+        expect(stats.scene_max_x).toBe(2)
+        expect(stats.scene_min_y).toBe(0)
+        expect(stats.scene_max_y).toBe(0)
+      })
+    })
+
+    describe('when a world is created without scenes', function () {
+      let worldName: string
+
+      beforeEach(async () => {
+        const { worldsManager } = components
+
+        worldName = 'no-scenes-world.dcl.eth'
+        await worldsManager.storeAccess(worldName, defaultAccess())
+      })
+
+      it('should have zero counts and null stats', async () => {
+        const stats = await getWorldStats(worldName)
+
+        expect(stats.deployed_scene_count).toBe(0)
+        expect(stats.last_deployed_at).toBeNull()
+        expect(stats.scene_min_x).toBeNull()
+        expect(stats.scene_max_x).toBeNull()
+        expect(stats.scene_min_y).toBeNull()
+        expect(stats.scene_max_y).toBeNull()
+      })
+    })
+
+    describe('when re-deploying to a world that was previously fully undeployed', function () {
+      let worldName: string
+
+      beforeEach(async () => {
+        const { worldCreator, worldsManager } = components
+
+        worldName = worldCreator.randomWorldName()
+
+        const files = new Map<string, Uint8Array>()
+        files.set('abc.txt', stringToUtf8Bytes(makeid(100)))
+
+        // Deploy, then fully undeploy
+        await worldCreator.createWorldWithScene({
+          worldName,
+          metadata: {
+            main: 'abc.txt',
+            scene: { base: '0,0', parcels: ['0,0'] },
+            worldConfiguration: { name: worldName }
+          },
+          files
+        })
+
+        await worldsManager.undeployWorld(worldName)
+
+        // Re-deploy a new scene
+        await worldCreator.createWorldWithScene({
+          worldName,
+          metadata: {
+            main: 'abc.txt',
+            scene: { base: '3,4', parcels: ['3,4', '4,4'] },
+            worldConfiguration: { name: worldName }
+          },
+          files
+        })
+      })
+
+      it('should recover stats from null/zero back to the new scene values', async () => {
+        const stats = await getWorldStats(worldName)
+
+        expect(stats.deployed_scene_count).toBe(1)
+        expect(stats.last_deployed_at).not.toBeNull()
+        expect(stats.scene_min_x).toBe(3)
+        expect(stats.scene_max_x).toBe(4)
+        expect(stats.scene_min_y).toBe(4)
+        expect(stats.scene_max_y).toBe(4)
+      })
     })
   })
 })
