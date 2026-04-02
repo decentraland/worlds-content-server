@@ -598,6 +598,100 @@ test('WorldsHandler GET /worlds', function ({ components }) {
     })
   })
 
+  describe('when a scene is undeployed from a multi-scene world', function () {
+    let worldName: string
+
+    beforeEach(async () => {
+      const { worldCreator, worldsManager } = components
+
+      worldName = worldCreator.randomWorldName()
+
+      await worldCreator.createWorldWithScene({
+        worldName,
+        metadata: {
+          main: 'abc.txt',
+          scene: { base: '0,0', parcels: ['0,0'] },
+          worldConfiguration: { name: worldName }
+        }
+      })
+
+      await worldCreator.createWorldWithScene({
+        worldName,
+        metadata: {
+          main: 'abc.txt',
+          scene: { base: '5,3', parcels: ['5,3'] },
+          worldConfiguration: { name: worldName }
+        }
+      })
+
+      // Undeploy only the second scene
+      await worldsManager.undeployScene(worldName, ['5,3'])
+    })
+
+    it('should return updated shape and deployed_scenes reflecting only the remaining scene', async () => {
+      const { localFetch } = components
+
+      const response = await localFetch.fetch('/worlds')
+
+      expect(response.status).toBe(200)
+      const body = await response.json()
+      const world = body.worlds.find((w: { name: string }) => w.name === worldName)
+      expect(world).toMatchObject({
+        name: worldName,
+        shape: { x1: 0, x2: 0, y1: 0, y2: 0 },
+        deployed_scenes: 1,
+        last_deployed_at: expect.any(String)
+      })
+    })
+  })
+
+  describe('when a world is re-deployed after being fully undeployed', function () {
+    let worldName: string
+
+    beforeEach(async () => {
+      const { worldCreator, worldsManager } = components
+
+      worldName = worldCreator.randomWorldName()
+
+      await worldCreator.createWorldWithScene({
+        worldName,
+        metadata: {
+          main: 'abc.txt',
+          scene: { base: '0,0', parcels: ['0,0'] },
+          worldConfiguration: { name: worldName }
+        }
+      })
+
+      await worldsManager.undeployWorld(worldName)
+
+      // Re-deploy a new scene on different parcels
+      await worldCreator.createWorldWithScene({
+        worldName,
+        metadata: {
+          main: 'abc.txt',
+          scene: { base: '3,4', parcels: ['3,4', '4,4'] },
+          worldConfiguration: { name: worldName }
+        }
+      })
+    })
+
+    it('should return the world with recovered stats from the new deployment', async () => {
+      const { localFetch } = components
+
+      const response = await localFetch.fetch('/worlds')
+
+      expect(response.status).toBe(200)
+      const body = await response.json()
+      const world = body.worlds.find((w: { name: string }) => w.name === worldName)
+      expect(world).toMatchObject({
+        name: worldName,
+        shape: { x1: 3, x2: 4, y1: 4, y2: 4 },
+        deployed_scenes: 1,
+        last_deployed_at: expect.any(String)
+      })
+    })
+  })
+
   describe('when a world owner is blocked', function () {
     let worldName: string
     let blockedSince: Date
