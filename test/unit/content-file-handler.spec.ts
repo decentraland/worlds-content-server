@@ -259,4 +259,89 @@ describe('getContentFile', () => {
       expect(storageMock.retrieve).toHaveBeenCalledWith(hashId)
     })
   })
+
+  describe('when a valid Range header is sent', () => {
+    let response: IHttpServerComponent.IResponse
+    let storageMock: Partial<IContentStorageComponent>
+
+    beforeEach(async () => {
+      const rangedItem = createContentItem({ size: 5 })
+      storageMock = {
+        fileInfo: jest.fn().mockResolvedValue({ encoding: null, size: fileContent.length, contentSize: fileContent.length }),
+        retrieve: jest.fn().mockResolvedValue(rangedItem)
+      }
+      response = await getContentFile(createContext(storageMock, 'bytes=0-4'))
+    })
+
+    it('should respond with 206', () => {
+      expect(response.status).toEqual(206)
+    })
+
+    it('should retrieve with the correct range', () => {
+      expect(storageMock.retrieve).toHaveBeenCalledWith(hashId, { start: 0, end: 4 })
+    })
+
+    it('should include the Content-Range header with the total file size', () => {
+      expect((response.headers as Record<string, string>)['Content-Range']).toEqual(
+        `bytes 0-4/${fileContent.length}`
+      )
+    })
+
+    it('should set Content-Length to the range size', () => {
+      expect((response.headers as Record<string, string>)['Content-Length']).toEqual('5')
+    })
+  })
+
+  describe('when an invalid Range header is sent', () => {
+    let response: IHttpServerComponent.IResponse
+    let storageMock: Partial<IContentStorageComponent>
+
+    beforeEach(async () => {
+      storageMock = {
+        fileInfo: jest.fn().mockResolvedValue({ encoding: null, size: fileContent.length, contentSize: fileContent.length }),
+        retrieve: jest.fn()
+      }
+      response = await getContentFile(createContext(storageMock, `bytes=${fileContent.length + 10}-`))
+    })
+
+    it('should respond with 416', () => {
+      expect(response.status).toEqual(416)
+    })
+
+    it('should include the Content-Range header with the file size', () => {
+      expect((response.headers as Record<string, string>)['Content-Range']).toEqual(
+        `bytes */${fileContent.length}`
+      )
+    })
+
+    it('should not call retrieve', () => {
+      expect(storageMock.retrieve).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('when no Range header is sent', () => {
+    let response: IHttpServerComponent.IResponse
+    let storageMock: Partial<IContentStorageComponent>
+
+    beforeEach(async () => {
+      const item = createContentItem()
+      storageMock = {
+        fileInfo: jest.fn(),
+        retrieve: jest.fn().mockResolvedValue(item)
+      }
+      response = await getContentFile(createContext(storageMock))
+    })
+
+    it('should respond with 200', () => {
+      expect(response.status).toEqual(200)
+    })
+
+    it('should retrieve without a range', () => {
+      expect(storageMock.retrieve).toHaveBeenCalledWith(hashId)
+    })
+
+    it('should not call fileInfo', () => {
+      expect(storageMock.fileInfo).not.toHaveBeenCalled()
+    })
+  })
 })
