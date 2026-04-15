@@ -319,6 +319,24 @@ describe('getContentFile', () => {
     })
   })
 
+  describe('when fileInfo succeeds but retrieve returns null', () => {
+    let response: IHttpServerComponent.IResponse
+
+    beforeEach(async () => {
+      const storageMock: Partial<IContentStorageComponent> = {
+        fileInfo: jest
+          .fn()
+          .mockResolvedValue({ encoding: null, size: fileContent.length, contentSize: fileContent.length }),
+        retrieve: jest.fn().mockResolvedValue(undefined)
+      }
+      response = await getContentFile(createContext(storageMock, 'bytes=0-4'))
+    })
+
+    it('should respond with 404', () => {
+      expect(response.status).toEqual(404)
+    })
+  })
+
   describe('when no Range header is sent', () => {
     let response: IHttpServerComponent.IResponse
     let storageMock: Partial<IContentStorageComponent>

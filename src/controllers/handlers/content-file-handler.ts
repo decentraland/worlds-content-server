@@ -109,6 +109,7 @@ export async function getContentFile(
     return retrieveFullContent(ctx.components.storage, ctx.params.hashId)
   }
 
+  // start and end are inclusive byte offsets, matching RFC 7233 and catalyst-storage convention
   const file = await ctx.components.storage.retrieve(ctx.params.hashId, { start: range.start, end: range.end })
   if (!file) return { status: 404 }
 
