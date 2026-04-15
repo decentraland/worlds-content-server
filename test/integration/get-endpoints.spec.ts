@@ -118,9 +118,7 @@ test('consume get endpoints', function ({ components }) {
       })
 
       it('should include the Content-Range header', () => {
-        expect(response.headers.get('content-range')).toEqual(
-          `bytes 7-${contentBody.length - 1}/${contentBody.length}`
-        )
+        expect(response.headers.get('content-range')).toEqual(`bytes 7-${contentBody.length - 1}/${contentBody.length}`)
       })
     })
 
@@ -188,12 +186,9 @@ test('consume get endpoints', function ({ components }) {
 
       beforeEach(async () => {
         const { localFetch } = components
-        response = await localFetch.fetch(
-          '/contents/bafybeictjyqjlkgybfckczpuqlqo7xfhho3jpnep4wesw3ivaeeuqugc2y',
-          {
-            headers: { Range: 'bytes=0-10' }
-          }
-        )
+        response = await localFetch.fetch('/contents/bafybeictjyqjlkgybfckczpuqlqo7xfhho3jpnep4wesw3ivaeeuqugc2y', {
+          headers: { Range: 'bytes=0-10' }
+        })
       })
 
       it('should respond with 404', () => {
