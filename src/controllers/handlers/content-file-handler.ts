@@ -112,16 +112,11 @@ export async function getContentFile(
   const file = await ctx.components.storage.retrieve(ctx.params.hashId, { start: range.start, end: range.end })
   if (!file) return { status: 404 }
 
-  const contentLength = range.end - range.start + 1
   return {
     status: 206,
     headers: {
-      'Content-Type': 'application/octet-stream',
-      ETag: JSON.stringify(ctx.params.hashId),
-      'Access-Control-Expose-Headers': EXPOSED_HEADERS,
-      'Accept-Ranges': 'bytes',
-      'Cache-Control': 'public,max-age=31536000,s-maxage=31536000,immutable',
-      'Content-Length': contentLength.toString(),
+      ...contentItemHeaders(file, ctx.params.hashId),
+      'Content-Length': (range.end - range.start + 1).toString(),
       'Content-Range': `bytes ${range.start}-${range.end}/${fileInfo.size}`
     },
     body: await file.asRawStream()
