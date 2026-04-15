@@ -319,6 +319,45 @@ describe('getContentFile', () => {
     })
   })
 
+  describe('when retrieve throws a RangeError', () => {
+    let response: IHttpServerComponent.IResponse
+
+    beforeEach(async () => {
+      const storageMock: Partial<IContentStorageComponent> = {
+        fileInfo: jest
+          .fn()
+          .mockResolvedValue({ encoding: null, size: fileContent.length, contentSize: fileContent.length }),
+        retrieve: jest.fn().mockRejectedValue(new RangeError('Range start 0 exceeds size 0'))
+      }
+      response = await getContentFile(createContext(storageMock, 'bytes=0-4'))
+    })
+
+    it('should respond with 416', () => {
+      expect(response.status).toEqual(416)
+    })
+
+    it('should include the Content-Range header with the file size', () => {
+      expect((response.headers as Record<string, string>)['Content-Range']).toEqual(`bytes */${fileContent.length}`)
+    })
+  })
+
+  describe('when retrieve throws a non-RangeError', () => {
+    let storageMock: Partial<IContentStorageComponent>
+
+    beforeEach(() => {
+      storageMock = {
+        fileInfo: jest
+          .fn()
+          .mockResolvedValue({ encoding: null, size: fileContent.length, contentSize: fileContent.length }),
+        retrieve: jest.fn().mockRejectedValue(new Error('connection lost'))
+      }
+    })
+
+    it('should re-throw the error', async () => {
+      await expect(getContentFile(createContext(storageMock, 'bytes=0-4'))).rejects.toThrow('connection lost')
+    })
+  })
+
   describe('when fileInfo succeeds but retrieve returns null', () => {
     let response: IHttpServerComponent.IResponse
 

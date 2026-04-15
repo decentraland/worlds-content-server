@@ -109,8 +109,22 @@ export async function getContentFile(
     return retrieveFullContent(ctx.components.storage, ctx.params.hashId)
   }
 
-  // start and end are inclusive byte offsets, matching RFC 7233 and catalyst-storage convention
-  const file = await ctx.components.storage.retrieve(ctx.params.hashId, { start: range.start, end: range.end })
+  // start and end are inclusive byte offsets, matching RFC 7233 and catalyst-storage convention.
+  // retrieve may throw RangeError if the file size changed between fileInfo and retrieve.
+  let file: Awaited<ReturnType<IContentStorageComponent['retrieve']>>
+  try {
+    file = await ctx.components.storage.retrieve(ctx.params.hashId, { start: range.start, end: range.end })
+  } catch (error) {
+    if (error instanceof RangeError) {
+      return {
+        status: 416,
+        headers: {
+          'Content-Range': `bytes */${fileInfo.size}`
+        }
+      }
+    }
+    throw error
+  }
   if (!file) return { status: 404 }
 
   return {
