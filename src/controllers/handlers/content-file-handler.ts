@@ -1,7 +1,7 @@
 import { IHttpServerComponent } from '@well-known-components/interfaces'
 import { IPFSv2 } from '@dcl/schemas'
 import { HandlerContextWithPath } from '../../types'
-import { ContentItem } from '@dcl/catalyst-storage'
+import { ContentItem, IContentStorageComponent } from '@dcl/catalyst-storage'
 
 const EXPOSED_HEADERS = 'ETag, Accept-Ranges, Content-Range'
 
@@ -65,6 +65,15 @@ export function parseRangeHeader(header: string, fileSize: number): RangeParseRe
   return { kind: 'ok', start, end: Math.min(end, fileSize - 1) }
 }
 
+async function retrieveFullContent(
+  storage: Pick<IContentStorageComponent, 'retrieve'>,
+  hashId: string
+): Promise<IHttpServerComponent.IResponse> {
+  const file = await storage.retrieve(hashId)
+  if (!file) return { status: 404 }
+  return { status: 200, headers: contentItemHeaders(file, hashId), body: await file.asRawStream() }
+}
+
 export async function getContentFile(
   ctx: HandlerContextWithPath<'storage', '/contents/:hashId'>
 ): Promise<IHttpServerComponent.IResponse> {
@@ -72,59 +81,51 @@ export async function getContentFile(
 
   const rangeHeader = ctx.request.headers.get('range')
 
-  if (rangeHeader) {
-    const fileInfo = await ctx.components.storage.fileInfo(ctx.params.hashId)
-    if (!fileInfo) return { status: 404 }
+  if (!rangeHeader) {
+    return retrieveFullContent(ctx.components.storage, ctx.params.hashId)
+  }
 
-    // Cannot serve byte ranges on compressed content
-    if (fileInfo.encoding || fileInfo.size === null) {
-      const file = await ctx.components.storage.retrieve(ctx.params.hashId)
-      if (!file) return { status: 404 }
-      return { status: 200, headers: contentItemHeaders(file, ctx.params.hashId), body: await file.asRawStream() }
-    }
+  const fileInfo = await ctx.components.storage.fileInfo(ctx.params.hashId)
+  if (!fileInfo) return { status: 404 }
 
-    const range = parseRangeHeader(rangeHeader, fileInfo.size)
+  // Cannot serve byte ranges on compressed content or when size is unknown
+  if (fileInfo.encoding || fileInfo.size === null) {
+    return retrieveFullContent(ctx.components.storage, ctx.params.hashId)
+  }
 
-    if (range.kind === 'invalid') {
-      return {
-        status: 416,
-        headers: {
-          'Content-Range': `bytes */${fileInfo.size}`
-        }
-      }
-    }
+  const range = parseRangeHeader(rangeHeader, fileInfo.size)
 
-    // Unsupported range format (e.g. multi-range): ignore and serve full content per RFC 7233
-    if (range.kind === 'unsupported') {
-      const file = await ctx.components.storage.retrieve(ctx.params.hashId)
-      if (!file) return { status: 404 }
-      return { status: 200, headers: contentItemHeaders(file, ctx.params.hashId), body: await file.asRawStream() }
-    }
-
-    const file = await ctx.components.storage.retrieve(ctx.params.hashId, { start: range.start, end: range.end })
-    if (!file) return { status: 404 }
-
-    const contentLength = range.end - range.start + 1
+  if (range.kind === 'invalid') {
     return {
-      status: 206,
+      status: 416,
       headers: {
-        'Content-Type': 'application/octet-stream',
-        ETag: JSON.stringify(ctx.params.hashId),
-        'Access-Control-Expose-Headers': EXPOSED_HEADERS,
-        'Accept-Ranges': 'bytes',
-        'Cache-Control': 'public,max-age=31536000,s-maxage=31536000,immutable',
-        'Content-Length': contentLength.toString(),
-        'Content-Range': `bytes ${range.start}-${range.end}/${fileInfo.size}`
-      },
-      body: await file.asRawStream()
+        'Content-Range': `bytes */${fileInfo.size}`
+      }
     }
   }
 
-  const file = await ctx.components.storage.retrieve(ctx.params.hashId)
+  // Unsupported range format (e.g. multi-range): ignore and serve full content per RFC 7233
+  if (range.kind === 'unsupported') {
+    return retrieveFullContent(ctx.components.storage, ctx.params.hashId)
+  }
 
+  const file = await ctx.components.storage.retrieve(ctx.params.hashId, { start: range.start, end: range.end })
   if (!file) return { status: 404 }
 
-  return { status: 200, headers: contentItemHeaders(file, ctx.params.hashId), body: await file.asRawStream() }
+  const contentLength = range.end - range.start + 1
+  return {
+    status: 206,
+    headers: {
+      'Content-Type': 'application/octet-stream',
+      ETag: JSON.stringify(ctx.params.hashId),
+      'Access-Control-Expose-Headers': EXPOSED_HEADERS,
+      'Accept-Ranges': 'bytes',
+      'Cache-Control': 'public,max-age=31536000,s-maxage=31536000,immutable',
+      'Content-Length': contentLength.toString(),
+      'Content-Range': `bytes ${range.start}-${range.end}/${fileInfo.size}`
+    },
+    body: await file.asRawStream()
+  }
 }
 
 export async function headContentFile(
