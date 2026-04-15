@@ -267,7 +267,9 @@ describe('getContentFile', () => {
     beforeEach(async () => {
       const rangedItem = createContentItem({ size: 5 })
       storageMock = {
-        fileInfo: jest.fn().mockResolvedValue({ encoding: null, size: fileContent.length, contentSize: fileContent.length }),
+        fileInfo: jest
+          .fn()
+          .mockResolvedValue({ encoding: null, size: fileContent.length, contentSize: fileContent.length }),
         retrieve: jest.fn().mockResolvedValue(rangedItem)
       }
       response = await getContentFile(createContext(storageMock, 'bytes=0-4'))
@@ -282,9 +284,7 @@ describe('getContentFile', () => {
     })
 
     it('should include the Content-Range header with the total file size', () => {
-      expect((response.headers as Record<string, string>)['Content-Range']).toEqual(
-        `bytes 0-4/${fileContent.length}`
-      )
+      expect((response.headers as Record<string, string>)['Content-Range']).toEqual(`bytes 0-4/${fileContent.length}`)
     })
 
     it('should set Content-Length to the range size', () => {
@@ -298,7 +298,9 @@ describe('getContentFile', () => {
 
     beforeEach(async () => {
       storageMock = {
-        fileInfo: jest.fn().mockResolvedValue({ encoding: null, size: fileContent.length, contentSize: fileContent.length }),
+        fileInfo: jest
+          .fn()
+          .mockResolvedValue({ encoding: null, size: fileContent.length, contentSize: fileContent.length }),
         retrieve: jest.fn()
       }
       response = await getContentFile(createContext(storageMock, `bytes=${fileContent.length + 10}-`))
@@ -309,9 +311,7 @@ describe('getContentFile', () => {
     })
 
     it('should include the Content-Range header with the file size', () => {
-      expect((response.headers as Record<string, string>)['Content-Range']).toEqual(
-        `bytes */${fileContent.length}`
-      )
+      expect((response.headers as Record<string, string>)['Content-Range']).toEqual(`bytes */${fileContent.length}`)
     })
 
     it('should not call retrieve', () => {
