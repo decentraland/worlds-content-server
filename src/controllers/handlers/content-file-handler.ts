@@ -17,11 +17,16 @@ function contentItemHeaders(content: ContentItem, hashId: string) {
   } else {
     ret['Accept-Ranges'] = 'bytes'
   }
-  if (content.size) {
+  if (content.size !== null) {
     ret['Content-Length'] = content.size.toString()
   }
   return ret
 }
+
+export type RangeParseResult =
+  | { kind: 'ok'; start: number; end: number }
+  | { kind: 'unsupported' }
+  | { kind: 'invalid' }
 
 /**
  * Parses a Range header value against a known file size.
@@ -29,16 +34,17 @@ function contentItemHeaders(content: ContentItem, hashId: string) {
  *   bytes=START-END
  *   bytes=START-
  *   bytes=-SUFFIX
- * Returns null for unsupported formats (e.g. multi-range).
+ * Returns { kind: 'unsupported' } for formats we don't handle (e.g. multi-range, non-bytes unit).
+ * Returns { kind: 'invalid' } for syntactically valid but unsatisfiable ranges.
  */
-export function parseRangeHeader(header: string, fileSize: number): { start: number; end: number } | null {
+export function parseRangeHeader(header: string, fileSize: number): RangeParseResult {
   const match = header.match(/^bytes=(\d*)-(\d*)$/)
-  if (!match) return null
+  if (!match) return { kind: 'unsupported' }
 
   const hasStart = match[1] !== ''
   const hasEnd = match[2] !== ''
 
-  if (!hasStart && !hasEnd) return null
+  if (!hasStart && !hasEnd) return { kind: 'unsupported' }
 
   let start: number
   let end: number
@@ -46,7 +52,7 @@ export function parseRangeHeader(header: string, fileSize: number): { start: num
   if (!hasStart) {
     // suffix range: bytes=-N (last N bytes)
     const suffix = parseInt(match[2], 10)
-    if (suffix === 0) return null
+    if (suffix === 0) return { kind: 'invalid' }
     start = Math.max(0, fileSize - suffix)
     end = fileSize - 1
   } else {
@@ -54,9 +60,9 @@ export function parseRangeHeader(header: string, fileSize: number): { start: num
     end = hasEnd ? parseInt(match[2], 10) : fileSize - 1
   }
 
-  if (start >= fileSize || end < start) return null
+  if (start >= fileSize || end < start) return { kind: 'invalid' }
 
-  return { start, end: Math.min(end, fileSize - 1) }
+  return { kind: 'ok', start, end: Math.min(end, fileSize - 1) }
 }
 
 export async function getContentFile(
@@ -78,7 +84,8 @@ export async function getContentFile(
     }
 
     const range = parseRangeHeader(rangeHeader, fileInfo.size)
-    if (!range) {
+
+    if (range.kind === 'invalid') {
       return {
         status: 416,
         headers: {
@@ -87,7 +94,14 @@ export async function getContentFile(
       }
     }
 
-    const file = await ctx.components.storage.retrieve(ctx.params.hashId, range)
+    // Unsupported range format (e.g. multi-range): ignore and serve full content per RFC 7233
+    if (range.kind === 'unsupported') {
+      const file = await ctx.components.storage.retrieve(ctx.params.hashId)
+      if (!file) return { status: 404 }
+      return { status: 200, headers: contentItemHeaders(file, ctx.params.hashId), body: await file.asRawStream() }
+    }
+
+    const file = await ctx.components.storage.retrieve(ctx.params.hashId, { start: range.start, end: range.end })
     if (!file) return { status: 404 }
 
     const contentLength = range.end - range.start + 1
