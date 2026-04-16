@@ -1,6 +1,7 @@
 import { FormDataContext } from './multipart'
 import { AuthChain } from '@dcl/schemas'
 import { requireString } from '../controllers/handlers/deploy-entity-handler'
+import { InvalidRequestError } from '@dcl/http-commons'
 
 export function extractAuthChain(ctx: FormDataContext): AuthChain {
   const ret: AuthChain = []
@@ -15,7 +16,7 @@ export function extractAuthChain(ctx: FormDataContext): AuthChain {
     }
   }
 
-  if (biggestIndex === -1) throw new Error('Missing auth chain')
+  if (biggestIndex === -1) throw new InvalidRequestError('Missing auth chain')
   // fill all the authChain
   for (let i = 0; i <= biggestIndex; i++) {
     ret.push({
