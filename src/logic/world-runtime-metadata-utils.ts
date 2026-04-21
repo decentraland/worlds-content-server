@@ -61,6 +61,18 @@ export function extractWorldRuntimeMetadata(worldName: string, entity: Entity): 
   }
 }
 
+export type SceneMetadataForShowInPlaces = {
+  worldConfiguration?: {
+    placesConfig?: {
+      optOut?: boolean
+    }
+  }
+}
+
+export function shouldShowInPlaces(sceneMetadata: SceneMetadataForShowInPlaces | null | undefined): boolean {
+  return !sceneMetadata?.worldConfiguration?.placesConfig?.optOut
+}
+
 export function buildWorldRuntimeMetadata(worldName: string, scenes: any[]): WorldRuntimeMetadata {
   // Derive runtime metadata from scenes
   if (scenes.length > 0) {

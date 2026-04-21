@@ -30,7 +30,7 @@ import {
 import { streamToBuffer } from '@dcl/catalyst-storage'
 import { Entity, EthAddress } from '@dcl/schemas'
 import SQL from 'sql-template-strings'
-import { buildWorldRuntimeMetadata } from '../logic/world-runtime-metadata-utils'
+import { buildWorldRuntimeMetadata, shouldShowInPlaces } from '../logic/world-runtime-metadata-utils'
 import { AccessSetting, defaultAccess } from '../logic/access'
 
 type BoundingRow = { min_x: number; max_x: number; min_y: number; max_y: number }
@@ -217,7 +217,7 @@ export async function createWorldsManagerComponent({
     const categories: string[] | null = sceneMetadata.tags?.length > 0 ? sceneMetadata.tags : null
     const rating = sceneMetadata?.rating ?? null
     const singlePlayer = sceneMetadata.worldConfiguration?.fixedAdapter === 'offline:offline'
-    const showInPlaces = !!sceneMetadata.worldConfiguration?.placesConfig?.optOut
+    const showInPlaces = shouldShowInPlaces(sceneMetadata)
 
     // Extract thumbnail hash from scene content
     const navmapThumbnail = sceneMetadata.display?.navmapThumbnail

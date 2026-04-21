@@ -787,7 +787,7 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
           skyboxTime: 3600,
           categories: ['adventure', 'exploration', 'fantasy'],
           singlePlayer: true,
-          showInPlaces: true,
+          showInPlaces: false,
           thumbnailHash: thumbnailHash
         })
       })
@@ -810,7 +810,7 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
           skybox_time: 3600,
           categories: ['adventure', 'exploration', 'fantasy'],
           single_player: true,
-          show_in_places: true,
+          show_in_places: false,
           thumbnail_hash: thumbnailHash
         })
       })
@@ -860,7 +860,7 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
         expect(settings?.skyboxTime).toBeUndefined()
         expect(settings?.categories).toBeUndefined()
         expect(settings?.singlePlayer).toBe(false)
-        expect(settings?.showInPlaces).toBe(false)
+        expect(settings?.showInPlaces).toBe(true)
         expect(settings?.thumbnailHash).toBeUndefined()
       })
     })
@@ -896,6 +896,9 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
               name: worldName,
               skyboxConfig: {
                 fixedTime: 1200
+              },
+              placesConfig: {
+                optOut: true
               }
             }
           }
@@ -950,7 +953,8 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
           description: 'Original description',
           spawnCoordinates: '0,0',
           skyboxTime: 1200,
-          categories: ['original']
+          categories: ['original'],
+          showInPlaces: false
         })
       })
     })
