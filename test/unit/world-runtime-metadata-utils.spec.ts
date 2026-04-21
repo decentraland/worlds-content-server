@@ -208,6 +208,7 @@ describe('world-runtime-metadata-utils', function () {
         scenes = [
           {
             entityId: 'bafi123',
+            createdAt: new Date('2024-01-01T00:00:00Z'),
             entity: {
               version: 'v3',
               type: EntityType.SCENE,
@@ -252,6 +253,7 @@ describe('world-runtime-metadata-utils', function () {
         scenes = [
           {
             entityId: 'first-scene',
+            createdAt: new Date('2024-01-01T00:00:00Z'),
             entity: {
               version: 'v3',
               type: EntityType.SCENE,
@@ -268,6 +270,7 @@ describe('world-runtime-metadata-utils', function () {
           },
           {
             entityId: 'second-scene',
+            createdAt: new Date('2024-02-01T00:00:00Z'),
             entity: {
               version: 'v3',
               type: EntityType.SCENE,
@@ -285,11 +288,19 @@ describe('world-runtime-metadata-utils', function () {
         ]
       })
 
-      it('should only use the first scene for metadata', () => {
+      it('should aggregate every scene entity id while using the most recent scene for world-level settings', () => {
         const result = buildWorldRuntimeMetadata(worldName, scenes)
 
-        expect(result.entityIds).toEqual(['first-scene'])
-        expect(result.name).toBe('first-scene-name')
+        expect(result.entityIds).toEqual(expect.arrayContaining(['first-scene', 'second-scene']))
+        expect(result.entityIds).toHaveLength(2)
+        expect(result.name).toBe('second-scene-name')
+      })
+
+      it('should pick the most recent scene even when scenes arrive in ascending order', () => {
+        const shuffled = [...scenes].reverse()
+        const result = buildWorldRuntimeMetadata(worldName, shuffled)
+
+        expect(result.name).toBe('second-scene-name')
       })
     })
   })

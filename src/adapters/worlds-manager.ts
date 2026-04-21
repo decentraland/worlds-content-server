@@ -144,13 +144,13 @@ export async function createWorldsManagerComponent({
 
     const row = result.rows[0]
 
-    // Get the last deployed scene (most recently deployed)
+    // Fetch every deployed scene for this world so /about can advertise each of
+    // them in `scenesUrn`.
     const { scenes } = await getWorldScenes(
       { worldName },
-      { limit: 1, orderBy: SceneOrderBy.CreatedAt, orderDirection: OrderDirection.Desc }
+      { orderBy: SceneOrderBy.CreatedAt, orderDirection: OrderDirection.Desc }
     )
 
-    // Build runtime metadata from scenes
     const runtimeMetadata = buildWorldRuntimeMetadata(worldName, scenes)
 
     // Override with world settings from DB
@@ -230,14 +230,14 @@ export async function createWorldsManagerComponent({
       // On subsequent deployments (UPDATE), preserve existing settings
       await database.query(SQL`
         INSERT INTO worlds (
-          name, owner, access, spawn_coordinates, 
+          name, owner, access, spawn_coordinates,
           title, description, content_rating, skybox_time, categories,
           single_player, show_in_places, thumbnail_hash,
           created_at, updated_at
         )
         VALUES (
-          ${worldName.toLowerCase()}, 
-          ${owner.toLowerCase()}, 
+          ${worldName.toLowerCase()},
+          ${owner.toLowerCase()},
           ${JSON.stringify(defaultAccess())}::jsonb,
           ${spawnCoordinates},
           ${title},
@@ -248,7 +248,7 @@ export async function createWorldsManagerComponent({
           ${singlePlayer},
           ${showInPlaces},
           ${thumbnailHash},
-          ${new Date()}, 
+          ${new Date()},
           ${new Date()}
         )
         ON CONFLICT (name) DO UPDATE SET
@@ -294,7 +294,7 @@ export async function createWorldsManagerComponent({
               INSERT INTO worlds (name, access, created_at, updated_at)
               VALUES (${worldName.toLowerCase()}, ${JSON.stringify(access)}::jsonb,
                       ${new Date()}, ${new Date()})
-              ON CONFLICT (name) 
+              ON CONFLICT (name)
                   DO UPDATE SET access = ${JSON.stringify(access)}::jsonb,
                                 updated_at = ${new Date()}
     `
@@ -419,12 +419,12 @@ export async function createWorldsManagerComponent({
       owner: string
       parcel_count: string
     }>(SQL`
-      SELECT 
+      SELECT
         w.name,
         array_agg(DISTINCT wp.permission_type) as user_permissions,
         COALESCE(sizes.total_size, 0)::text as size,
         w.owner,
-        CASE 
+        CASE
           WHEN bool_or(COALESCE(parcel_counts.count, 0) = 0) THEN '0'
           ELSE MIN(parcel_counts.count)::text
         END as parcel_count
@@ -672,7 +672,7 @@ export async function createWorldsManagerComponent({
       const result = await database.query<WorldRecord>(SQL`
         INSERT INTO worlds (
           name, owner, access,
-          title, description, content_rating, spawn_coordinates, 
+          title, description, content_rating, spawn_coordinates,
           skybox_time, categories, single_player, show_in_places, thumbnail_hash,
           created_at, updated_at
         )
@@ -715,8 +715,8 @@ export async function createWorldsManagerComponent({
 
   async function getWorldSettings(worldName: string): Promise<WorldSettings | undefined> {
     const result = await database.query<WorldRecord>(SQL`
-      SELECT title, description, content_rating, spawn_coordinates, skybox_time, 
-             categories, single_player, show_in_places, thumbnail_hash 
+      SELECT title, description, content_rating, spawn_coordinates, skybox_time,
+             categories, single_player, show_in_places, thumbnail_hash
       FROM worlds WHERE name = ${worldName.toLowerCase()}
     `)
 
@@ -788,7 +788,7 @@ export async function createWorldsManagerComponent({
 
   async function getWorldBoundingRectangle(worldName: string): Promise<WorldBoundingRectangle | undefined> {
     const query = SQL`
-      SELECT 
+      SELECT
         MIN(SPLIT_PART(parcel, ',', 1)::integer) as min_x,
         MAX(SPLIT_PART(parcel, ',', 1)::integer) as max_x,
         MIN(SPLIT_PART(parcel, ',', 2)::integer) as min_y,
@@ -1028,7 +1028,7 @@ export async function createWorldsManagerComponent({
         WHERE ws.world_name = ${normalizedWorldName}
         AND ws.status = 'DEPLOYED'
       ) unique_parcels
-      ORDER BY 
+      ORDER BY
         SPLIT_PART(parcel, ',', 1)::integer,
         SPLIT_PART(parcel, ',', 2)::integer
     `

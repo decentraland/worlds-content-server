@@ -646,10 +646,12 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
       expect(total).toBe(2)
       expect(scenes.map((s) => s.entityId)).toEqual(expect.arrayContaining([firstEntityId, secondEntityId]))
 
-      // getMetadataForWorld returns the most recently deployed scene
+      // getMetadataForWorld aggregates every deployed scene so /about can
+      // advertise the complete multi-scene world.
       const metadata = await worldsManager.getMetadataForWorld(worldName)
-      expect(metadata?.runtimeMetadata.entityIds).toHaveLength(1)
-      expect(metadata?.runtimeMetadata.entityIds).toContain(secondEntityId) // most recently deployed
+      expect(metadata?.runtimeMetadata.entityIds).toHaveLength(2)
+      expect(metadata?.runtimeMetadata.entityIds).toEqual(expect.arrayContaining([firstEntityId, secondEntityId]))
+      expect(metadata?.runtimeMetadata.entityIds[0]).toBe(secondEntityId)
     })
 
     it('should list both scenes in the scenes endpoint', async () => {

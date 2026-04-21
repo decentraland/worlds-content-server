@@ -1,4 +1,4 @@
-import { WorldRuntimeMetadata } from '../types'
+import { WorldRuntimeMetadata, WorldScene } from '../types'
 import { Entity, WorldConfiguration } from '@dcl/schemas'
 import { ContentMapping } from '@dcl/schemas/dist/misc/content-mapping'
 
@@ -61,20 +61,26 @@ export function extractWorldRuntimeMetadata(worldName: string, entity: Entity): 
   }
 }
 
-export function buildWorldRuntimeMetadata(worldName: string, scenes: any[]): WorldRuntimeMetadata {
-  // Derive runtime metadata from scenes
-  if (scenes.length > 0) {
-    const firstScene = scenes[0]
-    return extractWorldRuntimeMetadata(worldName, {
-      ...firstScene.entity,
-      id: firstScene.entityId
-    })
+export function buildWorldRuntimeMetadata(worldName: string, scenes: WorldScene[]): WorldRuntimeMetadata {
+  if (scenes.length === 0) {
+    return {
+      name: worldName,
+      entityIds: [],
+      minimapVisible: false
+    }
   }
 
-  // Default empty metadata
+  // Take world-level settings (minimap, skybox, thumbnail, fixedAdapter, name)
+  // from the most recently deployed scene
+  const orderedScenes = [...scenes].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+  const primaryScene = orderedScenes[0]
+  const baseMetadata = extractWorldRuntimeMetadata(worldName, {
+    ...primaryScene.entity,
+    id: primaryScene.entityId
+  })
+
   return {
-    name: worldName,
-    entityIds: [],
-    minimapVisible: false
+    ...baseMetadata,
+    entityIds: orderedScenes.map((scene) => scene.entityId)
   }
 }

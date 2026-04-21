@@ -496,6 +496,7 @@ test('world about handler /world/:world_name/about', function ({ components, stu
 
     describe('and it has multiple scenes deployed at different parcels', () => {
       let worldName: string
+      let firstDeployedEntityId: string
       let lastDeployedEntityId: string
 
       beforeEach(async () => {
@@ -504,7 +505,7 @@ test('world about handler /world/:world_name/about', function ({ components, stu
         worldName = worldCreator.randomWorldName()
 
         // First scene at spawn point (20,24)
-        await worldCreator.createWorldWithScene({
+        const firstResult = await worldCreator.createWorldWithScene({
           worldName: worldName,
           metadata: {
             main: 'abc.txt',
@@ -517,6 +518,7 @@ test('world about handler /world/:world_name/about', function ({ components, stu
             }
           }
         })
+        firstDeployedEntityId = firstResult.entityId
 
         // Second scene at different parcels (30,34) - this is the last deployed scene
         const secondResult = await worldCreator.createWorldWithScene({
@@ -535,15 +537,23 @@ test('world about handler /world/:world_name/about', function ({ components, stu
         lastDeployedEntityId = secondResult.entityId
       })
 
-      it('should respond with 200 and only the last deployed scene in scenesUrn', async () => {
+      it('should respond with 200 and advertise every deployed scene in scenesUrn', async () => {
         const { localFetch } = components
 
         const r = await localFetch.fetch(`/world/${worldName}/about`)
 
         expect(r.status).toEqual(200)
         const body = await r.json()
-        expect(body.configurations.scenesUrn).toHaveLength(1)
+        expect(body.configurations.scenesUrn).toHaveLength(2)
         expect(body.configurations.scenesUrn).toContain(
+          `urn:decentraland:entity:${lastDeployedEntityId}?=&baseUrl=http://0.0.0.0:3000/contents/`
+        )
+        expect(body.configurations.scenesUrn).toContain(
+          `urn:decentraland:entity:${firstDeployedEntityId}?=&baseUrl=http://0.0.0.0:3000/contents/`
+        )
+
+        // Most recently deployed scene drives primary-scene fields (index 0)
+        expect(body.configurations.scenesUrn[0]).toBe(
           `urn:decentraland:entity:${lastDeployedEntityId}?=&baseUrl=http://0.0.0.0:3000/contents/`
         )
         // Spawn coordinates remain at the original location
