@@ -98,7 +98,7 @@ test('WorldsHandler GET /worlds', function ({ components }) {
         shape: { x1: 0, x2: 1, y1: 0, y2: 0 },
         spawn_coordinates: '0,0',
         single_player: false,
-        show_in_places: false,
+        show_in_places: true,
         last_deployed_at: expect.any(String),
         blocked_since: null,
         deployed_scenes: 1
@@ -113,7 +113,7 @@ test('WorldsHandler GET /worlds', function ({ components }) {
         shape: { x1: 5, x2: 6, y1: 5, y2: 6 },
         spawn_coordinates: '5,5',
         single_player: false,
-        show_in_places: false,
+        show_in_places: true,
         last_deployed_at: expect.any(String),
         blocked_since: null,
         deployed_scenes: 1
@@ -128,7 +128,7 @@ test('WorldsHandler GET /worlds', function ({ components }) {
         shape: { x1: 10, x2: 10, y1: 10, y2: 10 },
         spawn_coordinates: '10,10',
         single_player: false,
-        show_in_places: false,
+        show_in_places: true,
         last_deployed_at: expect.any(String),
         blocked_since: null,
         deployed_scenes: 1
