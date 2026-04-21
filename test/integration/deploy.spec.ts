@@ -896,6 +896,9 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
               name: worldName,
               skyboxConfig: {
                 fixedTime: 1200
+              },
+              placesConfig: {
+                optOut: true
               }
             }
           }
@@ -950,7 +953,8 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
           description: 'Original description',
           spawnCoordinates: '0,0',
           skyboxTime: 1200,
-          categories: ['original']
+          categories: ['original'],
+          showInPlaces: false
         })
       })
     })

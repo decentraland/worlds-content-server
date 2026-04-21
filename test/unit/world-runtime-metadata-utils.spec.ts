@@ -312,35 +312,31 @@ describe('world-runtime-metadata-utils', function () {
 
     describe('when the scene has no worldConfiguration', function () {
       it('should return true', function () {
-        expect(shouldShowInPlaces({ display: { title: 'A World' } })).toBe(true)
+        expect(shouldShowInPlaces({})).toBe(true)
       })
     })
 
     describe('when the scene has a worldConfiguration but no placesConfig', function () {
       it('should return true', function () {
-        expect(shouldShowInPlaces({ worldConfiguration: { name: 'some.dcl.eth' } })).toBe(true)
+        expect(shouldShowInPlaces({ worldConfiguration: {} })).toBe(true)
       })
     })
 
     describe('when the scene has a placesConfig but no optOut flag', function () {
       it('should return true', function () {
-        expect(shouldShowInPlaces({ worldConfiguration: { name: 'some.dcl.eth', placesConfig: {} } })).toBe(true)
+        expect(shouldShowInPlaces({ worldConfiguration: { placesConfig: {} } })).toBe(true)
       })
     })
 
     describe('when the scene explicitly opts in (optOut=false)', function () {
       it('should return true', function () {
-        expect(
-          shouldShowInPlaces({ worldConfiguration: { name: 'some.dcl.eth', placesConfig: { optOut: false } } })
-        ).toBe(true)
+        expect(shouldShowInPlaces({ worldConfiguration: { placesConfig: { optOut: false } } })).toBe(true)
       })
     })
 
     describe('when the scene explicitly opts out (optOut=true)', function () {
       it('should return false', function () {
-        expect(
-          shouldShowInPlaces({ worldConfiguration: { name: 'some.dcl.eth', placesConfig: { optOut: true } } })
-        ).toBe(false)
+        expect(shouldShowInPlaces({ worldConfiguration: { placesConfig: { optOut: true } } })).toBe(false)
       })
     })
   })
