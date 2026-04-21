@@ -217,7 +217,7 @@ export async function createWorldsManagerComponent({
     const categories: string[] | null = sceneMetadata.tags?.length > 0 ? sceneMetadata.tags : null
     const rating = sceneMetadata?.rating ?? null
     const singlePlayer = sceneMetadata.worldConfiguration?.fixedAdapter === 'offline:offline'
-    const showInPlaces = !!sceneMetadata.worldConfiguration?.placesConfig?.optOut
+    const showInPlaces = !sceneMetadata.worldConfiguration?.placesConfig?.optOut
 
     // Extract thumbnail hash from scene content
     const navmapThumbnail = sceneMetadata.display?.navmapThumbnail
