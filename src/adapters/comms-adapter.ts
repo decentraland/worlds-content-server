@@ -54,30 +54,28 @@ function createWsRoomAdapter(
           }
         })
         .then((response) => response.json())
-        .then(
-          (res: any): CommsStatus => {
-            const details: WorldStatus[] = res.details
-              .filter(
-                (room: any) =>
-                  room.roomName.startsWith(worldRoomPrefix) &&
-                  !room.roomName.startsWith(sceneRoomPrefix) &&
-                  room.count > 0
-              )
-              .map((room: { roomName: string; count: number }): WorldStatus => {
-                const { roomName, count } = room
-                return { worldName: roomName.substring(worldRoomPrefix.length), users: count }
-              })
-            return {
-              adapterType: 'ws-room',
-              statusUrl,
-              commitHash: res.commitHash,
-              rooms: details.length,
-              users: details.reduce((carry, value) => carry + value.users, 0),
-              details,
-              timestamp: Date.now()
-            }
+        .then((res: any): CommsStatus => {
+          const details: WorldStatus[] = res.details
+            .filter(
+              (room: any) =>
+                room.roomName.startsWith(worldRoomPrefix) &&
+                !room.roomName.startsWith(sceneRoomPrefix) &&
+                room.count > 0
+            )
+            .map((room: { roomName: string; count: number }): WorldStatus => {
+              const { roomName, count } = room
+              return { worldName: roomName.substring(worldRoomPrefix.length), users: count }
+            })
+          return {
+            adapterType: 'ws-room',
+            statusUrl,
+            commitHash: res.commitHash,
+            rooms: details.length,
+            users: details.reduce((carry, value) => carry + value.users, 0),
+            details,
+            timestamp: Date.now()
           }
-        )
+        })
     },
     async getWorldRoomConnectionString(_userId: EthAddress, worldName: string): Promise<string> {
       const roomsUrl = fixedAdapter.replace(/rooms\/.*/, 'rooms')
