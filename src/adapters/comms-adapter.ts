@@ -62,7 +62,7 @@ function createWsRoomAdapter(
             rooms: res.rooms,
             users: res.users,
             details: res.details
-              .filter((room: any) => room.roomName.startsWith(worldRoomPrefix) && room.count > 0)
+              .filter((room: any) => room.roomName.startsWith(worldRoomPrefix) && !room.roomName.startsWith(sceneRoomPrefix) && room.count > 0)
               .map((room: { roomName: string; count: number }): WorldStatus => {
                 const { roomName, count } = room
                 return { worldName: roomName.substring(worldRoomPrefix.length), users: count }
@@ -141,6 +141,7 @@ function createLiveKitAdapter(
           namePrefix: worldRoomPrefix
         })
         const roomsWithUsers: WorldStatus[] = roomsWithCounts
+          .filter((room) => !room.name.startsWith(sceneRoomPrefix))
           .map((room) => ({
             worldName: room.name.substring(worldRoomPrefix.length),
             users: room.numParticipants

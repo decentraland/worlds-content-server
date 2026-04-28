@@ -82,6 +82,47 @@ describe('comms-adapter', function () {
       })
     })
 
+    it('excludes scene rooms from status when sceneRoomPrefix starts with worldRoomPrefix', async () => {
+      const config: IConfigComponent = await createConfigComponent({
+        COMMS_ADAPTER: 'ws-room',
+        COMMS_FIXED_ADAPTER: 'ws-room:ws-room-service.decentraland.org/rooms/test-scene',
+        COMMS_ROOM_PREFIX: 'world-',
+        SCENE_ROOM_PREFIX: 'world-scene-room-'
+      })
+      const logs = await createLogComponent({ config })
+
+      const fetch: IFetchComponent = {
+        fetch: async (_url: Request): Promise<Response> =>
+          new Response(
+            JSON.stringify({
+              commitHash: 'unknown',
+              users: 147,
+              rooms: 2,
+              details: [
+                { roomName: 'world-sheficlub.dcl.eth', count: 71 },
+                {
+                  roomName:
+                    'world-scene-room-sheficlub.dcl.eth-bafkreieivzadtylq2pug33h2eabvsvkamjtjxk3tqex3wumerjzqeqa7yu',
+                  count: 76
+                }
+              ]
+            })
+          )
+      }
+
+      const commsAdapter = await createCommsAdapterComponent({
+        config,
+        fetch,
+        logs,
+        livekitClient: createMockLivekitClient()
+      })
+
+      const status = await commsAdapter.status()
+      expect(status.rooms).toBe(1)
+      expect(status.users).toBe(71)
+      expect(status.details).toEqual([{ worldName: 'sheficlub.dcl.eth', users: 71 }])
+    })
+
     it('returns room participant count from cached status', async () => {
       const config: IConfigComponent = await createConfigComponent({
         COMMS_ADAPTER: 'ws-room',
@@ -271,6 +312,37 @@ describe('comms-adapter', function () {
       })
       expect(listRoomsWithParticipantCountsMock).toHaveBeenCalledTimes(1)
       expect(listRoomsWithParticipantCountsMock).toHaveBeenCalledWith({ namePrefix: 'world-' })
+    })
+
+    it('excludes scene rooms from status when sceneRoomPrefix starts with worldRoomPrefix', async () => {
+      const config: IConfigComponent = await createConfigComponent({
+        COMMS_ADAPTER: 'livekit',
+        COMMS_ROOM_PREFIX: 'world-',
+        SCENE_ROOM_PREFIX: 'world-scene-room-',
+        LIVEKIT_HOST: 'livekit.dcl.org',
+        LIVEKIT_API_KEY: 'myApiKey',
+        LIVEKIT_API_SECRET: 'myApiSecret'
+      })
+      const logs = await createLogComponent({ config })
+
+      const listRoomsWithParticipantCountsMock = jest.fn().mockResolvedValue([
+        { name: 'world-sheficlub.dcl.eth', numParticipants: 71 },
+        { name: 'world-scene-room-sheficlub.dcl.eth-bafkreieivzadtylq2pug33h2eabvsvkamjtjxk3tqex3wumerjzqeqa7yu', numParticipants: 76 }
+      ])
+      const livekitClient = createMockLivekitClient({
+        listRoomsWithParticipantCounts: listRoomsWithParticipantCountsMock
+      })
+
+      const fetch: IFetchComponent = {
+        fetch: async (_url: Request): Promise<Response> => new Response(undefined)
+      }
+      const commsAdapter = await createCommsAdapterComponent({ config, fetch, logs, livekitClient })
+
+      const adapter = await commsAdapter.status()
+
+      expect(adapter.rooms).toBe(1)
+      expect(adapter.users).toBe(71)
+      expect(adapter.details).toEqual([{ worldName: 'sheficlub.dcl.eth', users: 71 }])
     })
 
     it('aggregates status from many world rooms returned by listRoomsWithParticipantCounts', async () => {
