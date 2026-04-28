@@ -327,7 +327,10 @@ describe('comms-adapter', function () {
 
       const listRoomsWithParticipantCountsMock = jest.fn().mockResolvedValue([
         { name: 'world-sheficlub.dcl.eth', numParticipants: 71 },
-        { name: 'world-scene-room-sheficlub.dcl.eth-bafkreieivzadtylq2pug33h2eabvsvkamjtjxk3tqex3wumerjzqeqa7yu', numParticipants: 76 }
+        {
+          name: 'world-scene-room-sheficlub.dcl.eth-bafkreieivzadtylq2pug33h2eabvsvkamjtjxk3tqex3wumerjzqeqa7yu',
+          numParticipants: 76
+        }
       ])
       const livekitClient = createMockLivekitClient({
         listRoomsWithParticipantCounts: listRoomsWithParticipantCountsMock
