@@ -4,7 +4,8 @@ export const createMockDenyList = (
   overrides?: Partial<jest.Mocked<IDenyListComponent>>
 ): jest.Mocked<IDenyListComponent> => {
   return {
-    isDenylisted: jest.fn().mockResolvedValue(false),
+    isWalletDenylisted: jest.fn().mockResolvedValue(false),
+    isEntityDenylisted: jest.fn().mockResolvedValue(false),
     ...overrides
   }
 }

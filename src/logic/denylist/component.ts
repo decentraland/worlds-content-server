@@ -2,17 +2,9 @@ import { LRUCache } from 'lru-cache'
 import { AppComponents } from '../../types'
 import { IDenyListComponent } from './types'
 
-const DENYLIST_CACHE_KEY = 'DENYLIST'
+const WALLET_DENYLIST_CACHE_KEY = 'WALLET_DENYLIST'
+const ENTITY_DENYLIST_CACHE_KEY = 'ENTITY_DENYLIST'
 
-/**
- * Creates the DenyList component.
- *
- * Fetches and caches the global denylist of wallet addresses from an external URL.
- * Uses LRU cache with a 5-minute TTL to avoid fetching on every request.
- *
- * @param components Required components: config, fetch, logs
- * @returns IDenyListComponent implementation
- */
 export async function createDenyListComponent(
   components: Pick<AppComponents, 'config' | 'fetch' | 'logs'>
 ): Promise<IDenyListComponent> {
@@ -20,10 +12,11 @@ export async function createDenyListComponent(
   const logger = logs.getLogger('denylist-component')
 
   const denylistUrl = await config.requireString('DENYLIST_JSON_URL')
+  const assetBundleRegistryUrl = await config.requireString('ASSET_BUNDLE_REGISTRY_URL')
 
-  const denylistCache = new LRUCache<string, Set<string>>({
+  const walletDenylistCache = new LRUCache<string, Set<string>>({
     max: 1,
-    ttl: 5 * 60 * 1000, // cache for 5 minutes
+    ttl: 5 * 60 * 1000,
     fetchMethod: async (): Promise<Set<string>> => {
       try {
         const response = await fetch.fetch(denylistUrl)
@@ -35,24 +28,44 @@ export async function createDenyListComponent(
 
         throw Error('Did not get an array of users')
       } catch (error) {
-        logger.warn(`Failed to fetch denylist from ${denylistUrl}: ${error}`)
+        logger.warn(`Failed to fetch wallet denylist from ${denylistUrl}: ${error}`)
         return new Set()
       }
     }
   })
 
-  /**
-   * Checks if the given identity (wallet address) is in the global denylist.
-   *
-   * @param identity - The wallet address to check.
-   * @returns True if the identity is denylisted, false otherwise.
-   */
-  async function isDenylisted(identity: string): Promise<boolean> {
-    const denyList = await denylistCache.fetch(DENYLIST_CACHE_KEY)
+  const entityDenylistCache = new LRUCache<string, Set<string>>({
+    max: 1,
+    ttl: 5 * 60 * 1000,
+    fetchMethod: async (): Promise<Set<string>> => {
+      try {
+        const response = await fetch.fetch(`${assetBundleRegistryUrl}/denylist`)
+        const data: { entity_id: string }[] = await response.json()
+
+        if (Array.isArray(data)) {
+          return new Set(data.map((entry) => entry.entity_id.toLowerCase()))
+        }
+
+        throw Error('Did not get an array of denylist entries')
+      } catch (error) {
+        logger.warn(`Failed to fetch entity denylist from ${assetBundleRegistryUrl}/denylist: ${error}`)
+        return new Set()
+      }
+    }
+  })
+
+  async function isWalletDenylisted(identity: string): Promise<boolean> {
+    const denyList = await walletDenylistCache.fetch(WALLET_DENYLIST_CACHE_KEY)
     return denyList?.has(identity.toLowerCase()) ?? false
   }
 
+  async function isEntityDenylisted(entityId: string): Promise<boolean> {
+    const denyList = await entityDenylistCache.fetch(ENTITY_DENYLIST_CACHE_KEY)
+    return denyList?.has(entityId.toLowerCase()) ?? false
+  }
+
   return {
-    isDenylisted
+    isWalletDenylisted,
+    isEntityDenylisted
   }
 }
