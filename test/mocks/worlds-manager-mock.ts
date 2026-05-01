@@ -82,11 +82,13 @@ export async function createWorldsManagerMockComponent({
     }
     const metadata = JSON.parse((await streamToBuffer(await content.asStream())).toString())
 
-    // Convert size strings back to BigInt in scenes
+    // Convert size strings back to BigInt and date strings back to Date in scenes
     if (metadata.scenes) {
       metadata.scenes = metadata.scenes.map((scene: any) => ({
         ...scene,
-        size: typeof scene.size === 'string' ? BigInt(scene.size) : scene.size
+        size: typeof scene.size === 'string' ? BigInt(scene.size) : scene.size,
+        createdAt: typeof scene.createdAt === 'string' ? new Date(scene.createdAt) : scene.createdAt,
+        updatedAt: typeof scene.updatedAt === 'string' ? new Date(scene.updatedAt) : scene.updatedAt
       }))
     }
 

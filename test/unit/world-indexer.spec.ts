@@ -106,6 +106,55 @@ describe('when indexing worlds', function () {
     })
   })
 
+  describe('and a world has multiple scenes deployed on different parcels', () => {
+    const sceneA: Entity = {
+      version: 'v3',
+      type: 'scene' as any,
+      id: 'bafkreielwj3ki46munydwn4ayazdvmjln76khmz2xyaf5v6dkmo6yoebbi',
+      pointers: ['20,24'],
+      timestamp: 1683909215429,
+      content: [{ file: 'thumb-a.png', hash: 'bafkreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku' }],
+      metadata: {
+        display: { title: 'Scene A', description: 'first', navmapThumbnail: 'thumb-a.png' },
+        main: 'bin/game.js',
+        worldConfiguration: { name: 'multi.dcl.eth' },
+        scene: { base: '20,24', parcels: ['20,24'] }
+      }
+    }
+
+    const sceneB: Entity = {
+      version: 'v3',
+      type: 'scene' as any,
+      id: 'bafkreic6ix3pdwf7g24reg4ktlyjpmtbqbc2nq4zocupkmul37am4vlt6y',
+      pointers: ['21,24'],
+      timestamp: 1684263239610,
+      content: [{ file: 'thumb-b.png', hash: 'bafkreidduubi76bntd27dewz4cvextrfl3qyd4td6mtztuisxi26q64dnq' }],
+      metadata: {
+        display: { title: 'Scene B', description: 'second', navmapThumbnail: 'thumb-b.png' },
+        main: 'bin/game.js',
+        worldConfiguration: { name: 'multi.dcl.eth' },
+        scene: { base: '21,24', parcels: ['21,24'] }
+      }
+    }
+
+    beforeEach(async () => {
+      jest.useFakeTimers()
+      jest.setSystemTime(new Date('2026-01-01T00:00:00Z'))
+      await worldsManager.deployScene('multi.dcl.eth', sceneA, '0x1234567890123456789012345678901234567890')
+      jest.setSystemTime(new Date('2026-01-02T00:00:00Z'))
+      await worldsManager.deployScene('multi.dcl.eth', sceneB, '0x1234567890123456789012345678901234567890')
+      jest.useRealTimers()
+    })
+
+    it('returns every deployed scene for the world, newest first', async () => {
+      const worldsIndex = await worldsIndexer.getIndex()
+
+      expect(worldsIndex.index).toHaveLength(1)
+      expect(worldsIndex.index[0].name).toBe('multi.dcl.eth')
+      expect(worldsIndex.index[0].scenes.map((s) => s.id)).toEqual([sceneB.id, sceneA.id])
+    })
+  })
+
   describe('and there are worlds without scenes', () => {
     beforeEach(async () => {
       // Deploy a world with a scene first
