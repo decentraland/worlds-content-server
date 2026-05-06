@@ -1,5 +1,6 @@
 import { Entity } from '@dcl/schemas'
 import { randomBytes } from 'crypto'
+import { hashV1 } from '@dcl/hashing'
 import { InvalidRequestError } from '@dcl/http-commons'
 import {
   AppComponents,
@@ -118,8 +119,41 @@ export function createPartialDeploymentManager(
     })
   }
 
-  async function addFile(_e: string, _h: string, _t: string, _b: Buffer): Promise<void> {
-    throw new Error('not implemented yet')
+  async function addFile(entityId: string, fileHash: string, token: string, bytes: Buffer): Promise<void> {
+    return mutex.run(entityId, async () => {
+      const record = await store.get(entityId)
+      if (!record) {
+        throw new InvalidRequestError(`Deployment ${entityId} not found`)
+      }
+      if (record.expiresAt < Date.now()) {
+        await tempStorage.deleteAll(entityId).catch(() => undefined)
+        await store.delete(entityId)
+        throw new InvalidRequestError(`Deployment ${entityId} expired`)
+      }
+      if (record.deploymentToken !== token) {
+        throw new InvalidRequestError(`Deployment ${entityId} token mismatch`)
+      }
+
+      const computed = await hashV1(bytes)
+      if (computed !== fileHash) {
+        throw new InvalidRequestError(
+          `File hash mismatch: path=${fileHash} computed=${computed}`
+        )
+      }
+      if (!(fileHash in record.manifest)) {
+        throw new InvalidRequestError(
+          `File ${fileHash} not in manifest for deployment ${entityId} (unexpected file)`
+        )
+      }
+      if (record.manifest[fileHash] !== bytes.length) {
+        throw new InvalidRequestError(
+          `File ${fileHash} size mismatch: declared=${record.manifest[fileHash]} actual=${bytes.length}`
+        )
+      }
+
+      await tempStorage.putFile(entityId, fileHash, bytes)
+      await store.markUploaded(entityId, fileHash)
+    })
   }
 
   async function complete(_b: string, _e: string, _t: string): Promise<DeploymentResult> {
