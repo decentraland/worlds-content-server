@@ -11,9 +11,9 @@ function fileKey(entityId: string, fileHash: string): string {
   return `${TEMP_PREFIX}/${entityId}/${fileHash}`
 }
 
-export function createPartialDeploymentTempStorage(
-  components: { storage: IContentStorageComponent }
-): IPartialDeploymentTempStorage {
+export function createPartialDeploymentTempStorage(components: {
+  storage: IContentStorageComponent
+}): IPartialDeploymentTempStorage {
   const { storage } = components
 
   return {

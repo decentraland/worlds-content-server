@@ -2,7 +2,11 @@ import { createPartialDeploymentStore } from '../../src/adapters/partial-deploym
 import { createPartialDeploymentSweeper } from '../../src/adapters/partial-deployment-sweeper'
 
 const baseLogger: any = {
-  log: () => {}, info: () => {}, warn: () => {}, error: () => {}, debug: () => {}
+  log: () => {},
+  info: () => {},
+  warn: () => {},
+  error: () => {},
+  debug: () => {}
 }
 
 describe('partialDeploymentSweeper', () => {
@@ -10,15 +14,23 @@ describe('partialDeploymentSweeper', () => {
     const store = createPartialDeploymentStore()
     await store.put({
       entityId: 'old',
-      authChain: [], ownerAddress: '0x', manifest: {},
-      uploadedHashes: new Set(), alreadyAvailableHashes: new Set(),
-      deploymentToken: 't', expiresAt: Date.now() - 10_000
+      authChain: [],
+      ownerAddress: '0x',
+      manifest: {},
+      uploadedHashes: new Set(),
+      alreadyAvailableHashes: new Set(),
+      deploymentToken: 't',
+      expiresAt: Date.now() - 10_000
     })
     await store.put({
       entityId: 'new',
-      authChain: [], ownerAddress: '0x', manifest: {},
-      uploadedHashes: new Set(), alreadyAvailableHashes: new Set(),
-      deploymentToken: 't', expiresAt: Date.now() + 60_000
+      authChain: [],
+      ownerAddress: '0x',
+      manifest: {},
+      uploadedHashes: new Set(),
+      alreadyAvailableHashes: new Set(),
+      deploymentToken: 't',
+      expiresAt: Date.now() + 60_000
     })
 
     const onCleanup = jest.fn().mockResolvedValue(undefined)
@@ -40,9 +52,13 @@ describe('partialDeploymentSweeper', () => {
     for (const id of ['a', 'b', 'c']) {
       await store.put({
         entityId: id,
-        authChain: [], ownerAddress: '0x', manifest: {},
-        uploadedHashes: new Set(), alreadyAvailableHashes: new Set(),
-        deploymentToken: 't', expiresAt: Date.now() - 1
+        authChain: [],
+        ownerAddress: '0x',
+        manifest: {},
+        uploadedHashes: new Set(),
+        alreadyAvailableHashes: new Set(),
+        deploymentToken: 't',
+        expiresAt: Date.now() - 1
       })
     }
     const onCleanup = jest.fn().mockImplementation(async (id: string) => {

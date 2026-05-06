@@ -24,10 +24,7 @@ type ManagerComponents = Pick<
   | 'logs'
 >
 
-export function createPartialDeploymentManager(
-  components: ManagerComponents,
-  mutex: Mutex
-): IPartialDeploymentManager {
+export function createPartialDeploymentManager(components: ManagerComponents, mutex: Mutex): IPartialDeploymentManager {
   const {
     storage,
     partialDeploymentStore: store,
@@ -41,11 +38,7 @@ export function createPartialDeploymentManager(
     return randomBytes(32).toString('hex')
   }
 
-  function recomputeMissing(
-    manifest: Record<string, number>,
-    uploaded: Set<string>,
-    available: Set<string>
-  ): string[] {
+  function recomputeMissing(manifest: Record<string, number>, uploaded: Set<string>, available: Set<string>): string[] {
     const out: string[] = []
     for (const h of Object.keys(manifest)) {
       if (!uploaded.has(h) && !available.has(h)) out.push(h)
@@ -108,7 +101,11 @@ export function createPartialDeploymentManager(
 
       await store.put(record)
       await tempStorage.putEntityRaw(input.entityId, input.entityRaw)
-      logger.info('Init partial deployment', { entityId: input.entityId, missing: missing.length, available: alreadyAvailable.size })
+      logger.info('Init partial deployment', {
+        entityId: input.entityId,
+        missing: missing.length,
+        available: alreadyAvailable.size
+      })
 
       return {
         availableFiles: Array.from(alreadyAvailable),
@@ -136,14 +133,10 @@ export function createPartialDeploymentManager(
 
       const computed = await hashV1(bytes)
       if (computed !== fileHash) {
-        throw new InvalidRequestError(
-          `File hash mismatch: path=${fileHash} computed=${computed}`
-        )
+        throw new InvalidRequestError(`File hash mismatch: path=${fileHash} computed=${computed}`)
       }
       if (!(fileHash in record.manifest)) {
-        throw new InvalidRequestError(
-          `File ${fileHash} not in manifest for deployment ${entityId} (unexpected file)`
-        )
+        throw new InvalidRequestError(`File ${fileHash} not in manifest for deployment ${entityId} (unexpected file)`)
       }
       if (record.manifest[fileHash] !== bytes.length) {
         throw new InvalidRequestError(

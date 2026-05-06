@@ -23,8 +23,8 @@ describe('createPartialDeploymentTempStorage', () => {
     const temp = createPartialDeploymentTempStorage({ storage })
     await temp.putFile('QmA-deployment', 'QmFile', Buffer.from([1]))
     await temp.putFile('QmB-deployment', 'QmFile', Buffer.from([9]))
-    expect([...await temp.getFile('QmA-deployment', 'QmFile')]).toEqual([1])
-    expect([...await temp.getFile('QmB-deployment', 'QmFile')]).toEqual([9])
+    expect([...(await temp.getFile('QmA-deployment', 'QmFile'))]).toEqual([1])
+    expect([...(await temp.getFile('QmB-deployment', 'QmFile'))]).toEqual([9])
   })
 
   it('deleteAll removes the entity raw', async () => {

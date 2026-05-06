@@ -24,9 +24,7 @@ test('partial deployment v2 — happy path', function ({ components, stubCompone
       worldName = worldCreator.randomWorldName()
 
       const identity = await getIdentity()
-      namePermissionChecker.checkPermission
-        .withArgs(identity.authChain.authChain[0].payload, worldName)
-        .resolves(true)
+      namePermissionChecker.checkPermission.withArgs(identity.authChain.authChain[0].payload, worldName).resolves(true)
       nameOwnership.findOwners
         .withArgs([worldName])
         .resolves(new Map([[worldName, identity.authChain.authChain[0].payload]]))
@@ -44,9 +42,7 @@ test('partial deployment v2 — happy path', function ({ components, stubCompone
       const identity = await getIdentity()
 
       // Override stubs to match the specific identity we use in this test
-      namePermissionChecker.checkPermission
-        .withArgs(identity.authChain.authChain[0].payload, worldName)
-        .resolves(true)
+      namePermissionChecker.checkPermission.withArgs(identity.authChain.authChain[0].payload, worldName).resolves(true)
       nameOwnership.findOwners
         .withArgs([worldName])
         .resolves(new Map([[worldName, identity.authChain.authChain[0].payload]]))
@@ -101,7 +97,10 @@ test('partial deployment v2 — happy path', function ({ components, stubCompone
       })
 
       // Append the entity file under its own hash as the filename
-      initForm.append(entityId, Buffer.from(entityFileBytes), { filename: entityId, contentType: 'application/octet-stream' })
+      initForm.append(entityId, Buffer.from(entityFileBytes), {
+        filename: entityId,
+        contentType: 'application/octet-stream'
+      })
 
       // Append the fileSizesManifest (covers only non-entity content files)
       initForm.append('fileSizesManifest', JSON.stringify(manifest))
@@ -146,9 +145,7 @@ test('partial deployment v2 — happy path', function ({ components, stubCompone
 
       const identity = await getIdentity()
 
-      namePermissionChecker.checkPermission
-        .withArgs(identity.authChain.authChain[0].payload, worldName)
-        .resolves(true)
+      namePermissionChecker.checkPermission.withArgs(identity.authChain.authChain[0].payload, worldName).resolves(true)
       nameOwnership.findOwners
         .withArgs([worldName])
         .resolves(new Map([[worldName, identity.authChain.authChain[0].payload]]))
@@ -192,7 +189,10 @@ test('partial deployment v2 — happy path', function ({ components, stubCompone
           form.append(`authChain[${index}][signature]`, link.signature)
           form.append(`authChain[${index}][type]`, link.type)
         })
-        form.append(entityId, Buffer.from(entityFileBytes), { filename: entityId, contentType: 'application/octet-stream' })
+        form.append(entityId, Buffer.from(entityFileBytes), {
+          filename: entityId,
+          contentType: 'application/octet-stream'
+        })
         form.append('fileSizesManifest', JSON.stringify(manifest))
         return form
       }
@@ -226,9 +226,7 @@ test('partial deployment v2 — happy path', function ({ components, stubCompone
 
       const identity = await getIdentity()
 
-      namePermissionChecker.checkPermission
-        .withArgs(identity.authChain.authChain[0].payload, worldName)
-        .resolves(true)
+      namePermissionChecker.checkPermission.withArgs(identity.authChain.authChain[0].payload, worldName).resolves(true)
       nameOwnership.findOwners
         .withArgs([worldName])
         .resolves(new Map([[worldName, identity.authChain.authChain[0].payload]]))
@@ -266,7 +264,10 @@ test('partial deployment v2 — happy path', function ({ components, stubCompone
         initForm.append(`authChain[${index}][signature]`, link.signature)
         initForm.append(`authChain[${index}][type]`, link.type)
       })
-      initForm.append(entityId, Buffer.from(entityFileBytes), { filename: entityId, contentType: 'application/octet-stream' })
+      initForm.append(entityId, Buffer.from(entityFileBytes), {
+        filename: entityId,
+        contentType: 'application/octet-stream'
+      })
       initForm.append('fileSizesManifest', JSON.stringify(manifest))
 
       const initResp = await localFetch.fetch('/entities', {

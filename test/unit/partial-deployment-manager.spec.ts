@@ -13,7 +13,11 @@ const okValidator: IPartialDeploymentValidator = {
 }
 
 const baseLogger: any = {
-  log: () => {}, info: () => {}, warn: () => {}, error: () => {}, debug: () => {}
+  log: () => {},
+  info: () => {},
+  warn: () => {},
+  error: () => {},
+  debug: () => {}
 }
 
 function makeManager(opts: { validator?: IPartialDeploymentValidator } = {}) {
@@ -21,14 +25,17 @@ function makeManager(opts: { validator?: IPartialDeploymentValidator } = {}) {
   const store = createPartialDeploymentStore()
   const tempStorage = createPartialDeploymentTempStorage({ storage })
   const mutex = createMutex()
-  const manager = createPartialDeploymentManager({
-    storage,
-    partialDeploymentStore: store,
-    partialDeploymentTempStorage: tempStorage,
-    partialDeploymentValidator: opts.validator ?? okValidator,
-    entityDeployer: { deployEntity: jest.fn().mockResolvedValue({ message: 'ok' }) } as any,
-    logs: { getLogger: () => baseLogger } as any
-  } as any, mutex)
+  const manager = createPartialDeploymentManager(
+    {
+      storage,
+      partialDeploymentStore: store,
+      partialDeploymentTempStorage: tempStorage,
+      partialDeploymentValidator: opts.validator ?? okValidator,
+      entityDeployer: { deployEntity: jest.fn().mockResolvedValue({ message: 'ok' }) } as any,
+      logs: { getLogger: () => baseLogger } as any
+    } as any,
+    mutex
+  )
   return { manager, store, storage, tempStorage }
 }
 
@@ -123,9 +130,9 @@ describe('partialDeploymentManager.init', () => {
 describe('partialDeploymentManager.addFile', () => {
   it('rejects unknown deployment with not-found error', async () => {
     const { manager } = makeManager()
-    await expect(
-      manager.addFile('QmNope', 'QmA', 'tok', Buffer.from('a'))
-    ).rejects.toMatchObject({ message: expect.stringMatching(/not found/i) })
+    await expect(manager.addFile('QmNope', 'QmA', 'tok', Buffer.from('a'))).rejects.toMatchObject({
+      message: expect.stringMatching(/not found/i)
+    })
   })
 
   it('rejects when token mismatches', async () => {
@@ -140,9 +147,7 @@ describe('partialDeploymentManager.addFile', () => {
       manifest: { [fileHash]: 3 }
     })
     expect(init.missingFiles).toContain(fileHash)
-    await expect(
-      manager.addFile('QmE', fileHash, 'wrong-token', bytes)
-    ).rejects.toThrow(/token/i)
+    await expect(manager.addFile('QmE', fileHash, 'wrong-token', bytes)).rejects.toThrow(/token/i)
   })
 
   it('rejects when computed hash does not match path hash (FIXES Mariano inverted-check bug)', async () => {
@@ -157,9 +162,7 @@ describe('partialDeploymentManager.addFile', () => {
       manifest: { [realHash]: 3 }
     })
 
-    await expect(
-      manager.addFile('QmE', 'QmFakeHash', init.deploymentToken, bytes)
-    ).rejects.toThrow(/hash mismatch/i)
+    await expect(manager.addFile('QmE', 'QmFakeHash', init.deploymentToken, bytes)).rejects.toThrow(/hash mismatch/i)
   })
 
   it('rejects when fileHash is not in the declared manifest', async () => {
@@ -171,12 +174,12 @@ describe('partialDeploymentManager.addFile', () => {
       entityRaw: Buffer.from('{}'),
       authChain: [],
       ownerAddress: '0xabc',
-      manifest: { 'QmSomeOtherHash': 99 }
+      manifest: { QmSomeOtherHash: 99 }
     })
     expect(init.missingFiles).toContain('QmSomeOtherHash')
-    await expect(
-      manager.addFile('QmE', realHash, init.deploymentToken, bytes)
-    ).rejects.toThrow(/not in manifest|unexpected/i)
+    await expect(manager.addFile('QmE', realHash, init.deploymentToken, bytes)).rejects.toThrow(
+      /not in manifest|unexpected/i
+    )
   })
 
   it('rejects when bytes.length disagrees with manifest size', async () => {
@@ -191,9 +194,7 @@ describe('partialDeploymentManager.addFile', () => {
       manifest: { [realHash]: 99 }
     })
     expect(init.missingFiles).toContain(realHash)
-    await expect(
-      manager.addFile('QmE', realHash, init.deploymentToken, bytes)
-    ).rejects.toThrow(/size/i)
+    await expect(manager.addFile('QmE', realHash, init.deploymentToken, bytes)).rejects.toThrow(/size/i)
   })
 
   it('rejects when expiresAt has passed (lazy eviction)', async () => {
@@ -209,9 +210,7 @@ describe('partialDeploymentManager.addFile', () => {
     })
     const r = await store.get('QmE')
     r!.expiresAt = Date.now() - 1
-    await expect(
-      manager.addFile('QmE', realHash, init.deploymentToken, bytes)
-    ).rejects.toThrow(/expired/i)
+    await expect(manager.addFile('QmE', realHash, init.deploymentToken, bytes)).rejects.toThrow(/expired/i)
   })
 
   it('happy path: stores file, marks uploaded', async () => {
@@ -292,14 +291,17 @@ describe('partialDeploymentManager.complete', () => {
     const store = createPartialDeploymentStore()
     const tempStorage = createPartialDeploymentTempStorage({ storage })
     const mutex = createMutex()
-    const manager = createPartialDeploymentManager({
-      storage,
-      partialDeploymentStore: store,
-      partialDeploymentTempStorage: tempStorage,
-      partialDeploymentValidator: okValidator,
-      entityDeployer: { deployEntity: deployFn } as any,
-      logs: { getLogger: () => baseLogger } as any
-    } as any, mutex)
+    const manager = createPartialDeploymentManager(
+      {
+        storage,
+        partialDeploymentStore: store,
+        partialDeploymentTempStorage: tempStorage,
+        partialDeploymentValidator: okValidator,
+        entityDeployer: { deployEntity: deployFn } as any,
+        logs: { getLogger: () => baseLogger } as any
+      } as any,
+      mutex
+    )
 
     const init = await manager.init({
       entityId: 'QmE',

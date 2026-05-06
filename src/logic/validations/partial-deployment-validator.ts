@@ -6,9 +6,7 @@ import { createValidator } from './validator'
  * final runs at finalize (full validation including auth-chain). Both delegate
  * to the same v1 validator — the distinction is *when*, not *what*.
  */
-export function createPartialDeploymentValidator(
-  components: ValidatorComponents
-): IPartialDeploymentValidator {
+export function createPartialDeploymentValidator(components: ValidatorComponents): IPartialDeploymentValidator {
   const v1Validator: Validator = createValidator(components)
 
   return {

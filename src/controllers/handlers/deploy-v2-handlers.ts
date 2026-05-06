@@ -8,8 +8,7 @@ const TOKEN_HEADER = 'x-deployment-token'
 
 /** Init: dispatched here by deployEntity when it sees Upload-Incomplete: ?1 */
 export async function initPartialDeployment(
-  ctx: FormDataContext &
-    HandlerContextWithPath<'partialDeploymentManager', '/entities'>
+  ctx: FormDataContext & HandlerContextWithPath<'partialDeploymentManager', '/entities'>
 ): Promise<IHttpServerComponent.IResponse> {
   const entityIdRaw = ctx.formData.fields.entityId?.value[0]
   if (typeof entityIdRaw !== 'string') {

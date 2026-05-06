@@ -26,9 +26,7 @@ test('partial deployment v2 — failure modes', function ({ components, stubComp
     const identity = await getIdentity()
     const worldName = worldCreator.randomWorldName()
 
-    namePermissionChecker.checkPermission
-      .withArgs(identity.authChain.authChain[0].payload, worldName)
-      .resolves(true)
+    namePermissionChecker.checkPermission.withArgs(identity.authChain.authChain[0].payload, worldName).resolves(true)
     nameOwnership.findOwners
       .withArgs([worldName])
       .resolves(new Map([[worldName, identity.authChain.authChain[0].payload]]))
@@ -92,14 +90,17 @@ test('partial deployment v2 — failure modes', function ({ components, stubComp
   it('404 (or 400) on file upload to unknown entity', async () => {
     const { localFetch } = components
 
-    const resp = await localFetch.fetch('/entities/QmUnknownEntity000000000000000000000000000000001/files/QmUnknownFile0000000000000000000000000000000001', {
-      method: 'POST',
-      headers: {
-        'X-Deployment-Token': 'some-token',
-        'Content-Type': 'application/octet-stream'
-      },
-      body: Buffer.from('x') as any
-    })
+    const resp = await localFetch.fetch(
+      '/entities/QmUnknownEntity000000000000000000000000000000001/files/QmUnknownFile0000000000000000000000000000000001',
+      {
+        method: 'POST',
+        headers: {
+          'X-Deployment-Token': 'some-token',
+          'Content-Type': 'application/octet-stream'
+        },
+        body: Buffer.from('x') as any
+      }
+    )
 
     expect([400, 404]).toContain(resp.status)
   })
@@ -225,9 +226,7 @@ test('partial deployment v2 — failure modes', function ({ components, stubComp
   it('GET /entities/:entityId/status returns 404 for an unknown entity', async () => {
     const { localFetch } = components
 
-    const statusResp = await localFetch.fetch(
-      '/entities/QmUnknownEntity000000000000000000000000000000001/status'
-    )
+    const statusResp = await localFetch.fetch('/entities/QmUnknownEntity000000000000000000000000000000001/status')
     expect(statusResp.status).toBe(404)
   })
 })
