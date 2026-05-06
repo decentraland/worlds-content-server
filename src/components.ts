@@ -69,6 +69,12 @@ import { createRateLimiterComponent } from './logic/rate-limiter'
 import { createDenyListComponent } from './logic/denylist'
 import { createBansComponent } from './adapters/bans-adapter'
 import { createEvictionJob } from './adapters/eviction-job'
+import { createPartialDeploymentStore } from './adapters/partial-deployment-store'
+import { createPartialDeploymentTempStorage } from './adapters/partial-deployment-temp-storage'
+import { createMutex } from './adapters/partial-deployment-mutex'
+import { createPartialDeploymentManager } from './adapters/partial-deployment-manager'
+import { createPartialDeploymentSweeper } from './adapters/partial-deployment-sweeper'
+import { createPartialDeploymentValidator } from './logic/validations/partial-deployment-validator'
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
@@ -200,6 +206,44 @@ export async function initComponents(): Promise<AppComponents> {
     worldsManager
   })
 
+  const partialDeploymentStore = createPartialDeploymentStore()
+  const partialDeploymentTempStorage = createPartialDeploymentTempStorage({ storage })
+  const partialDeploymentValidator = createPartialDeploymentValidator({
+    config,
+    limitsManager,
+    nameDenyListChecker,
+    namePermissionChecker,
+    permissions,
+    storage,
+    worldsManager
+  })
+  const partialDeploymentMutex = createMutex()
+  const partialDeploymentManager = createPartialDeploymentManager(
+    {
+      storage,
+      partialDeploymentStore,
+      partialDeploymentTempStorage,
+      partialDeploymentValidator,
+      entityDeployer,
+      logs
+    },
+    partialDeploymentMutex
+  )
+  const partialDeploymentSweeper = createPartialDeploymentSweeper(
+    { partialDeploymentStore, logs },
+    {
+      onCleanupExpiredEntity: async (entityId) => {
+        const record = await partialDeploymentStore.get(entityId)
+        if (!record) return
+        const fileKeys = Object.keys(record.manifest).map((h) => `temp/partial/${entityId}/${h}`)
+        if (fileKeys.length > 0) {
+          await storage.delete(fileKeys).catch(() => undefined)
+        }
+        await partialDeploymentTempStorage.deleteAll(entityId).catch(() => undefined)
+      }
+    }
+  )
+
   const migrationExecutor = createMigrationExecutor({ logs, database: database, nameOwnership, storage, worldsManager })
 
   const notificationService = await createNotificationsClientComponent({ config, fetch, logs })
@@ -305,6 +349,11 @@ export async function initComponents(): Promise<AppComponents> {
     bans,
     worlds,
     worldsIndexer,
-    worldsManager
-  } as unknown as AppComponents
+    worldsManager,
+    partialDeploymentStore,
+    partialDeploymentTempStorage,
+    partialDeploymentManager,
+    partialDeploymentSweeper,
+    partialDeploymentValidator
+  }
 }
