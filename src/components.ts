@@ -8,7 +8,13 @@ import { createLogComponent } from '@well-known-components/logger'
 import { createFetchComponent } from '@dcl/platform-server-commons'
 import { createMetricsComponent } from '@well-known-components/metrics'
 import { createSubgraphComponent } from '@well-known-components/thegraph-component'
-import { AppComponents, GlobalContext, ICommsAdapter, INameDenyListChecker, IWorldNamePermissionChecker } from './types'
+import {
+  AppComponents,
+  GlobalContext,
+  ICommsAdapter,
+  INameDenyListChecker,
+  IWorldNamePermissionChecker
+} from './types'
 import { metricDeclarations } from './metrics'
 import { HTTPProvider } from 'eth-connect'
 import {
@@ -300,5 +306,5 @@ export async function initComponents(): Promise<AppComponents> {
     worlds,
     worldsIndexer,
     worldsManager
-  }
+  } as unknown as AppComponents
 }

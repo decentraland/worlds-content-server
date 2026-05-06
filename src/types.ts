@@ -575,6 +575,11 @@ export type IWorldCreator = {
 // components used in runtime
 export type AppComponents = BaseComponents & {
   statusChecks: IBaseComponent
+  partialDeploymentStore: IPartialDeploymentStore
+  partialDeploymentTempStorage: IPartialDeploymentTempStorage
+  partialDeploymentManager: IPartialDeploymentManager
+  partialDeploymentSweeper: IPartialDeploymentSweeper
+  partialDeploymentValidator: IPartialDeploymentValidator
 }
 
 // this type simplifies the typings of http handlers
@@ -652,3 +657,90 @@ export type PaginatedResult<T> = {
 }
 
 export type ParcelsResult = PaginatedResult<string>
+
+// ============================================================================
+// Partial / resumable deployment (v2 protocol) — Phase 1
+// ============================================================================
+
+/** TTL after which a stale in-flight deployment is evicted. */
+export const PARTIAL_DEPLOYMENT_TTL_MS = 15 * 60 * 1000
+
+/** Default per-file upload size limit. */
+export const PARTIAL_DEPLOYMENT_DEFAULT_FILE_LIMIT_BYTES = 100 * 1024 * 1024
+
+export type DeploymentRecord = {
+  entityId: string
+  authChain: AuthChain
+  ownerAddress: EthAddress
+  /** Manifest of file hash → declared byte size, taken verbatim from the init request. */
+  manifest: Record<string, number>
+  /** Hashes the server has already received under this deployment. Initially empty. */
+  uploadedHashes: Set<string>
+  /** Hashes that were already in storage before init (won't be re-uploaded). */
+  alreadyAvailableHashes: Set<string>
+  /** Random opaque correlator the client must send on subsequent calls. */
+  deploymentToken: string
+  /** Wall-clock ms after which this deployment must be evicted. */
+  expiresAt: number
+}
+
+export type IPartialDeploymentStore = {
+  put(record: DeploymentRecord): Promise<void>
+  get(entityId: string): Promise<DeploymentRecord | undefined>
+  markUploaded(entityId: string, fileHash: string): Promise<void>
+  delete(entityId: string): Promise<void>
+  /** Returns entityIds with `expiresAt < timestamp`. */
+  listExpiredBefore(timestamp: number): Promise<string[]>
+  /** For tests. */
+  clear(): Promise<void>
+}
+
+export type IPartialDeploymentTempStorage = {
+  putEntityRaw(entityId: string, bytes: Buffer): Promise<void>
+  putFile(entityId: string, fileHash: string, bytes: Buffer): Promise<void>
+  getEntityRaw(entityId: string): Promise<Buffer>
+  getFile(entityId: string, fileHash: string): Promise<Buffer>
+  deleteAll(entityId: string): Promise<void>
+}
+
+export type PartialDeploymentInitInput = {
+  entityId: string
+  entityRaw: Buffer
+  authChain: AuthChain
+  ownerAddress: EthAddress
+  manifest: Record<string, number>
+}
+
+export type PartialDeploymentInitResult = {
+  availableFiles: string[]
+  missingFiles: string[]
+  deploymentToken: string
+  expiresAt: number
+}
+
+export type PartialDeploymentStatus = {
+  availableFiles: string[]
+  missingFiles: string[]
+  expiresAt: number
+}
+
+export type IPartialDeploymentManager = {
+  init(input: PartialDeploymentInitInput): Promise<PartialDeploymentInitResult>
+  addFile(entityId: string, fileHash: string, token: string, bytes: Buffer): Promise<void>
+  complete(baseUrl: string, entityId: string, token: string): Promise<DeploymentResult>
+  status(entityId: string): Promise<PartialDeploymentStatus | undefined>
+}
+
+export type IPartialDeploymentSweeper = IBaseComponent
+
+export type IPartialDeploymentValidator = {
+  /** Light-weight pre-checks runnable at init: scene-size, signer permissions, per-file size. No file bytes needed. */
+  preflight(input: {
+    entity: Entity
+    authChain: AuthChain
+    fileSizesManifest: Record<string, number>
+    contentHashesInStorage: Map<string, boolean>
+  }): Promise<ValidationResult>
+  /** Full validation runnable at finalize: re-runs all checks, including auth-chain verification. */
+  final(deployment: DeploymentToValidate): Promise<ValidationResult>
+}
