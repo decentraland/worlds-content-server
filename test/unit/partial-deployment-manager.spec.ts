@@ -319,3 +319,45 @@ describe('partialDeploymentManager.complete', () => {
     await expect(tempStorage.getFile('QmE', fileHash)).rejects.toThrow()
   })
 })
+
+describe('partialDeploymentManager.status', () => {
+  it('returns undefined for unknown entity', async () => {
+    const { manager } = makeManager()
+    expect(await manager.status('QmNope')).toBeUndefined()
+  })
+
+  it('returns availableFiles, missingFiles, expiresAt for known deployment', async () => {
+    const bytes = Buffer.from([1, 2, 3])
+    const fileHash = await hashV1(bytes)
+    const { manager } = makeManager()
+    const init = await manager.init({
+      entityId: 'QmE',
+      entityRaw: Buffer.from('{}'),
+      authChain: [],
+      ownerAddress: '0xabc',
+      manifest: { [fileHash]: 3, QmOther: 5 }
+    })
+    await manager.addFile('QmE', fileHash, init.deploymentToken, bytes)
+
+    const s = await manager.status('QmE')
+    expect(s!.availableFiles.sort()).toEqual([fileHash])
+    expect(s!.missingFiles).toEqual(['QmOther'])
+    expect(s!.expiresAt).toBe(init.expiresAt)
+  })
+
+  it('returns undefined and cleans up if expired', async () => {
+    const { manager, store } = makeManager()
+    const init = await manager.init({
+      entityId: 'QmE',
+      entityRaw: Buffer.from('{}'),
+      authChain: [],
+      ownerAddress: '0xabc',
+      manifest: {}
+    })
+    expect(init.deploymentToken).toBeTruthy()
+    const r = await store.get('QmE')
+    r!.expiresAt = Date.now() - 1
+    expect(await manager.status('QmE')).toBeUndefined()
+    expect(await store.get('QmE')).toBeUndefined() // lazy eviction triggered
+  })
+})

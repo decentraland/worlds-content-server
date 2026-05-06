@@ -218,8 +218,20 @@ export function createPartialDeploymentManager(
     })
   }
 
-  async function status(_e: string): Promise<PartialDeploymentStatus | undefined> {
-    throw new Error('not implemented yet')
+  async function status(entityId: string): Promise<PartialDeploymentStatus | undefined> {
+    const record = await store.get(entityId)
+    if (!record) return undefined
+    if (record.expiresAt < Date.now()) {
+      await deleteAll(record).catch(() => undefined)
+      return undefined
+    }
+    return {
+      availableFiles: [...record.alreadyAvailableHashes, ...record.uploadedHashes],
+      missingFiles: Object.keys(record.manifest).filter(
+        (h) => !record.uploadedHashes.has(h) && !record.alreadyAvailableHashes.has(h)
+      ),
+      expiresAt: record.expiresAt
+    }
   }
 
   return { init, addFile, complete, status }
