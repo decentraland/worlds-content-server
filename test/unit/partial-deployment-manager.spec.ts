@@ -233,3 +233,89 @@ describe('partialDeploymentManager.addFile', () => {
     expect([...stored]).toEqual([1, 2, 3])
   })
 })
+
+describe('partialDeploymentManager.complete', () => {
+  it('rejects unknown deployment', async () => {
+    const { manager } = makeManager()
+    await expect(manager.complete('http://baseUrl', 'QmNope', 'tok')).rejects.toThrow(/not found/i)
+  })
+
+  it('rejects token mismatch', async () => {
+    const { manager } = makeManager()
+    const init = await manager.init({
+      entityId: 'QmE',
+      entityRaw: Buffer.from('{}'),
+      authChain: [],
+      ownerAddress: '0xabc',
+      manifest: {}
+    })
+    expect(init.deploymentToken).toBeTruthy()
+    await expect(manager.complete('http://x', 'QmE', 'wrong')).rejects.toThrow(/token/i)
+  })
+
+  it('rejects expired deployment', async () => {
+    const { manager, store } = makeManager()
+    const init = await manager.init({
+      entityId: 'QmE',
+      entityRaw: Buffer.from('{}'),
+      authChain: [],
+      ownerAddress: '0xabc',
+      manifest: {}
+    })
+    const r = await store.get('QmE')
+    r!.expiresAt = Date.now() - 1
+    await expect(manager.complete('http://x', 'QmE', init.deploymentToken)).rejects.toThrow(/expired/i)
+  })
+
+  it('rejects when validator.final fails', async () => {
+    const validator = {
+      preflight: async () => ({ ok: () => true, errors: [] }),
+      final: async () => ({ ok: () => false, errors: ['boom'] })
+    }
+    const { manager } = makeManager({ validator })
+    const init = await manager.init({
+      entityId: 'QmE',
+      entityRaw: Buffer.from('{"content":[]}'),
+      authChain: [],
+      ownerAddress: '0xabc',
+      manifest: {}
+    })
+    await expect(manager.complete('http://x', 'QmE', init.deploymentToken)).rejects.toThrow(/boom/)
+  })
+
+  it('happy path: validates, deploys, cleans up store + temp', async () => {
+    const bytes = Buffer.from([1, 2, 3])
+    const fileHash = await hashV1(bytes)
+    const entityRaw = Buffer.from(JSON.stringify({ content: [{ file: 'a.glb', hash: fileHash }] }))
+    const deployFn = jest.fn().mockResolvedValue({ message: 'deployed' })
+    const storage = createInMemoryStorage()
+    const store = createPartialDeploymentStore()
+    const tempStorage = createPartialDeploymentTempStorage({ storage })
+    const mutex = createMutex()
+    const manager = createPartialDeploymentManager({
+      storage,
+      partialDeploymentStore: store,
+      partialDeploymentTempStorage: tempStorage,
+      partialDeploymentValidator: okValidator,
+      entityDeployer: { deployEntity: deployFn } as any,
+      logs: { getLogger: () => baseLogger } as any
+    } as any, mutex)
+
+    const init = await manager.init({
+      entityId: 'QmE',
+      entityRaw,
+      authChain: [{ type: 'SIGNER' as any, payload: '0xabc', signature: '' }],
+      ownerAddress: '0xabc',
+      manifest: { [fileHash]: 3 }
+    })
+    await manager.addFile('QmE', fileHash, init.deploymentToken, bytes)
+    const result = await manager.complete('http://baseUrl', 'QmE', init.deploymentToken)
+
+    expect(result).toEqual({ message: 'deployed' })
+    expect(deployFn).toHaveBeenCalled()
+    // Cleanup verified: store + temp emptied
+    expect(await store.get('QmE')).toBeUndefined()
+    await expect(tempStorage.getEntityRaw('QmE')).rejects.toThrow()
+    await expect(tempStorage.getFile('QmE', fileHash)).rejects.toThrow()
+  })
+})

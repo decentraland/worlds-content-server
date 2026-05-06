@@ -156,8 +156,66 @@ export function createPartialDeploymentManager(
     })
   }
 
-  async function complete(_b: string, _e: string, _t: string): Promise<DeploymentResult> {
-    throw new Error('not implemented yet')
+  async function deleteAll(record: DeploymentRecord): Promise<void> {
+    const fileKeys = Object.keys(record.manifest).map((h) => `temp/partial/${record.entityId}/${h}`)
+    if (fileKeys.length > 0) {
+      await storage.delete(fileKeys).catch(() => undefined)
+    }
+    await tempStorage.deleteAll(record.entityId).catch(() => undefined)
+    await store.delete(record.entityId)
+  }
+
+  async function complete(baseUrl: string, entityId: string, token: string): Promise<DeploymentResult> {
+    return mutex.run(entityId, async () => {
+      const record = await store.get(entityId)
+      if (!record) {
+        throw new InvalidRequestError(`Deployment ${entityId} not found`)
+      }
+      if (record.expiresAt < Date.now()) {
+        await deleteAll(record)
+        throw new InvalidRequestError(`Deployment ${entityId} expired`)
+      }
+      if (record.deploymentToken !== token) {
+        throw new InvalidRequestError(`Deployment ${entityId} token mismatch`)
+      }
+
+      const entityRaw = await tempStorage.getEntityRaw(entityId)
+      const entityMetadataJson = JSON.parse(entityRaw.toString())
+      const entity: Entity = { id: entityId, timestamp: Date.now(), ...entityMetadataJson }
+      const expectedHashes = new Set(entity.content?.map(($) => $.hash) ?? [])
+
+      const uploadedFiles = new Map<string, Uint8Array>()
+      for (const h of expectedHashes) {
+        if (record.uploadedHashes.has(h)) {
+          uploadedFiles.set(h, await tempStorage.getFile(entityId, h))
+        }
+      }
+
+      const contentHashesInStorage = await storage.existMultiple(Array.from(expectedHashes))
+
+      const validation = await validator.final({
+        entity,
+        files: uploadedFiles,
+        authChain: record.authChain,
+        contentHashesInStorage
+      })
+      if (!validation.ok()) {
+        throw new InvalidRequestError(`Deployment failed: ${validation.errors.join(', ')}`)
+      }
+
+      try {
+        return await components.entityDeployer.deployEntity(
+          baseUrl,
+          entity,
+          contentHashesInStorage,
+          uploadedFiles,
+          entityRaw.toString(),
+          record.authChain
+        )
+      } finally {
+        await deleteAll(record).catch((err) => logger.warn('cleanup failed', { err: String(err) }))
+      }
+    })
   }
 
   async function status(_e: string): Promise<PartialDeploymentStatus | undefined> {
