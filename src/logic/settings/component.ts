@@ -15,13 +15,7 @@ import { Coordinate } from '../coordinates'
 export async function createSettingsComponent(
   components: Pick<
     AppComponents,
-    | 'config'
-    | 'coordinates'
-    | 'namePermissionChecker'
-    | 'permissions'
-    | 'storage'
-    | 'snsClient'
-    | 'worldsManager'
+    'config' | 'coordinates' | 'namePermissionChecker' | 'permissions' | 'storage' | 'snsClient' | 'worldsManager'
   >
 ): Promise<ISettingsComponent> {
   const { config, coordinates, namePermissionChecker, permissions, storage, snsClient, worldsManager } = components
