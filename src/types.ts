@@ -44,7 +44,7 @@ import { IDenyListComponent } from './logic/denylist/types'
 import { IBansComponent } from './adapters/bans-adapter'
 
 export type GlobalContext = {
-  components: BaseComponents
+  components: AppComponents
 }
 
 export const MB = 1024 * 1024

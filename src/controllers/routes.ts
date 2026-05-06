@@ -39,6 +39,11 @@ import { getWorldsHandler } from './handlers/worlds-handler'
 import { reprocessABSchema } from './schemas/reprocess-ab-schemas'
 import { getWorldScenesSchema } from './schemas/scenes-query-schemas'
 import { worldCommsHandler } from './handlers/world-comms-handler'
+import {
+  addFileToPartialDeployment,
+  finalizePartialDeployment,
+  getPartialDeploymentStatus
+} from './handlers/deploy-v2-handlers'
 
 export async function setupRouter(globalContext: GlobalContext): Promise<Router<GlobalContext>> {
   const { fetch, schemaValidator, config } = globalContext.components
@@ -89,6 +94,12 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   router.get('/ipfs/:hashId', getContentFile)
 
   router.post('/entities/active', activeEntitiesHandler)
+
+  // v2 partial-deployment sub-routes
+  router.post('/entities/:entityId/files/:fileHash', addFileToPartialDeployment)
+  router.post('/entities/:entityId', finalizePartialDeployment)
+  router.get('/entities/:entityId/status', getPartialDeploymentStatus)
+
   router.head('/contents/:hashId', headContentFile)
   router.get('/contents/:hashId', getContentFile)
 
