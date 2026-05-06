@@ -212,6 +212,7 @@ export async function initComponents(): Promise<AppComponents> {
     config,
     coordinates,
     namePermissionChecker,
+    permissions,
     storage,
     snsClient,
     worldsManager
