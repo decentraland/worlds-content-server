@@ -20,7 +20,7 @@ export async function deployEntity(
 ): Promise<IHttpServerComponent.IResponse> {
   // v2 init dispatch — capability-based, no /v2/ URL namespace
   if (ctx.request.headers.get('upload-incomplete') === '?1') {
-    return initPartialDeployment(ctx as any)
+    return initPartialDeployment(ctx)
   }
 
   // ===== v1 path (unchanged below this line) =====
