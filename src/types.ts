@@ -737,6 +737,7 @@ export type IPartialDeploymentValidator = {
   /** Light-weight pre-checks runnable at init: scene-size, signer permissions, per-file size. No file bytes needed. */
   preflight(input: {
     entity: Entity
+    entityRaw: Buffer
     authChain: AuthChain
     fileSizesManifest: Record<string, number>
     contentHashesInStorage: Map<string, boolean>

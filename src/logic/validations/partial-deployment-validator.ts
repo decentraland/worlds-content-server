@@ -1,4 +1,10 @@
-import { IPartialDeploymentValidator, ValidationResult, Validator, ValidatorComponents } from '../../types'
+import {
+  IPartialDeploymentValidator,
+  PARTIAL_DEPLOYMENT_DEFAULT_FILE_LIMIT_BYTES,
+  ValidationResult,
+  Validator,
+  ValidatorComponents
+} from '../../types'
 import { createValidator } from './validator'
 
 /**
@@ -11,9 +17,23 @@ export function createPartialDeploymentValidator(components: ValidatorComponents
 
   return {
     async preflight(input): Promise<ValidationResult> {
+      // Reject oversized individual files before accepting any blobs.
+      const oversized: string[] = []
+      for (const [hash, size] of Object.entries(input.fileSizesManifest)) {
+        if (size > PARTIAL_DEPLOYMENT_DEFAULT_FILE_LIMIT_BYTES) {
+          oversized.push(`${hash} (${size} bytes)`)
+        }
+      }
+      if (oversized.length > 0) {
+        const errors = [
+          `Files exceed per-file size limit (${PARTIAL_DEPLOYMENT_DEFAULT_FILE_LIMIT_BYTES} bytes): ${oversized.join(', ')}`
+        ]
+        return { ok: () => false, errors }
+      }
+
       return v1Validator.validate({
         entity: input.entity,
-        files: new Map(), // no file bytes available at init time
+        files: new Map([[input.entity.id, input.entityRaw]]),
         authChain: input.authChain,
         contentHashesInStorage: input.contentHashesInStorage
       })
