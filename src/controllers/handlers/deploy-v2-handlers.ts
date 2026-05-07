@@ -1,7 +1,7 @@
 import { IHttpServerComponent } from '@well-known-components/interfaces'
 import { InvalidRequestError } from '@dcl/http-commons'
 import { FormDataContext } from '../../logic/multipart'
-import { HandlerContextWithPath } from '../../types'
+import { HandlerContextWithPath, PARTIAL_DEPLOYMENT_DEFAULT_FILE_LIMIT_BYTES } from '../../types'
 import { extractAuthChain } from '../../logic/extract-auth-chain'
 
 const TOKEN_HEADER = 'x-deployment-token'
@@ -62,6 +62,20 @@ export async function addFileToPartialDeployment(
   const fileHash = ctx.params.fileHash
   const token = ctx.request.headers.get(TOKEN_HEADER)
   if (!token) throw new InvalidRequestError(`Missing ${TOKEN_HEADER} header`)
+
+  const contentLengthHeader = ctx.request.headers.get('content-length')
+  if (!contentLengthHeader) {
+    throw new InvalidRequestError('Content-Length header required')
+  }
+  const contentLength = Number(contentLengthHeader)
+  if (!Number.isFinite(contentLength) || contentLength < 0) {
+    throw new InvalidRequestError('Content-Length header invalid')
+  }
+  if (contentLength > PARTIAL_DEPLOYMENT_DEFAULT_FILE_LIMIT_BYTES) {
+    throw new InvalidRequestError(
+      `File too large: declared ${contentLength} bytes exceeds limit ${PARTIAL_DEPLOYMENT_DEFAULT_FILE_LIMIT_BYTES}`
+    )
+  }
 
   const buffer = await ctx.request.buffer()
   await ctx.components.partialDeploymentManager.addFile(entityId, fileHash, token, buffer)
