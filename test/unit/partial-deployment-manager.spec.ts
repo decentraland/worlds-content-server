@@ -6,6 +6,7 @@ import { createMutex } from '../../src/adapters/partial-deployment-mutex'
 import { createPartialDeploymentManager } from '../../src/adapters/partial-deployment-manager'
 import { IPartialDeploymentValidator } from '../../src/types'
 import { bufferToStream } from '@dcl/catalyst-storage'
+import { NotFoundError } from '@dcl/http-commons'
 
 const okValidator: IPartialDeploymentValidator = {
   preflight: async () => ({ ok: () => true, errors: [] }),
@@ -125,6 +126,24 @@ describe('partialDeploymentManager.init', () => {
       })
     ).rejects.toThrow(/nope/)
   })
+
+  it('passes entityRaw to validator.preflight', async () => {
+    const preflightSpy = jest.fn().mockResolvedValue({ ok: () => true, errors: [] })
+    const validator: IPartialDeploymentValidator = {
+      preflight: preflightSpy,
+      final: async () => ({ ok: () => true, errors: [] })
+    }
+    const entityRaw = Buffer.from('{"content":[]}')
+    const { manager } = makeManager({ validator })
+    await manager.init({
+      entityId: 'QmE',
+      entityRaw,
+      authChain: [],
+      ownerAddress: '0xabc',
+      manifest: {}
+    })
+    expect(preflightSpy).toHaveBeenCalledWith(expect.objectContaining({ entityRaw }))
+  })
 })
 
 describe('partialDeploymentManager.addFile', () => {
@@ -133,6 +152,7 @@ describe('partialDeploymentManager.addFile', () => {
     await expect(manager.addFile('QmNope', 'QmA', 'tok', Buffer.from('a'))).rejects.toMatchObject({
       message: expect.stringMatching(/not found/i)
     })
+    await expect(manager.addFile('QmNope', 'QmA', 'tok', Buffer.from('a'))).rejects.toBeInstanceOf(NotFoundError)
   })
 
   it('rejects when token mismatches', async () => {
@@ -211,6 +231,7 @@ describe('partialDeploymentManager.addFile', () => {
     const r = await store.get('QmE')
     r!.expiresAt = Date.now() - 1
     await expect(manager.addFile('QmE', realHash, init.deploymentToken, bytes)).rejects.toThrow(/expired/i)
+    await expect(manager.addFile('QmE', realHash, init.deploymentToken, bytes)).rejects.toBeInstanceOf(NotFoundError)
   })
 
   it('happy path: stores file, marks uploaded', async () => {
@@ -237,6 +258,7 @@ describe('partialDeploymentManager.complete', () => {
   it('rejects unknown deployment', async () => {
     const { manager } = makeManager()
     await expect(manager.complete('http://baseUrl', 'QmNope', 'tok')).rejects.toThrow(/not found/i)
+    await expect(manager.complete('http://baseUrl', 'QmNope', 'tok')).rejects.toBeInstanceOf(NotFoundError)
   })
 
   it('rejects token mismatch', async () => {
@@ -252,7 +274,7 @@ describe('partialDeploymentManager.complete', () => {
     await expect(manager.complete('http://x', 'QmE', 'wrong')).rejects.toThrow(/token/i)
   })
 
-  it('rejects expired deployment', async () => {
+  it('rejects expired deployment with NotFoundError (mapped to 404)', async () => {
     const { manager, store } = makeManager()
     const init = await manager.init({
       entityId: 'QmE',
@@ -263,7 +285,9 @@ describe('partialDeploymentManager.complete', () => {
     })
     const r = await store.get('QmE')
     r!.expiresAt = Date.now() - 1
-    await expect(manager.complete('http://x', 'QmE', init.deploymentToken)).rejects.toThrow(/expired/i)
+    const err = await manager.complete('http://x', 'QmE', init.deploymentToken).catch((e) => e)
+    expect(err).toBeInstanceOf(NotFoundError)
+    expect(err.message).toMatch(/expired/i)
   })
 
   it('rejects when validator.final fails', async () => {
@@ -319,6 +343,66 @@ describe('partialDeploymentManager.complete', () => {
     expect(await store.get('QmE')).toBeUndefined()
     await expect(tempStorage.getEntityRaw('QmE')).rejects.toThrow()
     await expect(tempStorage.getFile('QmE', fileHash)).rejects.toThrow()
+  })
+
+  it('passes entity raw into validator.final via files map keyed by entity.id', async () => {
+    const finalSpy = jest.fn().mockResolvedValue({ ok: () => true, errors: [] })
+    const validator: IPartialDeploymentValidator = {
+      preflight: async () => ({ ok: () => true, errors: [] }),
+      final: finalSpy
+    }
+    const bytes = Buffer.from([1, 2, 3])
+    const fileHash = await hashV1(bytes)
+    const entityRaw = Buffer.from(JSON.stringify({ content: [{ file: 'a.glb', hash: fileHash }] }))
+    const { manager } = makeManager({ validator })
+    const init = await manager.init({
+      entityId: 'QmE',
+      entityRaw,
+      authChain: [],
+      ownerAddress: '0xabc',
+      manifest: { [fileHash]: 3 }
+    })
+    await manager.addFile('QmE', fileHash, init.deploymentToken, bytes)
+    await manager.complete('http://x', 'QmE', init.deploymentToken)
+
+    expect(finalSpy).toHaveBeenCalled()
+    const passedDeployment = finalSpy.mock.calls[0][0]
+    expect(passedDeployment.files.get('QmE')).toBeDefined()
+    expect(Buffer.from(passedDeployment.files.get('QmE')).toString()).toBe(entityRaw.toString())
+  })
+
+  it('preserves the record when deployEntity throws transiently', async () => {
+    const deployFn = jest.fn().mockRejectedValue(new Error('SNS down'))
+    const storage = createInMemoryStorage()
+    const store = createPartialDeploymentStore()
+    const tempStorage = createPartialDeploymentTempStorage({ storage })
+    const mutex = createMutex()
+    const manager = createPartialDeploymentManager(
+      {
+        storage,
+        partialDeploymentStore: store,
+        partialDeploymentTempStorage: tempStorage,
+        partialDeploymentValidator: okValidator,
+        entityDeployer: { deployEntity: deployFn } as any,
+        logs: { getLogger: () => baseLogger } as any
+      } as any,
+      mutex
+    )
+
+    const bytes = Buffer.from([1, 2, 3])
+    const fileHash = await hashV1(bytes)
+    const entityRaw = Buffer.from(JSON.stringify({ content: [{ file: 'a.glb', hash: fileHash }] }))
+    const init = await manager.init({
+      entityId: 'QmE',
+      entityRaw,
+      authChain: [],
+      ownerAddress: '0xabc',
+      manifest: { [fileHash]: 3 }
+    })
+    await manager.addFile('QmE', fileHash, init.deploymentToken, bytes)
+    await expect(manager.complete('http://x', 'QmE', init.deploymentToken)).rejects.toThrow('SNS down')
+    // Record is preserved so the client can retry without re-initialising.
+    expect(await store.get('QmE')).toBeDefined()
   })
 })
 

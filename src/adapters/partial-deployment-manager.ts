@@ -1,7 +1,7 @@
 import { Entity } from '@dcl/schemas'
 import { randomBytes } from 'crypto'
 import { hashV1 } from '@dcl/hashing'
-import { InvalidRequestError } from '@dcl/http-commons'
+import { InvalidRequestError, NotFoundError } from '@dcl/http-commons'
 import {
   AppComponents,
   DeploymentRecord,
@@ -71,6 +71,7 @@ export function createPartialDeploymentManager(components: ManagerComponents, mu
 
       const preflight = await validator.preflight({
         entity,
+        entityRaw: input.entityRaw,
         authChain: input.authChain,
         fileSizesManifest: input.manifest,
         contentHashesInStorage
@@ -120,12 +121,11 @@ export function createPartialDeploymentManager(components: ManagerComponents, mu
     return mutex.run(entityId, async () => {
       const record = await store.get(entityId)
       if (!record) {
-        throw new InvalidRequestError(`Deployment ${entityId} not found`)
+        throw new NotFoundError(`Deployment ${entityId} not found`)
       }
       if (record.expiresAt < Date.now()) {
-        await tempStorage.deleteAll(entityId).catch(() => undefined)
-        await store.delete(entityId)
-        throw new InvalidRequestError(`Deployment ${entityId} expired`)
+        await deleteAll(record).catch(() => undefined)
+        throw new NotFoundError(`Deployment ${entityId} expired`)
       }
       if (record.deploymentToken !== token) {
         throw new InvalidRequestError(`Deployment ${entityId} token mismatch`)
@@ -162,11 +162,11 @@ export function createPartialDeploymentManager(components: ManagerComponents, mu
     return mutex.run(entityId, async () => {
       const record = await store.get(entityId)
       if (!record) {
-        throw new InvalidRequestError(`Deployment ${entityId} not found`)
+        throw new NotFoundError(`Deployment ${entityId} not found`)
       }
       if (record.expiresAt < Date.now()) {
         await deleteAll(record)
-        throw new InvalidRequestError(`Deployment ${entityId} expired`)
+        throw new NotFoundError(`Deployment ${entityId} expired`)
       }
       if (record.deploymentToken !== token) {
         throw new InvalidRequestError(`Deployment ${entityId} token mismatch`)
@@ -183,6 +183,8 @@ export function createPartialDeploymentManager(components: ManagerComponents, mu
           uploadedFiles.set(h, await tempStorage.getFile(entityId, h))
         }
       }
+      // Validators (including v1) dereference files.get(entity.id) for the entity raw.
+      uploadedFiles.set(entity.id, entityRaw)
 
       const contentHashesInStorage = await storage.existMultiple(Array.from(expectedHashes))
 
@@ -196,18 +198,16 @@ export function createPartialDeploymentManager(components: ManagerComponents, mu
         throw new InvalidRequestError(`Deployment failed: ${validation.errors.join(', ')}`)
       }
 
-      try {
-        return await components.entityDeployer.deployEntity(
-          baseUrl,
-          entity,
-          contentHashesInStorage,
-          uploadedFiles,
-          entityRaw.toString(),
-          record.authChain
-        )
-      } finally {
-        await deleteAll(record).catch((err) => logger.warn('cleanup failed', { err: String(err) }))
-      }
+      const result = await components.entityDeployer.deployEntity(
+        baseUrl,
+        entity,
+        contentHashesInStorage,
+        uploadedFiles,
+        entityRaw.toString(),
+        record.authChain
+      )
+      await deleteAll(record).catch((err) => logger.warn('cleanup failed', { err: String(err) }))
+      return result
     })
   }
 
