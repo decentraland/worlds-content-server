@@ -87,7 +87,7 @@ test('partial deployment v2 — failure modes', function ({ components, stubComp
     return { entityId, contentBuf, contentHash, token: initBody.deploymentToken }
   }
 
-  it('404 (or 400) on file upload to unknown entity', async () => {
+  it('404 on file upload to unknown entity', async () => {
     const { localFetch } = components
 
     const resp = await localFetch.fetch(
@@ -96,16 +96,17 @@ test('partial deployment v2 — failure modes', function ({ components, stubComp
         method: 'POST',
         headers: {
           'X-Deployment-Token': 'some-token',
+          'Content-Length': '1',
           'Content-Type': 'application/octet-stream'
         },
         body: Buffer.from('x') as any
       }
     )
 
-    expect([400, 404]).toContain(resp.status)
+    expect(resp.status).toBe(404)
   })
 
-  it('400 (or 404) on missing X-Deployment-Token header for file upload', async () => {
+  it('400 on missing X-Deployment-Token header for file upload', async () => {
     const { localFetch } = components
 
     const { entityId, contentBuf, contentHash } = await setupInitedDeployment()
@@ -119,7 +120,7 @@ test('partial deployment v2 — failure modes', function ({ components, stubComp
       body: contentBuf as any
     })
 
-    expect([400, 404]).toContain(resp.status)
+    expect(resp.status).toBe(400)
   })
 
   it('400 on token mismatch for file upload', async () => {
@@ -180,7 +181,7 @@ test('partial deployment v2 — failure modes', function ({ components, stubComp
       // X-Deployment-Token intentionally omitted
     })
 
-    expect([400, 404]).toContain(resp.status)
+    expect(resp.status).toBe(400)
   })
 
   it('400 on token mismatch for finalize', async () => {
