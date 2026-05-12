@@ -119,11 +119,12 @@ describe('SettingsComponent', () => {
         })
       })
 
-      it('should update the world settings', async () => {
+      it('should update the world settings without checking the world-wide deployment permission', async () => {
         const result = await settingsComponent.updateWorldSettings(worldName, signer, input)
 
         expect(result).toEqual(updatedSettings)
         expect(namePermissionChecker.checkPermission).toHaveBeenCalledWith(signer.toLowerCase(), worldName)
+        expect(permissions.hasWorldWidePermission).not.toHaveBeenCalled()
         expect(worldsManager.updateWorldSettings).toHaveBeenCalledWith(worldName, signer.toLowerCase(), {
           spawnCoordinates: '10,20'
         })
@@ -256,11 +257,15 @@ describe('SettingsComponent', () => {
         })
       })
 
-      it('should update the world settings and check the deployment permission for the normalized signer', async () => {
+      it('should check the name ownership before checking the world-wide deployment permission and update the world settings', async () => {
         const result = await settingsComponent.updateWorldSettings(worldName, signer, input)
 
         expect(result).toEqual(updatedSettings)
+        expect(namePermissionChecker.checkPermission).toHaveBeenCalledWith(signer.toLowerCase(), worldName)
         expect(permissions.hasWorldWidePermission).toHaveBeenCalledWith(worldName, 'deployment', signer.toLowerCase())
+        const nameCheckOrder = namePermissionChecker.checkPermission.mock.invocationCallOrder[0]
+        const worldWideCheckOrder = permissions.hasWorldWidePermission.mock.invocationCallOrder[0]
+        expect(nameCheckOrder).toBeLessThan(worldWideCheckOrder)
       })
     })
 
