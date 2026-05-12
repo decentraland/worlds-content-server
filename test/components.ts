@@ -173,6 +173,7 @@ async function initComponents(): Promise<TestComponents> {
     config,
     coordinates,
     namePermissionChecker,
+    permissions,
     storage,
     snsClient,
     worldsManager

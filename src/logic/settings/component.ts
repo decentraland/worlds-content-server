@@ -15,10 +15,10 @@ import { Coordinate } from '../coordinates'
 export async function createSettingsComponent(
   components: Pick<
     AppComponents,
-    'config' | 'coordinates' | 'namePermissionChecker' | 'storage' | 'snsClient' | 'worldsManager'
+    'config' | 'coordinates' | 'namePermissionChecker' | 'permissions' | 'storage' | 'snsClient' | 'worldsManager'
   >
 ): Promise<ISettingsComponent> {
-  const { config, coordinates, namePermissionChecker, storage, snsClient, worldsManager } = components
+  const { config, coordinates, namePermissionChecker, permissions, storage, snsClient, worldsManager } = components
   const baseUrl = await config.requireString('HTTP_BASE_URL')
 
   const { parseCoordinate, areCoordinatesEqual } = coordinates
@@ -47,10 +47,11 @@ export async function createSettingsComponent(
   ): Promise<WorldSettings> {
     const normalizedSigner = signer.toLowerCase()
 
-    // Only name owners can update world settings
-    const hasNamePermission = await namePermissionChecker.checkPermission(normalizedSigner, worldName)
+    const isNameOwner = await namePermissionChecker.checkPermission(normalizedSigner, worldName)
+    const isWorldWideDeployer =
+      !isNameOwner && (await permissions.hasWorldWidePermission(worldName, 'deployment', normalizedSigner))
 
-    if (!hasNamePermission) {
+    if (!isNameOwner && !isWorldWideDeployer) {
       throw new UnauthorizedError()
     }
 

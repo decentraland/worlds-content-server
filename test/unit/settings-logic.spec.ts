@@ -4,6 +4,7 @@ import { IContentStorageComponent, createInMemoryStorage } from '@dcl/catalyst-s
 import { IPublisherComponent } from '@dcl/sns-component'
 import { Events } from '@dcl/schemas'
 import { createSettingsComponent, ISettingsComponent } from '../../src/logic/settings'
+import { IPermissionsComponent } from '../../src/logic/permissions'
 import {
   IWorldNamePermissionChecker,
   IWorldsManager,
@@ -12,6 +13,7 @@ import {
   NoDeployedScenesError
 } from '../../src/types'
 import { createMockedNamePermissionChecker } from '../mocks/dcl-name-checker-mock'
+import { createMockedPermissionsComponent } from '../mocks/permissions-component-mock'
 import { createMockedWorldsManager } from '../mocks/worlds-manager-mock'
 import { createCoordinatesComponent, ICoordinatesComponent } from '../../src/logic/coordinates'
 import { createSnsClientMock } from '../mocks/sns-client-mock'
@@ -21,6 +23,7 @@ describe('SettingsComponent', () => {
   let config: IConfigComponent
   let coordinates: ICoordinatesComponent
   let namePermissionChecker: jest.Mocked<IWorldNamePermissionChecker>
+  let permissions: jest.Mocked<IPermissionsComponent>
   let storage: IContentStorageComponent
   let snsClient: IPublisherComponent
   let worldsManager: jest.Mocked<IWorldsManager>
@@ -32,6 +35,7 @@ describe('SettingsComponent', () => {
     })
     coordinates = createCoordinatesComponent()
     namePermissionChecker = createMockedNamePermissionChecker()
+    permissions = createMockedPermissionsComponent()
     storage = createInMemoryStorage()
     snsClient = createSnsClientMock()
     worldsManager = createMockedWorldsManager()
@@ -40,6 +44,7 @@ describe('SettingsComponent', () => {
       config,
       coordinates,
       namePermissionChecker,
+      permissions,
       storage,
       snsClient,
       worldsManager
@@ -114,11 +119,12 @@ describe('SettingsComponent', () => {
         })
       })
 
-      it('should update the world settings', async () => {
+      it('should update the world settings without checking the world-wide deployment permission', async () => {
         const result = await settingsComponent.updateWorldSettings(worldName, signer, input)
 
         expect(result).toEqual(updatedSettings)
         expect(namePermissionChecker.checkPermission).toHaveBeenCalledWith(signer.toLowerCase(), worldName)
+        expect(permissions.hasWorldWidePermission).not.toHaveBeenCalled()
         expect(worldsManager.updateWorldSettings).toHaveBeenCalledWith(worldName, signer.toLowerCase(), {
           spawnCoordinates: '10,20'
         })
@@ -218,11 +224,12 @@ describe('SettingsComponent', () => {
       })
     })
 
-    describe('when the signer does not own the world name', () => {
+    describe('when the signer does not own the world name and does not have world-wide deployment permission', () => {
       beforeEach(() => {
         signer = '0xUnauthorizedAddress'
         input = { spawnCoordinates: '5,10' }
         namePermissionChecker.checkPermission.mockResolvedValue(false)
+        permissions.hasWorldWidePermission.mockResolvedValue(false)
       })
 
       it('should throw an UnauthorizedError with the correct message', async () => {
@@ -232,6 +239,33 @@ describe('SettingsComponent', () => {
             message: 'Unauthorized. You do not have permission to update settings for this world.'
           })
         )
+      })
+    })
+
+    describe('when the signer does not own the world name but has world-wide deployment permission', () => {
+      let updatedSettings: WorldSettings
+
+      beforeEach(() => {
+        signer = '0xWorldWideDeployer'
+        input = { spawnCoordinates: '5,10' }
+        updatedSettings = { spawnCoordinates: '5,10' }
+        namePermissionChecker.checkPermission.mockResolvedValue(false)
+        permissions.hasWorldWidePermission.mockResolvedValue(true)
+        worldsManager.updateWorldSettings.mockResolvedValue({
+          settings: updatedSettings,
+          oldSpawnCoordinates: null
+        })
+      })
+
+      it('should check the name ownership before checking the world-wide deployment permission and update the world settings', async () => {
+        const result = await settingsComponent.updateWorldSettings(worldName, signer, input)
+
+        expect(result).toEqual(updatedSettings)
+        expect(namePermissionChecker.checkPermission).toHaveBeenCalledWith(signer.toLowerCase(), worldName)
+        expect(permissions.hasWorldWidePermission).toHaveBeenCalledWith(worldName, 'deployment', signer.toLowerCase())
+        const nameCheckOrder = namePermissionChecker.checkPermission.mock.invocationCallOrder[0]
+        const worldWideCheckOrder = permissions.hasWorldWidePermission.mock.invocationCallOrder[0]
+        expect(nameCheckOrder).toBeLessThan(worldWideCheckOrder)
       })
     })
 
