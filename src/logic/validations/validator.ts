@@ -23,9 +23,13 @@ import {
 import { OK, validateAll, validateIfTypeMatches } from './utils'
 import { EntityType } from '@dcl/schemas'
 
-export function createValidateFns(components: ValidatorComponents): Validation[] {
+/**
+ * Validations safe to run at partial-deployment init (preflight), when only the
+ * entity raw is available and content file bytes have not yet been uploaded.
+ * They depend on entity metadata, auth chain, or `files.get(entity.id)` only.
+ */
+export function createCommonValidations(components: ValidatorComponents): Validation[] {
   return [
-    // Common validations to all entity types
     validateAll([
       validateEntityId,
       validateBaseEntity,
@@ -33,11 +37,9 @@ export function createValidateFns(components: ValidatorComponents): Validation[]
       validateSigner,
       validateSignature,
       createValidateDeploymentTtl(components),
-      validateFiles,
       validateSupportedEntityType
     ]),
 
-    // Scene entity validations
     validateIfTypeMatches(
       EntityType.SCENE,
       validateAll([
@@ -49,13 +51,22 @@ export function createValidateFns(components: ValidatorComponents): Validation[]
         validateThumbnail,
         createValidateBannedNames(components),
         // validateSdkVersion(components) TODO re-enable (and test) once SDK7 is ready
-        createValidateSize(components), // Slow
         createValidateDeploymentPermission(components) // Slow
       ])
     )
-
-    // Other entity validations will go here ...
   ]
+}
+
+/**
+ * Validations that require every content file to be present (uploaded or
+ * already in storage). Only runnable at finalize.
+ */
+export function createFinalOnlyValidations(components: ValidatorComponents): Validation[] {
+  return [validateFiles, validateIfTypeMatches(EntityType.SCENE, createValidateSize(components))]
+}
+
+export function createValidateFns(components: ValidatorComponents): Validation[] {
+  return [...createCommonValidations(components), ...createFinalOnlyValidations(components)]
 }
 
 export const createValidator = (components: ValidatorComponents): Validator => ({
