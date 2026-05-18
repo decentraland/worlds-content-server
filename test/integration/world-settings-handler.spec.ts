@@ -247,7 +247,7 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
       })
     })
 
-    describe('when the user has deployment permission but does not own the name', () => {
+    describe('when the user has world-wide deployment permission but does not own the name', () => {
       let deployer: Identity
       let worldName: string
       let permissions: IPermissionsComponent
@@ -261,10 +261,50 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
         const created = await worldCreator.createWorldWithScene()
         worldName = created.worldName
 
-        // Grant deployment permission to the deployer
         await permissions.grantWorldWidePermission(worldName, 'deployment', [
           deployer.realAccount.address.toLowerCase()
         ])
+      })
+
+      it('should update the world settings successfully', async () => {
+        const { localFetch, worldsManager } = components
+
+        const response = await makeSignedMultipartRequest(localFetch, `/world/${worldName}/settings`, deployer, {
+          spawn_coordinates: '20,24'
+        })
+
+        expect(response.status).toBe(200)
+        expect(await response.json()).toMatchObject({
+          message: 'World settings updated successfully',
+          settings: {
+            spawn_coordinates: '20,24'
+          }
+        })
+
+        const settings = await worldsManager.getWorldSettings(worldName)
+        expect(settings).toMatchObject({
+          spawnCoordinates: '20,24'
+        })
+      })
+    })
+
+    describe('when the user has parcel-scoped deployment permission but does not own the name', () => {
+      let deployer: Identity
+      let worldName: string
+      let permissions: IPermissionsComponent
+
+      beforeEach(async () => {
+        const { worldCreator } = components
+        permissions = components.permissions
+
+        deployer = await getIdentity()
+
+        const created = await worldCreator.createWorldWithScene()
+        worldName = created.worldName
+
+        const deployerAddress = deployer.realAccount.address.toLowerCase()
+        await permissions.grantWorldWidePermission(worldName, 'deployment', [deployerAddress])
+        await permissions.addParcelsToPermission(worldName, 'deployment', deployerAddress, ['20,24'])
       })
 
       it('should respond with 403 unauthorized', async () => {
