@@ -193,7 +193,10 @@ export async function createWorldsManagerComponent({
    * @throws {Error} If any database operation fails (triggers rollback)
    */
   async function deployScene(worldName: string, scene: Entity, owner: EthAddress): Promise<void> {
-    const parcels: string[] = scene.metadata?.scene?.parcels || []
+    // Canonicalize so the stored parcels, the overlap-based replacement here, the undeploy
+    // authorization, and the size credit-back all compare parcels by value (e.g. "00,00" ==
+    // "0,0"). Otherwise a non-canonical scene.parcels could dodge replacement / over-credit.
+    const parcels: string[] = coordinates.canonicalizeParcels(scene.metadata?.scene?.parcels || [])
     if (!parcels.length) {
       throw new Error(`Attempt to deploy scene ${scene.id} to world ${worldName} with no parcels.`)
     }
@@ -753,6 +756,26 @@ export async function createWorldsManagerComponent({
   }
 
   /**
+   * Returns the total size of the world's currently deployed scenes that overlap any of the
+   * given parcels — i.e. the scenes a deployment on those parcels would replace.
+   */
+  async function getDeployedSceneSizeForParcels(worldName: string, parcels: string[]): Promise<bigint> {
+    if (parcels.length === 0) {
+      return 0n
+    }
+
+    const result = await database.query<{ total_size: string }>(SQL`
+      SELECT COALESCE(SUM(size), 0) as total_size
+      FROM world_scenes
+      WHERE world_name = ${worldName.toLowerCase()}
+      AND status = 'DEPLOYED'
+      AND parcels && ${parcels}::text[]
+    `)
+
+    return BigInt(result.rows[0]?.total_size || 0)
+  }
+
+  /**
    * Gets the bounding rectangle for all deployed scenes in a world
    * Computed directly in SQL to avoid fetching all parcels
    *
@@ -1117,6 +1140,7 @@ export async function createWorldsManagerComponent({
     updateWorldSettings,
     getWorldSettings,
     getTotalWorldSize,
+    getDeployedSceneSizeForParcels,
     getWorldBoundingRectangle,
     getWorlds,
     getOccupiedParcels,

@@ -563,6 +563,98 @@ test('ScenesHandler', function ({ components, stubComponents }) {
       })
     })
 
+    describe('when the user has parcel-specific permission over only part of a multi-parcel scene', function () {
+      let owner: Identity
+      let deployer: Identity
+      let worldName: string
+      let permissions: IPermissionsComponent
+
+      beforeEach(async () => {
+        const { worldCreator } = components
+        permissions = components.permissions
+
+        owner = await getIdentity()
+        deployer = await getIdentity()
+        worldName = worldCreator.randomWorldName()
+
+        // A single scene that spans three parcels
+        await worldCreator.createWorldWithScene({
+          worldName,
+          owner: owner.authChain,
+          metadata: {
+            main: 'abc.txt',
+            scene: { base: '20,24', parcels: ['20,24', '20,25', '20,26'] },
+            worldConfiguration: { name: worldName }
+          }
+        })
+
+        // The deployer is only granted one of the scene's parcels
+        await permissions.addParcelsToPermission(worldName, 'deployment', deployer.realAccount.address, ['20,24'])
+      })
+
+      it('should respond with 401 unauthorized', async () => {
+        const { localFetch } = components
+
+        const response = await makeSignedRequest(localFetch, `/world/${worldName}/scenes/20,24`, deployer)
+
+        expect(response.status).toBe(401)
+      })
+
+      it('should not undeploy the scene', async () => {
+        const { localFetch } = components
+
+        await makeSignedRequest(localFetch, `/world/${worldName}/scenes/20,24`, deployer)
+
+        const scenesResponse = await localFetch.fetch(`/world/${worldName}/scenes`)
+        const scenesBody = await scenesResponse.json()
+        expect(scenesBody.total).toBe(1)
+      })
+    })
+
+    describe('when the user has parcel-specific permission over the entire multi-parcel scene', function () {
+      let owner: Identity
+      let deployer: Identity
+      let worldName: string
+      let permissions: IPermissionsComponent
+
+      beforeEach(async () => {
+        const { worldCreator } = components
+        permissions = components.permissions
+
+        owner = await getIdentity()
+        deployer = await getIdentity()
+        worldName = worldCreator.randomWorldName()
+
+        await worldCreator.createWorldWithScene({
+          worldName,
+          owner: owner.authChain,
+          metadata: {
+            main: 'abc.txt',
+            scene: { base: '20,24', parcels: ['20,24', '20,25', '20,26'] },
+            worldConfiguration: { name: worldName }
+          }
+        })
+
+        await permissions.addParcelsToPermission(worldName, 'deployment', deployer.realAccount.address, [
+          '20,24',
+          '20,25',
+          '20,26'
+        ])
+      })
+
+      it('should successfully undeploy the scene and remove it from the world', async () => {
+        const { localFetch } = components
+
+        const response = await makeSignedRequest(localFetch, `/world/${worldName}/scenes/20,24`, deployer)
+
+        expect(response.status).toBe(200)
+
+        const scenesResponse = await localFetch.fetch(`/world/${worldName}/scenes`)
+        const scenesBody = await scenesResponse.json()
+        expect(scenesBody.total).toBe(0)
+      })
+    })
+
     describe('when the user does not have permission', function () {
       let identity: Identity
       let worldName: string

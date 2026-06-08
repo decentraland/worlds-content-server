@@ -8,8 +8,12 @@ export async function createLimitsManagerComponent({
   fetch,
   logs,
   nameOwnership,
-  walletStats
-}: Pick<AppComponents, 'config' | 'fetch' | 'logs' | 'nameOwnership' | 'walletStats'>): Promise<ILimitsManager> {
+  walletStats,
+  worldsManager
+}: Pick<
+  AppComponents,
+  'config' | 'fetch' | 'logs' | 'nameOwnership' | 'walletStats' | 'worldsManager'
+>): Promise<ILimitsManager> {
   const logger = logs.getLogger('limits-manager')
   const hardMaxParcels = await config.requireNumber('MAX_PARCELS')
   const hardMaxSize = await config.requireNumber('MAX_SIZE')
@@ -45,7 +49,7 @@ export async function createLimitsManagerComponent({
       const whitelist = (await cache.fetch(CONFIG_KEY))!
       return whitelist[worldName]?.max_parcels || hardMaxParcels
     },
-    async getMaxAllowedSizeInBytesFor(worldName: string): Promise<bigint> {
+    async getMaxAllowedSizeInBytesFor(worldName: string, parcels?: string[]): Promise<bigint> {
       if (worldName.endsWith('.eth') && !worldName.endsWith('.dcl.eth')) {
         return BigInt(hardMaxSizeForEns) * MB_BigInt
       }
@@ -61,12 +65,16 @@ export async function createLimitsManagerComponent({
         throw new Error(`Could not determine owner for world ${worldName}`)
       }
 
-      // We get used space, max allowed space and the size of the scene that is already deployed for that name (if any)
       const stats = await walletStats.get(owner)
-      const alreadyExistingSceneSize = stats.dclNames.find((name) => name.name === worldName.toLowerCase())?.size || 0n
 
-      // We subtract from usedSpace the scene that is about to be un-deployed
-      const usedSpace = stats.usedSpace - alreadyExistingSceneSize
+      // A deployment only replaces the scenes overlapping its parcels, so credit back only
+      // those (not the whole world, which would over-count in multi-scene worlds). Falls
+      // back to the whole-world size when parcels aren't provided.
+      const creditedBackSize = parcels
+        ? await worldsManager.getDeployedSceneSizeForParcels(worldName, parcels)
+        : stats.dclNames.find((name) => name.name === worldName.toLowerCase())?.size || 0n
+
+      const usedSpace = stats.usedSpace - creditedBackSize
 
       // We get the remaining space for the account (if any) or 0 if the space is already exceeded
       return bigIntMax(stats.maxAllowedSpace - usedSpace, 0n)

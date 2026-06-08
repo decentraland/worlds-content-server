@@ -119,11 +119,23 @@ async function initComponents(): Promise<TestComponents> {
 
   const worldsIndexer = await createWorldsIndexerComponent({ worldsManager })
 
-  const permissionsManager = await createPermissionsManagerComponent({ database, logs, nameOwnership, worldsManager })
+  const permissionsManager = await createPermissionsManagerComponent({
+    coordinates,
+    database,
+    logs,
+    nameOwnership,
+    worldsManager
+  })
 
   const snsClient: IPublisherComponent = createSnsClientMock()
 
-  const permissions = await createPermissionsComponent({ config, permissionsManager, snsClient, worldsManager })
+  const permissions = await createPermissionsComponent({
+    config,
+    coordinates,
+    permissionsManager,
+    snsClient,
+    worldsManager
+  })
   const socialService = createMockSocialService()
   const peersRegistry = createMockPeersRegistry()
   const participantKicker = await createParticipantKicker({ peersRegistry, commsAdapter, logs, config })
@@ -156,6 +168,7 @@ async function initComponents(): Promise<TestComponents> {
 
   const validator = createValidator({
     config,
+    coordinates,
     limitsManager,
     nameDenyListChecker,
     namePermissionChecker,

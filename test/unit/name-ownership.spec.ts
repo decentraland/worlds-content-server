@@ -218,6 +218,27 @@ describe('Name Ownership', () => {
       const map = await nameOwnership.findOwners(['something.dcl.eth'])
       expect(map.get('something.dcl.eth')).toBe('0x1')
     })
+
+    it('does not interpolate names with invalid characters into the query and resolves them as unowned', async () => {
+      let capturedQuery = ''
+      const nameOwnership = await createMarketplaceSubgraphDclNameOwnership({
+        logs,
+        marketplaceSubGraph: {
+          query: async (query: string) => {
+            capturedQuery = query
+            return { Pgood: [{ name: 'good', owner: { id: '0x1' } }] }
+          }
+        } as any
+      })
+
+      const map = await nameOwnership.findOwners(['evil"{.dcl.eth', 'good.dcl.eth'])
+
+      // The malicious label is filtered out before building the query (no injection) and has no owner;
+      // the well-formed name is still resolved.
+      expect(capturedQuery).not.toContain('evil')
+      expect(map.get('evil"{.dcl.eth')).toBeUndefined()
+      expect(map.get('good.dcl.eth')).toBe('0x1')
+    })
   })
 
   describe('DCL name ownership (On Chain)', function () {

@@ -12,7 +12,10 @@ import {
 import {
   createValidateBannedNames,
   createValidateDeploymentPermission,
+  createValidateFileCount,
+  createValidateParcelCoordinates,
   createValidateSceneDimensions,
+  createValidateScenePointers,
   createValidateSize,
   validateDeprecatedConfig,
   validateMiniMapImages,
@@ -43,7 +46,10 @@ export function createValidateFns(components: ValidatorComponents): Validation[]
       validateAll([
         validateSceneEntity,
         validateDeprecatedConfig,
+        createValidateParcelCoordinates(components),
+        createValidateScenePointers(components),
         createValidateSceneDimensions(components),
+        createValidateFileCount(components),
         validateMiniMapImages,
         validateSkyboxTextures,
         validateThumbnail,

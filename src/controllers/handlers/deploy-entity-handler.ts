@@ -20,8 +20,7 @@ export async function deployEntity(
   const entityMetadataJson = JSON.parse(entityRaw)
 
   const entity: Entity = {
-    id: entityId, // this is not part of the published entity
-    timestamp: Date.now(), // this is not part of the published entity
+    id: entityId,
     ...entityMetadataJson
   }
 

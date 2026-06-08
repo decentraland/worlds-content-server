@@ -4,8 +4,9 @@ import { createConfigComponent } from '@well-known-components/env-config-provide
 import { createLogComponent } from '@well-known-components/logger'
 import { createMockedNameOwnership } from '../mocks/name-ownership-mock'
 import { createMockWalletStatsComponent } from '../mocks/wallet-stats-mock'
+import { createMockedWorldsManager } from '../mocks/worlds-manager-mock'
 import { EthAddress } from '@dcl/schemas'
-import { ILimitsManager, INameOwnership, IWalletStats, MB_BigInt, WalletStats } from '../../src/types'
+import { ILimitsManager, INameOwnership, IWalletStats, IWorldsManager, MB_BigInt, WalletStats } from '../../src/types'
 import { IConfigComponent, IFetchComponent, ILoggerComponent } from '@well-known-components/interfaces'
 
 describe('limits manager', function () {
@@ -14,6 +15,7 @@ describe('limits manager', function () {
   let fetch: IFetchComponent
   let nameOwnership: jest.Mocked<INameOwnership>
   let walletStats: IWalletStats
+  let worldsManager: jest.Mocked<IWorldsManager>
   let limitsManager: ILimitsManager
 
   beforeEach(async () => {
@@ -58,12 +60,14 @@ describe('limits manager', function () {
         ]
       ])
     )
+    worldsManager = createMockedWorldsManager()
     limitsManager = await createLimitsManagerComponent({
       config,
       fetch,
       logs,
       nameOwnership,
-      walletStats
+      walletStats,
+      worldsManager
     })
   })
 
@@ -91,5 +95,24 @@ describe('limits manager', function () {
     expect(await limitsManager.getAllowSdk6For('whatever.dcl.eth')).toBeFalsy()
     expect(await limitsManager.getMaxAllowedSizeInBytesFor('whatever.dcl.eth')).toBe(200n * MB_BigInt)
     expect(await limitsManager.getMaxAllowedParcelsFor('whatever.dcl.eth')).toBe(4)
+  })
+
+  describe('when computing the size limit for a deployment targeting specific parcels', () => {
+    beforeEach(() => {
+      // The world has 10 bytes deployed in total, but only 4 bytes sit on the parcels
+      // this deployment overlaps and will replace.
+      worldsManager.getDeployedSceneSizeForParcels.mockResolvedValue(4n)
+    })
+
+    it('should credit back only the size of the overlapping scenes, not the whole world', async () => {
+      // maxAllowedSpace - (usedSpace - overlappingSize) = 200MB - (10 - 4) = 200MB - 6
+      expect(await limitsManager.getMaxAllowedSizeInBytesFor('whatever.dcl.eth', ['1,0'])).toBe(200n * MB_BigInt - 6n)
+    })
+
+    it('should query the deployed scene size for the deployment parcels', async () => {
+      await limitsManager.getMaxAllowedSizeInBytesFor('whatever.dcl.eth', ['1,0'])
+
+      expect(worldsManager.getDeployedSceneSizeForParcels).toHaveBeenCalledWith('whatever.dcl.eth', ['1,0'])
+    })
   })
 })

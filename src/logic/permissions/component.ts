@@ -6,12 +6,13 @@ import { randomUUID } from 'crypto'
 
 export async function createPermissionsComponent({
   config,
+  coordinates,
   permissionsManager,
   snsClient,
   worldsManager
 }: Pick<
   AppComponents,
-  'config' | 'permissionsManager' | 'snsClient' | 'worldsManager'
+  'config' | 'coordinates' | 'permissionsManager' | 'snsClient' | 'worldsManager'
 >): Promise<IPermissionsComponent> {
   const builderUrl = await config.requireString('BUILDER_URL')
 
@@ -120,8 +121,8 @@ export async function createPermissionsComponent({
       return false
     }
 
-    // Check in the database if all target parcels are allowed
-    return permissionsManager.checkParcelsAllowed(record.id, parcels)
+    // Canonicalize so parcels match the (also canonicalized) stored ones by value
+    return permissionsManager.checkParcelsAllowed(record.id, coordinates.canonicalizeParcels(parcels))
   }
 
   /**

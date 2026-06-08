@@ -40,14 +40,14 @@ export async function cleanup(storage: IContentStorageComponent, db: IPgComponen
   await db.query(`TRUNCATE worlds, world_scenes CASCADE`)
 }
 
-export async function getIdentity(): Promise<Identity> {
+export async function getIdentity(ephemeralKeyTTLInMinutes = 10): Promise<Identity> {
   const ephemeralIdentity = createUnsafeIdentity()
   const realAccount = createUnsafeIdentity()
 
   const authChain = await Authenticator.initializeAuthChain(
     realAccount.address,
     ephemeralIdentity,
-    10,
+    ephemeralKeyTTLInMinutes,
     async (message) => {
       return Authenticator.createSignature(realAccount, message)
     }

@@ -55,7 +55,7 @@ export const validateSigner: Validation = async (deployment: DeploymentToValidat
 }
 
 export const validateSignature: Validation = async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
-  const result = await Authenticator.validateSignature(deployment.entity.id, deployment.authChain, null, 10)
+  const result = await Authenticator.validateSignature(deployment.entity.id, deployment.authChain, null, Date.now())
 
   return createValidationResult(result.message ? [result.message] : [])
 }

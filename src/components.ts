@@ -151,10 +151,29 @@ export async function initComponents(): Promise<AppComponents> {
 
   const walletStats = await createWalletStatsComponent({ config, database, fetch, logs, worldsManager })
 
-  const limitsManager = await createLimitsManagerComponent({ config, fetch, logs, nameOwnership, walletStats })
+  const limitsManager = await createLimitsManagerComponent({
+    config,
+    fetch,
+    logs,
+    nameOwnership,
+    walletStats,
+    worldsManager
+  })
   const worldsIndexer = await createWorldsIndexerComponent({ worldsManager })
-  const permissionsManager = await createPermissionsManagerComponent({ database, logs, nameOwnership, worldsManager })
-  const permissions = await createPermissionsComponent({ config, permissionsManager, snsClient, worldsManager })
+  const permissionsManager = await createPermissionsManagerComponent({
+    coordinates,
+    database,
+    logs,
+    nameOwnership,
+    worldsManager
+  })
+  const permissions = await createPermissionsComponent({
+    config,
+    coordinates,
+    permissionsManager,
+    snsClient,
+    worldsManager
+  })
   const socialService = await createSocialServiceComponent({ config, fetch, logs })
   const peersRegistry = await createPeersRegistry({ config })
   const participantKicker = await createParticipantKicker({ peersRegistry, commsAdapter, logs, config })
@@ -186,6 +205,7 @@ export async function initComponents(): Promise<AppComponents> {
   })
   const validator = createValidator({
     config,
+    coordinates,
     nameDenyListChecker,
     namePermissionChecker,
     limitsManager,

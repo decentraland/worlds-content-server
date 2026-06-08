@@ -175,6 +175,11 @@ export async function createMarketplaceSubgraphDclNameOwnership(
   const logger = components.logs.getLogger('marketplace-subgraph-dcl-name-ownership')
   logger.info('Using Marketplace Subgraph NameOwnership')
 
+  // Valid DCL name labels are alphanumeric. Restricting to this charset both matches the
+  // registrar and prevents the label (interpolated into the GraphQL query below as an alias
+  // and string literals) from injecting GraphQL syntax.
+  const DCL_NAME_LABEL_REGEX = /^[a-zA-Z0-9]+$/
+
   function getQueryFragment(worldName: string) {
     // We need to add a 'P' prefix because the graph needs the fragment name to start with a letter and
     // names can start with digits
@@ -200,8 +205,12 @@ export async function createMarketplaceSubgraphDclNameOwnership(
     may not be in the exact same case of the registered name. There are several methods
     suffixed _nocase, but not one for equality, so this is a bit hackish, but it works.
      */
-    if (worldNames.length > 0) {
-      const query = `{${worldNames.map((name) => getQueryFragment(name.replace('.dcl.eth', ''))).join('\n')}}`
+    // Only query well-formed labels; anything else cannot own a name and is excluded so it
+    // can never be interpolated into the query (it resolves to "no owner").
+    const validNames = worldNames.filter((name) => DCL_NAME_LABEL_REGEX.test(name.replace('.dcl.eth', '')))
+
+    if (validNames.length > 0) {
+      const query = `{${validNames.map((name) => getQueryFragment(name.replace('.dcl.eth', ''))).join('\n')}}`
       const response = await components.marketplaceSubGraph.query<NamesResponse>(query)
 
       const page = Object.entries(response).map(([dclNameWithPrefix, nfts]) => {

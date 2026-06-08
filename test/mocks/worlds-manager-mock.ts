@@ -244,6 +244,10 @@ export async function createWorldsManagerMockComponent({
     return 0n
   }
 
+  async function getDeployedSceneSizeForParcels(_worldName: string, _parcels: string[]): Promise<bigint> {
+    return 0n
+  }
+
   async function getWorldBoundingRectangle(worldName: string): Promise<WorldBoundingRectangle | undefined> {
     const metadata = await getMetadataForWorld(worldName)
     if (!metadata || !metadata.scenes) {
@@ -346,6 +350,7 @@ export async function createWorldsManagerMockComponent({
     updateWorldSettings,
     getWorldSettings,
     getTotalWorldSize,
+    getDeployedSceneSizeForParcels,
     getWorldBoundingRectangle,
     getWorlds,
     getOccupiedParcels,
@@ -374,6 +379,7 @@ export function createMockedWorldsManager(
     getContributableDomains: jest.fn(),
     getWorldScenes: jest.fn(),
     getTotalWorldSize: jest.fn(),
+    getDeployedSceneSizeForParcels: jest.fn(),
     getWorldBoundingRectangle: jest.fn(),
     createBasicWorldIfNotExists: jest.fn(),
     worldExists: jest.fn(),

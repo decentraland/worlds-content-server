@@ -16,7 +16,7 @@ export function createMockLimitsManagerComponent(): ILimitsManager {
     async getMaxAllowedParcelsFor(worldName: string): Promise<number> {
       return whitelist[worldName]?.max_parcels || 4
     },
-    async getMaxAllowedSizeInBytesFor(worldName: string): Promise<bigint> {
+    async getMaxAllowedSizeInBytesFor(worldName: string, _parcels?: string[]): Promise<bigint> {
       return BigInt(whitelist[worldName]?.max_size_in_mb || 10 * MB)
     }
   }

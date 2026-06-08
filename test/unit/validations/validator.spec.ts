@@ -9,6 +9,8 @@ import {
 } from '../../../src/types'
 import { createMockLimitsManagerComponent } from '../../mocks/limits-manager-mock'
 import { createMockNamePermissionChecker } from '../../mocks/dcl-name-checker-mock'
+import { stringToUtf8Bytes } from 'eth-connect'
+import { EntityType } from '@dcl/schemas'
 import { getIdentity, Identity } from '../../utils'
 import { IConfigComponent } from '@well-known-components/interfaces'
 import { createSceneDeployment } from './shared'
@@ -46,6 +48,7 @@ describe('validator', function () {
     identity = await getIdentity()
     components = {
       config,
+      coordinates,
       storage,
       limitsManager,
       nameDenyListChecker,
@@ -63,5 +66,33 @@ describe('validator', function () {
     const result = await validator.validate(deployment)
     expect(result.ok()).toBeTruthy()
     expect(result.errors).toEqual([])
+  })
+
+  it('rejects a scene that declares more files than allowed', async () => {
+    const validator = createValidator({
+      ...components,
+      config: createConfigComponent({ DEPLOYMENT_TTL: '10000', MAX_FILE_COUNT: '1' })
+    })
+
+    const files = new Map<string, Uint8Array>()
+    files.set('a.txt', Buffer.from(stringToUtf8Bytes('a')))
+    files.set('b.txt', Buffer.from(stringToUtf8Bytes('b')))
+    const deployment = await createSceneDeployment(identity.authChain, {
+      type: EntityType.SCENE,
+      pointers: ['0,0'],
+      timestamp: Date.now(),
+      metadata: {
+        main: 'a.txt',
+        scene: { base: '0,0', parcels: ['0,0'] },
+        worldConfiguration: { name: 'whatever.dcl.eth' }
+      },
+      files
+    })
+
+    const result = await validator.validate(deployment)
+    expect(result.ok()).toBeFalsy()
+    expect(result.errors).toContain(
+      'The deployment has too many files. The maximum allowed is 1 but the deployment has 2.'
+    )
   })
 })
