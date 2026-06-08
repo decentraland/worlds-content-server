@@ -13,7 +13,7 @@ export async function createSceneDeployment(identityAuthChain: AuthIdentity, ent
 
   const sceneJson = entity || {
     type: EntityType.SCENE,
-    pointers: ['0,0'],
+    pointers: ['20,24'],
     timestamp: Date.now(),
     metadata: {
       main: 'abc.txt',

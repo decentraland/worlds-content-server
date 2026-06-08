@@ -3,8 +3,26 @@ import { BoundingRectangle, Coordinate, ICoordinatesComponent } from './types'
 
 const MIN_PARCEL_COORDINATE = -150
 const MAX_PARCEL_COORDINATE = 150
+const PARCEL_COORD_REGEX = /^\s*(-?\d+)\s*,\s*(-?\d+)\s*$/
 
 export function createCoordinatesComponent(): ICoordinatesComponent {
+  /**
+   * Canonicalizes a parcel coordinate to "<x>,<y>" (no leading zeros, whitespace or signed
+   * zero) so parcels are compared by value. Non-coordinate strings are returned unchanged so
+   * callers fail closed rather than throwing.
+   */
+  function canonicalizeParcel(parcel: string): string {
+    const match = PARCEL_COORD_REGEX.exec(parcel)
+    if (!match) {
+      return parcel
+    }
+    return `${parseInt(match[1], 10)},${parseInt(match[2], 10)}`
+  }
+
+  function canonicalizeParcels(parcels: string[]): string[] {
+    return parcels.map(canonicalizeParcel)
+  }
+
   /**
    * Parses a coordinate string (e.g., "10,20" or "-5,-10") into a Coordinate object
    *
@@ -132,6 +150,8 @@ export function createCoordinatesComponent(): ICoordinatesComponent {
   }
 
   return {
+    canonicalizeParcel,
+    canonicalizeParcels,
     parseCoordinate,
     calculateBoundingRectangle,
     isCoordinateWithinRectangle,

@@ -12,6 +12,7 @@ import { createMockedPermissionsManager } from '../mocks/permissions-manager-moc
 import { createMockedConfig } from '../mocks/config-mock'
 import { createMockedSnsClient } from '../mocks/sns-client-mock'
 import { createMockedWorldsManager } from '../mocks/worlds-manager-mock'
+import { createCoordinatesComponent } from '../../src/logic/coordinates'
 
 describe('PermissionsComponent', () => {
   let permissionsComponent: IPermissionsComponent
@@ -38,6 +39,7 @@ describe('PermissionsComponent', () => {
 
     permissionsComponent = await createPermissionsComponent({
       config,
+      coordinates: createCoordinatesComponent(),
       permissionsManager,
       snsClient,
       worldsManager
@@ -205,6 +207,17 @@ describe('PermissionsComponent', () => {
             '99,99'
           ])
           expect(result).toBe(false)
+        })
+      })
+
+      describe('and the requested parcels are not in canonical form', () => {
+        beforeEach(() => {
+          permissionsManager.checkParcelsAllowed.mockResolvedValueOnce(true)
+        })
+
+        it('should canonicalize the parcels before checking them in the database', async () => {
+          await permissionsComponent.hasPermissionForParcels('test-world', 'deployment', '0x1234', ['00,00', '01,-0'])
+          expect(permissionsManager.checkParcelsAllowed).toHaveBeenCalledWith(1, ['0,0', '1,0'])
         })
       })
     })

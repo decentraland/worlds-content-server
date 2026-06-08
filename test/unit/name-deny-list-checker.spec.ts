@@ -69,4 +69,23 @@ describe('name deny list checker', function () {
     await expect(nameDenyListChecker.checkNameDenyList('banned-name.eth')).resolves.toBeFalsy()
     await expect(nameDenyListChecker.checkNameDenyList('good-name.eth')).resolves.toBeTruthy()
   })
+
+  it('should reject a banned name regardless of the case it is deployed with', async () => {
+    const fetch = await createFetchComponent()
+    fetch.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          data: ['banned-name']
+        })
+    })
+    const nameDenyListChecker = await createNameDenyListChecker({
+      config,
+      logs,
+      fetch
+    })
+
+    await expect(nameDenyListChecker.checkNameDenyList('Banned-Name.dcl.eth')).resolves.toBeFalsy()
+    await expect(nameDenyListChecker.checkNameDenyList('BANNED-NAME.eth')).resolves.toBeFalsy()
+  })
 })

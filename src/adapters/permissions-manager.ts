@@ -4,11 +4,15 @@ import { EthAddress } from '@dcl/schemas'
 import SQL from 'sql-template-strings'
 
 export async function createPermissionsManagerComponent({
+  coordinates,
   database,
   logs,
   nameOwnership,
   worldsManager
-}: Pick<AppComponents, 'database' | 'logs' | 'nameOwnership' | 'worldsManager'>): Promise<IPermissionsManager> {
+}: Pick<
+  AppComponents,
+  'coordinates' | 'database' | 'logs' | 'nameOwnership' | 'worldsManager'
+>): Promise<IPermissionsManager> {
   const logger = logs.getLogger('permissions-manager')
 
   async function getOwner(worldName: string): Promise<EthAddress | undefined> {
@@ -310,6 +314,7 @@ export async function createPermissionsManagerComponent({
   ): Promise<{ created: boolean }> {
     const lowerCaseWorldName = worldName.toLowerCase()
     const lowerCaseAddress = address.toLowerCase()
+    const canonicalParcels = coordinates.canonicalizeParcels(parcels)
     const now = new Date()
 
     return await database.withAsyncContextTransaction(async () => {
@@ -344,12 +349,12 @@ export async function createPermissionsManagerComponent({
       }
 
       // Add parcels if any
-      if (parcels.length > 0) {
+      if (canonicalParcels.length > 0) {
         const insertQuery = SQL`
           INSERT INTO world_permission_parcels (permission_id, parcel)
           VALUES `
 
-        parcels.forEach((parcel, index) => {
+        canonicalParcels.forEach((parcel, index) => {
           if (index > 0) {
             insertQuery.append(SQL`, `)
           }
@@ -373,11 +378,13 @@ export async function createPermissionsManagerComponent({
       return
     }
 
+    const canonicalParcels = coordinates.canonicalizeParcels(parcels)
+
     await database.withAsyncContextTransaction(async () => {
       await database.query(SQL`
-        DELETE FROM world_permission_parcels 
-        WHERE permission_id = ${permissionId} 
-          AND parcel = ANY(${parcels})
+        DELETE FROM world_permission_parcels
+        WHERE permission_id = ${permissionId}
+          AND parcel = ANY(${canonicalParcels})
       `)
 
       // Update the permission's updated_at timestamp

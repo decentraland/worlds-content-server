@@ -143,6 +143,163 @@ test('WorldManagerAdapter', function ({ components }) {
     })
   })
 
+  describe('when getting the deployed scene size for parcels', function () {
+    describe('when the world has multiple non-overlapping scenes', function () {
+      let worldName: string
+      let firstSceneSize: bigint
+      let secondSceneSize: bigint
+
+      beforeEach(async () => {
+        const { worldCreator, worldsManager } = components
+
+        worldName = worldCreator.randomWorldName()
+
+        const files1 = new Map<string, Uint8Array>()
+        files1.set('abc.txt', stringToUtf8Bytes(makeid(100)))
+        await worldCreator.createWorldWithScene({
+          worldName,
+          metadata: {
+            main: 'abc.txt',
+            scene: { base: '0,0', parcels: ['0,0'] },
+            worldConfiguration: { name: worldName }
+          },
+          files: files1
+        })
+
+        const files2 = new Map<string, Uint8Array>()
+        files2.set('abc.txt', stringToUtf8Bytes(makeid(200)))
+        await worldCreator.createWorldWithScene({
+          worldName,
+          metadata: {
+            main: 'abc.txt',
+            scene: { base: '1,1', parcels: ['1,1'] },
+            worldConfiguration: { name: worldName }
+          },
+          files: files2
+        })
+
+        const { scenes } = await worldsManager.getWorldScenes({ worldName })
+        firstSceneSize = scenes.find((scene) => scene.parcels.includes('0,0'))!.size
+        secondSceneSize = scenes.find((scene) => scene.parcels.includes('1,1'))!.size
+      })
+
+      it('should return only the size of the scene overlapping the given parcels', async () => {
+        const { worldsManager } = components
+
+        const size = await worldsManager.getDeployedSceneSizeForParcels(worldName, ['1,1'])
+
+        expect(size).toBe(secondSceneSize)
+      })
+
+      it('should return the combined size when the parcels overlap multiple scenes', async () => {
+        const { worldsManager } = components
+
+        const size = await worldsManager.getDeployedSceneSizeForParcels(worldName, ['0,0', '1,1'])
+
+        expect(size).toBe(firstSceneSize + secondSceneSize)
+      })
+
+      it('should return zero when no deployed scene overlaps the given parcels', async () => {
+        const { worldsManager } = components
+
+        const size = await worldsManager.getDeployedSceneSizeForParcels(worldName, ['5,5'])
+
+        expect(size).toBe(BigInt(0))
+      })
+    })
+
+    describe('when the world has only undeployed scenes', function () {
+      let worldName: string
+
+      beforeEach(async () => {
+        const { worldCreator, worldsManager } = components
+
+        const files = new Map<string, Uint8Array>()
+        files.set('abc.txt', stringToUtf8Bytes(makeid(100)))
+
+        const created = await worldCreator.createWorldWithScene({ files })
+        worldName = created.worldName
+
+        await worldsManager.undeployWorld(worldName)
+      })
+
+      it('should return zero', async () => {
+        const { worldsManager } = components
+
+        const size = await worldsManager.getDeployedSceneSizeForParcels(worldName, ['20,24'])
+
+        expect(size).toBe(BigInt(0))
+      })
+    })
+
+    describe('when no parcels are provided', function () {
+      let worldName: string
+
+      beforeEach(async () => {
+        const { worldCreator } = components
+
+        const files = new Map<string, Uint8Array>()
+        files.set('abc.txt', stringToUtf8Bytes(makeid(100)))
+
+        const created = await worldCreator.createWorldWithScene({ files })
+        worldName = created.worldName
+      })
+
+      it('should return zero', async () => {
+        const { worldsManager } = components
+
+        const size = await worldsManager.getDeployedSceneSizeForParcels(worldName, [])
+
+        expect(size).toBe(BigInt(0))
+      })
+    })
+  })
+
+  describe('when deploying a scene whose parcels are not in canonical form', function () {
+    let worldName: string
+
+    beforeEach(async () => {
+      const { worldCreator } = components
+
+      worldName = worldCreator.randomWorldName()
+
+      // Existing scene at the canonical parcel
+      const existingFiles = new Map<string, Uint8Array>()
+      existingFiles.set('abc.txt', stringToUtf8Bytes(makeid(100)))
+      await worldCreator.createWorldWithScene({
+        worldName,
+        metadata: {
+          main: 'abc.txt',
+          scene: { base: '0,0', parcels: ['0,0'] },
+          worldConfiguration: { name: worldName }
+        },
+        files: existingFiles
+      })
+
+      // New scene declaring the same parcel in non-canonical form
+      const newFiles = new Map<string, Uint8Array>()
+      newFiles.set('abc.txt', stringToUtf8Bytes(makeid(120)))
+      await worldCreator.createWorldWithScene({
+        worldName,
+        metadata: {
+          main: 'abc.txt',
+          scene: { base: '00,00', parcels: ['00,00'] },
+          worldConfiguration: { name: worldName }
+        },
+        files: newFiles
+      })
+    })
+
+    it('should replace the overlapping scene and store the parcels canonically', async () => {
+      const { worldsManager } = components
+
+      const { scenes, total } = await worldsManager.getWorldScenes({ worldName })
+
+      expect(total).toBe(1)
+      expect(scenes[0].parcels).toEqual(['0,0'])
+    })
+  })
+
   describe('when soft-deleting scenes', function () {
     describe('when undeploying a world', function () {
       let worldName: string

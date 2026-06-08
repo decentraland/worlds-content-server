@@ -107,6 +107,37 @@ test('POST /world/:world_name/permissions/:permission_name/address/:address/parc
     })
   })
 
+  describe('when the parcels are not in canonical form', () => {
+    let targetAddress: Identity
+    let path: string
+
+    beforeEach(async () => {
+      targetAddress = await getIdentity()
+      path = `/world/${worldName}/permissions/deployment/address/${targetAddress.realAccount.address}/parcels`
+    })
+
+    it('should store the parcels in canonical form', async () => {
+      const response = await localFetch.fetch(path, {
+        method: 'POST',
+        identity,
+        metadata: BUILDER_METADATA,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parcels: ['00,00', '01,02'] })
+      })
+
+      expect(response.status).toBe(204)
+
+      const addressPermission = await permissionsManager.getAddressPermissions(
+        worldName,
+        'deployment',
+        targetAddress.realAccount.address
+      )
+      const parcelsResult = await permissionsManager.getParcelsForPermission(addressPermission!.id)
+      expect(parcelsResult.results).toEqual(expect.arrayContaining(['0,0', '1,2']))
+      expect(parcelsResult.results).not.toContain('00,00')
+    })
+  })
+
   describe('when the address already has world-wide permission', () => {
     let targetAddress: Identity
     let parcelsToAdd: string[]

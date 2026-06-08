@@ -56,7 +56,7 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
 
         const result = await DeploymentBuilder.buildEntity({
           type: EntityType.SCENE as any,
-          pointers: ['0,0'],
+          pointers: ['20,24'],
           files: entityFiles,
           metadata: {
             main: 'abc.txt',
@@ -255,7 +255,7 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
         const entityFiles = new Map<string, Uint8Array>()
         const result = await DeploymentBuilder.buildEntity({
           type: EntityType.SCENE as any,
-          pointers: ['0,0'],
+          pointers: ['20,24'],
           files: entityFiles,
           metadata: {
             main: 'abc.txt',
@@ -355,7 +355,7 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
 
         const result = await DeploymentBuilder.buildEntity({
           type: EntityType.SCENE as any,
-          pointers: ['0,0'],
+          pointers: ['20,24'],
           files: entityFiles,
           metadata: {
             main: 'abc.txt',
@@ -740,7 +740,7 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
 
         const result = await DeploymentBuilder.buildEntity({
           type: EntityType.SCENE as any,
-          pointers: ['0,0'],
+          pointers: ['10,20'],
           files: entityFiles,
           metadata: {
             main: 'abc.txt',
@@ -826,7 +826,7 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
 
         const result = await DeploymentBuilder.buildEntity({
           type: EntityType.SCENE as any,
-          pointers: ['0,0'],
+          pointers: ['5,10'],
           files: entityFiles,
           metadata: {
             main: 'abc.txt',
@@ -988,7 +988,7 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
 
       const result = await DeploymentBuilder.buildEntity({
         type: EntityType.SCENE as any,
-        pointers: ['0,0'],
+        pointers: ['20,24'],
         files: entityFiles,
         metadata: {
           main: 'abc.txt',
@@ -1290,6 +1290,206 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
         parcels: expect.arrayContaining(['0,0', '1,1'])
       })
       expect(scenesBody.total).toBe(1)
+    })
+  })
+
+  describe('when the scene has parcel coordinates that are out of bounds', () => {
+    let contentClient: ContentClient
+    let identity: Identity
+    let worldName: string
+    let entityId: string
+    let fileHash: string
+    let files: Map<string, Uint8Array>
+
+    beforeEach(async () => {
+      const { config, fetch, worldCreator } = components
+      const { namePermissionChecker, nameOwnership } = stubComponents
+
+      identity = await getIdentity()
+      worldName = worldCreator.randomWorldName()
+
+      contentClient = createContentClient({
+        url: `http://${await config.requireString('HTTP_SERVER_HOST')}:${await config.requireNumber('HTTP_SERVER_PORT')}`,
+        fetcher: fetch
+      })
+
+      namePermissionChecker.checkPermission.withArgs(identity.authChain.authChain[0].payload, worldName).resolves(true)
+      nameOwnership.findOwners
+        .withArgs([worldName])
+        .resolves(new Map([[worldName, identity.authChain.authChain[0].payload]]))
+
+      const entityFiles = new Map<string, Uint8Array>()
+      entityFiles.set('abc.txt', stringToUtf8Bytes(makeid(100)))
+      fileHash = await hashV1(entityFiles.get('abc.txt')!)
+
+      const result = await DeploymentBuilder.buildEntity({
+        type: EntityType.SCENE as any,
+        pointers: ['9999,9999'],
+        files: entityFiles,
+        metadata: {
+          main: 'abc.txt',
+          scene: {
+            base: '9999,9999',
+            parcels: ['9999,9999']
+          },
+          worldConfiguration: {
+            name: worldName
+          }
+        }
+      })
+
+      entityId = result.entityId
+      files = result.files
+    })
+
+    it('should reject the deployment with an out-of-bounds error', async () => {
+      const authChain = Authenticator.signPayload(identity.authChain, entityId)
+
+      await expect(() => contentClient.deploy({ files, entityId, authChain })).rejects.toThrow(
+        'Coordinate X value 9999 is out of bounds. Must be between -150 and 150.'
+      )
+    })
+
+    it('should not store any files in storage', async () => {
+      const { storage } = components
+      const authChain = Authenticator.signPayload(identity.authChain, entityId)
+
+      try {
+        await contentClient.deploy({ files, entityId, authChain })
+      } catch {
+        // Expected to fail
+      }
+
+      expect(await storage.exist(fileHash)).toBe(false)
+      expect(await storage.exist(entityId)).toBe(false)
+    })
+  })
+
+  describe('when the entity does not include a timestamp', () => {
+    let contentClient: ContentClient
+    let identity: Identity
+    let worldName: string
+    let entityId: string
+    let files: Map<string, Uint8Array>
+
+    beforeEach(async () => {
+      const { config, fetch, worldCreator } = components
+      const { namePermissionChecker, nameOwnership } = stubComponents
+
+      identity = await getIdentity()
+      worldName = worldCreator.randomWorldName()
+
+      contentClient = createContentClient({
+        url: `http://${await config.requireString('HTTP_SERVER_HOST')}:${await config.requireNumber('HTTP_SERVER_PORT')}`,
+        fetcher: fetch
+      })
+
+      namePermissionChecker.checkPermission.withArgs(identity.authChain.authChain[0].payload, worldName).resolves(true)
+      nameOwnership.findOwners
+        .withArgs([worldName])
+        .resolves(new Map([[worldName, identity.authChain.authChain[0].payload]]))
+
+      // Hand-craft an entity file that omits `timestamp` (DeploymentBuilder always includes it).
+      // Without it, the deployment TTL check would have nothing to validate against.
+      const entity = {
+        version: 'v3',
+        type: EntityType.SCENE,
+        pointers: ['0,0'],
+        content: [],
+        metadata: {
+          main: 'abc.txt',
+          scene: { base: '0,0', parcels: ['0,0'] },
+          worldConfiguration: { name: worldName }
+        }
+      }
+      const entityRaw = stringToUtf8Bytes(JSON.stringify(entity))
+      entityId = await hashV1(entityRaw)
+      files = new Map<string, Uint8Array>([[entityId, entityRaw]])
+    })
+
+    it('should reject the deployment because the entity has no timestamp', async () => {
+      const authChain = Authenticator.signPayload(identity.authChain, entityId)
+
+      await expect(() => contentClient.deploy({ files, entityId, authChain })).rejects.toThrow(/timestamp/)
+    })
+
+    it('should not store the entity in storage', async () => {
+      const { storage } = components
+      const authChain = Authenticator.signPayload(identity.authChain, entityId)
+
+      try {
+        await contentClient.deploy({ files, entityId, authChain })
+      } catch {
+        // Expected to fail
+      }
+
+      expect(await storage.exist(entityId)).toBe(false)
+    })
+  })
+
+  describe('when the deployment timestamp is stale', () => {
+    let contentClient: ContentClient
+    let identity: Identity
+    let worldName: string
+    let entityId: string
+    let files: Map<string, Uint8Array>
+
+    beforeEach(async () => {
+      const { config, fetch, worldCreator } = components
+      const { namePermissionChecker, nameOwnership } = stubComponents
+
+      identity = await getIdentity()
+      worldName = worldCreator.randomWorldName()
+
+      contentClient = createContentClient({
+        url: `http://${await config.requireString('HTTP_SERVER_HOST')}:${await config.requireNumber('HTTP_SERVER_PORT')}`,
+        fetcher: fetch
+      })
+
+      namePermissionChecker.checkPermission.withArgs(identity.authChain.authChain[0].payload, worldName).resolves(true)
+      nameOwnership.findOwners
+        .withArgs([worldName])
+        .resolves(new Map([[worldName, identity.authChain.authChain[0].payload]]))
+
+      const entityFiles = new Map<string, Uint8Array>()
+      entityFiles.set('abc.txt', stringToUtf8Bytes(makeid(100)))
+
+      // The entity carries a (signed) timestamp from a day ago, well beyond the deployment TTL.
+      const result = await DeploymentBuilder.buildEntity({
+        type: EntityType.SCENE as any,
+        pointers: ['0,0'],
+        files: entityFiles,
+        timestamp: Date.now() - 24 * 60 * 60 * 1000,
+        metadata: {
+          main: 'abc.txt',
+          scene: { base: '0,0', parcels: ['0,0'] },
+          worldConfiguration: { name: worldName }
+        }
+      })
+
+      entityId = result.entityId
+      files = result.files
+    })
+
+    it('should reject the deployment with a TTL error', async () => {
+      const authChain = Authenticator.signPayload(identity.authChain, entityId)
+
+      await expect(() => contentClient.deploy({ files, entityId, authChain })).rejects.toThrow(
+        /Deployment was created .* secs ago/
+      )
+    })
+
+    it('should not store the entity in storage', async () => {
+      const { storage } = components
+      const authChain = Authenticator.signPayload(identity.authChain, entityId)
+
+      try {
+        await contentClient.deploy({ files, entityId, authChain })
+      } catch {
+        // Expected to fail
+      }
+
+      expect(await storage.exist(entityId)).toBe(false)
     })
   })
 })

@@ -1,10 +1,12 @@
 import { createConfigComponent } from '@well-known-components/env-config-provider'
 import { bufferToStream, createInMemoryStorage, IContentStorageComponent } from '@dcl/catalyst-storage'
 import {
+  DeploymentToValidate,
   ILimitsManager,
   INameDenyListChecker,
   IWorldNamePermissionChecker,
   IWorldsManager,
+  Validation,
   ValidatorComponents
 } from '../../../src/types'
 import { stringToUtf8Bytes } from 'eth-connect'
@@ -19,7 +21,10 @@ import { createCoordinatesComponent } from '../../../src/logic/coordinates'
 import {
   createValidateBannedNames,
   createValidateDeploymentPermission,
+  createValidateFileCount,
+  createValidateParcelCoordinates,
   createValidateSceneDimensions,
+  createValidateScenePointers,
   createValidateSdkVersion,
   createValidateSize,
   validateDeprecatedConfig,
@@ -59,6 +64,7 @@ describe('scene validations', function () {
     identity = await getIdentity()
     components = {
       config,
+      coordinates,
       storage,
       limitsManager,
       nameDenyListChecker,
@@ -68,424 +74,788 @@ describe('scene validations', function () {
     }
   })
 
-  describe('validateSceneEntity', () => {
-    it('with all ok', async () => {
-      const deployment = await createSceneDeployment(identity.authChain)
+  describe('when validating the scene entity', () => {
+    let deployment: DeploymentToValidate
 
-      const result = await validateSceneEntity(deployment)
-      expect(result.ok()).toBeTruthy()
-    })
-
-    it('with missing required fields', async () => {
-      const deployment = await createSceneDeployment(identity.authChain, {
-        type: EntityType.SCENE,
-        pointers: ['0,0'],
-        timestamp: Date.parse('2022-11-01T00:00:00Z'),
-        metadata: {
-          worldConfiguration: { name: 'whatever.dcl.eth' }
-        },
-        files: []
+    describe('and the scene metadata is valid', () => {
+      beforeEach(async () => {
+        deployment = await createSceneDeployment(identity.authChain)
       })
 
-      const result = await validateSceneEntity(deployment)
-      expect(result.ok()).toBeFalsy()
-      expect(result.errors).toContain("must have required property 'main'")
-      expect(result.errors).toContain("must have required property 'scene'")
-    })
-
-    it('with no worldConfiguration', async () => {
-      const deployment = await createSceneDeployment(identity.authChain, {
-        type: EntityType.SCENE,
-        pointers: ['0,0'],
-        timestamp: Date.parse('2022-11-01T00:00:00Z'),
-        metadata: {
-          main: 'abc.txt',
-          scene: {
-            base: '20,24',
-            parcels: ['20,24']
-          }
-        },
-        files: []
+      it('should return a successful result', async () => {
+        const result = await validateSceneEntity(deployment)
+        expect(result.ok()).toBeTruthy()
       })
-
-      const result = await validateSceneEntity(deployment)
-      expect(result.ok()).toBeFalsy()
-      expect(result.errors).toContain(
-        'scene.json needs to specify a worldConfiguration section with a valid name inside.'
-      )
-    })
-  })
-
-  describe('validateDeprecatedConfig', () => {
-    it('with all ok', async () => {
-      const deployment = await createSceneDeployment(identity.authChain)
-
-      const result = await validateSceneEntity(deployment)
-      expect(result.ok()).toBeTruthy()
     })
 
-    it('with old field dclName', async () => {
-      const deployment = await createSceneDeployment(identity.authChain, {
-        type: EntityType.SCENE,
-        pointers: ['0,0'],
-        timestamp: Date.parse('2022-11-01T00:00:00Z'),
-        metadata: {
-          main: 'abc.txt',
-          scene: {
-            base: '20,24',
-            parcels: ['20,24']
+    describe('and required fields are missing', () => {
+      beforeEach(async () => {
+        deployment = await createSceneDeployment(identity.authChain, {
+          type: EntityType.SCENE,
+          pointers: ['0,0'],
+          timestamp: Date.parse('2022-11-01T00:00:00Z'),
+          metadata: {
+            worldConfiguration: { name: 'whatever.dcl.eth' }
           },
-          worldConfiguration: { dclName: 'whatever.dcl.eth' }
-        },
-        files: []
+          files: []
+        })
       })
 
-      const result = await validateDeprecatedConfig(deployment)
-      expect(result.ok()).toBeFalsy()
-      expect(result.errors).toContain(
-        '`dclName` in scene.json was renamed to `name`. Please update your scene.json accordingly.'
-      )
+      it('should return errors for the missing main and scene properties', async () => {
+        const result = await validateSceneEntity(deployment)
+        expect(result.ok()).toBeFalsy()
+        expect(result.errors).toContain("must have required property 'main'")
+        expect(result.errors).toContain("must have required property 'scene'")
+      })
     })
 
-    it('with old field minimapVisible', async () => {
-      const deployment = await createSceneDeployment(identity.authChain, {
-        type: EntityType.SCENE,
-        pointers: ['0,0'],
-        timestamp: Date.parse('2022-11-01T00:00:00Z'),
-        metadata: {
-          worldConfiguration: { name: 'whatever.dcl.eth', minimapVisible: true }
-        },
-        files: []
+    describe('and the worldConfiguration is missing', () => {
+      beforeEach(async () => {
+        deployment = await createSceneDeployment(identity.authChain, {
+          type: EntityType.SCENE,
+          pointers: ['0,0'],
+          timestamp: Date.parse('2022-11-01T00:00:00Z'),
+          metadata: {
+            main: 'abc.txt',
+            scene: {
+              base: '20,24',
+              parcels: ['20,24']
+            }
+          },
+          files: []
+        })
       })
 
-      const result = await validateDeprecatedConfig(deployment)
-      expect(result.ok()).toBeFalsy()
-      expect(result.errors).toContain(
-        '`minimapVisible` in scene.json is deprecated in favor of `{ miniMapConfig: { visible } }`. Please update your scene.json accordingly.'
-      )
-    })
-
-    it('with old field skybox', async () => {
-      const deployment = await createSceneDeployment(identity.authChain, {
-        type: EntityType.SCENE,
-        pointers: ['0,0'],
-        timestamp: Date.parse('2022-11-01T00:00:00Z'),
-        metadata: {
-          worldConfiguration: { name: 'whatever.dcl.eth', skybox: 3600 }
-        },
-        files: []
+      it('should return an error requiring a worldConfiguration with a name', async () => {
+        const result = await validateSceneEntity(deployment)
+        expect(result.ok()).toBeFalsy()
+        expect(result.errors).toContain(
+          'scene.json needs to specify a worldConfiguration section with a valid name inside.'
+        )
       })
-
-      const result = await validateDeprecatedConfig(deployment)
-      expect(result.ok()).toBeFalsy()
-      expect(result.errors).toContain(
-        '`skybox` in scene.json is deprecated in favor of `{ "skyboxConfig": { "fixedTime": 36000 }}`. Please update your scene.json accordingly.'
-      )
     })
   })
 
-  describe('validateBannedNames', () => {
-    it('with all ok', async () => {
-      const deployment = await createSceneDeployment(identity.authChain)
+  describe('when validating the scene pointers', () => {
+    let deployment: DeploymentToValidate
 
-      const validateBannedNames = createValidateBannedNames(components)
-      const result = await validateBannedNames(deployment)
-      expect(result.ok()).toBeTruthy()
-    })
-
-    it('with a dcl name that is banned', async () => {
-      const deployment = await createSceneDeployment(identity.authChain, {
-        type: EntityType.SCENE,
-        pointers: ['0,0'],
-        timestamp: Date.now(),
-        metadata: {
-          worldConfiguration: {
-            name: 'banned.dcl.eth'
-          }
-        },
-        files: []
+    describe('and the pointers match the scene parcels', () => {
+      beforeEach(async () => {
+        deployment = await createSceneDeployment(identity.authChain, {
+          type: EntityType.SCENE,
+          pointers: ['1,2', '1,3'],
+          timestamp: Date.now(),
+          metadata: {
+            main: 'abc.txt',
+            scene: { base: '1,2', parcels: ['1,2', '1,3'] },
+            worldConfiguration: { name: 'whatever.dcl.eth' }
+          },
+          files: []
+        })
       })
 
-      const validateBannedNames = createValidateBannedNames(components)
-      const result = await validateBannedNames(deployment)
-      expect(result.ok()).toBeFalsy()
-      expect(result.errors).toContain(
-        `Deployment failed: World "banned.dcl.eth" can not be deployed because the name is in the name deny list managed by Decentraland DAO.`
-      )
+      it('should return a successful result', async () => {
+        const result = await createValidateScenePointers(components)(deployment)
+        expect(result.ok()).toBeTruthy()
+      })
+    })
+
+    describe('and the pointers match the scene parcels in a different order', () => {
+      beforeEach(async () => {
+        deployment = await createSceneDeployment(identity.authChain, {
+          type: EntityType.SCENE,
+          pointers: ['1,3', '1,2'],
+          timestamp: Date.now(),
+          metadata: {
+            main: 'abc.txt',
+            scene: { base: '1,2', parcels: ['1,2', '1,3'] },
+            worldConfiguration: { name: 'whatever.dcl.eth' }
+          },
+          files: []
+        })
+      })
+
+      it('should return a successful result', async () => {
+        const result = await createValidateScenePointers(components)(deployment)
+        expect(result.ok()).toBeTruthy()
+      })
+    })
+
+    describe('and the pointers and scene parcels are equivalent but not in canonical form', () => {
+      beforeEach(async () => {
+        deployment = await createSceneDeployment(identity.authChain, {
+          type: EntityType.SCENE,
+          pointers: ['00,00'],
+          timestamp: Date.now(),
+          metadata: {
+            main: 'abc.txt',
+            scene: { base: '0,0', parcels: ['0,0'] },
+            worldConfiguration: { name: 'whatever.dcl.eth' }
+          },
+          files: []
+        })
+      })
+
+      it('should return a successful result', async () => {
+        const result = await createValidateScenePointers(components)(deployment)
+        expect(result.ok()).toBeTruthy()
+      })
+    })
+
+    describe('and the pointers and scene parcels reference different parcels', () => {
+      beforeEach(async () => {
+        deployment = await createSceneDeployment(identity.authChain, {
+          type: EntityType.SCENE,
+          pointers: ['0,0'],
+          timestamp: Date.now(),
+          metadata: {
+            main: 'abc.txt',
+            scene: { base: '100,100', parcels: ['100,100'] },
+            worldConfiguration: { name: 'whatever.dcl.eth' }
+          },
+          files: []
+        })
+      })
+
+      it('should return an error requiring the pointers to match the scene parcels', async () => {
+        const result = await createValidateScenePointers(components)(deployment)
+        expect(result.ok()).toBeFalsy()
+        expect(result.errors).toContain('The scene pointers [0,0] must match the scene parcels [100,100].')
+      })
     })
   })
 
-  describe('validateDeploymentPermission', () => {
-    it('with all ok', async () => {
-      const deployment = await createSceneDeployment(identity.authChain)
+  describe('when validating the deprecated config', () => {
+    let deployment: DeploymentToValidate
 
-      const validateDeploymentPermission = createValidateDeploymentPermission(components)
-      const result = await validateDeploymentPermission(deployment)
-      expect(result.ok()).toBeTruthy()
-    })
-
-    it('with no ownership of requested dcl name', async () => {
-      const deployment = await createSceneDeployment(identity.authChain, {
-        type: EntityType.SCENE,
-        pointers: ['0,0'],
-        timestamp: Date.now(),
-        metadata: {
-          worldConfiguration: {
-            name: 'different.dcl.eth'
-          }
-        },
-        files: []
+    describe('and there are no deprecated fields', () => {
+      beforeEach(async () => {
+        deployment = await createSceneDeployment(identity.authChain)
       })
 
-      const validateDeploymentPermission = createValidateDeploymentPermission(components)
-      const result = await validateDeploymentPermission(deployment)
-      expect(result.ok()).toBeFalsy()
-      expect(result.errors).toContain(
-        'Deployment failed: Your wallet has no permission to publish this scene because it does not have permission to deploy under "different.dcl.eth". Check scene.json to select a name that either you own or you were given permission to deploy.'
-      )
+      it('should return a successful result', async () => {
+        const result = await validateDeprecatedConfig(deployment)
+        expect(result.ok()).toBeTruthy()
+      })
+    })
+
+    describe('and the worldConfiguration uses the deprecated dclName field', () => {
+      beforeEach(async () => {
+        deployment = await createSceneDeployment(identity.authChain, {
+          type: EntityType.SCENE,
+          pointers: ['0,0'],
+          timestamp: Date.parse('2022-11-01T00:00:00Z'),
+          metadata: {
+            main: 'abc.txt',
+            scene: {
+              base: '20,24',
+              parcels: ['20,24']
+            },
+            worldConfiguration: { dclName: 'whatever.dcl.eth' }
+          },
+          files: []
+        })
+      })
+
+      it('should return an error explaining the field was renamed to name', async () => {
+        const result = await validateDeprecatedConfig(deployment)
+        expect(result.ok()).toBeFalsy()
+        expect(result.errors).toContain(
+          '`dclName` in scene.json was renamed to `name`. Please update your scene.json accordingly.'
+        )
+      })
+    })
+
+    describe('and the worldConfiguration uses the deprecated minimapVisible field', () => {
+      beforeEach(async () => {
+        deployment = await createSceneDeployment(identity.authChain, {
+          type: EntityType.SCENE,
+          pointers: ['0,0'],
+          timestamp: Date.parse('2022-11-01T00:00:00Z'),
+          metadata: {
+            worldConfiguration: { name: 'whatever.dcl.eth', minimapVisible: true }
+          },
+          files: []
+        })
+      })
+
+      it('should return an error pointing to the miniMapConfig replacement', async () => {
+        const result = await validateDeprecatedConfig(deployment)
+        expect(result.ok()).toBeFalsy()
+        expect(result.errors).toContain(
+          '`minimapVisible` in scene.json is deprecated in favor of `{ miniMapConfig: { visible } }`. Please update your scene.json accordingly.'
+        )
+      })
+    })
+
+    describe('and the worldConfiguration uses the deprecated skybox field', () => {
+      beforeEach(async () => {
+        deployment = await createSceneDeployment(identity.authChain, {
+          type: EntityType.SCENE,
+          pointers: ['0,0'],
+          timestamp: Date.parse('2022-11-01T00:00:00Z'),
+          metadata: {
+            worldConfiguration: { name: 'whatever.dcl.eth', skybox: 3600 }
+          },
+          files: []
+        })
+      })
+
+      it('should return an error pointing to the skyboxConfig replacement', async () => {
+        const result = await validateDeprecatedConfig(deployment)
+        expect(result.ok()).toBeFalsy()
+        expect(result.errors).toContain(
+          '`skybox` in scene.json is deprecated in favor of `{ "skyboxConfig": { "fixedTime": 36000 }}`. Please update your scene.json accordingly.'
+        )
+      })
     })
   })
 
-  describe('validateSceneDimensions', () => {
-    it('with all ok', async () => {
-      const deployment = await createSceneDeployment(identity.authChain)
+  describe('when validating banned names', () => {
+    let validateBannedNames: Validation
+    let deployment: DeploymentToValidate
 
-      const validateSceneDimensions = createValidateSceneDimensions(components)
-      const result = await validateSceneDimensions(deployment)
-      expect(result.ok()).toBeTruthy()
+    beforeEach(() => {
+      validateBannedNames = createValidateBannedNames(components)
     })
 
-    it('with more parcels than allowed', async () => {
-      const deployment = await createSceneDeployment(identity.authChain, {
-        type: EntityType.SCENE,
-        pointers: ['0,0', '0,1', '1,0', '1,1', '1,2'],
-        timestamp: Date.now(),
-        metadata: {
-          worldConfiguration: {
-            name: 'whatever.dcl.eth'
-          }
-        },
-        files: []
+    describe('and the world name is not banned', () => {
+      beforeEach(async () => {
+        deployment = await createSceneDeployment(identity.authChain)
       })
 
-      const validateSceneDimensions = createValidateSceneDimensions(components)
-      const result = await validateSceneDimensions(deployment)
-      expect(result.ok()).toBeFalsy()
-      expect(result.errors).toContain('Max allowed scene dimensions is 4 parcels.')
+      it('should return a successful result', async () => {
+        const result = await validateBannedNames(deployment)
+        expect(result.ok()).toBeTruthy()
+      })
+    })
+
+    describe('and the world name is banned', () => {
+      beforeEach(async () => {
+        deployment = await createSceneDeployment(identity.authChain, {
+          type: EntityType.SCENE,
+          pointers: ['0,0'],
+          timestamp: Date.now(),
+          metadata: {
+            worldConfiguration: {
+              name: 'banned.dcl.eth'
+            }
+          },
+          files: []
+        })
+      })
+
+      it('should return an error stating the name is in the deny list', async () => {
+        const result = await validateBannedNames(deployment)
+        expect(result.ok()).toBeFalsy()
+        expect(result.errors).toContain(
+          `Deployment failed: World "banned.dcl.eth" can not be deployed because the name is in the name deny list managed by Decentraland DAO.`
+        )
+      })
     })
   })
 
-  describe('validateSize', () => {
-    it('with all ok', async () => {
-      const deployment = await createSceneDeployment(identity.authChain)
+  describe('when validating the deployment permission', () => {
+    let validateDeploymentPermission: Validation
+    let deployment: DeploymentToValidate
 
-      const validateSize = createValidateSize(components)
-      const result = await validateSize(deployment)
-      expect(result.ok()).toBeTruthy()
+    beforeEach(() => {
+      validateDeploymentPermission = createValidateDeploymentPermission(components)
     })
 
-    it('with errors', async () => {
-      const fileContent = Buffer.from(
-        Array(10 * 1024 * 1024)
-          .fill(0)
-          .map((_) => Math.floor(Math.random() * 255))
-      )
-      const entityFiles = new Map<string, Uint8Array>()
-      entityFiles.set('abc.txt', Buffer.from(stringToUtf8Bytes('asd')))
-      entityFiles.set('file-1.txt', fileContent) // Big file to make validation fail
-
-      const deployment = await createSceneDeployment(identity.authChain, {
-        type: EntityType.SCENE,
-        pointers: ['0,0'],
-        timestamp: Date.now(),
-        metadata: {
-          worldConfiguration: {
-            name: 'whatever.dcl.eth'
-          }
-        },
-        files: entityFiles
+    describe('and the wallet owns the world name', () => {
+      beforeEach(async () => {
+        deployment = await createSceneDeployment(identity.authChain)
       })
 
-      // Remove one of the uploaded files and put it directly into storage
-      deployment.files.delete(await hashV1(Buffer.from('asd')))
-      await storage.storeStream(await hashV1(Buffer.from('asd')), bufferToStream(Buffer.from(stringToUtf8Bytes('asd'))))
+      it('should return a successful result', async () => {
+        const result = await validateDeploymentPermission(deployment)
+        expect(result.ok()).toBeTruthy()
+      })
+    })
 
-      const validateSize = createValidateSize(components)
-      const result = await validateSize(deployment)
-      expect(result.ok()).toBeFalsy()
-      expect(result.errors).toContain(
-        'The deployment is too big. The maximum total size allowed is 10485760 bytes for scenes. You can upload up to 10485760 bytes but you tried to upload 10485763.'
-      )
+    describe('and the wallet does not own the requested name', () => {
+      beforeEach(async () => {
+        deployment = await createSceneDeployment(identity.authChain, {
+          type: EntityType.SCENE,
+          pointers: ['0,0'],
+          timestamp: Date.now(),
+          metadata: {
+            worldConfiguration: {
+              name: 'different.dcl.eth'
+            }
+          },
+          files: []
+        })
+      })
+
+      it('should return a permission error', async () => {
+        const result = await validateDeploymentPermission(deployment)
+        expect(result.ok()).toBeFalsy()
+        expect(result.errors).toContain(
+          'Deployment failed: Your wallet has no permission to publish this scene because it does not have permission to deploy under "different.dcl.eth". Check scene.json to select a name that either you own or you were given permission to deploy.'
+        )
+      })
+    })
+
+    describe('and the wallet lacks permission over the parcels being deployed', () => {
+      beforeEach(async () => {
+        deployment = await createSceneDeployment(identity.authChain, {
+          type: EntityType.SCENE,
+          pointers: ['100,100'],
+          timestamp: Date.now(),
+          metadata: {
+            main: 'abc.txt',
+            scene: {
+              base: '100,100',
+              parcels: ['100,100']
+            },
+            worldConfiguration: {
+              name: 'different.dcl.eth'
+            }
+          },
+          files: []
+        })
+
+        // The wallet only has deployment permission over '0,0', not the requested '100,100',
+        // so the deployment (which targets '100,100') is rejected.
+        permissions.hasPermissionForParcels.mockImplementation(async (_worldName, _permission, _address, parcels) =>
+          parcels.every((parcel) => parcel === '0,0')
+        )
+      })
+
+      it('should return a permission error', async () => {
+        const result = await validateDeploymentPermission(deployment)
+        expect(result.ok()).toBeFalsy()
+      })
     })
   })
 
-  describe('validateSdkVersion', () => {
-    it('with all ok', async () => {
-      const deployment = await createSceneDeployment(identity.authChain)
+  describe('when validating the scene dimensions', () => {
+    let validateSceneDimensions: Validation
+    let deployment: DeploymentToValidate
 
-      const validateSdkVersion = createValidateSdkVersion(components)
-      const result = await validateSdkVersion(deployment)
-      expect(result.ok()).toBeTruthy()
+    beforeEach(() => {
+      validateSceneDimensions = createValidateSceneDimensions(components)
     })
 
-    it('with errors', async () => {
-      const deployment = await createSceneDeployment(identity.authChain, {
-        type: EntityType.SCENE,
-        pointers: ['0,0'],
-        timestamp: Date.now(),
-        metadata: {
-          runtimeVersion: '6',
-          worldConfiguration: {
-            name: 'whatever.dcl.eth'
-          }
-        },
-        files: []
+    describe('and the scene fits within the parcel limit', () => {
+      beforeEach(async () => {
+        deployment = await createSceneDeployment(identity.authChain)
       })
 
-      const validateSdkVersion = createValidateSdkVersion(components)
-      const result = await validateSdkVersion(deployment)
-      expect(result.ok()).toBeFalsy()
-      expect(result.errors).toContain(
-        'Worlds are only supported on SDK 7. Please upgrade your scene to latest version of SDK.'
-      )
+      it('should return a successful result', async () => {
+        const result = await validateSceneDimensions(deployment)
+        expect(result.ok()).toBeTruthy()
+      })
+    })
+
+    describe('and the scene exceeds the parcel limit', () => {
+      beforeEach(async () => {
+        deployment = await createSceneDeployment(identity.authChain, {
+          type: EntityType.SCENE,
+          pointers: ['0,0', '0,1', '1,0', '1,1', '1,2'],
+          timestamp: Date.now(),
+          metadata: {
+            worldConfiguration: {
+              name: 'whatever.dcl.eth'
+            }
+          },
+          files: []
+        })
+      })
+
+      it('should return an error about the maximum allowed dimensions', async () => {
+        const result = await validateSceneDimensions(deployment)
+        expect(result.ok()).toBeFalsy()
+        expect(result.errors).toContain('Max allowed scene dimensions is 4 parcels.')
+      })
     })
   })
 
-  describe('validateMiniMapImages', () => {
-    it('with all ok', async () => {
-      const entityFiles = new Map<string, Uint8Array>()
-      entityFiles.set('abc.png', Buffer.from(stringToUtf8Bytes('asd')))
+  describe('when validating the parcel coordinates', () => {
+    let validateParcelCoordinates: Validation
+    let deployment: DeploymentToValidate
 
-      const deployment = await createSceneDeployment(identity.authChain, {
-        type: EntityType.SCENE,
-        pointers: ['0,0'],
-        timestamp: Date.now(),
-        metadata: {
-          runtimeVersion: '7',
-          worldConfiguration: {
-            name: 'whatever.dcl.eth',
-            miniMapConfig: {
-              dataImage: 'abc.png',
-              estateImage: 'abc.png'
+    beforeEach(() => {
+      validateParcelCoordinates = createValidateParcelCoordinates(components)
+    })
+
+    describe('and all parcels are within bounds', () => {
+      beforeEach(async () => {
+        deployment = await createSceneDeployment(identity.authChain)
+      })
+
+      it('should return a successful result', async () => {
+        const result = await validateParcelCoordinates(deployment)
+        expect(result.ok()).toBeTruthy()
+      })
+    })
+
+    describe('and a parcel coordinate is out of bounds', () => {
+      beforeEach(async () => {
+        deployment = await createSceneDeployment(identity.authChain, {
+          type: EntityType.SCENE,
+          pointers: ['9999,9999'],
+          timestamp: Date.now(),
+          metadata: {
+            main: 'abc.txt',
+            scene: {
+              base: '9999,9999',
+              parcels: ['9999,9999']
+            },
+            worldConfiguration: {
+              name: 'whatever.dcl.eth'
+            }
+          },
+          files: []
+        })
+      })
+
+      it('should return an out-of-bounds error', async () => {
+        const result = await validateParcelCoordinates(deployment)
+        expect(result.ok()).toBeFalsy()
+        expect(result.errors).toContain('Coordinate X value 9999 is out of bounds. Must be between -150 and 150.')
+      })
+    })
+  })
+
+  describe('when validating the file count', () => {
+    let deployment: DeploymentToValidate
+
+    describe('and the file count is within the limit', () => {
+      let validateFileCount: Validation
+
+      beforeEach(async () => {
+        validateFileCount = createValidateFileCount(components)
+        deployment = await createSceneDeployment(identity.authChain)
+      })
+
+      it('should return a successful result', async () => {
+        const result = await validateFileCount(deployment)
+        expect(result.ok()).toBeTruthy()
+      })
+    })
+
+    describe('and the file count exceeds the limit', () => {
+      let validateFileCount: Validation
+
+      beforeEach(async () => {
+        const limitedConfig = createConfigComponent({ MAX_FILE_COUNT: '1' })
+        validateFileCount = createValidateFileCount({ config: limitedConfig })
+
+        const files = new Map<string, Uint8Array>()
+        files.set('a.txt', Buffer.from(stringToUtf8Bytes('a')))
+        files.set('b.txt', Buffer.from(stringToUtf8Bytes('b')))
+        deployment = await createSceneDeployment(identity.authChain, {
+          type: EntityType.SCENE,
+          pointers: ['0,0'],
+          timestamp: Date.now(),
+          metadata: {
+            main: 'a.txt',
+            scene: {
+              base: '0,0',
+              parcels: ['0,0']
+            },
+            worldConfiguration: {
+              name: 'whatever.dcl.eth'
+            }
+          },
+          files
+        })
+      })
+
+      it('should return an error stating the deployment has too many files', async () => {
+        const result = await validateFileCount(deployment)
+        expect(result.ok()).toBeFalsy()
+        expect(result.errors[0]).toContain(
+          'The deployment has too many files. The maximum allowed is 1 but the deployment has 2.'
+        )
+      })
+    })
+  })
+
+  describe('when validating the deployment size', () => {
+    let validateSize: Validation
+    let deployment: DeploymentToValidate
+
+    beforeEach(() => {
+      validateSize = createValidateSize(components)
+    })
+
+    describe('and the deployment is within the size limit', () => {
+      beforeEach(async () => {
+        deployment = await createSceneDeployment(identity.authChain)
+      })
+
+      it('should return a successful result', async () => {
+        const result = await validateSize(deployment)
+        expect(result.ok()).toBeTruthy()
+      })
+    })
+
+    describe('and the deployment exceeds the size limit', () => {
+      beforeEach(async () => {
+        const fileContent = Buffer.from(
+          Array(10 * 1024 * 1024)
+            .fill(0)
+            .map((_) => Math.floor(Math.random() * 255))
+        )
+        const entityFiles = new Map<string, Uint8Array>()
+        entityFiles.set('abc.txt', Buffer.from(stringToUtf8Bytes('asd')))
+        entityFiles.set('file-1.txt', fileContent) // Big file to make validation fail
+
+        deployment = await createSceneDeployment(identity.authChain, {
+          type: EntityType.SCENE,
+          pointers: ['0,0'],
+          timestamp: Date.now(),
+          metadata: {
+            worldConfiguration: {
+              name: 'whatever.dcl.eth'
+            }
+          },
+          files: entityFiles
+        })
+
+        // Remove one of the uploaded files and put it directly into storage
+        deployment.files.delete(await hashV1(Buffer.from('asd')))
+        await storage.storeStream(
+          await hashV1(Buffer.from('asd')),
+          bufferToStream(Buffer.from(stringToUtf8Bytes('asd')))
+        )
+      })
+
+      it('should return an error stating the deployment is too big', async () => {
+        const result = await validateSize(deployment)
+        expect(result.ok()).toBeFalsy()
+        expect(result.errors).toContain(
+          'The deployment is too big. The maximum total size allowed is 10485760 bytes for scenes. You can upload up to 10485760 bytes but you tried to upload 10485763.'
+        )
+      })
+    })
+  })
+
+  describe('when validating the SDK version', () => {
+    let validateSdkVersion: Validation
+    let deployment: DeploymentToValidate
+
+    beforeEach(() => {
+      validateSdkVersion = createValidateSdkVersion(components)
+    })
+
+    describe('and the scene targets a supported SDK version', () => {
+      beforeEach(async () => {
+        deployment = await createSceneDeployment(identity.authChain)
+      })
+
+      it('should return a successful result', async () => {
+        const result = await validateSdkVersion(deployment)
+        expect(result.ok()).toBeTruthy()
+      })
+    })
+
+    describe('and the scene targets an unsupported SDK version', () => {
+      beforeEach(async () => {
+        deployment = await createSceneDeployment(identity.authChain, {
+          type: EntityType.SCENE,
+          pointers: ['0,0'],
+          timestamp: Date.now(),
+          metadata: {
+            runtimeVersion: '6',
+            worldConfiguration: {
+              name: 'whatever.dcl.eth'
+            }
+          },
+          files: []
+        })
+      })
+
+      it('should return an error requiring SDK 7', async () => {
+        const result = await validateSdkVersion(deployment)
+        expect(result.ok()).toBeFalsy()
+        expect(result.errors).toContain(
+          'Worlds are only supported on SDK 7. Please upgrade your scene to latest version of SDK.'
+        )
+      })
+    })
+  })
+
+  describe('when validating the minimap images', () => {
+    let deployment: DeploymentToValidate
+
+    describe('and the configured minimap images are present', () => {
+      beforeEach(async () => {
+        const entityFiles = new Map<string, Uint8Array>()
+        entityFiles.set('abc.png', Buffer.from(stringToUtf8Bytes('asd')))
+
+        deployment = await createSceneDeployment(identity.authChain, {
+          type: EntityType.SCENE,
+          pointers: ['0,0'],
+          timestamp: Date.now(),
+          metadata: {
+            runtimeVersion: '7',
+            worldConfiguration: {
+              name: 'whatever.dcl.eth',
+              miniMapConfig: {
+                dataImage: 'abc.png',
+                estateImage: 'abc.png'
+              }
+            }
+          },
+          files: entityFiles
+        })
+      })
+
+      it('should return a successful result', async () => {
+        const result = await validateMiniMapImages(deployment)
+        expect(result.ok()).toBeTruthy()
+      })
+    })
+
+    describe('and a configured minimap image is missing from the entity', () => {
+      beforeEach(async () => {
+        const entityFiles = new Map<string, Uint8Array>()
+        entityFiles.set('abc.png', Buffer.from(stringToUtf8Bytes('asd')))
+
+        deployment = await createSceneDeployment(identity.authChain, {
+          type: EntityType.SCENE,
+          pointers: ['0,0'],
+          timestamp: Date.now(),
+          metadata: {
+            runtimeVersion: '7',
+            worldConfiguration: {
+              name: 'whatever.dcl.eth',
+              miniMapConfig: {
+                dataImage: 'abc.png',
+                estateImage: 'xyz.png'
+              }
+            }
+          },
+          files: entityFiles
+        })
+      })
+
+      it('should return an error for the missing file', async () => {
+        const result = await validateMiniMapImages(deployment)
+        expect(result.ok()).toBeFalsy()
+        expect(result.errors).toContain('The file xyz.png is not present in the entity.')
+      })
+    })
+  })
+
+  describe('when validating the thumbnail', () => {
+    let deployment: DeploymentToValidate
+
+    describe('and the thumbnail is a file included in the deployment', () => {
+      beforeEach(async () => {
+        deployment = await createSceneDeployment(identity.authChain)
+      })
+
+      it('should return a successful result', async () => {
+        const result = await validateThumbnail(deployment)
+        expect(result.ok()).toBeTruthy()
+      })
+    })
+
+    describe('and the thumbnail is an absolute URL', () => {
+      beforeEach(async () => {
+        deployment = await createSceneDeployment(identity.authChain, {
+          type: EntityType.SCENE,
+          pointers: ['0,0'],
+          timestamp: Date.now(),
+          metadata: {
+            display: {
+              navmapThumbnail: 'https://example.com/image.png'
             }
           }
-        },
-        files: entityFiles
+        })
       })
-      const result = await validateMiniMapImages(deployment)
-      expect(result.ok()).toBeTruthy()
+
+      it('should return an error requiring the thumbnail to be a deployment file', async () => {
+        const result = await validateThumbnail(deployment)
+        expect(result.ok()).toBeFalsy()
+        expect(result.errors).toContain(
+          "Scene thumbnail 'https://example.com/image.png' must be a file included in the deployment."
+        )
+      })
     })
 
-    it('with errors', async () => {
-      const entityFiles = new Map<string, Uint8Array>()
-      entityFiles.set('abc.png', Buffer.from(stringToUtf8Bytes('asd')))
-
-      const deployment = await createSceneDeployment(identity.authChain, {
-        type: EntityType.SCENE,
-        pointers: ['0,0'],
-        timestamp: Date.now(),
-        metadata: {
-          runtimeVersion: '7',
-          worldConfiguration: {
-            name: 'whatever.dcl.eth',
-            miniMapConfig: {
-              dataImage: 'abc.png',
-              estateImage: 'xyz.png'
+    describe('and the thumbnail file is missing from the deployment', () => {
+      beforeEach(async () => {
+        deployment = await createSceneDeployment(identity.authChain, {
+          type: EntityType.SCENE,
+          pointers: ['0,0'],
+          timestamp: Date.now(),
+          metadata: {
+            display: {
+              navmapThumbnail: 'image.png'
             }
           }
-        },
-        files: entityFiles
+        })
       })
-      const result = await validateMiniMapImages(deployment)
-      expect(result.ok()).toBeFalsy()
-      expect(result.errors).toContain('The file xyz.png is not present in the entity.')
+
+      it('should return an error requiring the thumbnail to be a deployment file', async () => {
+        const result = await validateThumbnail(deployment)
+        expect(result.ok()).toBeFalsy()
+        expect(result.errors).toContain("Scene thumbnail 'image.png' must be a file included in the deployment.")
+      })
     })
   })
 
-  describe('validateThumbnail', () => {
-    it('with all ok', async () => {
-      const deployment = await createSceneDeployment(identity.authChain)
-      const result = await validateThumbnail(deployment)
-      expect(result.ok()).toBeTruthy()
-    })
+  describe('when validating the skybox textures', () => {
+    let deployment: DeploymentToValidate
 
-    it('with absolute URL errors', async () => {
-      const deployment = await createSceneDeployment(identity.authChain, {
-        type: EntityType.SCENE,
-        pointers: ['0,0'],
-        timestamp: Date.now(),
-        metadata: {
-          display: {
-            navmapThumbnail: 'https://example.com/image.png'
-          }
-        }
+    describe('and the configured textures are present', () => {
+      beforeEach(async () => {
+        const entityFiles = new Map<string, Uint8Array>()
+        entityFiles.set('xyz.png', Buffer.from(stringToUtf8Bytes('asd')))
+
+        deployment = await createSceneDeployment(identity.authChain, {
+          type: EntityType.SCENE,
+          pointers: ['0,0'],
+          timestamp: Date.now(),
+          metadata: {
+            runtimeVersion: '7',
+            worldConfiguration: {
+              name: 'whatever.dcl.eth',
+              skyboxConfig: {
+                textures: ['xyz.png']
+              }
+            }
+          },
+          files: entityFiles
+        })
       })
-      const result = await validateThumbnail(deployment)
-      expect(result.ok()).toBeFalsy()
-      expect(result.errors).toContain(
-        "Scene thumbnail 'https://example.com/image.png' must be a file included in the deployment."
-      )
-    })
 
-    it('with missing file errors', async () => {
-      const deployment = await createSceneDeployment(identity.authChain, {
-        type: EntityType.SCENE,
-        pointers: ['0,0'],
-        timestamp: Date.now(),
-        metadata: {
-          display: {
-            navmapThumbnail: 'image.png'
-          }
-        }
+      it('should return a successful result', async () => {
+        const result = await validateSkyboxTextures(deployment)
+        expect(result.ok()).toBeTruthy()
       })
-      const result = await validateThumbnail(deployment)
-      expect(result.ok()).toBeFalsy()
-      expect(result.errors).toContain("Scene thumbnail 'image.png' must be a file included in the deployment.")
     })
-  })
 
-  describe('validateSkyboxTextures', () => {
-    it('with all ok', async () => {
-      const entityFiles = new Map<string, Uint8Array>()
-      entityFiles.set('xyz.png', Buffer.from(stringToUtf8Bytes('asd')))
-
-      const deployment = await createSceneDeployment(identity.authChain, {
-        type: EntityType.SCENE,
-        pointers: ['0,0'],
-        timestamp: Date.now(),
-        metadata: {
-          runtimeVersion: '7',
-          worldConfiguration: {
-            name: 'whatever.dcl.eth',
-            skyboxConfig: {
-              textures: ['xyz.png']
+    describe('and a configured texture is missing from the entity', () => {
+      beforeEach(async () => {
+        deployment = await createSceneDeployment(identity.authChain, {
+          type: EntityType.SCENE,
+          pointers: ['0,0'],
+          timestamp: Date.now(),
+          metadata: {
+            runtimeVersion: '7',
+            worldConfiguration: {
+              name: 'whatever.dcl.eth',
+              skyboxConfig: {
+                textures: ['xyz.png']
+              }
             }
           }
-        },
-        files: entityFiles
+        })
       })
-      const result = await validateSkyboxTextures(deployment)
-      expect(result.ok()).toBeTruthy()
-    })
 
-    it('with errors', async () => {
-      const deployment = await createSceneDeployment(identity.authChain, {
-        type: EntityType.SCENE,
-        pointers: ['0,0'],
-        timestamp: Date.now(),
-        metadata: {
-          runtimeVersion: '7',
-          worldConfiguration: {
-            name: 'whatever.dcl.eth',
-            skyboxConfig: {
-              textures: ['xyz.png']
-            }
-          }
-        }
+      it('should return an error for the missing texture file', async () => {
+        const result = await validateSkyboxTextures(deployment)
+        expect(result.ok()).toBeFalsy()
+        expect(result.errors).toContain('The texture file xyz.png is not present in the entity.')
       })
-      const result = await validateSkyboxTextures(deployment)
-      expect(result.ok()).toBeFalsy()
-      expect(result.errors).toContain('The texture file xyz.png is not present in the entity.')
     })
   })
 })

@@ -27,6 +27,24 @@ export type ICoordinatesComponent = {
   parseCoordinate(coordinateString: string): Coordinate
 
   /**
+   * Canonicalizes a parcel coordinate to "<x>,<y>" (no leading zeros, whitespace or signed
+   * zero), so parcels are compared by value, e.g. "00,00" matches "0,0". Non-coordinate
+   * strings are returned unchanged so callers fail closed rather than throwing.
+   *
+   * @param parcel - The parcel coordinate string to canonicalize
+   * @returns The canonicalized coordinate, or the original string if it is not a valid pair
+   */
+  canonicalizeParcel(parcel: string): string
+
+  /**
+   * Canonicalizes an array of parcel coordinates. See {@link ICoordinatesComponent.canonicalizeParcel}.
+   *
+   * @param parcels - The parcel coordinate strings to canonicalize
+   * @returns The canonicalized coordinates
+   */
+  canonicalizeParcels(parcels: string[]): string[]
+
+  /**
    * Calculates the bounding rectangle that encompasses all given parcels
    *
    * @param parcels - Array of parcel coordinate strings (e.g., ["0,0", "1,0", "-1,2"])

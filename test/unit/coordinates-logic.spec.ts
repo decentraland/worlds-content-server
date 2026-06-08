@@ -13,6 +13,37 @@ describe('CoordinatesComponent', () => {
     coordinatesComponent = createCoordinatesComponent()
   })
 
+  describe('when canonicalizing parcels', () => {
+    describe('and the coordinate is already canonical', () => {
+      it('should return it unchanged', () => {
+        expect(coordinatesComponent.canonicalizeParcel('0,0')).toBe('0,0')
+        expect(coordinatesComponent.canonicalizeParcel('-5,10')).toBe('-5,10')
+      })
+    })
+
+    describe('and the coordinate has leading zeros, whitespace or signed zero', () => {
+      it('should normalize it by value', () => {
+        expect(coordinatesComponent.canonicalizeParcel('00,00')).toBe('0,0')
+        expect(coordinatesComponent.canonicalizeParcel('01,02')).toBe('1,2')
+        expect(coordinatesComponent.canonicalizeParcel('-0,0')).toBe('0,0')
+        expect(coordinatesComponent.canonicalizeParcel(' 3 , -04 ')).toBe('3,-4')
+      })
+    })
+
+    describe('and the string is not a valid coordinate', () => {
+      it('should return it unchanged so callers fail closed', () => {
+        expect(coordinatesComponent.canonicalizeParcel('not-a-coord')).toBe('not-a-coord')
+        expect(coordinatesComponent.canonicalizeParcel('1,2,3')).toBe('1,2,3')
+      })
+    })
+
+    describe('and given an array of parcels', () => {
+      it('should canonicalize each element', () => {
+        expect(coordinatesComponent.canonicalizeParcels(['00,00', '01,02', 'x'])).toEqual(['0,0', '1,2', 'x'])
+      })
+    })
+  })
+
   describe('when parsing coordinates', () => {
     describe('when the coordinate string is valid', () => {
       describe('and the coordinates are positive', () => {

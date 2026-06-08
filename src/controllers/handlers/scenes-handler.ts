@@ -80,7 +80,7 @@ export async function getScenesHandler(
 
 export async function undeploySceneHandler(
   ctx: HandlerContextWithPath<
-    'namePermissionChecker' | 'permissions' | 'worlds',
+    'namePermissionChecker' | 'permissions' | 'worlds' | 'worldsManager',
     '/world/:world_name/scenes/:coordinate'
   > &
     DecentralandSignatureContext<any>
@@ -94,13 +94,21 @@ export async function undeploySceneHandler(
   const hasNamePermission = await ctx.components.namePermissionChecker.checkPermission(signer, world_name)
 
   if (!hasNamePermission) {
-    // Check if user has deployment permissions for the specific parcel
-    // This verifies world-wide permissions OR parcel-specific permissions
+    // Undeploying a parcel removes every scene overlapping it, so authorize the wallet
+    // against the full footprint of the affected scene(s) — not just the targeted
+    // coordinate — to stop a parcel-scoped grantee wiping a scene extending beyond its grant.
+    const { scenes } = await ctx.components.worldsManager.getWorldScenes({
+      worldName: world_name,
+      coordinates: [coordinate]
+    })
+    const affectedParcels = Array.from(new Set(scenes.flatMap((scene) => scene.parcels)))
+    const parcelsToAuthorize = affectedParcels.length > 0 ? affectedParcels : [coordinate]
+
     const hasDeploymentPermission = await ctx.components.permissions.hasPermissionForParcels(
       world_name,
       'deployment',
       signer,
-      [coordinate]
+      parcelsToAuthorize
     )
 
     if (!hasDeploymentPermission) {

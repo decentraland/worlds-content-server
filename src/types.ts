@@ -252,6 +252,7 @@ export type ValidationResult = {
 export type ValidatorComponents = Pick<
   AppComponents,
   | 'config'
+  | 'coordinates'
   | 'limitsManager'
   | 'nameDenyListChecker'
   | 'namePermissionChecker'
@@ -327,7 +328,7 @@ export type ICommsAdapter = {
 export type ILimitsManager = {
   getAllowSdk6For(worldName: string): Promise<boolean>
   getMaxAllowedParcelsFor(worldName: string): Promise<number>
-  getMaxAllowedSizeInBytesFor(worldName: string): Promise<bigint>
+  getMaxAllowedSizeInBytesFor(worldName: string, parcels?: string[]): Promise<bigint>
 }
 
 export type WorldBoundingRectangle = {
@@ -389,6 +390,7 @@ export type IWorldsManager = {
   updateWorldSettings(worldName: string, owner: EthAddress, settings: WorldSettings): Promise<UpdateWorldSettingsResult>
   getWorldSettings(worldName: string): Promise<WorldSettings | undefined>
   getTotalWorldSize(worldName: string): Promise<bigint>
+  getDeployedSceneSizeForParcels(worldName: string, parcels: string[]): Promise<bigint>
   getWorldBoundingRectangle(worldName: string): Promise<WorldBoundingRectangle | undefined>
   getWorlds(filters?: GetWorldsFilters, options?: GetWorldsOptions): Promise<GetWorldsResult>
   getOccupiedParcels(worldName: string, options?: GetOccupiedParcelsOptions): Promise<GetOccupiedParcelsResult>

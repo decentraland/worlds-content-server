@@ -184,6 +184,14 @@ describe('common validations', function () {
         `ERROR: Invalid final authority. Expected: ${deployment.entity.id}. Current invalidId.`
       )
     })
+
+    it('with an expired ephemeral key', async () => {
+      const expiredIdentity = await getIdentity(-10)
+      const deployment = await createSceneDeployment(expiredIdentity.authChain)
+
+      const result = await validateSignature(deployment)
+      expect(result.ok()).toBeFalsy()
+    })
   })
 
   describe('validateFiles', () => {
