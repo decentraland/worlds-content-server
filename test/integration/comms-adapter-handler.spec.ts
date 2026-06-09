@@ -187,7 +187,7 @@ test('comms adapter handler /get-comms-adapter/:roomId', function ({ components,
     })
   })
 
-  describe('when the world uses shared-secret access', function () {
+  describe('when the world uses shared-secret access', () => {
     beforeEach(async () => {
       const { namePermissionChecker } = stubComponents
 
@@ -198,7 +198,7 @@ test('comms adapter handler /get-comms-adapter/:roomId', function ({ components,
       })
     })
 
-    describe('and the subject is already rate limited', function () {
+    describe('and the subject is already rate limited', () => {
       let response: Response
 
       beforeEach(async () => {
@@ -220,7 +220,7 @@ test('comms adapter handler /get-comms-adapter/:roomId', function ({ components,
       })
     })
 
-    describe('and the failed attempt reaches the rate limit', function () {
+    describe('and the failed attempt reaches the rate limit', () => {
       let response: Response
 
       beforeEach(async () => {
@@ -243,7 +243,7 @@ test('comms adapter handler /get-comms-adapter/:roomId', function ({ components,
       })
     })
 
-    describe('and the request includes a Cloudflare connecting IP', function () {
+    describe('and the request includes a Cloudflare connecting IP', () => {
       let response: Response
       let isRateLimitedSpy: jest.SpyInstance
       let recordFailedAttemptSpy: jest.SpyInstance
@@ -271,7 +271,7 @@ test('comms adapter handler /get-comms-adapter/:roomId', function ({ components,
       })
     })
 
-    describe('and the shared secret is correct', function () {
+    describe('and the shared secret is correct', () => {
       let response: Response
       let clearAttemptsSpy: jest.SpyInstance
 

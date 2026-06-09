@@ -152,7 +152,7 @@ test('ScenesHandler', function ({ components, stubComponents }) {
           })
         })
 
-        describe('and the maximum number of coordinates is provided', function () {
+        describe('and the maximum number of coordinates is provided', () => {
           let coordinates: string[]
 
           beforeEach(() => {
