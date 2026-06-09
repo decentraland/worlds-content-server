@@ -9,7 +9,6 @@ import { commsAdapterHandler } from './handlers/comms-adapter-handler'
 import { activeEntitiesHandler } from './handlers/active-entities'
 import { getIndexHandler } from './handlers/index-handler'
 import { getLiveDataHandler } from './handlers/live-data-handler'
-import { castAdapterHandler } from './handlers/cast-adapter-handler'
 import { wellKnownComponents } from '@dcl/platform-crypto-middleware'
 import {
   deletePermissionsAccessCommunityHandler,
@@ -168,7 +167,6 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   router.post('/worlds/:worldName/scenes/:sceneId/comms', signedFetchMiddleware, worldCommsHandler)
 
   router.post('/get-comms-adapter/:roomId', signedFetchMiddleware, commsAdapterHandler)
-  router.post('/cast-adapter/:roomId', signedFetchMiddleware, castAdapterHandler)
 
   // administrative endpoints
   const secret = await config.requireString('AUTH_SECRET')
