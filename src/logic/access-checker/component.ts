@@ -46,7 +46,13 @@ export async function createAccessCheckerComponent({
       case AccessType.Unrestricted:
         return true
       case AccessType.SharedSecret:
-        return bcrypt.compare(extras, access.secret) // extras being the secret provided by the user
+        // `extras` is the secret provided by the user. Guard against a missing or non-string
+        // value so a request without a secret is denied cleanly, instead of letting bcrypt.compare
+        // reject and surface as a 500.
+        if (typeof extras !== 'string' || extras.length === 0) {
+          return false
+        }
+        return bcrypt.compare(extras, access.secret)
       case AccessType.NFTOwnership:
         // TODO: Check NFT ownership in the blockchain
         return false

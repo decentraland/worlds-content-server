@@ -16,8 +16,19 @@ export async function deployEntity(
   const entityId = requireString(ctx.formData.fields.entityId?.value[0])
   const authChain = extractAuthChain(ctx)
 
-  const entityRaw = ctx.formData.files[entityId].value.toString()
-  const entityMetadataJson = JSON.parse(entityRaw)
+  const entityFile = ctx.formData.files[entityId]
+  if (!entityFile) {
+    throw new InvalidRequestError(`Entity file "${entityId}" is missing from the request.`)
+  }
+
+  const entityRaw = entityFile.value.toString()
+
+  let entityMetadataJson
+  try {
+    entityMetadataJson = JSON.parse(entityRaw)
+  } catch {
+    throw new InvalidRequestError('The entity file is not valid JSON.')
+  }
 
   const entity: Entity = {
     id: entityId,
