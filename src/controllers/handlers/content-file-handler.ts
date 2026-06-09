@@ -2,8 +2,10 @@ import { IHttpServerComponent } from '@well-known-components/interfaces'
 import { IPFSv2 } from '@dcl/schemas'
 import { HandlerContextWithPath } from '../../types'
 import { ContentItem, IContentStorageComponent } from '@dcl/catalyst-storage'
+import { InvalidRequestError } from '@dcl/http-commons'
 
 const EXPOSED_HEADERS = 'ETag, Accept-Ranges, Content-Range'
+export const MAX_AVAILABLE_CONTENT_CIDS = 500
 
 function contentItemHeaders(content: ContentItem, hashId: string) {
   const ret: Record<string, string> = {
@@ -155,6 +157,20 @@ export async function availableContentHandler(
 ): Promise<IHttpServerComponent.IResponse> {
   const params = new URLSearchParams(ctx.url.search)
   const cids = params.getAll('cid')
+
+  if (cids.length === 0) {
+    throw new InvalidRequestError('At least one cid query parameter is required.')
+  }
+
+  if (cids.length > MAX_AVAILABLE_CONTENT_CIDS) {
+    throw new InvalidRequestError(`Too many cid query parameters. Maximum allowed is ${MAX_AVAILABLE_CONTENT_CIDS}.`)
+  }
+
+  for (const cid of cids) {
+    if (!IPFSv2.validate(cid)) {
+      throw new InvalidRequestError('Invalid cid format.')
+    }
+  }
 
   const results = Array.from((await ctx.components.storage.existMultiple(cids)).entries())
 

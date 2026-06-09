@@ -197,7 +197,7 @@ async function initComponents(): Promise<TestComponents> {
   const evictionJob = { start: jest.fn(), stop: jest.fn() }
 
   const redis = createRedisMock()
-  const rateLimiter = await createRateLimiterComponent({ config, redis })
+  const rateLimiter = await createRateLimiterComponent({ config, logs, redis })
 
   const denyList = createMockDenyList()
   const bans = createMockBans()

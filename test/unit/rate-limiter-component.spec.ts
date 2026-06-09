@@ -3,10 +3,13 @@ import { IConfigComponent } from '@well-known-components/interfaces'
 import { createRateLimiterComponent, IRateLimiterComponent } from '../../src/logic/rate-limiter'
 import { createRedisMock } from '../mocks/redis-mock'
 import { createMockedConfig } from '../mocks/config-mock'
+import { createMockLogs } from '../mocks/logs-mock'
 
 describe('RateLimiterComponent', () => {
   let redis: jest.Mocked<ICacheStorageComponent>
   let config: jest.Mocked<IConfigComponent>
+  let logs: ReturnType<typeof createMockLogs>
+  let logger: ReturnType<typeof logs.getLogger>
   let rateLimiter: IRateLimiterComponent
 
   const worldName = 'test-world'
@@ -15,9 +18,11 @@ describe('RateLimiterComponent', () => {
   beforeEach(async () => {
     redis = createRedisMock()
     config = createMockedConfig()
+    logs = createMockLogs()
+    logger = logs.getLogger('rate-limiter')
     config.getNumber.mockResolvedValue(3)
 
-    rateLimiter = await createRateLimiterComponent({ config, redis })
+    rateLimiter = await createRateLimiterComponent({ config, logs, redis })
   })
 
   afterEach(() => {
@@ -76,6 +81,15 @@ describe('RateLimiterComponent', () => {
         const result = await rateLimiter.isRateLimited(worldName, subject)
 
         expect(result).toBe(false)
+      })
+
+      it('should log a warning', async () => {
+        await rateLimiter.isRateLimited(worldName, subject)
+
+        expect(logger.warn).toHaveBeenCalledWith(
+          'Failed to check shared-secret rate limit, allowing request',
+          expect.objectContaining({ worldName, subject, error: 'Redis error' })
+        )
       })
     })
 
@@ -178,12 +192,21 @@ describe('RateLimiterComponent', () => {
         expect(result.rateLimited).toBe(false)
         expect(redis.set).not.toHaveBeenCalled()
       })
+
+      it('should log a warning', async () => {
+        await rateLimiter.recordFailedAttempt(worldName, subject)
+
+        expect(logger.warn).toHaveBeenCalledWith(
+          'Failed to record shared-secret rate limit attempt, allowing request',
+          expect.objectContaining({ worldName, subject, error: 'Lock not acquired' })
+        )
+      })
     })
 
     describe('when the max attempts config is customized', () => {
       beforeEach(async () => {
         config.getNumber.mockResolvedValue(1)
-        rateLimiter = await createRateLimiterComponent({ config, redis })
+        rateLimiter = await createRateLimiterComponent({ config, logs, redis })
 
         const now = Date.now()
         redis.get.mockResolvedValue({

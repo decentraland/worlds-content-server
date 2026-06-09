@@ -1,6 +1,11 @@
 import { Readable } from 'stream'
 import { IHttpServerComponent } from '@well-known-components/interfaces'
-import { getContentFile, parseRangeHeader } from '../../src/controllers/handlers/content-file-handler'
+import {
+  availableContentHandler,
+  getContentFile,
+  MAX_AVAILABLE_CONTENT_CIDS,
+  parseRangeHeader
+} from '../../src/controllers/handlers/content-file-handler'
 import { HandlerContextWithPath } from '../../src/types'
 import { ContentItem, IContentStorageComponent } from '@dcl/catalyst-storage'
 
@@ -399,6 +404,107 @@ describe('getContentFile', () => {
 
     it('should not call fileInfo', () => {
       expect(storageMock.fileInfo).not.toHaveBeenCalled()
+    })
+  })
+})
+
+describe('availableContentHandler', () => {
+  const validCid = 'bafkreiahsvnr4x4rnskhkwfbnbplkbqhzb3xagdwpyfy44lgcndmhyizde'
+
+  function createContext(
+    storage: Partial<IContentStorageComponent>,
+    search: string
+  ): HandlerContextWithPath<'storage', '/content/available-content'> {
+    return {
+      url: new URL(`http://localhost/available-content${search}`),
+      params: {},
+      request: { headers: new Headers() } as unknown as IHttpServerComponent.IRequest,
+      components: { storage: storage as IContentStorageComponent }
+    }
+  }
+
+  describe('when no cid is provided', () => {
+    let storageMock: Partial<IContentStorageComponent>
+
+    beforeEach(() => {
+      storageMock = {
+        existMultiple: jest.fn()
+      }
+    })
+
+    it('should reject the request', async () => {
+      await expect(availableContentHandler(createContext(storageMock, ''))).rejects.toThrow(
+        'At least one cid query parameter is required.'
+      )
+    })
+  })
+
+  describe('when a cid is invalid', () => {
+    let storageMock: Partial<IContentStorageComponent>
+
+    beforeEach(() => {
+      storageMock = {
+        existMultiple: jest.fn()
+      }
+    })
+
+    it('should reject the request', async () => {
+      await expect(availableContentHandler(createContext(storageMock, '?cid=invalid'))).rejects.toThrow(
+        'Invalid cid format.'
+      )
+    })
+  })
+
+  describe('when too many cids are provided', () => {
+    let storageMock: Partial<IContentStorageComponent>
+    let search: string
+
+    beforeEach(() => {
+      storageMock = {
+        existMultiple: jest.fn()
+      }
+      search = `?${Array.from({ length: MAX_AVAILABLE_CONTENT_CIDS + 1 }, () => `cid=${validCid}`).join('&')}`
+    })
+
+    it('should reject the request', async () => {
+      await expect(availableContentHandler(createContext(storageMock, search))).rejects.toThrow(
+        `Too many cid query parameters. Maximum allowed is ${MAX_AVAILABLE_CONTENT_CIDS}.`
+      )
+    })
+  })
+
+  describe('when all cids are valid', () => {
+    let response: IHttpServerComponent.IResponse
+    let storageMock: Partial<IContentStorageComponent>
+
+    beforeEach(async () => {
+      storageMock = {
+        existMultiple: jest.fn().mockResolvedValue(new Map([[validCid, true]]))
+      }
+      response = await availableContentHandler(createContext(storageMock, `?cid=${validCid}`))
+    })
+
+    it('should return availability for the requested cids', () => {
+      expect(response.body).toEqual([{ cid: validCid, available: true }])
+    })
+  })
+
+  describe('when the maximum number of cids is provided', () => {
+    let response: IHttpServerComponent.IResponse
+    let storageMock: Partial<IContentStorageComponent>
+    let search: string
+
+    beforeEach(async () => {
+      storageMock = {
+        existMultiple: jest.fn().mockResolvedValue(new Map([[validCid, true]]))
+      }
+      search = `?${Array.from({ length: MAX_AVAILABLE_CONTENT_CIDS }, () => `cid=${validCid}`).join('&')}`
+
+      response = await availableContentHandler(createContext(storageMock, search))
+    })
+
+    it('should accept the request', () => {
+      expect(response.body).toEqual([{ cid: validCid, available: true }])
     })
   })
 })

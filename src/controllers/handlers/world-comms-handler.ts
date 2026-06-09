@@ -12,17 +12,14 @@ import {
 } from '../../logic/comms'
 import { AccessType } from '../../logic/access'
 import { RATE_LIMIT_WINDOW_SECONDS, RateLimitedError } from '../../logic/rate-limiter'
+import { extractCommsRateLimitSubject } from './comms-rate-limit-subject'
 
 type CommsMetadata = {
   secret?: string
 }
 
-function extractClientIp(request: IHttpServerComponent.IRequest): string | undefined {
-  return request.headers.get('cf-connecting-ip') ?? undefined
-}
-
 function extractSubject(context: HandlerContext): string {
-  return extractClientIp(context.request) || context.verification!.auth
+  return extractCommsRateLimitSubject(context.request, context.verification!.auth)
 }
 
 type HandlerContext = HandlerContextWithPath<
