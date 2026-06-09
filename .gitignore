@@ -3,7 +3,9 @@ node_modules/
 **/.DS_Store
 coverage
 contents
-.env
+.env*
+!.env.default
+!.env.example
 yarn-error.log
 
 # Generated API client

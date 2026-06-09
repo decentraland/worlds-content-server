@@ -270,7 +270,7 @@ export async function initComponents(): Promise<AppComponents> {
   for (const subType of COMMUNITY_MEMBER_REMOVED_EVENT_SUBTYPES) {
     queueConsumer.addMessageHandler(Events.Type.COMMUNITY, subType, communityMemberRemovedHandler.handle)
   }
-  const rateLimiter = await createRateLimiterComponent({ config, redis })
+  const rateLimiter = await createRateLimiterComponent({ config, logs, redis })
 
   return {
     access,

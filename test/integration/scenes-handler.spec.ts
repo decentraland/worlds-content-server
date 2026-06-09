@@ -132,6 +132,46 @@ test('ScenesHandler', function ({ components, stubComponents }) {
           })
         })
 
+        describe('and too many coordinates are provided', function () {
+          let coordinates: string[]
+
+          beforeEach(() => {
+            coordinates = Array.from({ length: 501 }, (_, index) => `${index},${index}`)
+          })
+
+          it('should respond with 400', async () => {
+            const { localFetch } = components
+
+            const response = await localFetch.fetch(`/world/${worldName}/scenes`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ coordinates })
+            })
+
+            expect(response.status).toBe(400)
+          })
+        })
+
+        describe('and the maximum number of coordinates is provided', () => {
+          let coordinates: string[]
+
+          beforeEach(() => {
+            coordinates = Array.from({ length: 500 }, (_, index) => `${index},${index}`)
+          })
+
+          it('should accept the request', async () => {
+            const { localFetch } = components
+
+            const response = await localFetch.fetch(`/world/${worldName}/scenes`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ coordinates })
+            })
+
+            expect(response.status).toBe(200)
+          })
+        })
+
         describe('and one of multiple coordinates is invalid', function () {
           let coordinates: string[]
 

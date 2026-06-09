@@ -4,6 +4,7 @@ import { getAuthHeaders, getIdentity, Identity } from '../utils'
 import { IAuthenticatedFetchComponent } from '../components/local-auth-fetch'
 import { IWorldsManager } from '../../src/types'
 import { AccessType } from '../../src/logic/access'
+import bcrypt from 'bcrypt'
 
 const EXPLORER_METADATA = {
   origin: 'https://play.decentraland.org',
@@ -39,6 +40,10 @@ test('comms adapter handler /get-comms-adapter/:roomId', function ({ components,
 
     const created = await worldCreator.createWorldWithScene()
     worldName = created.worldName
+  })
+
+  afterEach(() => {
+    jest.restoreAllMocks()
   })
 
   it('works when signed-fetch request is correct', async () => {
@@ -179,6 +184,115 @@ test('comms adapter handler /get-comms-adapter/:roomId', function ({ components,
     expect(await r.json()).toEqual({
       error: 'Invalid Auth Chain',
       message: 'This endpoint requires a signed fetch request. See ADR-44.'
+    })
+  })
+
+  describe('when the world uses shared-secret access', () => {
+    beforeEach(async () => {
+      const { namePermissionChecker } = stubComponents
+
+      namePermissionChecker.checkPermission.resolves(false)
+      await worldsManager.storeAccess(worldName, {
+        type: AccessType.SharedSecret,
+        secret: bcrypt.hashSync('correct-secret', 10)
+      })
+    })
+
+    describe('and the subject is already rate limited', () => {
+      let response: Response
+
+      beforeEach(async () => {
+        jest.spyOn(components.rateLimiter, 'isRateLimited').mockResolvedValueOnce(true)
+
+        response = await localFetch.fetch(`/get-comms-adapter/world-${worldName}`, {
+          method: 'POST',
+          identity,
+          metadata: { ...EXPLORER_METADATA, secret: 'wrong-secret' }
+        })
+      })
+
+      it('should respond with 429', async () => {
+        expect(response.status).toEqual(429)
+      })
+
+      it('should include a retry-after header', async () => {
+        expect(response.headers.get('retry-after')).toEqual('60')
+      })
+    })
+
+    describe('and the failed attempt reaches the rate limit', () => {
+      let response: Response
+
+      beforeEach(async () => {
+        jest.spyOn(components.rateLimiter, 'isRateLimited').mockResolvedValueOnce(false)
+        jest.spyOn(components.rateLimiter, 'recordFailedAttempt').mockResolvedValueOnce({ rateLimited: true })
+
+        response = await localFetch.fetch(`/get-comms-adapter/world-${worldName}`, {
+          method: 'POST',
+          identity,
+          metadata: { ...EXPLORER_METADATA, secret: 'wrong-secret' }
+        })
+      })
+
+      it('should respond with 429', async () => {
+        expect(response.status).toEqual(429)
+      })
+
+      it('should include a retry-after header', async () => {
+        expect(response.headers.get('retry-after')).toEqual('60')
+      })
+    })
+
+    describe('and the request includes a Cloudflare connecting IP', () => {
+      let response: Response
+      let isRateLimitedSpy: jest.SpyInstance
+      let recordFailedAttemptSpy: jest.SpyInstance
+      let clientIp: string
+
+      beforeEach(async () => {
+        clientIp = '203.0.113.10'
+        isRateLimitedSpy = jest.spyOn(components.rateLimiter, 'isRateLimited').mockResolvedValueOnce(false)
+        recordFailedAttemptSpy = jest
+          .spyOn(components.rateLimiter, 'recordFailedAttempt')
+          .mockResolvedValueOnce({ rateLimited: false })
+
+        response = await localFetch.fetch(`/get-comms-adapter/world-${worldName}`, {
+          method: 'POST',
+          identity,
+          headers: { 'cf-connecting-ip': clientIp },
+          metadata: { ...EXPLORER_METADATA, secret: 'wrong-secret' }
+        })
+      })
+
+      it('should use the IP as the rate limit subject', async () => {
+        expect(response.status).toEqual(401)
+        expect(isRateLimitedSpy).toHaveBeenCalledWith(worldName, clientIp)
+        expect(recordFailedAttemptSpy).toHaveBeenCalledWith(worldName, clientIp)
+      })
+    })
+
+    describe('and the shared secret is correct', () => {
+      let response: Response
+      let clearAttemptsSpy: jest.SpyInstance
+
+      beforeEach(async () => {
+        jest.spyOn(components.rateLimiter, 'isRateLimited').mockResolvedValueOnce(false)
+        clearAttemptsSpy = jest.spyOn(components.rateLimiter, 'clearAttempts')
+
+        response = await localFetch.fetch(`/get-comms-adapter/world-${worldName}`, {
+          method: 'POST',
+          identity,
+          metadata: { ...EXPLORER_METADATA, secret: 'correct-secret' }
+        })
+      })
+
+      it('should respond with 200', async () => {
+        expect(response.status).toEqual(200)
+      })
+
+      it('should clear failed attempts for the signer', async () => {
+        expect(clearAttemptsSpy).toHaveBeenCalledWith(worldName, identity.realAccount.address.toLowerCase())
+      })
     })
   })
 })
