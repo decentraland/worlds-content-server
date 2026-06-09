@@ -17,8 +17,10 @@ type StoredAttempts = {
 
 export async function createRateLimiterComponent({
   config,
+  logs,
   redis
-}: Pick<AppComponents, 'config' | 'redis'>): Promise<IRateLimiterComponent> {
+}: Pick<AppComponents, 'config' | 'logs' | 'redis'>): Promise<IRateLimiterComponent> {
+  const logger = logs.getLogger('rate-limiter')
   const maxAttempts =
     (await config.getNumber('SHARED_SECRET_MAX_ATTEMPTS_PER_MINUTE')) ?? DEFAULT_MAX_ATTEMPTS_PER_MINUTE
 
@@ -38,7 +40,12 @@ export async function createRateLimiterComponent({
       const stored = await redis.get<StoredAttempts>(attemptsKey)
       const recentAttempts = stored ? stored.attempts.filter((ts) => ts > windowStart) : []
       return recentAttempts.length >= maxAttempts
-    } catch {
+    } catch (error) {
+      logger.warn('Failed to check shared-secret rate limit, allowing request', {
+        worldName,
+        subject,
+        error: error instanceof Error ? error.message : String(error)
+      })
       return false // fail-open
     }
   }
@@ -67,11 +74,24 @@ export async function createRateLimiterComponent({
       await redis.set<StoredAttempts>(attemptsKey, { attempts: recentAttempts }, RATE_LIMIT_TTL_SECONDS)
 
       return { rateLimited: false }
-    } catch {
+    } catch (error) {
+      logger.warn('Failed to record shared-secret rate limit attempt, allowing request', {
+        worldName,
+        subject,
+        error: error instanceof Error ? error.message : String(error)
+      })
       // If lock acquisition fails, don't block the caller — just skip tracking
       return { rateLimited: false }
     } finally {
-      await redis.tryReleaseLock(lockKey)
+      try {
+        await redis.tryReleaseLock(lockKey)
+      } catch (error) {
+        logger.warn('Failed to release shared-secret rate limit lock', {
+          worldName,
+          subject,
+          error: error instanceof Error ? error.message : String(error)
+        })
+      }
     }
   }
 
