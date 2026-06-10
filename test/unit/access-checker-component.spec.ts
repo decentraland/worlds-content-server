@@ -94,6 +94,32 @@ describe('AccessCheckerComponent', () => {
           expect(result).toBe(false)
         })
       })
+
+      describe('and no secret is provided', () => {
+        beforeEach(() => {
+          worldsManager.getRawWorldRecords.mockResolvedValueOnce(
+            mockRawWorldRecords({ type: AccessType.SharedSecret, secret: hashedSecret })
+          )
+        })
+
+        it('should return false without throwing', async () => {
+          const result = await accessChecker.checkAccess('test-world', '0x1234')
+          expect(result).toBe(false)
+        })
+      })
+
+      describe('and a non-string secret is provided', () => {
+        beforeEach(() => {
+          worldsManager.getRawWorldRecords.mockResolvedValueOnce(
+            mockRawWorldRecords({ type: AccessType.SharedSecret, secret: hashedSecret })
+          )
+        })
+
+        it('should return false without throwing', async () => {
+          const result = await accessChecker.checkAccess('test-world', '0x1234', { unexpected: 'object' })
+          expect(result).toBe(false)
+        })
+      })
     })
 
     describe('and the world has allow-list access', () => {

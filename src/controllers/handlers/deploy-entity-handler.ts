@@ -10,6 +10,14 @@ export function requireString(val: string | null | undefined): string {
   return val
 }
 
+function parseEntityJson(raw: string) {
+  try {
+    return JSON.parse(raw)
+  } catch {
+    throw new InvalidRequestError('The entity file is not valid JSON.')
+  }
+}
+
 export async function deployEntity(
   ctx: FormDataContext & HandlerContextWithPath<'config' | 'entityDeployer' | 'storage' | 'validator', '/entities'>
 ): Promise<IHttpServerComponent.IResponse> {
@@ -18,11 +26,12 @@ export async function deployEntity(
 
   const entityFile = ctx.formData.files[entityId]
   if (!entityFile) {
-    throw new InvalidRequestError(`Entity file ${entityId} is missing from the upload.`)
+    throw new InvalidRequestError(`Entity file "${entityId}" is missing from the request.`)
   }
+
   // The entity JSON is small, so it is safe to read fully into memory.
   const entityRaw = (await readUploadedFile(entityFile)).toString()
-  const entityMetadataJson = JSON.parse(entityRaw)
+  const entityMetadataJson = parseEntityJson(entityRaw)
 
   const entity: Entity = {
     id: entityId,
