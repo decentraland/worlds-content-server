@@ -3,6 +3,11 @@ import { InvalidRequestError, getPaginationParams } from '@dcl/http-commons'
 import { EthAddress } from '@dcl/schemas'
 import { HandlerContextWithPath, WorldInfo, WorldsOrderBy, OrderDirection } from '../../types'
 
+// Caps the free-text search term length. The term feeds leading-wildcard ILIKE and pg_trgm
+// similarity over several columns (sequential scans), so an unbounded term lets an anonymous
+// caller drive arbitrarily expensive queries. 64 chars comfortably fits any real world name/title.
+export const MAX_SEARCH_TERM_LENGTH = 64
+
 type SnakeCaseWorldInfo = {
   name: string
   owner: string
@@ -48,13 +53,19 @@ export async function getWorldsHandler(
 
   // Extract optional query parameters
   const deployer = ctx.url.searchParams.get('authorized_deployer') ?? undefined
-  const search = ctx.url.searchParams.get('search') ?? undefined
+  const trimmedSearch = ctx.url.searchParams.get('search')?.trim()
+  const search = trimmedSearch ? trimmedSearch : undefined
   const hasDeployedScenesParam = ctx.url.searchParams.get('has_deployed_scenes')
   const hasDeployedScenes = hasDeployedScenesParam !== null ? hasDeployedScenesParam === 'true' : undefined
 
   // Validate authorized_deployer is a valid Ethereum address if provided
   if (deployer && !EthAddress.validate(deployer)) {
     throw new InvalidRequestError(`Invalid authorized_deployer address: ${deployer}. Must be a valid Ethereum address.`)
+  }
+
+  // Bound the search term length to keep the ILIKE/trigram scan cost predictable
+  if (search !== undefined && search.length > MAX_SEARCH_TERM_LENGTH) {
+    throw new InvalidRequestError(`Invalid search parameter: must be at most ${MAX_SEARCH_TERM_LENGTH} characters.`)
   }
   const sortParam = ctx.url.searchParams.get('sort') ?? WorldsOrderBy.Name
   const orderParam = ctx.url.searchParams.get('order') ?? OrderDirection.Asc

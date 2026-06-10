@@ -16,7 +16,7 @@ import {
   validateSigner,
   validateSupportedEntityType
 } from '../../../src/logic/validations/common'
-import { createSceneDeployment } from './shared'
+import { bufferToDeploymentFile, createSceneDeployment } from './shared'
 
 describe('common validations', function () {
   let config: IConfigComponent
@@ -57,7 +57,7 @@ describe('common validations', function () {
       const deployment = await createSceneDeployment(identity.authChain)
 
       // make the entity id invalid
-      deployment.files.set(deployment.entity.id, Buffer.from(stringToUtf8Bytes('invalid')))
+      deployment.files.set(deployment.entity.id, bufferToDeploymentFile(Buffer.from(stringToUtf8Bytes('invalid'))))
 
       const result = await validateEntityId(deployment)
       expect(result.ok()).toBeFalsy()
@@ -212,8 +212,8 @@ describe('common validations', function () {
       const deployment = await createSceneDeployment(identity.authChain)
 
       // Alter the files to make it fail
-      deployment.files.set(await hashV1(Buffer.from('efg')), Buffer.from('efg'))
-      deployment.files.set(await hashV0(Buffer.from('igh')), Buffer.from('igh'))
+      deployment.files.set(await hashV1(Buffer.from('efg')), bufferToDeploymentFile(Buffer.from('efg')))
+      deployment.files.set(await hashV0(Buffer.from('igh')), bufferToDeploymentFile(Buffer.from('igh')))
       deployment.entity.content.push({
         file: 'def.txt',
         hash: 'bafkreie3yaomoex7orli7fumfwgk5abgels5o5fiauxfijzlzoiymqppdi'

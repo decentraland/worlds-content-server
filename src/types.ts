@@ -12,6 +12,7 @@ import { HTTPProvider } from 'eth-connect'
 import { ISubgraphComponent } from '@well-known-components/thegraph-component'
 import { IStatusComponent } from './adapters/status'
 import { AuthChain, AuthLink, Entity, EthAddress, IPFSv2 } from '@dcl/schemas'
+import { Readable } from 'stream'
 import { MigrationExecutor } from './adapters/migration-executor'
 import { IPgComponent } from '@dcl/pg-component'
 import { AuthIdentity } from '@dcl/crypto'
@@ -56,9 +57,23 @@ export type Migration = {
   run: (components: MigratorComponents) => Promise<void>
 }
 
+/**
+ * A file uploaded as part of a deployment. Backed by a temp file on disk so large content files
+ * are never held in memory in full: callers stream them for hashing/storing and only read the
+ * small entity JSON into a Buffer.
+ */
+export type DeploymentFile = {
+  /** Size in bytes of the uploaded file. */
+  size: number
+  /** Opens a fresh read stream over the file's bytes (for hashing and storing). */
+  getStream(): Readable
+  /** Reads the full file into a Buffer. Intended for small files such as the entity JSON. */
+  asBuffer(): Promise<Buffer>
+}
+
 export type DeploymentToValidate = {
   entity: Entity
-  files: Map<string, Uint8Array>
+  files: Map<string, DeploymentFile>
   authChain: AuthChain
   contentHashesInStorage: Map<string, boolean>
 }
@@ -456,7 +471,7 @@ export type WorldsIndex = {
 }
 
 export type IWorldsIndexer = {
-  getIndex(): Promise<WorldsIndex>
+  getIndex(options?: GetRawWorldRecordsOptions): Promise<WorldsIndex>
 }
 
 export type DeploymentResult = {
@@ -468,7 +483,7 @@ export type IEntityDeployer = {
     baseUrl: string,
     entity: Entity,
     allContentHashesInStorage: Map<string, boolean>,
-    files: Map<string, Uint8Array>,
+    files: Map<string, DeploymentFile>,
     entityJson: string,
     authChain: AuthLink[]
   ): Promise<DeploymentResult>

@@ -202,16 +202,18 @@ describe('getContentFile', () => {
 
   function createContext(
     storage: Partial<IContentStorageComponent>,
-    rangeHeader?: string
+    rangeHeader?: string,
+    keyOverride?: string
   ): HandlerContextWithPath<'storage', '/contents/:hashId'> {
     const headers = new Headers()
     if (rangeHeader) {
       headers.set('range', rangeHeader)
     }
 
+    const key = keyOverride ?? hashId
     return {
-      url: new URL(`http://localhost/contents/${hashId}`),
-      params: { hashId },
+      url: new URL(`http://localhost/contents/${key}`),
+      params: { hashId: key },
       request: { headers } as unknown as IHttpServerComponent.IRequest,
       components: { storage: storage as IContentStorageComponent }
     }
@@ -404,6 +406,50 @@ describe('getContentFile', () => {
 
     it('should not call fileInfo', () => {
       expect(storageMock.fileInfo).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('when the content key is a SHA-256 hex digest', () => {
+    const sha256Key = 'a'.repeat(64)
+    let response: IHttpServerComponent.IResponse
+    let storageMock: Partial<IContentStorageComponent>
+
+    beforeEach(async () => {
+      const item = createContentItem()
+      storageMock = {
+        fileInfo: jest.fn(),
+        retrieve: jest.fn().mockResolvedValue(item)
+      }
+      response = await getContentFile(createContext(storageMock, undefined, sha256Key))
+    })
+
+    it('should respond with 200', () => {
+      expect(response.status).toEqual(200)
+    })
+
+    it('should retrieve the file by its SHA-256 key', () => {
+      expect(storageMock.retrieve).toHaveBeenCalledWith(sha256Key)
+    })
+  })
+
+  describe('when the content key is neither a CIDv1 nor a SHA-256 digest', () => {
+    let response: IHttpServerComponent.IResponse
+    let storageMock: Partial<IContentStorageComponent>
+
+    beforeEach(async () => {
+      storageMock = {
+        fileInfo: jest.fn(),
+        retrieve: jest.fn()
+      }
+      response = await getContentFile(createContext(storageMock, undefined, 'not-a-valid-key'))
+    })
+
+    it('should respond with 400', () => {
+      expect(response.status).toEqual(400)
+    })
+
+    it('should not call retrieve', () => {
+      expect(storageMock.retrieve).not.toHaveBeenCalled()
     })
   })
 })

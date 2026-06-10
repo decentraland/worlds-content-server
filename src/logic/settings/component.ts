@@ -58,7 +58,9 @@ export async function createSettingsComponent(
     // Handle thumbnail upload
     let thumbnailHash: string | undefined
     if (settings.thumbnail) {
-      // Store new thumbnail by hash (content-addressable, old thumbnails cleaned up by GC)
+      // Store new thumbnail by content hash (content-addressable, old thumbnails cleaned up by GC).
+      // The SHA-256 hex digest is served back through GET /contents/:hashId, which accepts both
+      // CIDv1 and SHA-256 content keys.
       thumbnailHash = createHash('sha256').update(settings.thumbnail).digest('hex')
       await storage.storeStream(thumbnailHash, bufferToStream(settings.thumbnail))
     }

@@ -1,7 +1,7 @@
 import { Entity } from '@dcl/schemas'
 import { IHttpServerComponent } from '@well-known-components/interfaces'
-import { FormDataContext } from '../../logic/multipart'
-import { HandlerContextWithPath } from '../../types'
+import { FormDataContext, readUploadedFile, toDeploymentFile } from '../../logic/multipart'
+import { DeploymentFile, HandlerContextWithPath } from '../../types'
 import { extractAuthChain } from '../../logic/extract-auth-chain'
 import { InvalidRequestError } from '@dcl/http-commons'
 
@@ -16,7 +16,12 @@ export async function deployEntity(
   const entityId = requireString(ctx.formData.fields.entityId?.value[0])
   const authChain = extractAuthChain(ctx)
 
-  const entityRaw = ctx.formData.files[entityId].value.toString()
+  const entityFile = ctx.formData.files[entityId]
+  if (!entityFile) {
+    throw new InvalidRequestError(`Entity file ${entityId} is missing from the upload.`)
+  }
+  // The entity JSON is small, so it is safe to read fully into memory.
+  const entityRaw = (await readUploadedFile(entityFile)).toString()
   const entityMetadataJson = JSON.parse(entityRaw)
 
   const entity: Entity = {
@@ -24,9 +29,9 @@ export async function deployEntity(
     ...entityMetadataJson
   }
 
-  const uploadedFiles: Map<string, Uint8Array> = new Map()
+  const uploadedFiles: Map<string, DeploymentFile> = new Map()
   for (const filesKey in ctx.formData.files) {
-    uploadedFiles.set(filesKey, ctx.formData.files[filesKey].value)
+    uploadedFiles.set(filesKey, toDeploymentFile(ctx.formData.files[filesKey]))
   }
 
   const contentHashesInStorage = await ctx.components.storage.existMultiple(
