@@ -30,8 +30,11 @@ function detectImageFormat(buffer: Buffer): 'png' | 'jpeg' | 'gif' | 'webp' | nu
   if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
     return 'jpeg'
   }
-  // GIF87a / GIF89a
-  if (buffer.length >= 6 && buffer.subarray(0, 4).toString('latin1') === 'GIF8') {
+  // GIF87a / GIF89a (full 6-byte signature, so e.g. "GIF8XX" does not pass)
+  if (
+    buffer.length >= 6 &&
+    (buffer.subarray(0, 6).toString('latin1') === 'GIF87a' || buffer.subarray(0, 6).toString('latin1') === 'GIF89a')
+  ) {
     return 'gif'
   }
   // RIFF....WEBP
