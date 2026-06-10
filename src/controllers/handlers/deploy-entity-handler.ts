@@ -1,13 +1,21 @@
 import { Entity } from '@dcl/schemas'
 import { IHttpServerComponent } from '@well-known-components/interfaces'
-import { FormDataContext } from '../../logic/multipart'
-import { HandlerContextWithPath } from '../../types'
+import { FormDataContext, readUploadedFile, toDeploymentFile } from '../../logic/multipart'
+import { DeploymentFile, HandlerContextWithPath } from '../../types'
 import { extractAuthChain } from '../../logic/extract-auth-chain'
 import { InvalidRequestError } from '@dcl/http-commons'
 
 export function requireString(val: string | null | undefined): string {
   if (typeof val !== 'string') throw new InvalidRequestError('A string was expected')
   return val
+}
+
+function parseEntityJson(raw: string) {
+  try {
+    return JSON.parse(raw)
+  } catch {
+    throw new InvalidRequestError('The entity file is not valid JSON.')
+  }
 }
 
 export async function deployEntity(
@@ -21,23 +29,18 @@ export async function deployEntity(
     throw new InvalidRequestError(`Entity file "${entityId}" is missing from the request.`)
   }
 
-  const entityRaw = entityFile.value.toString()
-
-  let entityMetadataJson
-  try {
-    entityMetadataJson = JSON.parse(entityRaw)
-  } catch {
-    throw new InvalidRequestError('The entity file is not valid JSON.')
-  }
+  // The entity JSON is small, so it is safe to read fully into memory.
+  const entityRaw = (await readUploadedFile(entityFile)).toString()
+  const entityMetadataJson = parseEntityJson(entityRaw)
 
   const entity: Entity = {
     id: entityId,
     ...entityMetadataJson
   }
 
-  const uploadedFiles: Map<string, Uint8Array> = new Map()
+  const uploadedFiles: Map<string, DeploymentFile> = new Map()
   for (const filesKey in ctx.formData.files) {
-    uploadedFiles.set(filesKey, ctx.formData.files[filesKey].value)
+    uploadedFiles.set(filesKey, toDeploymentFile(ctx.formData.files[filesKey]))
   }
 
   const contentHashesInStorage = await ctx.components.storage.existMultiple(

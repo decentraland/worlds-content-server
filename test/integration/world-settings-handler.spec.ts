@@ -177,6 +177,121 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
       })
     })
 
+    describe('and the thumbnail is not a valid image', () => {
+      let identity: Identity
+      let worldName: string
+
+      beforeEach(async () => {
+        const { worldCreator } = components
+
+        identity = await getIdentity()
+        const created = await worldCreator.createWorldWithScene({ owner: identity.authChain })
+        worldName = created.worldName
+
+        stubComponents.namePermissionChecker.checkPermission
+          .withArgs(identity.authChain.authChain[0].payload.toLowerCase(), worldName)
+          .resolves(true)
+      })
+
+      it('should respond with a 400 and reject the non-image thumbnail', async () => {
+        const { localFetch } = components
+
+        const notAnImage = Buffer.from('<html><script>alert(1)</script></html>')
+
+        const response = await makeSignedMultipartRequest(
+          localFetch,
+          `/world/${worldName}/settings`,
+          identity,
+          {},
+          { thumbnail: { buffer: notAnImage, filename: 'thumbnail.png' } }
+        )
+
+        expect(response.status).toBe(400)
+        expect(await response.json()).toMatchObject({
+          error: 'Invalid thumbnail: expected a PNG, JPEG, GIF or WebP image.'
+        })
+      })
+    })
+
+    describe('and the thumbnail starts with GIF8 but is not a real GIF signature', () => {
+      let identity: Identity
+      let worldName: string
+
+      beforeEach(async () => {
+        const { worldCreator } = components
+
+        identity = await getIdentity()
+        const created = await worldCreator.createWorldWithScene({ owner: identity.authChain })
+        worldName = created.worldName
+
+        stubComponents.namePermissionChecker.checkPermission
+          .withArgs(identity.authChain.authChain[0].payload.toLowerCase(), worldName)
+          .resolves(true)
+      })
+
+      it('should respond with a 400 (the full 6-byte GIF87a/GIF89a signature is required)', async () => {
+        const { localFetch } = components
+
+        // "GIF8XX" passes a 4-byte "GIF8" check but is not a real GIF signature.
+        const fakeGif = Buffer.concat([Buffer.from('GIF8XX', 'latin1'), Buffer.alloc(16, 0)])
+
+        const response = await makeSignedMultipartRequest(
+          localFetch,
+          `/world/${worldName}/settings`,
+          identity,
+          {},
+          { thumbnail: { buffer: fakeGif, filename: 'thumbnail.gif' } }
+        )
+
+        expect(response.status).toBe(400)
+        expect(await response.json()).toMatchObject({
+          error: 'Invalid thumbnail: expected a PNG, JPEG, GIF or WebP image.'
+        })
+      })
+    })
+
+    describe('and the thumbnail is a valid PNG image', () => {
+      let identity: Identity
+      let worldName: string
+
+      beforeEach(async () => {
+        const { worldCreator } = components
+
+        identity = await getIdentity()
+        const created = await worldCreator.createWorldWithScene({ owner: identity.authChain })
+        worldName = created.worldName
+
+        stubComponents.namePermissionChecker.checkPermission
+          .withArgs(identity.authChain.authChain[0].payload.toLowerCase(), worldName)
+          .resolves(true)
+      })
+
+      it('should store the thumbnail under a key that is retrievable via GET /contents', async () => {
+        const { localFetch } = components
+
+        const pngBuffer = Buffer.concat([
+          Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), // PNG magic bytes
+          Buffer.from('minimal-png-body')
+        ])
+
+        const response = await makeSignedMultipartRequest(
+          localFetch,
+          `/world/${worldName}/settings`,
+          identity,
+          {},
+          { thumbnail: { buffer: pngBuffer, filename: 'thumbnail.png' } }
+        )
+
+        expect(response.status).toBe(200)
+        const thumbnailHash = (await response.json()).settings.thumbnail_hash
+        // Thumbnails are keyed by SHA-256 hex digest, which GET /contents/:hashId now accepts
+        expect(thumbnailHash).toMatch(/^[0-9a-f]{64}$/)
+
+        const thumbnailResponse = await localFetch.fetch(`/contents/${thumbnailHash}`)
+        expect(thumbnailResponse.status).toBe(200)
+      })
+    })
+
     describe('when the user sends null for categories to clear them', () => {
       let identity: Identity
       let worldName: string

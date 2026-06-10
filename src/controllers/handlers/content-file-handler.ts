@@ -7,6 +7,16 @@ import { InvalidRequestError } from '@dcl/http-commons'
 const EXPOSED_HEADERS = 'ETag, Accept-Ranges, Content-Range'
 export const MAX_AVAILABLE_CONTENT_CIDS = 500
 
+// Content is addressed by IPFS CIDv1, but world thumbnails have historically been stored under a
+// raw SHA-256 hex digest. Accept both when serving so those legacy thumbnails remain retrievable.
+// Both formats are strictly validated and contain no path separators, so neither can escape the
+// storage root.
+const SHA256_HEX = /^[0-9a-f]{64}$/
+
+function isRetrievableContentKey(hashId: string): boolean {
+  return IPFSv2.validate(hashId) || SHA256_HEX.test(hashId)
+}
+
 function contentItemHeaders(content: ContentItem, hashId: string) {
   const ret: Record<string, string> = {
     'Content-Type': 'application/octet-stream',
@@ -79,7 +89,7 @@ async function retrieveFullContent(
 export async function getContentFile(
   ctx: HandlerContextWithPath<'storage', '/contents/:hashId'>
 ): Promise<IHttpServerComponent.IResponse> {
-  if (!IPFSv2.validate(ctx.params.hashId)) return { status: 400 }
+  if (!isRetrievableContentKey(ctx.params.hashId)) return { status: 400 }
 
   const rangeHeader = ctx.request.headers.get('range')
 
@@ -143,7 +153,7 @@ export async function getContentFile(
 export async function headContentFile(
   ctx: HandlerContextWithPath<'storage', '/contents/:hashId'>
 ): Promise<IHttpServerComponent.IResponse> {
-  if (!IPFSv2.validate(ctx.params.hashId)) return { status: 400 }
+  if (!isRetrievableContentKey(ctx.params.hashId)) return { status: 400 }
 
   const file = await ctx.components.storage.retrieve(ctx.params.hashId)
 

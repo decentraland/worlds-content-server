@@ -374,6 +374,20 @@ test('WorldsHandler GET /worlds', function ({ components }) {
           expect(body.worlds[0].name).toBe(worldName3)
         })
       })
+
+      describe('and the search term exceeds the maximum allowed length', function () {
+        it('should respond with a 400 and reject the request', async () => {
+          const { localFetch } = components
+
+          const response = await localFetch.fetch(`/worlds?search=${'a'.repeat(65)}`)
+
+          expect(response.status).toBe(400)
+          expect(await response.json()).toMatchObject({
+            error: 'Bad request',
+            message: 'Invalid search parameter: must be at most 64 characters.'
+          })
+        })
+      })
     })
 
     describe('and authorized_deployer filter is provided', function () {

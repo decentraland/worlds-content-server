@@ -1,4 +1,4 @@
-import { DeploymentToValidate, Validation, ValidationResult, ValidatorComponents } from '../../types'
+import { DeploymentFile, DeploymentToValidate, Validation, ValidationResult, ValidatorComponents } from '../../types'
 import { Entity, Scene } from '@dcl/schemas'
 import { createValidationResult, OK } from './utils'
 import { ICoordinatesComponent } from '../coordinates'
@@ -85,8 +85,7 @@ export function createValidateBannedNames(
   components: Pick<ValidatorComponents, 'nameDenyListChecker' | 'worldsManager'>
 ) {
   return async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
-    const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())
-    const worldSpecifiedName = sceneJson.metadata.worldConfiguration.name
+    const worldSpecifiedName = deployment.entity.metadata.worldConfiguration.name
 
     // Check the name is not banned
     if (await components.nameDenyListChecker.checkNameDenyList(worldSpecifiedName)) {
@@ -107,8 +106,7 @@ export function createValidateDeploymentPermission(
   components: Pick<ValidatorComponents, 'coordinates' | 'namePermissionChecker' | 'permissions' | 'worldsManager'>
 ) {
   return async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
-    const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())
-    const worldSpecifiedName = sceneJson.metadata.worldConfiguration.name
+    const worldSpecifiedName = deployment.entity.metadata.worldConfiguration.name
     const signer = deployment.authChain[0].payload
     const parcels = getDeploymentParcels(deployment, components.coordinates)
 
@@ -137,8 +135,7 @@ export function createValidateDeploymentPermission(
 /** Rejects scenes that occupy more parcels than the world's configured maximum. */
 export function createValidateSceneDimensions(components: Pick<ValidatorComponents, 'coordinates' | 'limitsManager'>) {
   return async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
-    const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())
-    const worldName = sceneJson.metadata.worldConfiguration.name
+    const worldName = deployment.entity.metadata.worldConfiguration.name
 
     const maxParcels = await components.limitsManager.getMaxAllowedParcelsFor(worldName || '')
     if (getDeploymentParcels(deployment, components.coordinates).length > maxParcels) {
@@ -196,12 +193,12 @@ export function createValidateSize(components: Pick<ValidatorComponents, 'coordi
       return content.size || 0
     }
 
-    const calculateDeploymentSize = async (entity: Entity, files: Map<string, Uint8Array>): Promise<number> => {
+    const calculateDeploymentSize = async (entity: Entity, files: Map<string, DeploymentFile>): Promise<number> => {
       let totalSize = 0
       for (const hash of new Set(entity.content?.map((item) => item.hash) ?? [])) {
         const uploadedFile = files.get(hash)
         if (uploadedFile) {
-          totalSize += uploadedFile.byteLength
+          totalSize += uploadedFile.size
         } else {
           const contentSize = await fetchContentFileSize(hash)
           totalSize += contentSize
@@ -210,8 +207,7 @@ export function createValidateSize(components: Pick<ValidatorComponents, 'coordi
       return totalSize
     }
 
-    const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())
-    const worldName = sceneJson.metadata.worldConfiguration.name
+    const worldName = deployment.entity.metadata.worldConfiguration.name
     // Pass the deployment's parcels so the quota credits back only the scenes this
     // deployment actually replaces (those overlapping these parcels), not the whole world.
     const maxTotalSizeInBytes = await components.limitsManager.getMaxAllowedSizeInBytesFor(
@@ -237,8 +233,7 @@ export function createValidateSize(components: Pick<ValidatorComponents, 'coordi
 
 export function createValidateSdkVersion(components: Pick<ValidatorComponents, 'limitsManager' | 'storage'>) {
   return async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
-    const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())
-    const worldName = sceneJson.metadata.worldConfiguration.name
+    const worldName = deployment.entity.metadata.worldConfiguration.name
     const allowSdk6 = await components.limitsManager.getAllowSdk6For(worldName || '')
 
     const sdkVersion = deployment.entity.metadata.runtimeVersion
@@ -255,16 +250,15 @@ export function createValidateSdkVersion(components: Pick<ValidatorComponents, '
 export const validateMiniMapImages: Validation = async (
   deployment: DeploymentToValidate
 ): Promise<ValidationResult> => {
-  const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())
-
   const errors: string[] = []
+  const content = deployment.entity.content || []
 
   for (const imageFile of [
-    sceneJson.metadata.worldConfiguration?.miniMapConfig?.dataImage,
-    sceneJson.metadata.worldConfiguration?.miniMapConfig?.estateImage
+    deployment.entity.metadata.worldConfiguration?.miniMapConfig?.dataImage,
+    deployment.entity.metadata.worldConfiguration?.miniMapConfig?.estateImage
   ]) {
     if (imageFile) {
-      const isFilePresent = sceneJson.content.some((content: ContentMapping) => content.file === imageFile)
+      const isFilePresent = content.some((mapping: ContentMapping) => mapping.file === imageFile)
       if (!isFilePresent) {
         errors.push(`The file ${imageFile} is not present in the entity.`)
       }
@@ -290,13 +284,12 @@ export const validateThumbnail: Validation = async (deployment: DeploymentToVali
 export const validateSkyboxTextures: Validation = async (
   deployment: DeploymentToValidate
 ): Promise<ValidationResult> => {
-  const sceneJson = JSON.parse(deployment.files.get(deployment.entity.id)!.toString())
-
   const errors: string[] = []
+  const content = deployment.entity.content || []
 
-  for (const textureFile of sceneJson.metadata.worldConfiguration?.skyboxConfig?.textures || []) {
+  for (const textureFile of deployment.entity.metadata.worldConfiguration?.skyboxConfig?.textures || []) {
     if (textureFile) {
-      const isFilePresent = sceneJson.content.some((content: ContentMapping) => content.file === textureFile)
+      const isFilePresent = content.some((mapping: ContentMapping) => mapping.file === textureFile)
       if (!isFilePresent) {
         errors.push(`The texture file ${textureFile} is not present in the entity.`)
       }

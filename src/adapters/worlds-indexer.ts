@@ -1,5 +1,6 @@
 import {
   AppComponents,
+  GetRawWorldRecordsOptions,
   IWorldsIndexer,
   SceneData,
   WorldData,
@@ -12,8 +13,11 @@ import { ContentMapping } from '@dcl/schemas/dist/misc/content-mapping'
 export async function createWorldsIndexerComponent({
   worldsManager
 }: Pick<AppComponents, 'worldsManager'>): Promise<IWorldsIndexer> {
-  async function getIndex(): Promise<WorldsIndex> {
-    const { records: worlds } = await worldsManager.getRawWorldRecords()
+  // The index is built by fanning out one scene query per world, so the number of worlds fetched
+  // bounds the per-request work. Pagination options are forwarded to keep that bound in the
+  // caller's hands (the HTTP handler caps the page size).
+  async function getIndex(options?: GetRawWorldRecordsOptions): Promise<WorldsIndex> {
+    const { records: worlds } = await worldsManager.getRawWorldRecords({}, options)
     const index: WorldData[] = []
 
     for (const world of worlds) {

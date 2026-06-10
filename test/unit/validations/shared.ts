@@ -4,7 +4,18 @@ import { hashV1 } from '@dcl/hashing'
 import { EntityType } from '@dcl/schemas'
 import { DeploymentBuilder } from 'dcl-catalyst-client'
 import { TextDecoder } from 'util'
-import { DeploymentToValidate } from '../../../src/types'
+import { Readable } from 'stream'
+import { DeploymentFile, DeploymentToValidate } from '../../../src/types'
+
+/** Wraps an in-memory buffer as a DeploymentFile for unit tests (no temp files needed). */
+export function bufferToDeploymentFile(content: Uint8Array): DeploymentFile {
+  const buffer = Buffer.from(content)
+  return {
+    size: buffer.byteLength,
+    getStream: () => Readable.from(buffer),
+    asBuffer: async () => buffer
+  }
+}
 
 export async function createSceneDeployment(identityAuthChain: AuthIdentity, entity?: any) {
   const entityFiles = new Map<string, Uint8Array>()
@@ -29,8 +40,8 @@ export async function createSceneDeployment(identityAuthChain: AuthIdentity, ent
     },
     files: entityFiles
   }
-  const { files, entityId } = await DeploymentBuilder.buildEntity(sceneJson)
-  files.set(entityId, Buffer.from(files.get(entityId)!))
+  const { files: builtFiles, entityId } = await DeploymentBuilder.buildEntity(sceneJson)
+  builtFiles.set(entityId, Buffer.from(builtFiles.get(entityId)!))
 
   const authChain = Authenticator.signPayload(identityAuthChain, entityId)
 
@@ -39,7 +50,12 @@ export async function createSceneDeployment(identityAuthChain: AuthIdentity, ent
 
   const finalEntity = {
     id: entityId,
-    ...JSON.parse(new TextDecoder().decode(files.get(entityId)))
+    ...JSON.parse(new TextDecoder().decode(builtFiles.get(entityId)))
+  }
+
+  const files = new Map<string, DeploymentFile>()
+  for (const [name, content] of builtFiles) {
+    files.set(name, bufferToDeploymentFile(content))
   }
 
   const deployment: DeploymentToValidate = {
