@@ -2,7 +2,7 @@ import { HandlerContextWithPath, WorldSettings, WorldSettingsInput } from '../..
 import { IHttpServerComponent } from '@well-known-components/interfaces'
 import { DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
 import { UnauthorizedError, ValidationError, WorldNotFoundError } from '../../logic/settings'
-import { FormDataContext, isDefinedMultipartField } from '../../logic/multipart'
+import { FormDataContext, isDefinedMultipartField, readUploadedFile } from '../../logic/multipart'
 import { ICoordinatesComponent } from '../../logic/coordinates'
 
 type SnakeCaseWorldSettings = {
@@ -15,6 +15,37 @@ type SnakeCaseWorldSettings = {
   single_player?: boolean
   show_in_places?: boolean
   thumbnail_hash?: string
+}
+
+// Allowed thumbnail image formats, identified by their leading magic bytes. The thumbnail is
+// stored and later served verbatim, so we reject anything that is not a real raster image
+// (e.g. HTML/SVG/scripts smuggled as a "thumbnail").
+function detectImageFormat(buffer: Buffer): 'png' | 'jpeg' | 'gif' | 'webp' | null {
+  if (
+    buffer.length >= 8 &&
+    buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+  ) {
+    return 'png'
+  }
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return 'jpeg'
+  }
+  // GIF87a / GIF89a (full 6-byte signature, so e.g. "GIF8XX" does not pass)
+  if (
+    buffer.length >= 6 &&
+    (buffer.subarray(0, 6).toString('latin1') === 'GIF87a' || buffer.subarray(0, 6).toString('latin1') === 'GIF89a')
+  ) {
+    return 'gif'
+  }
+  // RIFF....WEBP
+  if (
+    buffer.length >= 12 &&
+    buffer.subarray(0, 4).toString('latin1') === 'RIFF' &&
+    buffer.subarray(8, 12).toString('latin1') === 'WEBP'
+  ) {
+    return 'webp'
+  }
+  return null
 }
 
 function toSnakeCaseSettings(settings: WorldSettings): SnakeCaseWorldSettings {
@@ -31,10 +62,10 @@ function toSnakeCaseSettings(settings: WorldSettings): SnakeCaseWorldSettings {
   }
 }
 
-function parseMultipartInput(
+async function parseMultipartInput(
   formData: FormDataContext['formData'],
   coordinates: ICoordinatesComponent
-): WorldSettingsInput {
+): Promise<WorldSettingsInput> {
   const { fields, files } = formData
   const input: WorldSettingsInput = {}
 
@@ -109,14 +140,19 @@ function parseMultipartInput(
   }
 
   // Handle thumbnail file
-  if (files.thumbnail?.value) {
+  if (files.thumbnail) {
     const maxThumbnailSize = 1024 * 1024 // 1MB
-    if (files.thumbnail.value.length > maxThumbnailSize) {
+    if (files.thumbnail.size > maxThumbnailSize) {
       throw new ValidationError(
-        `Invalid thumbnail: size ${files.thumbnail.value.length} bytes exceeds maximum of ${maxThumbnailSize} bytes (1MB).`
+        `Invalid thumbnail: size ${files.thumbnail.size} bytes exceeds maximum of ${maxThumbnailSize} bytes (1MB).`
       )
     }
-    input.thumbnail = files.thumbnail.value
+    // Thumbnails are capped at 1MB, so reading the temp file fully into memory is fine.
+    const thumbnail = await readUploadedFile(files.thumbnail)
+    if (!detectImageFormat(thumbnail)) {
+      throw new ValidationError('Invalid thumbnail: expected a PNG, JPEG, GIF or WebP image.')
+    }
+    input.thumbnail = thumbnail
   }
 
   return input
@@ -160,7 +196,7 @@ export async function updateWorldSettingsHandler(
   const signer = ctx.verification!.auth
 
   try {
-    const input = parseMultipartInput(ctx.formData, coordinates)
+    const input = await parseMultipartInput(ctx.formData, coordinates)
     const updatedSettings = await settings.updateWorldSettings(world_name, signer, input)
 
     return {

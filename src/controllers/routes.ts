@@ -55,10 +55,14 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   const router = new Router<GlobalContext>()
   router.use(errorHandler)
 
+  // Aggregate buffered-bytes budget for multipart uploads. Tune per container memory; falls back
+  // to the parser's default when unset.
+  const maxInFlightUploadBytes = await config.getNumber('MAX_IN_FLIGHT_UPLOAD_BYTES')
+
   router.get('/world/:world_name/about', worldAboutHandler)
 
   // Post world scene(s)
-  router.post('/entities', multipartParserWrapper(deployEntity))
+  router.post('/entities', multipartParserWrapper(deployEntity, { maxInFlightUploadBytes }))
   // Undeploy the whole world
   router.delete('/entities/:world_name', signedFetchMiddleware, undeployEntity)
   router.get('/available-content', availableContentHandler)
@@ -75,7 +79,11 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
 
   // World settings
   router.get('/world/:world_name/settings', getWorldSettingsHandler)
-  router.put('/world/:world_name/settings', signedFetchMiddleware, multipartParserWrapper(updateWorldSettingsHandler))
+  router.put(
+    '/world/:world_name/settings',
+    signedFetchMiddleware,
+    multipartParserWrapper(updateWorldSettingsHandler, { maxInFlightUploadBytes })
+  )
 
   // World manifest
   router.get('/world/:world_name/manifest', getWorldManifestHandler)

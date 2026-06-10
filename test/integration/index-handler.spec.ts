@@ -85,4 +85,23 @@ test('index handler GET /index', function ({ components }) {
     })
     expect(world2Data.scenes[0].thumbnail).toBeUndefined()
   })
+
+  it('returns the full index by default and honors explicit limit/offset', async () => {
+    const { localFetch, worldCreator } = components
+
+    await worldCreator.createWorldWithScene()
+    await worldCreator.createWorldWithScene()
+
+    // No pagination params: returns every world (backward compatible for consumers like the
+    // AB-conversion snapshot job that expect the full set).
+    const all = (await (await localFetch.fetch('/index')).json()).data
+    expect(all.length).toBeGreaterThanOrEqual(2)
+
+    // Explicit limit/offset paginate over the same ordering.
+    const firstPage = (await (await localFetch.fetch('/index?limit=1&offset=0')).json()).data
+    const secondPage = (await (await localFetch.fetch('/index?limit=1&offset=1')).json()).data
+    expect(firstPage).toHaveLength(1)
+    expect(secondPage).toHaveLength(1)
+    expect(secondPage[0].name).not.toBe(firstPage[0].name)
+  })
 })

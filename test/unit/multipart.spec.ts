@@ -1,12 +1,16 @@
 import { Readable } from 'stream'
 import FormData from 'form-data'
-import { multipartParserWrapper } from '../../src/logic/multipart'
+import { multipartParserWrapper, readUploadedFile } from '../../src/logic/multipart'
 
-function createMultipartContext(form: FormData): any {
+function createMultipartContext(form: FormData, overrides?: { contentLength?: string }): any {
+  const headers: Record<string, string | null> = {
+    'content-type': form.getHeaders()['content-type'],
+    'content-length': overrides?.contentLength ?? null
+  }
   return {
     request: {
       headers: {
-        get: (name: string) => (name.toLowerCase() === 'content-type' ? form.getHeaders()['content-type'] : null)
+        get: (name: string) => headers[name.toLowerCase()] ?? null
       },
       body: Readable.from(form.getBuffer())
     }
@@ -103,6 +107,117 @@ describe('multipartParserWrapper', function () {
 
     it('should invoke the handler', async () => {
       await parse(context)
+      expect(handler).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('when a file is uploaded within the limits', () => {
+    let parse: (ctx: any) => Promise<any>
+    let context: any
+    let captured: { size: number; contents: string } | undefined
+
+    beforeEach(() => {
+      captured = undefined
+      // Read the temp-backed file inside the handler, before the wrapper cleans it up.
+      const handler = jest.fn(async (ctx: any) => {
+        const file = ctx.formData.files['file']
+        captured = { size: file.size, contents: (await readUploadedFile(file)).toString() }
+        return { status: 200 }
+      })
+      parse = multipartParserWrapper(handler, { maxSizeInBytes: 100000 })
+      const form = new FormData()
+      form.append('file', Buffer.from('hello world'), { filename: 'ok.bin' })
+      context = createMultipartContext(form)
+    })
+
+    it('should expose the number of bytes written to disk', async () => {
+      await parse(context)
+      expect(captured?.size).toBe('hello world'.length)
+    })
+
+    it('should stream the uploaded contents to a readable temp file', async () => {
+      await parse(context)
+      expect(captured?.contents).toBe('hello world')
+    })
+  })
+
+  describe('when the Content-Length header exceeds the maximum allowed size', () => {
+    let handler: jest.Mock
+    let parse: (ctx: any) => Promise<any>
+    let context: any
+
+    beforeEach(() => {
+      handler = jest.fn(async () => ({ status: 200 }))
+      parse = multipartParserWrapper(handler, { maxSizeInBytes: 100 })
+      const form = new FormData()
+      form.append('file', Buffer.alloc(10), { filename: 'small.bin' })
+      context = createMultipartContext(form, { contentLength: '5000' })
+    })
+
+    it('should reject the request before reading the body', async () => {
+      await expect(parse(context)).rejects.toThrow('The multipart request is too large.')
+    })
+
+    it('should not invoke the handler', async () => {
+      await parse(context).catch(() => undefined)
+      expect(handler).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('when concurrent uploads would exceed the buffered-bytes budget', () => {
+    let handler: jest.Mock
+    let parse: (ctx: any) => Promise<any>
+    let releaseFirstUpload: () => void
+    let firstUploadInHandler: Promise<void>
+    let firstUpload: Promise<any>
+
+    beforeEach(async () => {
+      let signalFirstInHandler: () => void
+      firstUploadInHandler = new Promise<void>((resolve) => {
+        signalFirstInHandler = resolve
+      })
+      const gate = new Promise<void>((resolve) => {
+        releaseFirstUpload = resolve
+      })
+
+      handler = jest.fn(async () => {
+        signalFirstInHandler()
+        await gate
+        return { status: 200 }
+      })
+      // With no Content-Length, each request reserves the full per-request limit, so a single
+      // in-flight upload exhausts a budget equal to that limit.
+      parse = multipartParserWrapper(handler, { maxInFlightUploadBytes: 100, maxSizeInBytes: 100 })
+
+      const firstForm = new FormData()
+      firstForm.append('file', Buffer.alloc(10), { filename: 'a.bin' })
+
+      // Hold the single slot busy inside the handler until we release it.
+      firstUpload = parse(createMultipartContext(firstForm))
+      await firstUploadInHandler
+    })
+
+    afterEach(async () => {
+      releaseFirstUpload()
+      await firstUpload
+    })
+
+    it('should shed the extra upload with a 503 response', async () => {
+      const secondForm = new FormData()
+      secondForm.append('file', Buffer.alloc(10), { filename: 'b.bin' })
+
+      const response = await parse(createMultipartContext(secondForm))
+
+      expect(response.status).toBe(503)
+    })
+
+    it('should not invoke the handler for the shed upload', async () => {
+      const secondForm = new FormData()
+      secondForm.append('file', Buffer.alloc(10), { filename: 'b.bin' })
+
+      await parse(createMultipartContext(secondForm))
+
+      // Only the first (still-pending) upload reached the handler.
       expect(handler).toHaveBeenCalledTimes(1)
     })
   })

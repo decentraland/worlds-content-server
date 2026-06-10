@@ -5,14 +5,16 @@ import { AuthChain, Entity, EntityType, EthAddress, IPFSv2 } from '@dcl/schemas'
 import { Authenticator } from '@dcl/crypto'
 
 export const validateEntityId: Validation = async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
-  const entityRaw = deployment.files.get(deployment.entity.id)
-  if (!entityRaw) {
+  const entityFile = deployment.files.get(deployment.entity.id)
+  if (!entityFile) {
     return createValidationResult(['Entity not found in files.'])
   }
 
-  const result = (await hashV1(entityRaw)) === deployment.entity.id
+  const actualHash = await hashV1(entityFile.getStream())
   return createValidationResult(
-    !result ? [`Invalid entity hash: expected ${await hashV1(entityRaw)} but got ${deployment.entity.id}`] : []
+    actualHash !== deployment.entity.id
+      ? [`Invalid entity hash: expected ${actualHash} but got ${deployment.entity.id}`]
+      : []
   )
 }
 
@@ -73,8 +75,8 @@ export const validateFiles: Validation = async (deployment: DeploymentToValidate
     if (!IPFSv2.validate(hash)) {
       errors.push(`Only CIDv1 are allowed for content files: ${hash}`)
     }
-    // hash the file
-    if ((await hashV1(deployment.files.get(hash)!)) !== hash) {
+    // hash the file (streamed from disk so large files aren't loaded into memory)
+    if ((await hashV1(deployment.files.get(hash)!.getStream())) !== hash) {
       errors.push(`The hashed file doesn't match the provided content: ${hash}`)
     }
   }
