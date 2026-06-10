@@ -13,4 +13,7 @@ jobs:
       api-spec-file: docs/openapi.yaml
       api-spec-name: worlds-content-server
       output-bundle-file: docs/openapi.yaml
+      # @gitbook/cli (installed via `yarn global add`) pulls miniflare@4, which requires Node >=22.
+      # The reusable workflow defaults to Node 20, so pin to 24 to match build.yml and the Dockerfile.
+      node-version: '24.x'
     secrets: inherit      
