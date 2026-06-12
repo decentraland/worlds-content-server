@@ -142,7 +142,7 @@ test('world comms handler', function ({ components, stubComponents }) {
     describe('and the user is denylisted', () => {
       beforeEach(() => {
         const { denyList } = stubComponents as any
-        denyList.isDenylisted.resolves(true)
+        denyList.isWalletDenylisted.resolves(true)
       })
 
       it('should respond with 401 and the deny-listed error', async () => {

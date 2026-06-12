@@ -436,7 +436,7 @@ describe('CommsComponent', () => {
         } catch {
           // Expected to throw
         }
-        expect(denyList.isDenylisted).not.toHaveBeenCalled()
+        expect(denyList.isWalletDenylisted).not.toHaveBeenCalled()
       })
 
       it('should not check world validity', async () => {
@@ -466,7 +466,7 @@ describe('CommsComponent', () => {
         } catch {
           // Expected to throw
         }
-        expect(denyList.isDenylisted).not.toHaveBeenCalled()
+        expect(denyList.isWalletDenylisted).not.toHaveBeenCalled()
       })
     })
   })
@@ -477,7 +477,7 @@ describe('CommsComponent', () => {
 
     describe('and getting the world room connection string', () => {
       beforeEach(() => {
-        denyList.isDenylisted.mockResolvedValueOnce(true)
+        denyList.isWalletDenylisted.mockResolvedValueOnce(true)
       })
 
       it('should throw UserDenylistedError', async () => {
@@ -508,7 +508,7 @@ describe('CommsComponent', () => {
 
     describe('and getting the scene room connection string', () => {
       beforeEach(() => {
-        denyList.isDenylisted.mockResolvedValueOnce(true)
+        denyList.isWalletDenylisted.mockResolvedValueOnce(true)
       })
 
       it('should throw UserDenylistedError', async () => {
@@ -607,7 +607,7 @@ describe('CommsComponent', () => {
     describe('and the user is denylisted', () => {
       describe('and getting the scene room connection string', () => {
         beforeEach(() => {
-          denyList.isDenylisted.mockResolvedValueOnce(true)
+          denyList.isWalletDenylisted.mockResolvedValueOnce(true)
         })
 
         it('should throw UserDenylistedError before reaching ban check', async () => {
@@ -622,7 +622,7 @@ describe('CommsComponent', () => {
     describe('and neither check restricts the user', () => {
       describe('and getting the world room connection string', () => {
         beforeEach(() => {
-          denyList.isDenylisted.mockResolvedValueOnce(false)
+          denyList.isWalletDenylisted.mockResolvedValueOnce(false)
           worlds.isWorldValid.mockResolvedValueOnce(true)
           namePermissionChecker.checkPermission.mockResolvedValueOnce(true)
           access.checkAccess.mockResolvedValueOnce(true)
@@ -637,14 +637,14 @@ describe('CommsComponent', () => {
 
         it('should call denylist checker but not scene ban checker', async () => {
           await commsComponent.getWorldRoomConnectionString(userAddress, worldName)
-          expect(denyList.isDenylisted).toHaveBeenCalledWith(userAddress)
+          expect(denyList.isWalletDenylisted).toHaveBeenCalledWith(userAddress)
           expect(bans.isUserBannedFromScene).not.toHaveBeenCalled()
         })
       })
 
       describe('and getting the scene room connection string', () => {
         beforeEach(() => {
-          denyList.isDenylisted.mockResolvedValueOnce(false)
+          denyList.isWalletDenylisted.mockResolvedValueOnce(false)
           worlds.isWorldValid.mockResolvedValueOnce(true)
           namePermissionChecker.checkPermission.mockResolvedValueOnce(true)
           access.checkAccess.mockResolvedValueOnce(true)
@@ -661,7 +661,7 @@ describe('CommsComponent', () => {
 
         it('should call both denylist and scene ban checker', async () => {
           await commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, sceneId)
-          expect(denyList.isDenylisted).toHaveBeenCalledWith(userAddress)
+          expect(denyList.isWalletDenylisted).toHaveBeenCalledWith(userAddress)
           expect(bans.isUserBannedFromScene).toHaveBeenCalledWith(userAddress, worldName, sceneBaseParcel)
         })
       })

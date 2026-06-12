@@ -39,12 +39,13 @@ export async function createWorldsManagerComponent({
   coordinates,
   logs,
   database,
+  denyList,
   nameDenyListChecker,
   search,
   storage
 }: Pick<
   AppComponents,
-  'coordinates' | 'logs' | 'database' | 'nameDenyListChecker' | 'search' | 'storage'
+  'coordinates' | 'logs' | 'database' | 'denyList' | 'nameDenyListChecker' | 'search' | 'storage'
 >): Promise<IWorldsManager> {
   const logger = logs.getLogger('worlds-manager')
   const { extractSpawnCoordinates, parseCoordinate, isCoordinateWithinRectangle, getRectangleCenter } = coordinates
@@ -376,14 +377,21 @@ export async function createWorldsManagerComponent({
       `
     )
 
-    return result.rows.map((row) => ({
-      ...row.entity,
-      id: row.entity_id,
-      metadata: {
-        ...row.entity.metadata,
-        owner: row.owner
-      }
-    }))
+    const entities = await Promise.all(
+      result.rows.map(async (row) => {
+        if (await denyList.isEntityDenylisted(row.entity_id)) return null
+        return {
+          ...row.entity,
+          id: row.entity_id,
+          metadata: {
+            ...row.entity.metadata,
+            owner: row.owner
+          }
+        }
+      })
+    )
+
+    return entities.filter((e): e is Entity => e !== null)
   }
 
   async function undeployWorld(worldName: string): Promise<void> {
