@@ -164,6 +164,72 @@ describe('multipartParserWrapper', function () {
     })
   })
 
+  describe('when a form field name collides with the object prototype', () => {
+    let parse: (ctx: any) => Promise<any>
+    let context: any
+    let captured: { protoIsNull: boolean; entityId: string[] | undefined } | undefined
+
+    beforeEach(() => {
+      captured = undefined
+      const handler = jest.fn(async (ctx: any) => {
+        const fields = ctx.formData.fields
+        captured = { protoIsNull: Object.getPrototypeOf(fields) === null, entityId: fields['entityId']?.value }
+        return { status: 200 }
+      })
+      parse = multipartParserWrapper(handler, { maxSizeInBytes: 100000 })
+      const form = new FormData()
+      // On a plain object this both mutates the prototype and crashes the field handler; on a
+      // null-prototype map it is stored as an ordinary key.
+      form.append('__proto__', 'polluted')
+      form.append('entityId', 'abc')
+      context = createMultipartContext(form)
+    })
+
+    it('should keep the parsed fields on a null-prototype object', async () => {
+      await parse(context)
+      expect(captured?.protoIsNull).toBe(true)
+    })
+
+    it('should still expose the legitimate fields to the handler', async () => {
+      await parse(context)
+      expect(captured?.entityId).toEqual(['abc'])
+    })
+  })
+
+  describe('when the request body stream errors mid-upload', () => {
+    let handler: jest.Mock
+    let parse: (ctx: any) => Promise<any>
+    let context: any
+
+    beforeEach(() => {
+      handler = jest.fn(async () => ({ status: 200 }))
+      parse = multipartParserWrapper(handler, { maxSizeInBytes: 100000 })
+      const contentType = new FormData().getHeaders()['content-type']
+      // A body that fails partway through. With `.pipe()` busboy would emit neither close nor error
+      // and the wrapper would hang forever; it must reject (and clean up) instead.
+      const erroringBody = new Readable({
+        read() {
+          this.destroy(new Error('socket hang up'))
+        }
+      })
+      context = {
+        request: {
+          headers: { get: (name: string) => (name.toLowerCase() === 'content-type' ? contentType : null) },
+          body: erroringBody
+        }
+      }
+    })
+
+    it('should reject the request rather than hang', async () => {
+      await expect(parse(context)).rejects.toThrow()
+    })
+
+    it('should not invoke the handler', async () => {
+      await parse(context).catch(() => undefined)
+      expect(handler).not.toHaveBeenCalled()
+    })
+  })
+
   describe('when concurrent uploads would exceed the buffered-bytes budget', () => {
     let handler: jest.Mock
     let parse: (ctx: any) => Promise<any>
