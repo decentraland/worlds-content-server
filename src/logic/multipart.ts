@@ -8,6 +8,7 @@ import { mkdtemp, readFile, rm } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { Readable } from 'stream'
+import { pipeline } from 'stream/promises'
 import { DeploymentFile } from '../types'
 
 /**
@@ -147,8 +148,12 @@ export function multipartParserWrapper<Ctx extends FormDataContext, T extends IH
       throw new InvalidRequestError(error.message || 'Invalid multipart form data')
     }
 
-    const fields: FormDataContext['formData']['fields'] = {}
-    const files: FormDataContext['formData']['files'] = {}
+    // Null-prototype maps so an attacker-controlled field/file name such as `__proto__` or
+    // `constructor` is stored as a plain key. On a plain object a field named `__proto__` makes
+    // `if (fields[name])` read Object.prototype (truthy) and then `fields[name].value.push(...)`
+    // throw, aborting the request.
+    const fields: FormDataContext['formData']['fields'] = Object.create(null)
+    const files: FormDataContext['formData']['files'] = Object.create(null)
 
     // Uploaded files are streamed to temp files under this directory and removed once the handler
     // returns, so large content files are never held in memory in full.
@@ -167,11 +172,6 @@ export function multipartParserWrapper<Ctx extends FormDataContext, T extends IH
         limitError = message
       }
     }
-
-    const finished = new Promise((ok, err) => {
-      formDataParser.on('error', err)
-      formDataParser.on('close', ok)
-    })
 
     formDataParser.on('partsLimit', () => fail('The multipart request has too many parts.'))
     formDataParser.on('filesLimit', () => fail('The multipart request has too many files.'))
@@ -254,13 +254,15 @@ export function multipartParserWrapper<Ctx extends FormDataContext, T extends IH
       fileWrites.push(written)
     })
 
-    ctx.request.body.pipe(formDataParser)
-
     const newContext: Ctx = Object.assign(Object.create(ctx), { formData: { fields, files } })
 
     try {
       try {
-        await finished
+        // `.pipe()` doesn't propagate teardown: a client disconnecting mid-upload would leave busboy
+        // waiting forever (and the temp dir below never cleaned up). `pipeline` tears both streams
+        // down if either errors and rejects here instead. busboy is otherwise drained to completion —
+        // limit breaches are recorded via fail() and surfaced after parsing, never by destroying it.
+        await pipeline(ctx.request.body as Readable, formDataParser)
       } catch (error: any) {
         throw new InvalidRequestError(limitError || error.message || 'Invalid multipart form data')
       }
