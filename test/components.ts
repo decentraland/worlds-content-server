@@ -47,6 +47,12 @@ import { createRedisMock } from './mocks/redis-mock'
 import { createRateLimiterComponent } from '../src/logic/rate-limiter'
 import { createMockDenyList } from './mocks/denylist-mock'
 import { createMockBans } from './mocks/bans-mock'
+import { createPartialDeploymentStore } from '../src/adapters/partial-deployment-store'
+import { createPartialDeploymentTempStorage } from '../src/adapters/partial-deployment-temp-storage'
+import { createMutex } from '../src/adapters/partial-deployment-mutex'
+import { createPartialDeploymentManager } from '../src/adapters/partial-deployment-manager'
+import { createPartialDeploymentSweeper } from '../src/adapters/partial-deployment-sweeper'
+import { createPartialDeploymentValidator } from '../src/logic/validations/partial-deployment-validator'
 
 /**
  * Behaves like Jest "describe" function, used to describe a test for a
@@ -214,6 +220,45 @@ async function initComponents(): Promise<TestComponents> {
 
   const queueConsumer = createMockQueueConsumer()
 
+  const partialDeploymentStore = createPartialDeploymentStore()
+  const partialDeploymentTempStorage = createPartialDeploymentTempStorage({ storage })
+  const partialDeploymentValidator = createPartialDeploymentValidator({
+    config,
+    limitsManager,
+    nameDenyListChecker,
+    namePermissionChecker,
+    permissions,
+    storage,
+    worldsManager
+  })
+  const partialDeploymentMutex = createMutex()
+  const partialDeploymentManager = createPartialDeploymentManager(
+    {
+      storage,
+      partialDeploymentStore,
+      partialDeploymentTempStorage,
+      partialDeploymentValidator,
+      entityDeployer,
+      logs
+    },
+    partialDeploymentMutex
+  )
+  const partialDeploymentSweeper = createPartialDeploymentSweeper(
+    { partialDeploymentStore, logs },
+    {
+      intervalMs: 60_000_000,
+      onCleanupExpiredEntity: async (entityId) => {
+        const record = await partialDeploymentStore.get(entityId)
+        if (!record) return
+        const fileKeys = Object.keys(record.manifest).map((h) => `temp/partial/${entityId}/${h}`)
+        if (fileKeys.length > 0) {
+          await storage.delete(fileKeys).catch(() => undefined)
+        }
+        await partialDeploymentTempStorage.deleteAll(entityId).catch(() => undefined)
+      }
+    }
+  )
+
   return {
     ...components,
     access,
@@ -250,6 +295,11 @@ async function initComponents(): Promise<TestComponents> {
     worldCreator,
     worlds,
     worldsIndexer,
-    worldsManager
+    worldsManager,
+    partialDeploymentStore,
+    partialDeploymentTempStorage,
+    partialDeploymentManager,
+    partialDeploymentSweeper,
+    partialDeploymentValidator
   }
 }
