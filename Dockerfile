@@ -1,6 +1,6 @@
 ARG RUN
 
-FROM node:24-alpine as builderenv
+FROM node:24-alpine@sha256:5fa278c599dbba0c8f873d8717d50ecbb57c5ae6a53b7ab240c25135e0b65995 as builderenv
 
 RUN apk add --no-cache git
 
@@ -25,7 +25,7 @@ RUN yarn install --prod --frozen-lockfile
 
 ########################## END OF BUILD STAGE ##########################
 
-FROM node:24-alpine
+FROM node:24-alpine@sha256:5fa278c599dbba0c8f873d8717d50ecbb57c5ae6a53b7ab240c25135e0b65995
 
 RUN apk update && apk upgrade
 RUN apk add --no-cache tini
