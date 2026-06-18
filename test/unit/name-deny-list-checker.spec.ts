@@ -70,6 +70,18 @@ describe('name deny list checker', function () {
     await expect(nameDenyListChecker.checkNameDenyList('good-name.eth')).resolves.toBeTruthy()
   })
 
+  it('when fetch fails, it gracefully degrades and allows all names', async () => {
+    const fetch = await createFetchComponent()
+    fetch.fetch = jest.fn().mockRejectedValue(new Error('Premature close'))
+
+    const nameDenyListChecker = await createNameDenyListChecker({
+      config,
+      logs,
+      fetch
+    })
+    await expect(nameDenyListChecker.checkNameDenyList('any-name.dcl.eth')).resolves.toBeTruthy()
+  })
+
   it('should reject a banned name regardless of the case it is deployed with', async () => {
     const fetch = await createFetchComponent()
     fetch.fetch = jest.fn().mockResolvedValue({

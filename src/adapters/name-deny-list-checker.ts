@@ -16,13 +16,19 @@ export async function createNameDenyListChecker(
   const nameDenyListCache = new LRUCache<string, string[]>({
     max: 1,
     ttl: 60 * 60 * 1000, // cache for 1 hour
+    allowStaleOnFetchRejection: true,
     fetchMethod: async (_: string): Promise<string[]> => {
       if (url) {
-        logger.info(`Fetching name deny list from ${url}`)
-        const response = await components.fetch.fetch(`${url}/banned-names`, { method: 'POST' })
-        const list = (await response.json())['data']
-        logger.debug(`Fetched list: ${list}`)
-        return list
+        try {
+          logger.info(`Fetching name deny list from ${url}`)
+          const response = await components.fetch.fetch(`${url}/banned-names`, { method: 'POST' })
+          const list = (await response.json())['data']
+          logger.debug(`Fetched list: ${list}`)
+          return list
+        } catch (error) {
+          logger.warn(`Failed to fetch name deny list from ${url}/banned-names: ${error}`)
+          return []
+        }
       }
       return []
     }
