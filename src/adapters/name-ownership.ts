@@ -337,6 +337,29 @@ function chunkArray<T>(array: T[], chunkSize: number): T[][] {
   return chunks
 }
 
+// Transient RPC failures worth retrying: HTTP 400s (Alchemy occasionally returns
+// these for otherwise-valid batches) and network-level errors where the upstream
+// dropped or never completed the connection — most notably node-fetch's
+// ERR_STREAM_PREMATURE_CLOSE ("Premature close") when the RPC closes the socket
+// mid-body, plus resets/timeouts/DNS blips.
+function isRetriableRpcError(error: any): boolean {
+  if (!error) {
+    return false
+  }
+  const retriableCodes = ['ERR_STREAM_PREMATURE_CLOSE', 'ECONNRESET', 'ECONNREFUSED', 'EPIPE', 'ETIMEDOUT', 'EAI_AGAIN']
+  if (error.code && retriableCodes.includes(error.code)) {
+    return true
+  }
+  const message: string = error.message || ''
+  return (
+    message.includes('400') ||
+    message.includes('Premature close') ||
+    message.includes('socket hang up') ||
+    message.includes('network timeout') ||
+    message.includes('ECONNRESET')
+  )
+}
+
 async function sendBatchWithRetry(provider: HTTPProvider, batch: RPCSendableMessage[], maxRetries = 3): Promise<any> {
   // Split large batches into smaller chunks (Alchemy limit is typically 100)
   const BATCH_SIZE_LIMIT = 50 // Conservative limit
@@ -357,15 +380,17 @@ async function sendBatchWithRetry(provider: HTTPProvider, batch: RPCSendableMess
       } catch (error: any) {
         const isLastAttempt = attempt === maxRetries - 1
 
-        // If it's a 400 error and not the last attempt, retry
-        if (error.message && error.message.includes('400') && !isLastAttempt) {
+        // Retry transient failures (HTTP 400s, premature close, resets/timeouts) with backoff
+        if (isRetriableRpcError(error) && !isLastAttempt) {
           const delay = Math.pow(2, attempt) * 1000 // Exponential backoff: 1s, 2s, 4s
-          console.warn(`RPC request failed with 400, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`)
+          console.warn(
+            `RPC request failed (${error.code || error.message}), retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`
+          )
           await new Promise((resolve) => setTimeout(resolve, delay))
           continue
         }
 
-        // For other errors or last attempt, throw the error
+        // For non-retriable errors or last attempt, throw the error
         throw error
       }
     }

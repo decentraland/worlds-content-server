@@ -10,7 +10,6 @@ import { createMetricsComponent } from '@well-known-components/metrics'
 import { createSubgraphComponent } from '@well-known-components/thegraph-component'
 import { AppComponents, GlobalContext, ICommsAdapter, INameDenyListChecker, IWorldNamePermissionChecker } from './types'
 import { metricDeclarations } from './metrics'
-import { HTTPProvider } from 'eth-connect'
 import {
   createFolderBasedFileSystemContentStorage,
   createFsComponent,
@@ -29,6 +28,7 @@ import { createNameDenyListChecker } from './adapters/name-deny-list-checker'
 import { createDatabaseComponent } from './adapters/database-component'
 import { createPermissionsManagerComponent } from './adapters/permissions-manager'
 import { createNameOwnership } from './adapters/name-ownership'
+import { createEthereumProvider } from './adapters/rpc-provider'
 import { createNameChecker } from './adapters/dcl-name-checker'
 import { createWalletStatsComponent } from './adapters/wallet-stats'
 import { createUpdateOwnerJob } from './adapters/update-owner-job'
@@ -97,7 +97,7 @@ export async function initComponents(): Promise<AppComponents> {
   const commsAdapter: ICommsAdapter = await createCommsAdapterComponent({ config, fetch, logs, livekitClient })
 
   const rpcUrl = await config.requireString('RPC_URL')
-  const ethereumProvider = new HTTPProvider(rpcUrl, fetch)
+  const ethereumProvider = createEthereumProvider({ fetch }, rpcUrl)
 
   const storageFolder = (await config.getString('STORAGE_FOLDER')) || 'contents'
 
