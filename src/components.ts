@@ -77,6 +77,8 @@ export async function initComponents(): Promise<AppComponents> {
   const server = await createServerComponent<GlobalContext>(
     { config, logs },
     {
+      // Required by @dcl/http-server v2: its options must pick a transport. An empty object selects
+      // a plain HTTP server with default settings (we terminate TLS upstream).
       http: {},
       cors: {
         methods: ['GET', 'HEAD', 'OPTIONS', 'DELETE', 'POST', 'PUT'],

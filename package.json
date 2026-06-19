@@ -18,18 +18,19 @@
     "@dcl/catalyst-storage": "^4.6.1",
     "@dcl/core-commons": "^0.10.0",
     "@dcl/crypto": "^3.4.5",
-    "@dcl/crypto-middleware": "^3.0.0",
+    "@dcl/crypto-middleware": "^4.0.0",
     "@dcl/fetch-component": "^1.0.1",
     "@dcl/hashing": "^3.0.4",
     "@dcl/http-commons": "^2.0.0",
     "@dcl/http-server": "^2.0.1",
-    "@dcl/job-component": "^0.2.8",
+    "@dcl/job-component": "^0.3.4",
     "@dcl/pg-component": "^0.1.0",
-    "@dcl/queue-consumer-component": "^2.0.0",
-    "@dcl/redis-component": "^3.0.1",
+    "@dcl/queue-consumer-component": "^3.0.3",
+    "@dcl/redis-component": "^3.1.2",
     "@dcl/schema-validator-component": "^1.0.0",
     "@dcl/schemas": "^26.1.0",
-    "@dcl/sns-component": "^3.0.2",
+    "@dcl/sns-component": "^3.1.4",
+    "@dcl/sqs-component": "^2.2.3",
     "@dcl/thegraph-component": "^0.1.0",
     "@ensdomains/eth-ens-namehash": "^2.0.15",
     "@types/busboy": "^1.5.3",
@@ -45,8 +46,7 @@
     "eth-connect": "^6.2.4",
     "livekit-server-sdk": "^2.10.1",
     "lru-cache": "^10.2.0",
-    "p-queue": "^6.6.2",
-    "passport-strategy": "^1.0.0"
+    "p-queue": "^6.6.2"
   },
   "devDependencies": {
     "@dcl/eslint-config": "^2.2.1",
@@ -59,9 +59,6 @@
     "nodemon": "^3.1.11",
     "ts-node": "^10.9.2",
     "typescript": "^5.3.3"
-  },
-  "resolutions": {
-    "@dcl/core-commons": "0.10.0"
   },
   "prettier": {
     "printWidth": 120,
