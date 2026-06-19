@@ -177,7 +177,7 @@ describe('SocialServiceComponent', () => {
           logs: mockLogs
         })
 
-        mockFetch.fetch.mockResolvedValueOnce(
+        mockFetch.fetch.mockResolvedValue(
           mockResponse({
             ok: false,
             status: 500,
@@ -210,13 +210,51 @@ describe('SocialServiceComponent', () => {
           logs: mockLogs
         })
 
-        mockFetch.fetch.mockRejectedValueOnce(new Error('Network error'))
+        mockFetch.fetch.mockRejectedValue(new Error('Network error'))
       })
 
       it('should return empty communities (fail closed)', async () => {
         const result = await socialService.getMemberCommunities('0x1234', ['community-1'])
 
         expect(result).toEqual({ communities: [] })
+      })
+    })
+
+    describe('and the first attempt fails transiently before succeeding', () => {
+      let socialService: ISocialServiceComponent
+
+      beforeEach(async () => {
+        mockConfig = {
+          getString: jest.fn().mockResolvedValue(apiKey),
+          getNumber: jest.fn(),
+          requireString: jest.fn().mockResolvedValue(socialServiceUrl),
+          requireNumber: jest.fn()
+        } as unknown as jest.Mocked<IConfigComponent>
+
+        socialService = await createSocialServiceComponent({
+          config: mockConfig,
+          fetch: mockFetch,
+          logs: mockLogs
+        })
+
+        mockFetch.fetch.mockRejectedValueOnce(new Error('socket hang up')).mockResolvedValueOnce(
+          mockResponse({
+            ok: true,
+            json: jest.fn().mockResolvedValueOnce({ data: { communities: [{ id: 'community-1' }] } })
+          })
+        )
+      })
+
+      it('should retry and return the communities', async () => {
+        const result = await socialService.getMemberCommunities('0x1234', ['community-1'])
+
+        expect(result).toEqual({ communities: [{ id: 'community-1' }] })
+      })
+
+      it('should have queried the social service more than once', async () => {
+        await socialService.getMemberCommunities('0x1234', ['community-1'])
+
+        expect(mockFetch.fetch).toHaveBeenCalledTimes(2)
       })
     })
   })

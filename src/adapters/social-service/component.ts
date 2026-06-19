@@ -1,5 +1,6 @@
 import { EthAddress } from '@dcl/schemas'
 import { AppComponents } from '../../types'
+import { withRetry } from '../../logic/utils'
 import { ISocialServiceComponent, MemberCommunitiesResponse } from './types'
 
 export async function createSocialServiceComponent({
@@ -29,20 +30,28 @@ export async function createSocialServiceComponent({
     }
 
     try {
-      const response = await fetch.fetch(`${socialServiceUrl}/v1/members/${address.toLowerCase()}/communities`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`
+      // Retry transient failures (5xx, dropped/reset connections from undici's keep-alive pool).
+      // The membership lookup is a read, so re-attempting the POST is safe.
+      const responseBody = await withRetry<{ data?: { communities: Array<{ id: string }> } }>(
+        async () => {
+          const response = await fetch.fetch(`${socialServiceUrl}/v1/members/${address.toLowerCase()}/communities`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${apiKey}`
+            },
+            body: JSON.stringify({ communityIds })
+          })
+
+          if (!response.ok) {
+            throw new Error(`Failed to get member communities: ${response.status} ${response.statusText}`)
+          }
+
+          return (await response.json()) as { data?: { communities: Array<{ id: string }> } }
         },
-        body: JSON.stringify({ communityIds })
-      })
+        { logger, maxRetries: 3 }
+      )
 
-      if (!response.ok) {
-        throw new Error(`Failed to get member communities: ${response.status} ${response.statusText}`)
-      }
-
-      const responseBody = (await response.json()) as { data?: { communities: Array<{ id: string }> } }
       return { communities: responseBody.data?.communities ?? [] }
     } catch (error) {
       logger.error('Error getting member communities', {

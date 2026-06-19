@@ -100,6 +100,24 @@ describe('BansComponent', () => {
         expect(result).toBe(false)
       })
     })
+
+    describe('and the first attempt fails transiently before succeeding', () => {
+      beforeEach(() => {
+        fetch.fetch.mockRejectedValueOnce(new Error('socket hang up')).mockResolvedValueOnce({
+          ok: true,
+          json: jest.fn().mockResolvedValue({ data: { isBanned: true } })
+        } as unknown as Response)
+      })
+
+      it('should retry and return the eventual result', async () => {
+        expect(await bans.isPlayerBanned(address)).toBe(true)
+      })
+
+      it('should have queried the comms-gatekeeper more than once', async () => {
+        await bans.isPlayerBanned(address)
+        expect(fetch.fetch).toHaveBeenCalledTimes(2)
+      })
+    })
   })
 
   describe('when checking if a user is banned from a scene', () => {

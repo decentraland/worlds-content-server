@@ -1,4 +1,5 @@
 import { AppComponents } from '../types'
+import { withRetry } from '../logic/utils'
 
 /**
  * Component interface for checking if a user is banned from a world scene.
@@ -55,21 +56,28 @@ export async function createBansComponent(
    * @returns True if the user is banned, false otherwise. Returns false on errors (fail open).
    */
   async function isUserBannedFromScene(address: string, worldName: string, sceneBaseParcel: string): Promise<boolean> {
+    const url = `${commsGatekeeperUrl}/worlds/${encodeURIComponent(worldName)}/parcels/${encodeURIComponent(sceneBaseParcel)}/users/${encodeURIComponent(address)}/ban-status`
     try {
-      const url = `${commsGatekeeperUrl}/worlds/${encodeURIComponent(worldName)}/parcels/${encodeURIComponent(sceneBaseParcel)}/users/${encodeURIComponent(address)}/ban-status`
-      const response = await fetch.fetch(url, {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${authToken}`
-        }
-      })
+      // Retry transient failures (5xx, dropped/reset connections from undici's keep-alive pool):
+      // a non-2xx response is thrown so withRetry re-attempts it, then we fail open on exhaustion.
+      const body = await withRetry<{ isBanned: boolean }>(
+        async () => {
+          const response = await fetch.fetch(url, {
+            method: 'GET',
+            headers: {
+              Authorization: `Bearer ${authToken}`
+            }
+          })
 
-      if (!response.ok) {
-        logger.warn(`Unexpected response from comms-gatekeeper ban check: ${response.status}`)
-        return false
-      }
+          if (!response.ok) {
+            throw new Error(`Unexpected response from comms-gatekeeper ban check: ${response.status}`)
+          }
 
-      const body: { isBanned: boolean } = await response.json()
+          return (await response.json()) as { isBanned: boolean }
+        },
+        { logger, maxRetries: 3 }
+      )
+
       return body.isBanned
     } catch (error) {
       logger.warn(
@@ -80,21 +88,26 @@ export async function createBansComponent(
   }
 
   async function isPlayerBanned(address: string): Promise<boolean> {
+    const url = `${commsGatekeeperUrl}/users/${address.toLowerCase()}/bans`
     try {
-      const url = `${commsGatekeeperUrl}/users/${address.toLowerCase()}/bans`
-      const response = await fetch.fetch(url, {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${authToken}`
-        }
-      })
+      const body = await withRetry<{ data: { isBanned: boolean } }>(
+        async () => {
+          const response = await fetch.fetch(url, {
+            method: 'GET',
+            headers: {
+              Authorization: `Bearer ${authToken}`
+            }
+          })
 
-      if (!response.ok) {
-        logger.warn(`Unexpected response from comms-gatekeeper platform ban check: ${response.status}`)
-        return false
-      }
+          if (!response.ok) {
+            throw new Error(`Unexpected response from comms-gatekeeper platform ban check: ${response.status}`)
+          }
 
-      const body: { data: { isBanned: boolean } } = await response.json()
+          return (await response.json()) as { data: { isBanned: boolean } }
+        },
+        { logger, maxRetries: 3 }
+      )
+
       return body.data.isBanned === true
     } catch (error) {
       logger.warn('Error checking player ban status, allowing user through', {
