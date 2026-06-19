@@ -1,6 +1,6 @@
-import { IHttpServerComponent } from '@well-known-components/interfaces'
+import { IHttpServerComponent } from '@dcl/core-commons'
 import { InvalidRequestError, NotAuthorizedError, getPaginationParams } from '@dcl/http-commons'
-import { DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
+import { DecentralandSignatureContext } from '@dcl/crypto-middleware'
 import { EthAddress } from '@dcl/schemas'
 import { HandlerContextWithPath } from '../../types'
 import type { GetWorldScenesRequestBody } from '../schemas/scenes-query-schemas'

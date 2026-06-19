@@ -5,6 +5,7 @@ export function createRedisMock(): jest.Mocked<ICacheStorageComponent> {
     get: jest.fn().mockResolvedValue(null),
     set: jest.fn().mockResolvedValue(undefined),
     remove: jest.fn().mockResolvedValue(undefined),
+    exists: jest.fn().mockResolvedValue(false),
     keys: jest.fn().mockResolvedValue([]),
     setInHash: jest.fn().mockResolvedValue(undefined),
     getFromHash: jest.fn().mockResolvedValue(null),

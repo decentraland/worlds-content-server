@@ -4,7 +4,7 @@ import { Readable } from 'stream'
 import { IContentStorageComponent } from '@dcl/catalyst-storage'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { AuthChain } from '@dcl/schemas'
-import { AUTH_CHAIN_HEADER_PREFIX, AUTH_METADATA_HEADER, AUTH_TIMESTAMP_HEADER } from '@dcl/platform-crypto-middleware'
+import { AUTH_CHAIN_HEADER_PREFIX, AUTH_METADATA_HEADER, AUTH_TIMESTAMP_HEADER } from '@dcl/crypto-middleware'
 import { IPgComponent } from '@dcl/pg-component'
 import { IWorldsManager } from '../src/types'
 

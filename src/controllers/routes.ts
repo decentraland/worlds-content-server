@@ -1,4 +1,4 @@
-import { Router } from '@well-known-components/http-server'
+import { Router } from '@dcl/http-server'
 import { multipartParserWrapper } from '../logic/multipart'
 import { GlobalContext } from '../types'
 import { availableContentHandler, getContentFile, headContentFile } from './handlers/content-file-handler'
@@ -9,7 +9,7 @@ import { commsAdapterHandler } from './handlers/comms-adapter-handler'
 import { activeEntitiesHandler } from './handlers/active-entities'
 import { getIndexHandler } from './handlers/index-handler'
 import { getLiveDataHandler } from './handlers/live-data-handler'
-import { wellKnownComponents } from '@dcl/platform-crypto-middleware'
+import { wellKnownComponents } from '@dcl/crypto-middleware'
 import {
   deletePermissionsAccessCommunityHandler,
   deletePermissionsAddressHandler,

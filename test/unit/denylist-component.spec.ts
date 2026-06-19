@@ -1,7 +1,6 @@
 import { createDenyListComponent } from '../../src/logic/denylist/component'
 import { IDenyListComponent } from '../../src/logic/denylist/types'
-import { IFetchComponent } from '@well-known-components/interfaces'
-import { Response } from 'node-fetch'
+import { IFetchComponent } from '@dcl/core-commons'
 import { createMockedConfig } from '../mocks/config-mock'
 import { createMockFetch } from '../mocks/fetch-mock'
 import { createMockLogs } from '../mocks/logs-mock'

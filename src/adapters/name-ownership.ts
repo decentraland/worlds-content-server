@@ -339,25 +339,53 @@ function chunkArray<T>(array: T[], chunkSize: number): T[][] {
 
 // Transient RPC failures worth retrying: HTTP 400s (Alchemy occasionally returns
 // these for otherwise-valid batches) and network-level errors where the upstream
-// dropped or never completed the connection — most notably node-fetch's
-// ERR_STREAM_PREMATURE_CLOSE ("Premature close") when the RPC closes the socket
-// mid-body, plus resets/timeouts/DNS blips.
+// dropped or never completed the connection — most notably a socket closed
+// mid-body, plus resets/timeouts/DNS blips. Native `fetch` (undici) wraps the
+// underlying socket failure as `TypeError: terminated` and stashes the real
+// error in `error.cause` (e.g. code `UND_ERR_SOCKET`, message "other side
+// closed"), so we walk the cause chain and match codes and messages from both
+// the legacy node-fetch shape and undici.
 function isRetriableRpcError(error: any): boolean {
-  if (!error) {
-    return false
+  const retriableCodes = [
+    'ERR_STREAM_PREMATURE_CLOSE',
+    'ECONNRESET',
+    'ECONNREFUSED',
+    'EPIPE',
+    'ETIMEDOUT',
+    'EAI_AGAIN',
+    'ENOTFOUND',
+    'UND_ERR_SOCKET',
+    'UND_ERR_CONNECT_TIMEOUT',
+    'UND_ERR_HEADERS_TIMEOUT',
+    'UND_ERR_BODY_TIMEOUT'
+  ]
+  const retriableMessages = [
+    '400',
+    'Premature close',
+    'socket hang up',
+    'network timeout',
+    'ECONNRESET',
+    'terminated',
+    'fetch failed',
+    'other side closed'
+  ]
+
+  // Walk the `cause` chain so a wrapping `TypeError: terminated` (undici) does
+  // not hide a retriable underlying socket error.
+  const seen = new Set<any>()
+  let current: any = error
+  while (current && !seen.has(current)) {
+    seen.add(current)
+    if (current.code && retriableCodes.includes(current.code)) {
+      return true
+    }
+    const message: string = current.message || ''
+    if (retriableMessages.some((m) => message.includes(m))) {
+      return true
+    }
+    current = current.cause
   }
-  const retriableCodes = ['ERR_STREAM_PREMATURE_CLOSE', 'ECONNRESET', 'ECONNREFUSED', 'EPIPE', 'ETIMEDOUT', 'EAI_AGAIN']
-  if (error.code && retriableCodes.includes(error.code)) {
-    return true
-  }
-  const message: string = error.message || ''
-  return (
-    message.includes('400') ||
-    message.includes('Premature close') ||
-    message.includes('socket hang up') ||
-    message.includes('network timeout') ||
-    message.includes('ECONNRESET')
-  )
+  return false
 }
 
 async function sendBatchWithRetry(provider: HTTPProvider, batch: RPCSendableMessage[], maxRetries = 3): Promise<any> {

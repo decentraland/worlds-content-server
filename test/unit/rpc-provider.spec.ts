@@ -1,4 +1,4 @@
-import { IFetchComponent } from '@well-known-components/interfaces'
+import { IFetchComponent } from '@dcl/core-commons'
 import { HTTPProvider, RPCSendableMessage } from 'eth-connect'
 import { createEthereumProvider } from '../../src/adapters/rpc-provider'
 

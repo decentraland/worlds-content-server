@@ -13,7 +13,7 @@ import { createMockStatusComponent } from './mocks/status-mock'
 import { createInMemoryStorage } from '@dcl/catalyst-storage'
 import { createMockCommsAdapterComponent } from './mocks/comms-adapter-mock'
 import { createWorldsIndexerComponent } from '../src/adapters/worlds-indexer'
-import * as nodeFetch from 'node-fetch'
+import { IFetchComponent } from '@dcl/core-commons'
 
 import { createValidator } from '../src/logic/validations'
 import { createTestMetricsComponent } from '@well-known-components/metrics'
@@ -85,16 +85,15 @@ async function initComponents(): Promise<TestComponents> {
 
   const namePermissionChecker = createMockNamePermissionChecker()
 
-  const fetch = {
-    async fetch(url: nodeFetch.RequestInfo, init?: nodeFetch.RequestInit): Promise<nodeFetch.Response> {
-      return nodeFetch.default(url, init).then(async (response: nodeFetch.Response) => {
-        if (response.ok) {
-          // response.status >= 200 && response.status < 300
-          return response
-        }
+  const fetch: IFetchComponent = {
+    async fetch(url, init) {
+      const response = await globalThis.fetch(url, init)
+      if (response.ok) {
+        // response.status >= 200 && response.status < 300
+        return response
+      }
 
-        throw new Error(await response.text())
-      })
+      throw new Error(await response.text())
     }
   }
 

@@ -1,7 +1,7 @@
 import { createConfigComponent } from '@well-known-components/env-config-provider'
 import { createLogComponent } from '@well-known-components/logger'
 import { IConfigComponent, ILoggerComponent } from '@well-known-components/interfaces'
-import { createFetchComponent } from '@dcl/platform-server-commons'
+import { createFetchComponent } from '../../src/adapters/fetch'
 import { IPgComponent } from '@dcl/pg-component'
 import { createWalletStatsComponent } from '../../src/adapters/wallet-stats'
 import { createDatabaseMock } from '../mocks/database-mock'

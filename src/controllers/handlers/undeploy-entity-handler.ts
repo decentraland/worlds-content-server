@@ -1,7 +1,7 @@
-import { IHttpServerComponent } from '@well-known-components/interfaces'
+import { IHttpServerComponent } from '@dcl/core-commons'
 import { HandlerContextWithPath } from '../../types'
 import { InvalidRequestError } from '@dcl/http-commons'
-import { DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
+import { DecentralandSignatureContext } from '@dcl/crypto-middleware'
 
 export async function undeployEntity({
   params,

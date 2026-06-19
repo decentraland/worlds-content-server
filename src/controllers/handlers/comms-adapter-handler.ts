@@ -1,6 +1,6 @@
 import { HandlerContextWithPath } from '../../types'
-import { IHttpServerComponent } from '@well-known-components/interfaces'
-import { DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
+import { IHttpServerComponent } from '@dcl/core-commons'
+import { DecentralandSignatureContext } from '@dcl/crypto-middleware'
 import { InvalidRequestError, NotAuthorizedError, NotFoundError } from '@dcl/http-commons'
 import { AccessType } from '../../logic/access'
 import { RATE_LIMIT_WINDOW_SECONDS } from '../../logic/rate-limiter'

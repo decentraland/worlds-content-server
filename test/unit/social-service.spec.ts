@@ -1,19 +1,19 @@
 import { createSocialServiceComponent, ISocialServiceComponent } from '../../src/adapters/social-service'
-import { IConfigComponent, IFetchComponent, ILoggerComponent } from '@well-known-components/interfaces'
-import * as nodeFetch from 'node-fetch'
+import { IConfigComponent, ILoggerComponent } from '@well-known-components/interfaces'
+import { IFetchComponent } from '@dcl/core-commons'
 
 function mockResponse(options: {
   ok?: boolean
   status?: number
   statusText?: string
   json?: () => Promise<any>
-}): nodeFetch.Response {
+}): Response {
   return {
     ok: options.ok ?? true,
     status: options.status ?? 200,
     statusText: options.statusText ?? 'OK',
     json: options.json ?? jest.fn().mockResolvedValue({})
-  } as unknown as nodeFetch.Response
+  } as unknown as Response
 }
 
 describe('SocialServiceComponent', () => {

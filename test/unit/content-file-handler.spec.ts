@@ -1,5 +1,5 @@
 import { Readable } from 'stream'
-import { IHttpServerComponent } from '@well-known-components/interfaces'
+import { IHttpServerComponent } from '@dcl/core-commons'
 import {
   availableContentHandler,
   getContentFile,

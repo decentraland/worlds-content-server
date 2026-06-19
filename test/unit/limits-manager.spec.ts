@@ -1,4 +1,3 @@
-import { Request, Response } from 'node-fetch'
 import { createLimitsManagerComponent } from '../../src/adapters/limits-manager'
 import { createConfigComponent } from '@well-known-components/env-config-provider'
 import { createLogComponent } from '@well-known-components/logger'
@@ -7,7 +6,8 @@ import { createMockWalletStatsComponent } from '../mocks/wallet-stats-mock'
 import { createMockedWorldsManager } from '../mocks/worlds-manager-mock'
 import { EthAddress } from '@dcl/schemas'
 import { ILimitsManager, INameOwnership, IWalletStats, IWorldsManager, MB_BigInt, WalletStats } from '../../src/types'
-import { IConfigComponent, IFetchComponent, ILoggerComponent } from '@well-known-components/interfaces'
+import { IConfigComponent, ILoggerComponent } from '@well-known-components/interfaces'
+import { IFetchComponent } from '@dcl/core-commons'
 
 describe('limits manager', function () {
   let logs: ILoggerComponent
