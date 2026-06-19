@@ -1,6 +1,6 @@
-import { DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
+import { DecentralandSignatureContext } from '@dcl/crypto-middleware'
 import { HandlerContextWithPath } from '../../types'
-import { IHttpServerComponent } from '@well-known-components/interfaces'
+import { IHttpServerComponent } from '@dcl/core-commons'
 
 export async function getContributableDomainsHandler(
   ctx: HandlerContextWithPath<'worldsManager', '/world/contribute'> & DecentralandSignatureContext<any>

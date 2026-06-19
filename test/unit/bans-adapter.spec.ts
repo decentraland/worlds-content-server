@@ -1,6 +1,5 @@
 import { createBansComponent, IBansComponent } from '../../src/adapters/bans-adapter'
-import { IFetchComponent } from '@well-known-components/interfaces'
-import { Response } from 'node-fetch'
+import { IFetchComponent } from '@dcl/core-commons'
 import { createMockedConfig } from '../mocks/config-mock'
 import { createMockFetch } from '../mocks/fetch-mock'
 import { createMockLogs } from '../mocks/logs-mock'
@@ -99,6 +98,24 @@ describe('BansComponent', () => {
       it('should return false (fail open)', async () => {
         const result = await bans.isPlayerBanned(address)
         expect(result).toBe(false)
+      })
+    })
+
+    describe('and the first attempt fails transiently before succeeding', () => {
+      beforeEach(() => {
+        fetch.fetch.mockRejectedValueOnce(new Error('socket hang up')).mockResolvedValueOnce({
+          ok: true,
+          json: jest.fn().mockResolvedValue({ data: { isBanned: true } })
+        } as unknown as Response)
+      })
+
+      it('should retry and return the eventual result', async () => {
+        expect(await bans.isPlayerBanned(address)).toBe(true)
+      })
+
+      it('should have queried the comms-gatekeeper more than once', async () => {
+        await bans.isPlayerBanned(address)
+        expect(fetch.fetch).toHaveBeenCalledTimes(2)
       })
     })
   })

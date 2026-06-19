@@ -10,7 +10,7 @@ import {
   UserPlatformBannedError
 } from '../../src/logic/comms/errors'
 import { HandlerContextWithPath } from '../../src/types'
-import { DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
+import { DecentralandSignatureContext } from '@dcl/crypto-middleware'
 import { IAccessComponent, AccessType } from '../../src/logic/access'
 import { IRateLimiterComponent } from '../../src/logic/rate-limiter'
 

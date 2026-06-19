@@ -3,11 +3,11 @@ import {
   createServerComponent,
   createStatusCheckComponent,
   instrumentHttpServerWithPromClientRegistry
-} from '@well-known-components/http-server'
+} from '@dcl/http-server'
 import { createLogComponent } from '@well-known-components/logger'
-import { createFetchComponent } from '@dcl/platform-server-commons'
+import { createFetchComponent } from './adapters/fetch'
 import { createMetricsComponent } from '@well-known-components/metrics'
-import { createSubgraphComponent } from '@well-known-components/thegraph-component'
+import { createSubgraphComponent } from '@dcl/thegraph-component'
 import { AppComponents, GlobalContext, ICommsAdapter, INameDenyListChecker, IWorldNamePermissionChecker } from './types'
 import { metricDeclarations } from './metrics'
 import {
@@ -77,6 +77,9 @@ export async function initComponents(): Promise<AppComponents> {
   const server = await createServerComponent<GlobalContext>(
     { config, logs },
     {
+      // Required by @dcl/http-server v2: its options must pick a transport. An empty object selects
+      // a plain HTTP server with default settings (we terminate TLS upstream).
+      http: {},
       cors: {
         methods: ['GET', 'HEAD', 'OPTIONS', 'DELETE', 'POST', 'PUT'],
         maxAge: 86400

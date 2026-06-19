@@ -1,5 +1,5 @@
 import { HandlerContextWithPath } from '../../types'
-import { IHttpServerComponent } from '@well-known-components/interfaces'
+import { IHttpServerComponent } from '@dcl/core-commons'
 
 function formatSecs(millis: number): string {
   return `${(millis / 1000).toFixed(2)} secs`

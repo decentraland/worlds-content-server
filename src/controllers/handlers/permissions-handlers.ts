@@ -1,6 +1,6 @@
-import { IHttpServerComponent } from '@well-known-components/interfaces'
+import { IHttpServerComponent } from '@dcl/core-commons'
 import { HandlerContextWithPath, IWorldNamePermissionChecker } from '../../types'
-import { DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
+import { DecentralandSignatureContext } from '@dcl/crypto-middleware'
 import { getPaginationParams, InvalidRequestError, NotAuthorizedError, NotFoundError } from '@dcl/http-commons'
 import { EthAddress } from '@dcl/schemas'
 import {

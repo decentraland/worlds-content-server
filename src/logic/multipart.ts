@@ -1,7 +1,7 @@
 // TODO: move this helper to well-known-components
 
 import { InvalidRequestError } from '@dcl/http-commons'
-import { IHttpServerComponent } from '@well-known-components/interfaces'
+import { IHttpServerComponent } from '@dcl/core-commons'
 import busboy, { FieldInfo, FileInfo } from 'busboy'
 import { createReadStream, createWriteStream } from 'fs'
 import { mkdtemp, readFile, rm } from 'fs/promises'
@@ -262,7 +262,19 @@ export function multipartParserWrapper<Ctx extends FormDataContext, T extends IH
         // waiting forever (and the temp dir below never cleaned up). `pipeline` tears both streams
         // down if either errors and rejects here instead. busboy is otherwise drained to completion —
         // limit breaches are recorded via fail() and surfaced after parsing, never by destroying it.
-        await pipeline(ctx.request.body as Readable, formDataParser)
+        //
+        // `@dcl/http-server` exposes the native request body as a web `ReadableStream`; normalize it
+        // to a Node `Readable` so busboy can consume it (callers/tests may also pass a Node `Readable`
+        // directly). Teardown still propagates — destroying the Readable cancels the web stream.
+        const requestBody: unknown = ctx.request.body
+        if (!requestBody) {
+          throw new InvalidRequestError('Missing multipart request body')
+        }
+        const bodyStream =
+          requestBody instanceof Readable
+            ? requestBody
+            : Readable.fromWeb(requestBody as import('stream/web').ReadableStream)
+        await pipeline(bodyStream, formDataParser)
       } catch (error: any) {
         throw new InvalidRequestError(limitError || error.message || 'Invalid multipart form data')
       }

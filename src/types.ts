@@ -1,22 +1,22 @@
 import type {
   IBaseComponent,
   IConfigComponent,
-  IHttpServerComponent,
   ILoggerComponent,
   IMetricsComponent
 } from '@well-known-components/interfaces'
+import type { IHttpServerComponent } from '@dcl/core-commons'
 import { PaginatedParameters } from '@dcl/schemas'
 import { metricDeclarations } from './metrics'
 import { IContentStorageComponent } from '@dcl/catalyst-storage'
 import { HTTPProvider } from 'eth-connect'
-import { ISubgraphComponent } from '@well-known-components/thegraph-component'
+import { ISubgraphComponent } from '@dcl/thegraph-component'
 import { IStatusComponent } from './adapters/status'
 import { AuthChain, AuthLink, Entity, EthAddress, IPFSv2 } from '@dcl/schemas'
 import { Readable } from 'stream'
 import { MigrationExecutor } from './adapters/migration-executor'
 import { IPgComponent } from '@dcl/pg-component'
 import { AuthIdentity } from '@dcl/crypto'
-import { IFetchComponent } from '@well-known-components/interfaces'
+import { IFetchComponent } from '@dcl/core-commons'
 import { INatsComponent } from '@well-known-components/nats-component/dist/types'
 import type { Room, VideoGrant, WebhookEvent } from 'livekit-server-sdk'
 import { IPublisherComponent } from '@dcl/sns-component'

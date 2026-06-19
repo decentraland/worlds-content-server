@@ -1,5 +1,5 @@
 import { HandlerContextWithPath } from '../../types'
-import { IHttpServerComponent } from '@well-known-components/interfaces'
+import { IHttpServerComponent } from '@dcl/core-commons'
 
 export async function getLiveDataHandler(
   context: HandlerContextWithPath<'commsAdapter', '/live-data'>

@@ -1,8 +1,7 @@
 import { createConfigComponent } from '@well-known-components/env-config-provider'
-import { IFetchComponent } from '@well-known-components/interfaces'
+import { IFetchComponent } from '@dcl/core-commons'
 import { createCommsAdapterComponent } from '../../src/adapters/comms-adapter'
 import { createLogComponent } from '@well-known-components/logger'
-import { Request, Response } from 'node-fetch'
 import { createMockLivekitClient } from '../mocks/livekit-client-mock'
 import { CommsStatus, ICommsAdapter } from '../../src/types'
 

@@ -1,6 +1,6 @@
 import { HandlerContextWithPath, WorldSettings, WorldSettingsInput } from '../../types'
-import { IHttpServerComponent } from '@well-known-components/interfaces'
-import { DecentralandSignatureContext } from '@dcl/platform-crypto-middleware'
+import { IHttpServerComponent } from '@dcl/core-commons'
+import { DecentralandSignatureContext } from '@dcl/crypto-middleware'
 import { UnauthorizedError, ValidationError, WorldNotFoundError } from '../../logic/settings'
 import { FormDataContext, isDefinedMultipartField, readUploadedFile } from '../../logic/multipart'
 import { ICoordinatesComponent } from '../../logic/coordinates'

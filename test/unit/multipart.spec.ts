@@ -141,6 +141,40 @@ describe('multipartParserWrapper', function () {
     })
   })
 
+  describe('when the request body is a web ReadableStream, as @dcl/http-server delivers it', () => {
+    let parse: (ctx: any) => Promise<any>
+    let context: any
+    let captured: { contents: string } | undefined
+
+    beforeEach(() => {
+      captured = undefined
+      const handler = jest.fn(async (ctx: any) => {
+        const file = ctx.formData.files['file']
+        captured = { contents: (await readUploadedFile(file)).toString() }
+        return { status: 200 }
+      })
+      parse = multipartParserWrapper(handler, { maxSizeInBytes: 100000 })
+      const form = new FormData()
+      form.append('file', Buffer.from('hello world'), { filename: 'ok.bin' })
+      // @dcl/http-server exposes the native request body as a web ReadableStream
+      // (Readable.toWeb), not a Node Readable.
+      context = {
+        request: {
+          headers: {
+            get: (name: string) => (name.toLowerCase() === 'content-type' ? form.getHeaders()['content-type'] : null)
+          },
+          body: Readable.toWeb(Readable.from(form.getBuffer()))
+        }
+      }
+    })
+
+    it('should parse the uploaded file and pass it to the handler', async () => {
+      const result = await parse(context)
+      expect(result).toEqual({ status: 200 })
+      expect(captured?.contents).toBe('hello world')
+    })
+  })
+
   describe('when the Content-Length header exceeds the maximum allowed size', () => {
     let handler: jest.Mock
     let parse: (ctx: any) => Promise<any>

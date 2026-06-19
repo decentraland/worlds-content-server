@@ -1,4 +1,3 @@
-import { Request, Response } from 'node-fetch'
 import { test } from '../components'
 import { createLimitsManagerComponent } from '../../src/adapters/limits-manager'
 import { createConfigComponent } from '@well-known-components/env-config-provider'
@@ -8,7 +7,7 @@ import { stringToUtf8Bytes } from 'eth-connect'
 import { makeid } from '../utils'
 import { EthAddress } from '@dcl/schemas'
 import { ILimitsManager, MB_BigInt, WalletStats } from '../../src/types'
-import { IFetchComponent } from '@well-known-components/interfaces'
+import { IFetchComponent } from '@dcl/core-commons'
 
 test('LimitsManagerAdapter', function ({ components }) {
   afterEach(() => {

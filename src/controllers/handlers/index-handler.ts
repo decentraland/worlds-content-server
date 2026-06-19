@@ -1,5 +1,5 @@
 import { HandlerContextWithPath } from '../../types'
-import { IHttpServerComponent } from '@well-known-components/interfaces'
+import { IHttpServerComponent } from '@dcl/core-commons'
 
 // Known consumers (opscli's AB-conversion snapshot, asset-bundle-encoder's download-worlds.sh)
 // fetch /index without pagination and expect every world, so we default to a large page to keep

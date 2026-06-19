@@ -13,7 +13,7 @@ import { createMockStatusComponent } from './mocks/status-mock'
 import { createInMemoryStorage } from '@dcl/catalyst-storage'
 import { createMockCommsAdapterComponent } from './mocks/comms-adapter-mock'
 import { createWorldsIndexerComponent } from '../src/adapters/worlds-indexer'
-import * as nodeFetch from 'node-fetch'
+import { IFetchComponent } from '@dcl/core-commons'
 
 import { createValidator } from '../src/logic/validations'
 import { createTestMetricsComponent } from '@well-known-components/metrics'
@@ -47,6 +47,23 @@ import { createRedisMock } from './mocks/redis-mock'
 import { createRateLimiterComponent } from '../src/logic/rate-limiter'
 import { createMockDenyList } from './mocks/denylist-mock'
 import { createMockBans } from './mocks/bans-mock'
+
+/**
+ * The npm `form-data` package (used by dcl-catalyst-client to build deploy bodies) exposes its
+ * serialized bytes via `getBuffer()` and its multipart `Content-Type` (including the boundary) via
+ * `getHeaders()`. It is not a native `BodyInit`, so it needs converting before being handed to the
+ * native `fetch`.
+ */
+type NodeFormDataBody = { getBuffer(): Buffer; getHeaders(): Record<string, string> }
+
+function isNodeFormDataBody(body: unknown): body is NodeFormDataBody {
+  return (
+    typeof body === 'object' &&
+    body !== null &&
+    typeof (body as NodeFormDataBody).getBuffer === 'function' &&
+    typeof (body as NodeFormDataBody).getHeaders === 'function'
+  )
+}
 
 /**
  * Behaves like Jest "describe" function, used to describe a test for a
@@ -85,16 +102,31 @@ async function initComponents(): Promise<TestComponents> {
 
   const namePermissionChecker = createMockNamePermissionChecker()
 
-  const fetch = {
-    async fetch(url: nodeFetch.RequestInfo, init?: nodeFetch.RequestInit): Promise<nodeFetch.Response> {
-      return nodeFetch.default(url, init).then(async (response: nodeFetch.Response) => {
-        if (response.ok) {
-          // response.status >= 200 && response.status < 300
-          return response
+  const fetch: IFetchComponent = {
+    async fetch(url, init) {
+      // dcl-catalyst-client (used by the integration deploy tests) builds request bodies with the
+      // npm `form-data` package, which isn't a native `BodyInit`. Passed as-is, undici serializes it
+      // to `text/plain` and the server's multipart parser rejects it. Materialize it to a Buffer and
+      // set its multipart `Content-Type` (with boundary) so it goes out as a proper upload.
+      const body = init?.body
+      let requestInit = init
+      if (isNodeFormDataBody(body)) {
+        requestInit = {
+          ...init,
+          // `Buffer` (ArrayBufferLike-backed) isn't a native `BodyInit`; copy into a plain
+          // `Uint8Array<ArrayBuffer>`, which undici accepts.
+          body: new Uint8Array(body.getBuffer()),
+          headers: { ...body.getHeaders(), ...(init?.headers as Record<string, string> | undefined) }
         }
+      }
 
-        throw new Error(await response.text())
-      })
+      const response = await globalThis.fetch(url, requestInit)
+      if (response.ok) {
+        // response.status >= 200 && response.status < 300
+        return response
+      }
+
+      throw new Error(await response.text())
     }
   }
 

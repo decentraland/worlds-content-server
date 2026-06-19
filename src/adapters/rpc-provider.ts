@@ -1,18 +1,19 @@
-import { IFetchComponent } from '@well-known-components/interfaces'
+import { IFetchComponent } from '@dcl/core-commons'
 import { HTTPProvider } from 'eth-connect'
 
 /**
  * Builds the eth-connect HTTPProvider used to talk to the configured RPC node.
  *
  * eth-connect's HTTPProvider consumes the RPC response body with `await
- * res.json()` *inside* its `fetch(...).then(onFulfilled)` callback. node-fetch
- * rejects that body read when the upstream RPC closes the connection mid-body
- * (`ERR_STREAM_PREMATURE_CLOSE` -> "Invalid response body ...: Premature
- * close"). Because that rejection happens in the fulfillment handler — not the
- * `.then(_, onRejected)` handler, and with no trailing `.catch()` — it escapes
- * as an unhandled promise rejection that crashes the process under
- * `--unhandled-rejections=strict`. It also bypasses the retry logic in
- * name-ownership, which only sees errors delivered to the sendAsync callback.
+ * res.json()` *inside* its `fetch(...).then(onFulfilled)` callback. The fetch
+ * implementation rejects that body read when the upstream RPC closes the
+ * connection mid-body (native `fetch`/undici surfaces this as `TypeError:
+ * terminated` with a `Premature close` cause). Because that rejection happens
+ * in the fulfillment handler — not the `.then(_, onRejected)` handler, and with
+ * no trailing `.catch()` — it escapes as an unhandled promise rejection that
+ * crashes the process under `--unhandled-rejections=strict`. It also bypasses
+ * the retry logic in name-ownership, which only sees errors delivered to the
+ * sendAsync callback.
  *
  * This wrapper reads (and parses) the body *here*, inside the awaited fetch
  * call, so a premature close / stream error rejects the fetch promise that

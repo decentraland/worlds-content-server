@@ -1,5 +1,5 @@
 import { Entity } from '@dcl/schemas'
-import { IHttpServerComponent } from '@well-known-components/interfaces'
+import { IHttpServerComponent } from '@dcl/core-commons'
 import { FormDataContext, readUploadedFile, toDeploymentFile } from '../../logic/multipart'
 import { DeploymentFile, HandlerContextWithPath } from '../../types'
 import { extractAuthChain } from '../../logic/extract-auth-chain'
