@@ -14,6 +14,7 @@ import { createInMemoryStorage } from '@dcl/catalyst-storage'
 import { createMockCommsAdapterComponent } from './mocks/comms-adapter-mock'
 import { createWorldsIndexerComponent } from '../src/adapters/worlds-indexer'
 import { IFetchComponent } from '@dcl/core-commons'
+import * as nodeFetch from 'node-fetch'
 
 import { createValidator } from '../src/logic/validations'
 import { createTestMetricsComponent } from '@well-known-components/metrics'
@@ -85,12 +86,20 @@ async function initComponents(): Promise<TestComponents> {
 
   const namePermissionChecker = createMockNamePermissionChecker()
 
+  // Uses node-fetch (dev-only) rather than the native `globalThis.fetch`: the integration deploy
+  // tests go through dcl-catalyst-client, which sends the request body as an npm `form-data` object
+  // and relies on the fetcher to set the multipart `Content-Type`. node-fetch does that
+  // automatically; undici does not, so a native fetch would send the deploy as `text/plain` and the
+  // server would reject it.
   const fetch: IFetchComponent = {
     async fetch(url, init) {
-      const response = await globalThis.fetch(url, init)
+      const response = await nodeFetch.default(
+        url as unknown as nodeFetch.RequestInfo,
+        init as unknown as nodeFetch.RequestInit
+      )
       if (response.ok) {
         // response.status >= 200 && response.status < 300
-        return response
+        return response as unknown as Response
       }
 
       throw new Error(await response.text())

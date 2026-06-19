@@ -160,7 +160,9 @@ describe('multipartParserWrapper', function () {
       // (Readable.toWeb), not a Node Readable.
       context = {
         request: {
-          headers: { get: (name: string) => (name.toLowerCase() === 'content-type' ? form.getHeaders()['content-type'] : null) },
+          headers: {
+            get: (name: string) => (name.toLowerCase() === 'content-type' ? form.getHeaders()['content-type'] : null)
+          },
           body: Readable.toWeb(Readable.from(form.getBuffer()))
         }
       }
