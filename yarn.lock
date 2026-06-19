@@ -2401,7 +2401,7 @@
   resolved "https://registry.npmjs.org/@types/luxon/-/luxon-3.4.2.tgz"
   integrity sha512-TifLZlFudklWlMBfhubvgqTXRzLDI5pCbGa4P8a3wPyUQSW+1xQ5eDsreP9DWHX3tjq1ke96uYG/nwundroWcA==
 
-"@types/node-fetch@^2.5.12", "@types/node-fetch@^2.6.12":
+"@types/node-fetch@^2.5.12":
   version "2.6.13"
   resolved "https://registry.npmjs.org/@types/node-fetch/-/node-fetch-2.6.13.tgz"
   integrity sha512-QGpRVpzSaUs30JBSGPjOg4Uveu384erbHBoT1zeONvyCfwQxIkUshLAOqN/k9EjGviPRmWTTe6aH2qySWKTVSw==
