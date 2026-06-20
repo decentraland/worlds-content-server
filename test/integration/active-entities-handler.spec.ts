@@ -166,4 +166,22 @@ test('active entities handler /entities/active', function ({ components }) {
       id: world1.entityId
     })
   })
+
+  it('when entity is denylisted it is excluded from the response', async () => {
+    const { localFetch, worldCreator, denyList } = components
+
+    const { worldName, entityId } = await worldCreator.createWorldWithScene()
+    denyList.isEntityDenylisted.mockImplementation(async (id) => id === entityId)
+
+    const r = await localFetch.fetch('/entities/active', {
+      method: 'POST',
+      body: JSON.stringify({ pointers: [worldName] }),
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    })
+
+    expect(r.status).toEqual(200)
+    expect(await r.json()).toEqual([])
+  })
 })

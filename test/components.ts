@@ -140,10 +140,13 @@ async function initComponents(): Promise<TestComponents> {
 
   const search = await createSearchComponent({ database, logs })
 
+  const denyList = createMockDenyList()
+
   const worldsManager = await createWorldsManagerComponent({
     coordinates,
     logs,
     database,
+    denyList,
     nameDenyListChecker,
     search,
     storage
@@ -231,7 +234,6 @@ async function initComponents(): Promise<TestComponents> {
   const redis = createRedisMock()
   const rateLimiter = await createRateLimiterComponent({ config, logs, redis })
 
-  const denyList = createMockDenyList()
   const bans = createMockBans()
 
   const comms = await createCommsComponent({

@@ -143,10 +143,13 @@ export async function initComponents(): Promise<AppComponents> {
 
   const search = await createSearchComponent({ database, logs })
 
+  const denyList = await createDenyListComponent({ config, fetch, logs })
+
   const worldsManager = await createWorldsManagerComponent({
     coordinates,
     logs,
     database,
+    denyList,
     nameDenyListChecker,
     search,
     storage
@@ -246,7 +249,6 @@ export async function initComponents(): Promise<AppComponents> {
 
   const evictionJob = await createEvictionJob({ config, logs, worlds })
 
-  const denyList = await createDenyListComponent({ config, fetch, logs })
   const bans = await createBansComponent({ config, fetch, logs })
 
   const comms = await createCommsComponent({

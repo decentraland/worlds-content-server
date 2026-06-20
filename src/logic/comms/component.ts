@@ -29,7 +29,7 @@ export const createCommsComponent = async (
   }
 
   async function assertUserNotDenylisted(userAddress: EthAddress): Promise<void> {
-    const isDenylisted = await denyList.isDenylisted(userAddress)
+    const isDenylisted = await denyList.isWalletDenylisted(userAddress)
     if (isDenylisted) {
       throw new UserDenylistedError()
     }
