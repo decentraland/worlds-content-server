@@ -26,7 +26,7 @@ test('world comms handler', function ({ components, stubComponents }) {
       const { worldCreator } = components
       const { namePermissionChecker } = stubComponents
 
-      namePermissionChecker.checkPermission.resolves(true)
+      namePermissionChecker.checkPermission.mockResolvedValue(true)
 
       const created = await worldCreator.createWorldWithScene()
       worldName = created.worldName
@@ -72,7 +72,7 @@ test('world comms handler', function ({ components, stubComponents }) {
       beforeEach(async () => {
         const { namePermissionChecker } = stubComponents
 
-        namePermissionChecker.checkPermission.resolves(false)
+        namePermissionChecker.checkPermission.mockResolvedValue(false)
 
         await worldsManager.storeAccess(worldName, {
           type: AccessType.AllowList,
@@ -118,7 +118,7 @@ test('world comms handler', function ({ components, stubComponents }) {
       beforeEach(async () => {
         const { namePermissionChecker } = stubComponents
 
-        namePermissionChecker.checkPermission.resolves(false)
+        namePermissionChecker.checkPermission.mockResolvedValue(false)
 
         const userAddress = identity.authChain.authChain[0].payload.toLowerCase()
         await worldsManager.storeAccess(worldName, {
@@ -142,7 +142,7 @@ test('world comms handler', function ({ components, stubComponents }) {
     describe('and the user is denylisted', () => {
       beforeEach(() => {
         const { denyList } = stubComponents as any
-        denyList.isDenylisted.resolves(true)
+        denyList.isDenylisted.mockResolvedValue(true)
       })
 
       it('should respond with 401 and the deny-listed error', async () => {
@@ -161,7 +161,7 @@ test('world comms handler', function ({ components, stubComponents }) {
     describe('and the user is platform-banned', () => {
       beforeEach(() => {
         const { bans } = stubComponents as any
-        bans.isPlayerBanned.resolves(true)
+        bans.isPlayerBanned.mockResolvedValue(true)
       })
 
       it('should respond with 401 and the platform-banned error', async () => {
@@ -238,7 +238,7 @@ test('world comms handler', function ({ components, stubComponents }) {
       const { worldCreator } = components
       const { namePermissionChecker } = stubComponents
 
-      namePermissionChecker.checkPermission.resolves(true)
+      namePermissionChecker.checkPermission.mockResolvedValue(true)
 
       const created = await worldCreator.createWorldWithScene()
       worldName = created.worldName
@@ -299,7 +299,7 @@ test('world comms handler', function ({ components, stubComponents }) {
       beforeEach(async () => {
         const { namePermissionChecker } = stubComponents
 
-        namePermissionChecker.checkPermission.resolves(false)
+        namePermissionChecker.checkPermission.mockResolvedValue(false)
 
         await worldsManager.storeAccess(worldName, {
           type: AccessType.AllowList,
@@ -324,7 +324,7 @@ test('world comms handler', function ({ components, stubComponents }) {
     describe('and the user is banned from the scene', () => {
       beforeEach(() => {
         const { bans } = stubComponents as any
-        bans.isUserBannedFromScene.resolves(true)
+        bans.isUserBannedFromScene.mockResolvedValue(true)
       })
 
       it('should respond with 401 and the banned error', async () => {
@@ -343,7 +343,7 @@ test('world comms handler', function ({ components, stubComponents }) {
     describe('and the user is platform-banned', () => {
       beforeEach(() => {
         const { bans } = stubComponents as any
-        bans.isPlayerBanned.resolves(true)
+        bans.isPlayerBanned.mockResolvedValue(true)
       })
 
       it('should respond with 401 and the platform-banned error', async () => {

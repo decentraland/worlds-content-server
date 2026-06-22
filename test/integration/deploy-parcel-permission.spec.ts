@@ -47,11 +47,14 @@ test('DeployEntity POST /entities - parcel-scoped deployment permission boundary
 
       // The grantee does NOT own the world name, so the only thing that should
       // authorize a deployment is the parcel-scoped permission.
-      namePermissionChecker.checkPermission.withArgs(grantee.authChain.authChain[0].payload, worldName).resolves(false)
-      nameOwnership.findOwners
-        .withArgs([worldName])
-        .resolves(new Map([[worldName, owner.authChain.authChain[0].payload]]))
-      snsClient.publishMessage.resolves({
+      // The grantee was given parcel-scoped permission only; name-level permission must resolve false.
+      namePermissionChecker.checkPermission.mockResolvedValue(false)
+      nameOwnership.findOwners.mockImplementation(async (worldNames) =>
+        worldNames.length === 1 && worldNames[0] === worldName
+          ? new Map([[worldName, owner.authChain.authChain[0].payload]])
+          : new Map()
+      )
+      snsClient.publishMessage.mockResolvedValue({
         MessageId: 'mocked-message-id',
         SequenceNumber: 'mocked-sequence-number',
         $metadata: {}

@@ -34,9 +34,10 @@ test('PUT /world/:world_name/permissions/access/communities/:communityId', ({ co
     const created = await worldCreator.createWorldWithScene({ owner: identity.authChain })
     worldName = created.worldName
 
-    stubComponents.namePermissionChecker.checkPermission
-      .withArgs(identity.authChain.authChain[0].payload.toLowerCase(), worldName)
-      .resolves(true)
+    stubComponents.namePermissionChecker.checkPermission.mockImplementation(
+      async (ethAddress, name) =>
+        ethAddress === identity.authChain.authChain[0].payload.toLowerCase() && name === worldName
+    )
     ;(components.socialService as jest.Mocked<ISocialServiceComponent>).getMemberCommunities.mockResolvedValue({
       communities: [{ id: COMMUNITY_ID }]
     })

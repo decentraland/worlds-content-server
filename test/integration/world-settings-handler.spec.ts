@@ -150,9 +150,10 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
         const created = await worldCreator.createWorldWithScene({ owner: identity.authChain })
         worldName = created.worldName
 
-        stubComponents.namePermissionChecker.checkPermission
-          .withArgs(identity.authChain.authChain[0].payload.toLowerCase(), worldName)
-          .resolves(true)
+        stubComponents.namePermissionChecker.checkPermission.mockImplementation(
+          async (ethAddress, name) =>
+            ethAddress === identity.authChain.authChain[0].payload.toLowerCase() && name === worldName
+        )
       })
 
       it('should update the world settings successfully', async () => {
@@ -188,9 +189,10 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
         const created = await worldCreator.createWorldWithScene({ owner: identity.authChain })
         worldName = created.worldName
 
-        stubComponents.namePermissionChecker.checkPermission
-          .withArgs(identity.authChain.authChain[0].payload.toLowerCase(), worldName)
-          .resolves(true)
+        stubComponents.namePermissionChecker.checkPermission.mockImplementation(
+          async (ethAddress, name) =>
+            ethAddress === identity.authChain.authChain[0].payload.toLowerCase() && name === worldName
+        )
       })
 
       it('should respond with a 400 and reject the non-image thumbnail', async () => {
@@ -224,9 +226,10 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
         const created = await worldCreator.createWorldWithScene({ owner: identity.authChain })
         worldName = created.worldName
 
-        stubComponents.namePermissionChecker.checkPermission
-          .withArgs(identity.authChain.authChain[0].payload.toLowerCase(), worldName)
-          .resolves(true)
+        stubComponents.namePermissionChecker.checkPermission.mockImplementation(
+          async (ethAddress, name) =>
+            ethAddress === identity.authChain.authChain[0].payload.toLowerCase() && name === worldName
+        )
       })
 
       it('should respond with a 400 (the full 6-byte GIF87a/GIF89a signature is required)', async () => {
@@ -261,9 +264,10 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
         const created = await worldCreator.createWorldWithScene({ owner: identity.authChain })
         worldName = created.worldName
 
-        stubComponents.namePermissionChecker.checkPermission
-          .withArgs(identity.authChain.authChain[0].payload.toLowerCase(), worldName)
-          .resolves(true)
+        stubComponents.namePermissionChecker.checkPermission.mockImplementation(
+          async (ethAddress, name) =>
+            ethAddress === identity.authChain.authChain[0].payload.toLowerCase() && name === worldName
+        )
       })
 
       it('should store the thumbnail under a key that is retrievable via GET /contents', async () => {
@@ -303,9 +307,10 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
         const created = await worldCreator.createWorldWithScene({ owner: identity.authChain })
         worldName = created.worldName
 
-        stubComponents.namePermissionChecker.checkPermission
-          .withArgs(identity.authChain.authChain[0].payload.toLowerCase(), worldName)
-          .resolves(true)
+        stubComponents.namePermissionChecker.checkPermission.mockImplementation(
+          async (ethAddress, name) =>
+            ethAddress === identity.authChain.authChain[0].payload.toLowerCase() && name === worldName
+        )
 
         // First set categories
         await worldsManager.updateWorldSettings(worldName, identity.authChain.authChain[0].payload.toLowerCase(), {
@@ -338,9 +343,10 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
         const created = await worldCreator.createWorldWithScene({ owner: identity.authChain })
         worldName = created.worldName
 
-        stubComponents.namePermissionChecker.checkPermission
-          .withArgs(identity.authChain.authChain[0].payload.toLowerCase(), worldName)
-          .resolves(true)
+        stubComponents.namePermissionChecker.checkPermission.mockImplementation(
+          async (ethAddress, name) =>
+            ethAddress === identity.authChain.authChain[0].payload.toLowerCase() && name === worldName
+        )
 
         // First set skybox_time
         await worldsManager.updateWorldSettings(worldName, identity.authChain.authChain[0].payload.toLowerCase(), {
@@ -474,9 +480,10 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
         const created = await worldCreator.createWorldWithScene({ owner: identity.authChain })
         worldName = created.worldName
 
-        stubComponents.namePermissionChecker.checkPermission
-          .withArgs(identity.authChain.authChain[0].payload.toLowerCase(), worldName)
-          .resolves(true)
+        stubComponents.namePermissionChecker.checkPermission.mockImplementation(
+          async (ethAddress, name) =>
+            ethAddress === identity.authChain.authChain[0].payload.toLowerCase() && name === worldName
+        )
       })
 
       it('should respond with 400 validation error', async () => {
@@ -516,9 +523,10 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
         })
         worldName = created.worldName
 
-        stubComponents.namePermissionChecker.checkPermission
-          .withArgs(identity.authChain.authChain[0].payload.toLowerCase(), worldName)
-          .resolves(true)
+        stubComponents.namePermissionChecker.checkPermission.mockImplementation(
+          async (ethAddress, name) =>
+            ethAddress === identity.authChain.authChain[0].payload.toLowerCase() && name === worldName
+        )
       })
 
       it('should successfully update spawn coordinates to a scene parcel', async () => {
@@ -567,9 +575,10 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
         })
         worldName = created.worldName
 
-        stubComponents.namePermissionChecker.checkPermission
-          .withArgs(identity.authChain.authChain[0].payload.toLowerCase(), worldName)
-          .resolves(true)
+        stubComponents.namePermissionChecker.checkPermission.mockImplementation(
+          async (ethAddress, name) =>
+            ethAddress === identity.authChain.authChain[0].payload.toLowerCase() && name === worldName
+        )
       })
 
       it('should successfully update spawn coordinates within the rectangle', async () => {
@@ -635,9 +644,10 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
         const created = await worldCreator.createWorldWithScene({ owner: identity.authChain })
         worldName = created.worldName
 
-        stubComponents.namePermissionChecker.checkPermission
-          .withArgs(identity.authChain.authChain[0].payload.toLowerCase(), worldName)
-          .resolves(true)
+        stubComponents.namePermissionChecker.checkPermission.mockImplementation(
+          async (ethAddress, name) =>
+            ethAddress === identity.authChain.authChain[0].payload.toLowerCase() && name === worldName
+        )
       })
 
       describe('and at least one field is provided', () => {
@@ -850,9 +860,10 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
         // Create a world entry without deploying a scene
         await worldsManager.storeAccess(worldName, defaultAccess())
 
-        stubComponents.namePermissionChecker.checkPermission
-          .withArgs(identity.authChain.authChain[0].payload.toLowerCase(), worldName)
-          .resolves(true)
+        stubComponents.namePermissionChecker.checkPermission.mockImplementation(
+          async (ethAddress, name) =>
+            ethAddress === identity.authChain.authChain[0].payload.toLowerCase() && name === worldName
+        )
       })
 
       it('should respond with 400 validation error since there are no scenes deployed', async () => {

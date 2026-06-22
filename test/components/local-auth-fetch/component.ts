@@ -1,8 +1,26 @@
 import { Authenticator } from '@dcl/crypto'
-import { IConfigComponent, IFetchComponent } from '@well-known-components/interfaces'
-import { createLocalFetchCompoment } from '@well-known-components/test-helpers'
+import { IConfigComponent } from '@well-known-components/interfaces'
+import { IFetchComponent } from '@dcl/core-commons'
+import { createLocalFetchComponent } from '@dcl/test-helpers'
 import { AuthenticatedRequestInit, IAuthenticatedFetchComponent } from './types'
 import { getAuthHeaders } from '../../utils'
+
+/**
+ * The npm `form-data` package exposes its serialized bytes via `getBuffer()` and its multipart
+ * `Content-Type` (including the boundary) via `getHeaders()`. It is not a native `BodyInit`, so the
+ * native `fetch` backing `@dcl/test-helpers`' local fetch component serializes it to `text/plain` and
+ * the server's multipart parser rejects it. It needs converting before being handed to `fetch`.
+ */
+type NodeFormDataBody = { getBuffer(): Buffer; getHeaders(): Record<string, string> }
+
+function isNodeFormDataBody(body: unknown): body is NodeFormDataBody {
+  return (
+    typeof body === 'object' &&
+    body !== null &&
+    typeof (body as NodeFormDataBody).getBuffer === 'function' &&
+    typeof (body as NodeFormDataBody).getHeaders === 'function'
+  )
+}
 
 /**
  * Creates a fetch component that wraps the local fetch component and adds support
@@ -12,7 +30,7 @@ import { getAuthHeaders } from '../../utils'
 export async function createAuthenticatedLocalFetchComponent(
   config: IConfigComponent
 ): Promise<IAuthenticatedFetchComponent> {
-  const localFetch: IFetchComponent = await createLocalFetchCompoment(config)
+  const localFetch: IFetchComponent = await createLocalFetchComponent(config)
 
   return {
     async fetch(path: string, init?: AuthenticatedRequestInit): Promise<Response> {
@@ -34,6 +52,17 @@ export async function createAuthenticatedLocalFetchComponent(
         } else {
           Object.assign(headers, restInit.headers)
         }
+      }
+
+      // Materialize npm `form-data` bodies into a native body (a `Uint8Array`) and set the multipart
+      // `Content-Type` (with boundary), otherwise the native `fetch` mis-serializes them and the
+      // server's multipart parser rejects the request.
+      if (isNodeFormDataBody(restInit.body)) {
+        const form = restInit.body
+        // `Buffer` (ArrayBufferLike-backed) isn't a native `BodyInit`; copy into a plain
+        // `Uint8Array<ArrayBuffer>`, which undici accepts.
+        restInit.body = new Uint8Array(form.getBuffer())
+        Object.assign(headers, form.getHeaders())
       }
 
       // If identity is provided, add auth headers

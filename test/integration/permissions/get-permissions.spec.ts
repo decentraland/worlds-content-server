@@ -28,9 +28,10 @@ test('GET /world/:world_name/permissions', ({ components, stubComponents }) => {
     const created = await worldCreator.createWorldWithScene({ owner: identity.authChain })
     worldName = created.worldName
 
-    stubComponents.namePermissionChecker.checkPermission
-      .withArgs(identity.authChain.authChain[0].payload.toLowerCase(), worldName)
-      .resolves(true)
+    stubComponents.namePermissionChecker.checkPermission.mockImplementation(
+      async (ethAddress, name) =>
+        ethAddress === identity.authChain.authChain[0].payload.toLowerCase() && name === worldName
+    )
   })
 
   afterEach(() => {
@@ -50,9 +51,11 @@ test('GET /world/:world_name/permissions', ({ components, stubComponents }) => {
       beforeEach(() => {
         ownerAddress = '0xD9370c94253f080272BA1c28E216146ecE806d33'.toLowerCase()
 
-        stubComponents.nameOwnership.findOwners
-          .withArgs([nonExistentWorldName])
-          .resolves(new Map([[nonExistentWorldName, ownerAddress]]))
+        stubComponents.nameOwnership.findOwners.mockImplementation(async (worldNames) =>
+          worldNames.length === 1 && worldNames[0] === nonExistentWorldName
+            ? new Map([[nonExistentWorldName, ownerAddress]])
+            : new Map()
+        )
       })
 
       it('should respond with 200, default permissions, and the owner from nameOwnership', async () => {
@@ -71,7 +74,7 @@ test('GET /world/:world_name/permissions', ({ components, stubComponents }) => {
 
     describe('and the name does not have an owner', () => {
       beforeEach(() => {
-        stubComponents.nameOwnership.findOwners.withArgs([nonExistentWorldName]).resolves(new Map())
+        stubComponents.nameOwnership.findOwners.mockResolvedValue(new Map())
       })
 
       it('should respond with 200 and default permissions and no owner', async () => {
@@ -90,9 +93,7 @@ test('GET /world/:world_name/permissions', ({ components, stubComponents }) => {
 
     describe('and the nameOwnership lookup fails', () => {
       beforeEach(() => {
-        stubComponents.nameOwnership.findOwners
-          .withArgs([nonExistentWorldName])
-          .rejects(new Error('Service unavailable'))
+        stubComponents.nameOwnership.findOwners.mockRejectedValue(new Error('Service unavailable'))
       })
 
       it('should respond with 200, default permissions and no owner', async () => {

@@ -29,7 +29,7 @@ test('wallet stats handler /wallet/:wallet/stats', function ({ components, stubC
       owner: identity.authChain
     })
 
-    stubComponents.walletStats.get.resolves({
+    stubComponents.walletStats.get.mockResolvedValue({
       wallet: identity.realAccount.address,
       dclNames: [{ name: worldName, size: 18n * MB_BigInt }],
       ensNames: [{ name: 'ensname.eth', size: 3n * MB_BigInt }],

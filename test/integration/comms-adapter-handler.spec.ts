@@ -30,13 +30,16 @@ test('comms adapter handler /get-comms-adapter/:roomId', function ({ components,
     const { worldCreator } = components
     const { config, namePermissionChecker } = stubComponents
 
-    config.requireString.withArgs('LIVEKIT_HOST').resolves('livekit.org')
-    config.requireString.withArgs('LIVEKIT_API_KEY').resolves('livekit_key')
-    config.requireString.withArgs('LIVEKIT_API_SECRET').resolves('livekit_secret')
-    config.requireString.withArgs('COMMS_ROOM_PREFIX').resolves('world-')
+    const requireStringValues: Record<string, string> = {
+      LIVEKIT_HOST: 'livekit.org',
+      LIVEKIT_API_KEY: 'livekit_key',
+      LIVEKIT_API_SECRET: 'livekit_secret',
+      COMMS_ROOM_PREFIX: 'world-'
+    }
+    config.requireString.mockImplementation(async (name) => requireStringValues[name] ?? '')
 
     // Default to allowing permission checks - individual tests can override
-    namePermissionChecker.checkPermission.resolves(true)
+    namePermissionChecker.checkPermission.mockResolvedValue(true)
 
     const created = await worldCreator.createWorldWithScene()
     worldName = created.worldName
@@ -76,7 +79,7 @@ test('comms adapter handler /get-comms-adapter/:roomId', function ({ components,
   it('fails when signed-fetch request metadata is correct but user has neither permission nor access', async () => {
     const { namePermissionChecker } = stubComponents
 
-    namePermissionChecker.checkPermission.resolves(false)
+    namePermissionChecker.checkPermission.mockResolvedValue(false)
 
     await worldsManager.storeAccess(worldName, {
       type: AccessType.AllowList,
@@ -191,7 +194,7 @@ test('comms adapter handler /get-comms-adapter/:roomId', function ({ components,
     beforeEach(async () => {
       const { namePermissionChecker } = stubComponents
 
-      namePermissionChecker.checkPermission.resolves(false)
+      namePermissionChecker.checkPermission.mockResolvedValue(false)
       await worldsManager.storeAccess(worldName, {
         type: AccessType.SharedSecret,
         secret: bcrypt.hashSync('correct-secret', 10)

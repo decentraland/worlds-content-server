@@ -8,8 +8,11 @@ test('world about handler /world/:world_name/about', function ({ components, stu
   beforeEach(async () => {
     const { config } = stubComponents
 
-    config.requireString.withArgs('ETH_NETWORK').resolves('mainnet')
-    config.requireString.withArgs('COMMS_ROOM_PREFIX').resolves('world-')
+    const requireStringValues: Record<string, string> = {
+      ETH_NETWORK: 'mainnet',
+      COMMS_ROOM_PREFIX: 'world-'
+    }
+    config.requireString.mockImplementation(async (name) => requireStringValues[name] ?? '')
   })
 
   afterEach(() => {
@@ -562,7 +565,7 @@ test('world about handler /world/:world_name/about', function ({ components, stu
       const result = await worldCreator.createWorldWithScene()
       worldName = result.worldName
 
-      nameDenyListChecker.checkNameDenyList.withArgs(worldName).resolves(false)
+      nameDenyListChecker.checkNameDenyList.mockImplementation(async (name) => (name === worldName ? false : true))
     })
 
     it('should respond with 404 status and an error message indicating no scene is deployed', async () => {
@@ -595,7 +598,7 @@ test('world about handler /world/:world_name/about', function ({ components, stu
             VALUES (${identity.realAccount.address.toLowerCase()}, ${blockedSince}, ${new Date()})
         `)
 
-      nameDenyListChecker.checkNameDenyList.withArgs(worldName).resolves(true)
+      nameDenyListChecker.checkNameDenyList.mockResolvedValue(true)
     })
 
     it('should respond with 401 status and Not Authorized error', async () => {

@@ -64,8 +64,10 @@ test('undeploy entity handler /entities/:world_name', function ({ components, st
       owner: identity.authChain
     })
 
-    namePermissionChecker.checkPermission.withArgs(identity.realAccount.address.toLowerCase(), worldName).resolves(true)
-    snsClient.publishMessages.resolves({
+    namePermissionChecker.checkPermission.mockImplementation(
+      async (ethAddress, name) => ethAddress === identity.realAccount.address.toLowerCase() && name === worldName
+    )
+    snsClient.publishMessages.mockResolvedValue({
       successfulMessageIds: ['msg-id'],
       failedEvents: []
     })
@@ -81,9 +83,8 @@ test('undeploy entity handler /entities/:world_name', function ({ components, st
     const entities = await components.worldsManager.getEntityForWorlds([worldName])
     expect(entities.length).toEqual(0)
 
-    expect(snsClient.publishMessages.calledOnce).toBe(true)
-    const call = snsClient.publishMessages.getCall(0)
-    const events = call.args[0]
+    expect(snsClient.publishMessages).toHaveBeenCalledTimes(1)
+    const events = snsClient.publishMessages.mock.calls[0][0]
     expect(events).toHaveLength(1)
     expect(events[0]).toMatchObject({
       type: Events.Type.WORLD,

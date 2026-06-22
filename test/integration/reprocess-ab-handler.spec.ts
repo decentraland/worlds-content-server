@@ -7,7 +7,7 @@ test('reprocess asset-bundles handler /reprocess-ab', function ({ components, st
   beforeEach(async () => {
     const { config } = stubComponents
 
-    config.getString.withArgs('AWS_SNS_ARN').resolves('some-arn')
+    config.getString.mockImplementation(async (name) => (name === 'AWS_SNS_ARN' ? 'some-arn' : undefined))
   })
 
   afterEach(() => {
@@ -29,7 +29,7 @@ test('reprocess asset-bundles handler /reprocess-ab', function ({ components, st
         entityId = created.entityId
         authChain = Authenticator.signPayload(created.owner, entityId)
 
-        snsClient.publishMessages.resolves({
+        snsClient.publishMessages.mockResolvedValue({
           successfulMessageIds: [entityId],
           failedEvents: []
         })
@@ -76,7 +76,7 @@ test('reprocess asset-bundles handler /reprocess-ab', function ({ components, st
         entityId = created.entityId
         authChain = Authenticator.signPayload(created.owner, entityId)
 
-        snsClient.publishMessages.resolves({
+        snsClient.publishMessages.mockResolvedValue({
           successfulMessageIds: [entityId],
           failedEvents: []
         })
@@ -221,7 +221,7 @@ test('reprocess asset-bundles handler /reprocess-ab', function ({ components, st
     beforeEach(() => {
       const { config } = stubComponents
 
-      config.getString.withArgs('AWS_SNS_ARN').resolves(undefined)
+      config.getString.mockResolvedValue(undefined)
     })
 
     it('should return internal server error', async () => {
