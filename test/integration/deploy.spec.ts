@@ -32,11 +32,15 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
         fetcher: fetch
       })
 
-      namePermissionChecker.checkPermission.withArgs(identity.authChain.authChain[0].payload, worldName).resolves(true)
-      nameOwnership.findOwners
-        .withArgs([worldName])
-        .resolves(new Map([[worldName, identity.authChain.authChain[0].payload]]))
-      snsClient.publishMessage.resolves({
+      namePermissionChecker.checkPermission.mockImplementation(
+        async (ethAddress, name) => ethAddress === identity.authChain.authChain[0].payload && name === worldName
+      )
+      nameOwnership.findOwners.mockImplementation(async (worldNames) =>
+        worldNames.length === 1 && worldNames[0] === worldName
+          ? new Map([[worldName, identity.authChain.authChain[0].payload]])
+          : new Map()
+      )
+      snsClient.publishMessage.mockResolvedValue({
         MessageId: 'mocked-message-id',
         SequenceNumber: 'mocked-sequence-number',
         $metadata: {}
@@ -129,9 +133,10 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
 
         await contentClient.deploy({ files, entityId, authChain })
 
-        expect(
-          namePermissionChecker.checkPermission.calledWith(identity.authChain.authChain[0].payload, worldName)
-        ).toBe(true)
+        expect(namePermissionChecker.checkPermission).toHaveBeenCalledWith(
+          identity.authChain.authChain[0].payload,
+          worldName
+        )
       })
 
       it('should increment the world deployments counter metric', async () => {
@@ -140,7 +145,7 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
 
         await contentClient.deploy({ files, entityId, authChain })
 
-        expect(metrics.increment.calledWithMatch('world_deployments_counter', { kind: 'dcl-name' })).toBe(true)
+        expect(metrics.increment).toHaveBeenCalledWith('world_deployments_counter', { kind: 'dcl-name' })
       })
 
       it('should publish an SNS message with isMultiplayer set to false', async () => {
@@ -149,9 +154,9 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
 
         await contentClient.deploy({ files, entityId, authChain })
 
-        expect(snsClient.publishMessage.calledOnce).toBe(true)
-        const call = snsClient.publishMessage.getCall(0)
-        expect(call.args[1]?.isMultiplayer?.StringValue).toBe('false')
+        expect(snsClient.publishMessage).toHaveBeenCalledTimes(1)
+        const call = snsClient.publishMessage.mock.calls[0]
+        expect(call[1]?.isMultiplayer?.StringValue).toBe('false')
       })
 
       it('should make the world accessible via /world/:world_name/about endpoint', async () => {
@@ -228,9 +233,9 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
 
         await contentClient.deploy({ files, entityId, authChain })
 
-        expect(snsClient.publishMessage.calledOnce).toBe(true)
-        const call = snsClient.publishMessage.getCall(0)
-        expect(call.args[1]?.isMultiplayer?.StringValue).toBe('true')
+        expect(snsClient.publishMessage).toHaveBeenCalledTimes(1)
+        const call = snsClient.publishMessage.mock.calls[0]
+        expect(call[1]?.isMultiplayer?.StringValue).toBe('true')
       })
     })
 
@@ -245,12 +250,16 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
 
         uppercaseWorldName = worldCreator.randomWorldName().toUpperCase()
 
-        namePermissionChecker.checkPermission
-          .withArgs(identity.authChain.authChain[0].payload, uppercaseWorldName)
-          .resolves(true)
-        nameOwnership.findOwners
-          .withArgs([uppercaseWorldName])
-          .resolves(new Map([[uppercaseWorldName, identity.authChain.authChain[0].payload]]))
+        namePermissionChecker.checkPermission.mockImplementation(
+          async (ethAddress, name) =>
+            ethAddress === identity.authChain.authChain[0].payload &&
+            (name === worldName || name === uppercaseWorldName)
+        )
+        nameOwnership.findOwners.mockImplementation(async (worldNames) =>
+          worldNames.length === 1 && worldNames[0] === uppercaseWorldName
+            ? new Map([[uppercaseWorldName, identity.authChain.authChain[0].payload]])
+            : new Map()
+        )
 
         const entityFiles = new Map<string, Uint8Array>()
         const result = await DeploymentBuilder.buildEntity({
@@ -329,13 +338,14 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
         fetcher: fetch
       })
 
-      namePermissionChecker.checkPermission
-        .withArgs(delegatedIdentity.authChain.authChain[0].payload, worldName)
-        .resolves(false)
-      nameOwnership.findOwners
-        .withArgs([worldName])
-        .resolves(new Map([[worldName, identity.authChain.authChain[0].payload]]))
-      snsClient.publishMessage.resolves({
+      // The delegated identity has no name-level permission; deployment is authorized via the allow list.
+      namePermissionChecker.checkPermission.mockResolvedValue(false)
+      nameOwnership.findOwners.mockImplementation(async (worldNames) =>
+        worldNames.length === 1 && worldNames[0] === worldName
+          ? new Map([[worldName, identity.authChain.authChain[0].payload]])
+          : new Map()
+      )
+      snsClient.publishMessage.mockResolvedValue({
         MessageId: 'mocked-message-id',
         SequenceNumber: 'mocked-sequence-number',
         $metadata: {}
@@ -424,7 +434,7 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
 
         await contentClient.deploy({ files, entityId, authChain })
 
-        expect(metrics.increment.calledWithMatch('world_deployments_counter')).toBe(true)
+        expect(metrics.increment).toHaveBeenCalledWith('world_deployments_counter', expect.anything())
       })
     })
   })
@@ -449,11 +459,15 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
         fetcher: fetch
       })
 
-      namePermissionChecker.checkPermission.withArgs(identity.authChain.authChain[0].payload, worldName).resolves(true)
-      nameOwnership.findOwners
-        .withArgs([worldName])
-        .resolves(new Map([[worldName, identity.authChain.authChain[0].payload]]))
-      snsClient.publishMessage.resolves({
+      namePermissionChecker.checkPermission.mockImplementation(
+        async (ethAddress, name) => ethAddress === identity.authChain.authChain[0].payload && name === worldName
+      )
+      nameOwnership.findOwners.mockImplementation(async (worldNames) =>
+        worldNames.length === 1 && worldNames[0] === worldName
+          ? new Map([[worldName, identity.authChain.authChain[0].payload]])
+          : new Map()
+      )
+      snsClient.publishMessage.mockResolvedValue({
         MessageId: 'mocked-message-id',
         SequenceNumber: 'mocked-sequence-number',
         $metadata: {}
@@ -576,11 +590,15 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
         fetcher: fetch
       })
 
-      namePermissionChecker.checkPermission.withArgs(identity.authChain.authChain[0].payload, worldName).resolves(true)
-      nameOwnership.findOwners
-        .withArgs([worldName])
-        .resolves(new Map([[worldName, identity.authChain.authChain[0].payload]]))
-      snsClient.publishMessage.resolves({
+      namePermissionChecker.checkPermission.mockImplementation(
+        async (ethAddress, name) => ethAddress === identity.authChain.authChain[0].payload && name === worldName
+      )
+      nameOwnership.findOwners.mockImplementation(async (worldNames) =>
+        worldNames.length === 1 && worldNames[0] === worldName
+          ? new Map([[worldName, identity.authChain.authChain[0].payload]])
+          : new Map()
+      )
+      snsClient.publishMessage.mockResolvedValue({
         MessageId: 'mocked-message-id',
         SequenceNumber: 'mocked-sequence-number',
         $metadata: {}
@@ -716,11 +734,15 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
         fetcher: fetch
       })
 
-      namePermissionChecker.checkPermission.withArgs(identity.authChain.authChain[0].payload, worldName).resolves(true)
-      nameOwnership.findOwners
-        .withArgs([worldName])
-        .resolves(new Map([[worldName, identity.authChain.authChain[0].payload]]))
-      snsClient.publishMessage.resolves({
+      namePermissionChecker.checkPermission.mockImplementation(
+        async (ethAddress, name) => ethAddress === identity.authChain.authChain[0].payload && name === worldName
+      )
+      nameOwnership.findOwners.mockImplementation(async (worldNames) =>
+        worldNames.length === 1 && worldNames[0] === worldName
+          ? new Map([[worldName, identity.authChain.authChain[0].payload]])
+          : new Map()
+      )
+      snsClient.publishMessage.mockResolvedValue({
         MessageId: 'mocked-message-id',
         SequenceNumber: 'mocked-sequence-number',
         $metadata: {}
@@ -980,7 +1002,7 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
         fetcher: fetch
       })
 
-      namePermissionChecker.checkPermission.withArgs(identity.authChain.authChain[0].payload, worldName).resolves(false)
+      namePermissionChecker.checkPermission.mockResolvedValue(false)
 
       const entityFiles = new Map<string, Uint8Array>()
       entityFiles.set('abc.txt', stringToUtf8Bytes(makeid(100)))
@@ -1038,8 +1060,9 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
         // Expected to fail
       }
 
-      expect(namePermissionChecker.checkPermission.calledWith(identity.authChain.authChain[0].payload, worldName)).toBe(
-        true
+      expect(namePermissionChecker.checkPermission).toHaveBeenCalledWith(
+        identity.authChain.authChain[0].payload,
+        worldName
       )
     })
 
@@ -1053,7 +1076,7 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
         // Expected to fail
       }
 
-      expect(metrics.increment.notCalled).toBe(true)
+      expect(metrics.increment).not.toHaveBeenCalled()
     })
 
     it('should not make the world accessible via /world/:world_name/about endpoint', async () => {
@@ -1141,7 +1164,7 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
         // Expected to fail
       }
 
-      expect(namePermissionChecker.checkPermission.notCalled).toBe(true)
+      expect(namePermissionChecker.checkPermission).not.toHaveBeenCalled()
     })
 
     it('should not increment the world deployments counter metric', async () => {
@@ -1154,7 +1177,7 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
         // Expected to fail
       }
 
-      expect(metrics.increment.notCalled).toBe(true)
+      expect(metrics.increment).not.toHaveBeenCalled()
     })
   })
 
@@ -1179,11 +1202,15 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
         fetcher: fetch
       })
 
-      namePermissionChecker.checkPermission.withArgs(identity.authChain.authChain[0].payload, worldName).resolves(true)
-      nameOwnership.findOwners
-        .withArgs([worldName])
-        .resolves(new Map([[worldName, identity.authChain.authChain[0].payload]]))
-      snsClient.publishMessage.resolves({
+      namePermissionChecker.checkPermission.mockImplementation(
+        async (ethAddress, name) => ethAddress === identity.authChain.authChain[0].payload && name === worldName
+      )
+      nameOwnership.findOwners.mockImplementation(async (worldNames) =>
+        worldNames.length === 1 && worldNames[0] === worldName
+          ? new Map([[worldName, identity.authChain.authChain[0].payload]])
+          : new Map()
+      )
+      snsClient.publishMessage.mockResolvedValue({
         MessageId: 'mocked-message-id',
         SequenceNumber: 'mocked-sequence-number',
         $metadata: {}
@@ -1313,10 +1340,14 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
         fetcher: fetch
       })
 
-      namePermissionChecker.checkPermission.withArgs(identity.authChain.authChain[0].payload, worldName).resolves(true)
-      nameOwnership.findOwners
-        .withArgs([worldName])
-        .resolves(new Map([[worldName, identity.authChain.authChain[0].payload]]))
+      namePermissionChecker.checkPermission.mockImplementation(
+        async (ethAddress, name) => ethAddress === identity.authChain.authChain[0].payload && name === worldName
+      )
+      nameOwnership.findOwners.mockImplementation(async (worldNames) =>
+        worldNames.length === 1 && worldNames[0] === worldName
+          ? new Map([[worldName, identity.authChain.authChain[0].payload]])
+          : new Map()
+      )
 
       const entityFiles = new Map<string, Uint8Array>()
       entityFiles.set('abc.txt', stringToUtf8Bytes(makeid(100)))
@@ -1384,10 +1415,14 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
         fetcher: fetch
       })
 
-      namePermissionChecker.checkPermission.withArgs(identity.authChain.authChain[0].payload, worldName).resolves(true)
-      nameOwnership.findOwners
-        .withArgs([worldName])
-        .resolves(new Map([[worldName, identity.authChain.authChain[0].payload]]))
+      namePermissionChecker.checkPermission.mockImplementation(
+        async (ethAddress, name) => ethAddress === identity.authChain.authChain[0].payload && name === worldName
+      )
+      nameOwnership.findOwners.mockImplementation(async (worldNames) =>
+        worldNames.length === 1 && worldNames[0] === worldName
+          ? new Map([[worldName, identity.authChain.authChain[0].payload]])
+          : new Map()
+      )
 
       // Hand-craft an entity file that omits `timestamp` (DeploymentBuilder always includes it).
       // Without it, the deployment TTL check would have nothing to validate against.
@@ -1446,10 +1481,14 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
         fetcher: fetch
       })
 
-      namePermissionChecker.checkPermission.withArgs(identity.authChain.authChain[0].payload, worldName).resolves(true)
-      nameOwnership.findOwners
-        .withArgs([worldName])
-        .resolves(new Map([[worldName, identity.authChain.authChain[0].payload]]))
+      namePermissionChecker.checkPermission.mockImplementation(
+        async (ethAddress, name) => ethAddress === identity.authChain.authChain[0].payload && name === worldName
+      )
+      nameOwnership.findOwners.mockImplementation(async (worldNames) =>
+        worldNames.length === 1 && worldNames[0] === worldName
+          ? new Map([[worldName, identity.authChain.authChain[0].payload]])
+          : new Map()
+      )
 
       const entityFiles = new Map<string, Uint8Array>()
       entityFiles.set('abc.txt', stringToUtf8Bytes(makeid(100)))

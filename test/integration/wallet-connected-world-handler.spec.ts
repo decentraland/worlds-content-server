@@ -8,7 +8,7 @@ test('WalletConnectedWorldHandler', function ({ components, stubComponents }) {
     localFetch = components.localFetch
 
     const { config } = stubComponents
-    config.requireString.withArgs('COMMS_ROOM_PREFIX').resolves('world-test-')
+    config.requireString.mockImplementation(async (name) => (name === 'COMMS_ROOM_PREFIX' ? 'world-test-' : ''))
   })
 
   describe('when requesting connected world for a wallet', () => {
@@ -17,7 +17,7 @@ test('WalletConnectedWorldHandler', function ({ components, stubComponents }) {
       const wallet = '0xtest'
       const world = 'test-world'
 
-      peersRegistry.getPeerWorld.withArgs(wallet).returns(world)
+      peersRegistry.getPeerWorld.mockImplementation((id) => (id === wallet ? world : undefined))
 
       const response = await localFetch.fetch(`/wallet/${wallet}/connected-world`, { method: 'GET' })
       expect(response.status).toBe(200)
@@ -32,7 +32,7 @@ test('WalletConnectedWorldHandler', function ({ components, stubComponents }) {
       const wallet = '0xtest'
       const world = 'my-world' // This would be the result after prefix stripping
 
-      peersRegistry.getPeerWorld.withArgs(wallet).returns(world)
+      peersRegistry.getPeerWorld.mockImplementation((id) => (id === wallet ? world : undefined))
 
       const response = await localFetch.fetch(`/wallet/${wallet}/connected-world`, { method: 'GET' })
       expect(response.status).toBe(200)
@@ -47,7 +47,7 @@ test('WalletConnectedWorldHandler', function ({ components, stubComponents }) {
       const wallet = '0xTEST'
       const world = 'test-world'
 
-      peersRegistry.getPeerWorld.withArgs(wallet).returns(world)
+      peersRegistry.getPeerWorld.mockImplementation((id) => (id === wallet ? world : undefined))
 
       const response = await localFetch.fetch(`/wallet/${wallet}/connected-world`, { method: 'GET' })
       expect(response.status).toBe(200)
@@ -78,7 +78,7 @@ test('WalletConnectedWorldHandler', function ({ components, stubComponents }) {
       const { peersRegistry } = stubComponents
       const wallet = '0xtest'
 
-      peersRegistry.getPeerWorld.withArgs(wallet).returns(undefined)
+      peersRegistry.getPeerWorld.mockReturnValue(undefined)
 
       const response = await localFetch.fetch(`/wallet/${wallet}/connected-world`, { method: 'GET' })
       expect(response.status).toBe(404)

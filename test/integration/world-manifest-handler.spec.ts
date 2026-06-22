@@ -259,7 +259,7 @@ test('world manifest handler /world/:world_name/manifest', function ({ component
       const result = await worldCreator.createWorldWithScene()
       worldName = result.worldName
 
-      nameDenyListChecker.checkNameDenyList.withArgs(worldName).resolves(false)
+      nameDenyListChecker.checkNameDenyList.mockImplementation(async (name) => (name === worldName ? false : true))
     })
 
     it('should respond with 404 status and an error message', async () => {

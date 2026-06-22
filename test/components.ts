@@ -1,7 +1,7 @@
 // This file is the "test-environment" analogous for src/components.ts
 // Here we define the test components to be used in the testing environment
 
-import { createRunner } from '@well-known-components/test-helpers'
+import { createRunner } from '@dcl/test-helpers'
 
 import { main } from '../src/service'
 import { TestComponents } from './types'

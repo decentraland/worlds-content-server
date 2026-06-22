@@ -36,9 +36,10 @@ test('PUT /world/:world_name/permissions/:permission_name/:address', ({ componen
     const created = await worldCreator.createWorldWithScene({ owner: identity.authChain })
     worldName = created.worldName
 
-    stubComponents.namePermissionChecker.checkPermission
-      .withArgs(identity.authChain.authChain[0].payload.toLowerCase(), worldName)
-      .resolves(true)
+    stubComponents.namePermissionChecker.checkPermission.mockImplementation(
+      async (ethAddress, name) =>
+        ethAddress === identity.authChain.authChain[0].payload.toLowerCase() && name === worldName
+    )
   })
 
   afterEach(() => {
@@ -143,9 +144,11 @@ test('PUT /world/:world_name/permissions/:permission_name/:address', ({ componen
       nonExistentWorldName = worldCreator.randomWorldName()
       addressToAllow = await getIdentity()
 
-      stubComponents.namePermissionChecker.checkPermission
-        .withArgs(identity.authChain.authChain[0].payload.toLowerCase(), nonExistentWorldName)
-        .resolves(true)
+      stubComponents.namePermissionChecker.checkPermission.mockImplementation(
+        async (ethAddress, name) =>
+          ethAddress === identity.authChain.authChain[0].payload.toLowerCase() &&
+          (name === worldName || name === nonExistentWorldName)
+      )
     })
 
     it('should create the world and respond with 204', async () => {

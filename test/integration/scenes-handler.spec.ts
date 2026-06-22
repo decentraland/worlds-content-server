@@ -204,8 +204,10 @@ test('ScenesHandler', function ({ components, stubComponents }) {
 
           expect(response.status).toBe(200)
           const body = await response.json()
+          // `Array.isArray` is realm-agnostic; `expect.any(Array)` relies on `instanceof`, which fails
+          // for arrays parsed by the native fetch's JSON in a different realm.
+          expect(Array.isArray(body.scenes)).toBe(true)
           expect(body).toMatchObject({
-            scenes: expect.any(Array),
             total: expect.any(Number)
           })
         })
@@ -515,16 +517,17 @@ test('ScenesHandler', function ({ components, stubComponents }) {
         const created = await worldCreator.createWorldWithScene({ owner: identity.authChain })
         worldName = created.worldName
 
-        stubComponents.namePermissionChecker.checkPermission
-          .withArgs(identity.authChain.authChain[0].payload.toLowerCase(), worldName)
-          .resolves(true)
+        stubComponents.namePermissionChecker.checkPermission.mockImplementation(
+          async (ethAddress, name) =>
+            ethAddress === identity.authChain.authChain[0].payload.toLowerCase() && name === worldName
+        )
       })
 
       it('should successfully undeploy the scene, remove it from the world and publish a WorldScenesUndeploymentEvent', async () => {
         const { localFetch } = components
         const { snsClient } = stubComponents
 
-        snsClient.publishMessages.resolves({
+        snsClient.publishMessages.mockResolvedValue({
           successfulMessageIds: ['msg-id'],
           failedEvents: []
         })
@@ -542,9 +545,8 @@ test('ScenesHandler', function ({ components, stubComponents }) {
         expect(scenesBody.scenes).toHaveLength(0)
         expect(scenesBody.total).toBe(0)
 
-        expect(snsClient.publishMessages.calledOnce).toBe(true)
-        const call = snsClient.publishMessages.getCall(0)
-        const events = call.args[0]
+        expect(snsClient.publishMessages).toHaveBeenCalledTimes(1)
+        const events = snsClient.publishMessages.mock.calls[0][0]
         expect(events).toHaveLength(1)
         expect(events[0]).toMatchObject({
           type: Events.Type.WORLD,
@@ -731,9 +733,10 @@ test('ScenesHandler', function ({ components, stubComponents }) {
         const created = await worldCreator.createWorldWithScene({ owner: identity.authChain })
         worldName = created.worldName
 
-        stubComponents.namePermissionChecker.checkPermission
-          .withArgs(identity.authChain.authChain[0].payload.toLowerCase(), worldName)
-          .resolves(true)
+        stubComponents.namePermissionChecker.checkPermission.mockImplementation(
+          async (ethAddress, name) =>
+            ethAddress === identity.authChain.authChain[0].payload.toLowerCase() && name === worldName
+        )
       })
 
       it('should respond with 400', async () => {
@@ -797,9 +800,10 @@ test('ScenesHandler', function ({ components, stubComponents }) {
         })
         worldName = created.worldName
 
-        stubComponents.namePermissionChecker.checkPermission
-          .withArgs(identity.authChain.authChain[0].payload.toLowerCase(), worldName)
-          .resolves(true)
+        stubComponents.namePermissionChecker.checkPermission.mockImplementation(
+          async (ethAddress, name) =>
+            ethAddress === identity.authChain.authChain[0].payload.toLowerCase() && name === worldName
+        )
       })
 
       it('should accept negative coordinate values and remove the scene from the world', async () => {
@@ -831,9 +835,10 @@ test('ScenesHandler', function ({ components, stubComponents }) {
         const created = await worldCreator.createWorldWithScene({ owner: identity.authChain })
         worldName = created.worldName
 
-        stubComponents.namePermissionChecker.checkPermission
-          .withArgs(identity.authChain.authChain[0].payload.toLowerCase(), worldName)
-          .resolves(true)
+        stubComponents.namePermissionChecker.checkPermission.mockImplementation(
+          async (ethAddress, name) =>
+            ethAddress === identity.authChain.authChain[0].payload.toLowerCase() && name === worldName
+        )
       })
 
       it('should respond with 200 but not affect any scenes', async () => {
@@ -887,9 +892,10 @@ test('ScenesHandler', function ({ components, stubComponents }) {
           }
         })
 
-        stubComponents.namePermissionChecker.checkPermission
-          .withArgs(identity.authChain.authChain[0].payload.toLowerCase(), worldName)
-          .resolves(true)
+        stubComponents.namePermissionChecker.checkPermission.mockImplementation(
+          async (ethAddress, name) =>
+            ethAddress === identity.authChain.authChain[0].payload.toLowerCase() && name === worldName
+        )
       })
 
       it('should update spawn coordinates to another deployed scene', async () => {
@@ -937,9 +943,10 @@ test('ScenesHandler', function ({ components, stubComponents }) {
           }
         })
 
-        stubComponents.namePermissionChecker.checkPermission
-          .withArgs(identity.authChain.authChain[0].payload.toLowerCase(), worldName)
-          .resolves(true)
+        stubComponents.namePermissionChecker.checkPermission.mockImplementation(
+          async (ethAddress, name) =>
+            ethAddress === identity.authChain.authChain[0].payload.toLowerCase() && name === worldName
+        )
       })
 
       it('should not change the spawn coordinates', async () => {
@@ -968,9 +975,10 @@ test('ScenesHandler', function ({ components, stubComponents }) {
         const created = await worldCreator.createWorldWithScene({ owner: identity.authChain })
         worldName = created.worldName
 
-        stubComponents.namePermissionChecker.checkPermission
-          .withArgs(identity.authChain.authChain[0].payload.toLowerCase(), worldName)
-          .resolves(true)
+        stubComponents.namePermissionChecker.checkPermission.mockImplementation(
+          async (ethAddress, name) =>
+            ethAddress === identity.authChain.authChain[0].payload.toLowerCase() && name === worldName
+        )
       })
 
       it('should set spawn coordinates to null', async () => {

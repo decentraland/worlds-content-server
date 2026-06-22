@@ -7,8 +7,11 @@ test('LivekitWebhookHandler', function ({ components, stubComponents }) {
   beforeEach(() => {
     const { config } = stubComponents
 
-    config.requireString.withArgs('LIVEKIT_API_KEY').resolves('test_api_key')
-    config.requireString.withArgs('LIVEKIT_API_SECRET').resolves('test_api_secret')
+    const requireStringValues: Record<string, string> = {
+      LIVEKIT_API_KEY: 'test_api_key',
+      LIVEKIT_API_SECRET: 'test_api_secret'
+    }
+    config.requireString.mockImplementation(async (name) => requireStringValues[name] ?? '')
 
     jest.spyOn(WebhookReceiver.prototype, 'receive').mockImplementation((body, auth) => {
       if (auth === 'invalid-auth-token') {
