@@ -31,7 +31,7 @@ async function createHttpNotificationClient({
 
   async function sendNotifications(notifications: Notification[]): Promise<void> {
     logger.info(`Sending ${notifications.length} notifications`, { notifications: JSON.stringify(notifications) })
-    await fetch.fetch(`${notificationServiceUrl}/notifications`, {
+    const response = await fetch.fetch(`${notificationServiceUrl}/notifications`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -39,6 +39,9 @@ async function createHttpNotificationClient({
       },
       body: JSON.stringify(notifications)
     })
+    // The response is not used; drain its body so undici can release the
+    // connection back to its pool instead of leaving it pinned until GC.
+    await response.body?.cancel().catch(() => undefined)
   }
 
   return {
