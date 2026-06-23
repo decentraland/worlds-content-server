@@ -832,15 +832,15 @@
     "@dcl/core-commons" "^0.10.0"
     "@dcl/crypto" "3.7.0"
 
-"@dcl/crypto-middleware@^4.1.0":
-  version "4.1.0"
-  resolved "https://registry.yarnpkg.com/@dcl/crypto-middleware/-/crypto-middleware-4.1.0.tgz#85b946c2627d4fbb3a91795fd78109f5cccba1e4"
-  integrity sha512-F9MVyxnLFaLJSyo5o6MtsGTDiQ1r4VqCKuFkaEPcq2JFyI6W4ftIRaKIj7hLb65PP/ywm3FkQrizSJ+6MhWpZw==
+"@dcl/crypto-middleware@^4.1.1":
+  version "4.1.1"
+  resolved "https://registry.yarnpkg.com/@dcl/crypto-middleware/-/crypto-middleware-4.1.1.tgz#a46861caa68bf38f0355ce72d77a8232200d54ed"
+  integrity sha512-wNo3D00SyZKoxy3THQj+EMWWatU9F2VTPwqTIVWZj3JlnaKRScNpLOsrHVPETN9FYtTIlJqqhjlUWsjoUGVisw==
   dependencies:
     "@dcl/core-commons" "^0.10.0"
     "@dcl/crypto" "3.7.0"
 
-"@dcl/crypto@3.7.0":
+"@dcl/crypto@3.7.0", "@dcl/crypto@^3.7.0":
   version "3.7.0"
   resolved "https://registry.yarnpkg.com/@dcl/crypto/-/crypto-3.7.0.tgz#2436370e591ea269da4806ee800e8eec21ff2168"
   integrity sha512-8HSFLxnIHDeA8I/6yGAUwbCin2TX2oPn2uBLj5UmR0NFAyN5wYJCqbeolaJaIdmqN9RFjdb9ixKOY4uKF5Q2XA==
@@ -875,10 +875,10 @@
     eslint-plugin-prettier "^5.1.3"
     prettier "^3.3.2"
 
-"@dcl/fetch-component@^1.1.0":
-  version "1.1.0"
-  resolved "https://registry.yarnpkg.com/@dcl/fetch-component/-/fetch-component-1.1.0.tgz#cc16300374e789fb920b8d7d11e6445fe4f20ee0"
-  integrity sha512-WDri8jx8EN90P+0EE9NII/oMV5GDcpMMIrUGFq9OT3EW9xeRkyiUyRYwSqI9rjjG+2wNJcpDnkCVlMq+kva6fg==
+"@dcl/fetch-component@^1.1.1":
+  version "1.1.1"
+  resolved "https://registry.yarnpkg.com/@dcl/fetch-component/-/fetch-component-1.1.1.tgz#8f089f216150bab23d4cb798311796943243bc0b"
+  integrity sha512-Q1d/By58NRFIF7h5oMSSFNFGtcJmoKKY6V3kOo314soCgSH0IETydwaD8Hu2zPWK9TZQVx+eDJppViyKVpt91Q==
   dependencies:
     "@dcl/core-commons" "0.10.1"
 
@@ -896,10 +896,10 @@
     "@dcl/schemas" "^18.0.0"
     "@well-known-components/interfaces" "^1.4.3"
 
-"@dcl/http-server@^2.0.2":
-  version "2.0.2"
-  resolved "https://registry.yarnpkg.com/@dcl/http-server/-/http-server-2.0.2.tgz#9909d0e423489b4a7f76b6a9111a79029f4153a9"
-  integrity sha512-tzzBrW0JtexwwZNB7yYLiKVhG8LysWf7Sy2xrLBrqF8BAsCWqeLvPqftKrLBHNkxAd66zHsi5P3Mg5I9GdvdRA==
+"@dcl/http-server@^2.1.0":
+  version "2.1.0"
+  resolved "https://registry.yarnpkg.com/@dcl/http-server/-/http-server-2.1.0.tgz#5385ba3319356d32d468365a84530f24e245fa65"
+  integrity sha512-UqIFIo18JeKklM/RM0wEJ0u/DCGjikBHtQ1LzuQKjDK6SP9XgeVhukgCg5BmdW0D3Qzlql2i5CGpW4EdyfUiWQ==
   dependencies:
     "@dcl/core-commons" "0.10.1"
     "@well-known-components/interfaces" "^1.5.1"
@@ -920,10 +920,10 @@
     "@well-known-components/interfaces" "^1.5.2"
     cron-parser "^5.0.0"
 
-"@dcl/pg-component@^0.1.0":
-  version "0.1.1"
-  resolved "https://registry.npmjs.org/@dcl/pg-component/-/pg-component-0.1.1.tgz"
-  integrity sha512-hwkK3jjTjjJGfPODCOqe5sf8mApLqe+28FHiHpnEoeqfyOosjBG+tGDS3ULTFadkXv07h2iPCwuYFdoZua658g==
+"@dcl/pg-component@^0.2.0":
+  version "0.2.0"
+  resolved "https://registry.yarnpkg.com/@dcl/pg-component/-/pg-component-0.2.0.tgz#e4bab822c84b1c0d93823032771f9c78c0f6fdd3"
+  integrity sha512-54GTehvCYHyFW0KqTzMrdLVRkSHmX1xEWpk9SRkL8nO2JaJNPI0gYRkruVI+UgMOXwW7w9fPvzwog65FPWqyVg==
   dependencies:
     "@well-known-components/interfaces" "^1.5.2"
     node-pg-migrate "^7.9.1"
@@ -932,13 +932,13 @@
     pg-query-stream "4.11.2"
     sql-template-strings "2.2.2"
 
-"@dcl/queue-consumer-component@^3.0.4":
-  version "3.0.4"
-  resolved "https://registry.yarnpkg.com/@dcl/queue-consumer-component/-/queue-consumer-component-3.0.4.tgz#352a3db5a5a76b0c2e89b25ff713e8a195fe7404"
-  integrity sha512-bg3fJJWqos3+qstM7ksRiIMqOqlonquqsrJuvEBruEVENO6KyEauFnT41TGNVJSRQbZN36h4nWthTpQ1ed+JAA==
+"@dcl/queue-consumer-component@^3.0.5":
+  version "3.0.5"
+  resolved "https://registry.yarnpkg.com/@dcl/queue-consumer-component/-/queue-consumer-component-3.0.5.tgz#a58bf6993b93449e03b38ed09baefa5e4e5bbe89"
+  integrity sha512-d+3UAgfvMXkrmYxk+JC7VEp27LDyPxU5D2bAsGHfrQV+ECsirV/X/Dg9KjA+8Gj5Mn7a7FW9AiNIN5sN2idJVw==
   dependencies:
     "@dcl/core-commons" "0.10.1"
-    "@dcl/sqs-component" "2.2.4"
+    "@dcl/sqs-component" "2.2.5"
     "@well-known-components/interfaces" "^1.5.2"
 
 "@dcl/redis-component@^3.1.3":
@@ -1018,10 +1018,10 @@
     "@dcl/core-commons" "0.10.1"
     "@well-known-components/interfaces" "^1.5.2"
 
-"@dcl/sqs-component@2.2.4", "@dcl/sqs-component@^2.2.4":
-  version "2.2.4"
-  resolved "https://registry.yarnpkg.com/@dcl/sqs-component/-/sqs-component-2.2.4.tgz#b596c4f3abf01f745b34c9ee2bbba1c3910eb565"
-  integrity sha512-eBHvL4NuBkYshefSSPIihcWyPjRexjmfR+DbMKtTP6ZLi0tNDogeOYG3VUjh2S3+0Fb1z9PeOXPx4OABRlEY1g==
+"@dcl/sqs-component@2.2.5", "@dcl/sqs-component@^2.2.5":
+  version "2.2.5"
+  resolved "https://registry.yarnpkg.com/@dcl/sqs-component/-/sqs-component-2.2.5.tgz#b589dd11fc7d09e70564afaa6809d0adc3853e31"
+  integrity sha512-zHKkOXtsU8DOT4CeAhIvysjUQAzhameoH3fO9qzNphGOJxNqNlaCyYyLrB1yBOwXFctfGvz9ELcsmppHBsR9ng==
   dependencies:
     "@aws-sdk/client-sqs" "^3.956.0"
     "@dcl/core-commons" "0.10.1"
@@ -1037,10 +1037,10 @@
     "@dcl/crypto-middleware" "^4.0.0"
     "@well-known-components/interfaces" "^1.5.2"
 
-"@dcl/thegraph-component@^0.1.1":
-  version "0.1.1"
-  resolved "https://registry.yarnpkg.com/@dcl/thegraph-component/-/thegraph-component-0.1.1.tgz#1f2f75edffee9871651525ecdb5b289c427c0bc2"
-  integrity sha512-rPlVGBtniXdTdH5gEC/4I2a4qzIuhCVBTb4hEFNB2wrF2WFjWboRE7/gCl/ZliB5VDnkk3dH+6GHYUyF6uY+zQ==
+"@dcl/thegraph-component@^0.1.2":
+  version "0.1.2"
+  resolved "https://registry.yarnpkg.com/@dcl/thegraph-component/-/thegraph-component-0.1.2.tgz#fb1a8890bfa40df661c4ff99ad3b0f329a2118b6"
+  integrity sha512-00lSTREgLGjLfrU8oRi7v0gIJ1+/MRHXHSfKzDZHNboa1xdx4D7cWrO4K2ZfdFbAB17gVflw1ykxsONMAeEuYg==
   dependencies:
     "@dcl/core-commons" "0.10.1"
     "@well-known-components/interfaces" "^1.5.2"
