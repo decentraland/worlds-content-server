@@ -3,9 +3,42 @@ import { IPFSv2 } from '@dcl/schemas'
 import { HandlerContextWithPath } from '../../types'
 import { ContentItem, IContentStorageComponent } from '@dcl/catalyst-storage'
 import { InvalidRequestError } from '@dcl/http-commons'
+import { fromStream } from 'file-type'
+import { Readable } from 'stream'
 
 const EXPOSED_HEADERS = 'ETag, Accept-Ranges, Content-Range'
 export const MAX_AVAILABLE_CONTENT_CIDS = 500
+
+const DEFAULT_CONTENT_TYPE = 'application/octet-stream'
+
+// file-type inspects magic bytes near the start of the file; 4100 bytes is its internal sample
+// size and is enough to recognize every format it supports.
+const MIME_SNIFF_BYTES = 4100
+
+// Content is addressed by hash, so the request carries no file name or extension to derive a MIME
+// type from. We detect it by sniffing the file's magic bytes. The detected type describes the full
+// representation, so it is also correct for partial (206) responses. Anything file-type cannot
+// recognize (plain text, JSON, glTF, ...) falls back to application/octet-stream.
+//
+// We sniff the raw stream: worlds content is always stored uncompressed (deploys use storeStream,
+// never storeStreamAndCompress), so the raw bytes are the real bytes. We skip detection for any
+// compressed item rather than route it through asStream(), which would pipe the source into a
+// gunzip transform whose source stream destroy() does not tear down (an fd/socket leak).
+async function detectContentType(item: ContentItem): Promise<string> {
+  if (item.encoding) return DEFAULT_CONTENT_TYPE
+
+  let stream: Readable | undefined
+  try {
+    stream = await item.asRawStream()
+    const result = await fromStream(stream)
+    return result?.mime ?? DEFAULT_CONTENT_TYPE
+  } catch {
+    return DEFAULT_CONTENT_TYPE
+  } finally {
+    // We only need the head of the file; destroying the stream aborts any remaining transfer.
+    stream?.destroy()
+  }
+}
 
 // Content is addressed by IPFS CIDv1, but world thumbnails have historically been stored under a
 // raw SHA-256 hex digest. Accept both when serving so those legacy thumbnails remain retrievable.
@@ -17,9 +50,9 @@ function isRetrievableContentKey(hashId: string): boolean {
   return IPFSv2.validate(hashId) || SHA256_HEX.test(hashId)
 }
 
-function contentItemHeaders(content: ContentItem, hashId: string) {
+function contentItemHeaders(content: ContentItem, hashId: string, contentType: string) {
   const ret: Record<string, string> = {
-    'Content-Type': 'application/octet-stream',
+    'Content-Type': contentType,
     ETag: JSON.stringify(hashId), // by spec, the ETag must be a double-quoted string
     'Access-Control-Expose-Headers': EXPOSED_HEADERS,
     'Cache-Control': 'public,max-age=31536000,s-maxage=31536000,immutable'
@@ -83,7 +116,8 @@ async function retrieveFullContent(
 ): Promise<IHttpServerComponent.IResponse> {
   const file = await storage.retrieve(hashId)
   if (!file) return { status: 404 }
-  return { status: 200, headers: contentItemHeaders(file, hashId), body: await file.asRawStream() }
+  const contentType = await detectContentType(file)
+  return { status: 200, headers: contentItemHeaders(file, hashId, contentType), body: await file.asRawStream() }
 }
 
 export async function getContentFile(
@@ -139,10 +173,19 @@ export async function getContentFile(
   }
   if (!file) return { status: 404 }
 
+  // Sniff the MIME type from the start of the file, not the requested range (which may begin
+  // mid-file). encoding is null here (compressed content bailed out above), so a small read from
+  // offset 0 yields valid bytes to inspect.
+  const head = await ctx.components.storage.retrieve(ctx.params.hashId, {
+    start: 0,
+    end: Math.min(MIME_SNIFF_BYTES - 1, fileInfo.size - 1)
+  })
+  const contentType = head ? await detectContentType(head) : DEFAULT_CONTENT_TYPE
+
   return {
     status: 206,
     headers: {
-      ...contentItemHeaders(file, ctx.params.hashId),
+      ...contentItemHeaders(file, ctx.params.hashId, contentType),
       'Content-Length': (range.end - range.start + 1).toString(),
       'Content-Range': `bytes ${range.start}-${range.end}/${fileInfo.size}`
     },
@@ -159,7 +202,8 @@ export async function headContentFile(
 
   if (!file) return { status: 404 }
 
-  return { status: 200, headers: contentItemHeaders(file, ctx.params.hashId) }
+  const contentType = await detectContentType(file)
+  return { status: 200, headers: contentItemHeaders(file, ctx.params.hashId, contentType) }
 }
 
 export async function availableContentHandler(
