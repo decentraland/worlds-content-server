@@ -189,13 +189,20 @@ describe('getContentFile', () => {
   const hashId = 'bafkreiahsvnr4x4rnskhkwfbnbplkbqhzb3xagdwpyfy44lgcndmhyizde'
   const fileContent = Buffer.from('test content')
 
-  function createContentItem(overrides: Partial<ContentItem> = {}): ContentItem {
+  // Minimal but valid magic bytes so file-type recognizes the content.
+  const mp4Content = Buffer.from([
+    0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x6d, 0x70, 0x34, 0x32, 0x00, 0x00, 0x00, 0x00, 0x6d, 0x70, 0x34,
+    0x32, 0x69, 0x73, 0x6f, 0x6d
+  ])
+
+  function createContentItem(content: Buffer = fileContent, overrides: Partial<ContentItem> = {}): ContentItem {
     return {
       encoding: null,
-      size: fileContent.length,
-      contentSize: fileContent.length,
-      asStream: jest.fn().mockResolvedValue(Readable.from(fileContent)),
-      asRawStream: jest.fn().mockResolvedValue(Readable.from(fileContent)),
+      size: content.length,
+      contentSize: content.length,
+      // Fresh streams per call so detection and body reads don't share a consumed stream.
+      asStream: jest.fn().mockImplementation(async () => Readable.from(content)),
+      asRawStream: jest.fn().mockImplementation(async () => Readable.from(content)),
       ...overrides
     }
   }
@@ -222,9 +229,10 @@ describe('getContentFile', () => {
   describe('when the file has compressed encoding and a Range header is sent', () => {
     let response: IHttpServerComponent.IResponse
     let storageMock: Partial<IContentStorageComponent>
+    let compressedItem: ContentItem
 
     beforeEach(async () => {
-      const compressedItem = createContentItem({ encoding: 'gzip' })
+      compressedItem = createContentItem(fileContent, { encoding: 'gzip' })
       storageMock = {
         fileInfo: jest.fn().mockResolvedValue({ encoding: 'gzip', size: 100, contentSize: 200 }),
         retrieve: jest.fn().mockResolvedValue(compressedItem)
@@ -243,6 +251,16 @@ describe('getContentFile', () => {
     it('should not advertise Accept-Ranges', () => {
       expect(response.headers!['Accept-Ranges']).toBeUndefined()
     })
+
+    it('should skip MIME detection and fall back to application/octet-stream', () => {
+      expect((response.headers as Record<string, string>)['Content-Type']).toEqual('application/octet-stream')
+    })
+
+    it('should not read the raw stream to sniff a compressed item', () => {
+      // asRawStream is called once for the body, never a second time for detection (which would
+      // require routing a compressed stream through a gunzip pipe we cannot reliably tear down).
+      expect(compressedItem.asRawStream).toHaveBeenCalledTimes(1)
+    })
   })
 
   describe('when the file size is null and a Range header is sent', () => {
@@ -250,7 +268,7 @@ describe('getContentFile', () => {
     let storageMock: Partial<IContentStorageComponent>
 
     beforeEach(async () => {
-      const item = createContentItem({ size: null })
+      const item = createContentItem(fileContent, { size: null })
       storageMock = {
         fileInfo: jest.fn().mockResolvedValue({ encoding: null, size: null, contentSize: null }),
         retrieve: jest.fn().mockResolvedValue(item)
@@ -272,7 +290,7 @@ describe('getContentFile', () => {
     let storageMock: Partial<IContentStorageComponent>
 
     beforeEach(async () => {
-      const rangedItem = createContentItem({ size: 5 })
+      const rangedItem = createContentItem(fileContent, { size: 5 })
       storageMock = {
         fileInfo: jest
           .fn()
@@ -406,6 +424,70 @@ describe('getContentFile', () => {
 
     it('should not call fileInfo', () => {
       expect(storageMock.fileInfo).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('when serving full content of a recognizable file type', () => {
+    let response: IHttpServerComponent.IResponse
+
+    beforeEach(async () => {
+      const item = createContentItem(mp4Content)
+      const storageMock: Partial<IContentStorageComponent> = {
+        fileInfo: jest.fn(),
+        retrieve: jest.fn().mockResolvedValue(item)
+      }
+      response = await getContentFile(createContext(storageMock))
+    })
+
+    it('should set the Content-Type to the detected MIME type', () => {
+      expect((response.headers as Record<string, string>)['Content-Type']).toEqual('video/mp4')
+    })
+  })
+
+  describe('when serving full content of an unrecognizable file type', () => {
+    let response: IHttpServerComponent.IResponse
+
+    beforeEach(async () => {
+      const item = createContentItem() // plain text: no recognizable magic bytes
+      const storageMock: Partial<IContentStorageComponent> = {
+        fileInfo: jest.fn(),
+        retrieve: jest.fn().mockResolvedValue(item)
+      }
+      response = await getContentFile(createContext(storageMock))
+    })
+
+    it('should fall back to application/octet-stream', () => {
+      expect((response.headers as Record<string, string>)['Content-Type']).toEqual('application/octet-stream')
+    })
+  })
+
+  describe('when serving a byte range of a recognizable file type', () => {
+    let response: IHttpServerComponent.IResponse
+    let storageMock: Partial<IContentStorageComponent>
+
+    beforeEach(async () => {
+      // The requested range starts mid-file; the type must still be detected from the file start.
+      storageMock = {
+        fileInfo: jest.fn().mockResolvedValue({ encoding: null, size: 5000, contentSize: 5000 }),
+        retrieve: jest
+          .fn()
+          .mockImplementation(async (_id: string, range?: { start: number; end: number }) =>
+            createContentItem(mp4Content, { size: range ? range.end - range.start + 1 : mp4Content.length })
+          )
+      }
+      response = await getContentFile(createContext(storageMock, 'bytes=1000-2000'))
+    })
+
+    it('should respond with 206', () => {
+      expect(response.status).toEqual(206)
+    })
+
+    it('should sniff the MIME type from the start of the file', () => {
+      expect(storageMock.retrieve).toHaveBeenCalledWith(hashId, { start: 0, end: 4099 })
+    })
+
+    it('should set the Content-Type to the detected MIME type', () => {
+      expect((response.headers as Record<string, string>)['Content-Type']).toEqual('video/mp4')
     })
   })
 
