@@ -6,7 +6,7 @@ import {
 } from '@dcl/http-server'
 import { createLogComponent } from '@well-known-components/logger'
 import { createFetchComponent } from './adapters/fetch'
-import { createMetricsComponent } from '@well-known-components/metrics'
+import { createMetricsComponent } from '@dcl/metrics'
 import { createSubgraphComponent } from '@dcl/thegraph-component'
 import { AppComponents, GlobalContext, ICommsAdapter, INameDenyListChecker, IWorldNamePermissionChecker } from './types'
 import { metricDeclarations } from './metrics'

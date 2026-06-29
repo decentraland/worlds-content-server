@@ -920,6 +920,13 @@
     "@well-known-components/interfaces" "^1.5.2"
     cron-parser "^5.0.0"
 
+"@dcl/metrics@^1.0.1":
+  version "1.0.1"
+  resolved "https://registry.yarnpkg.com/@dcl/metrics/-/metrics-1.0.1.tgz#de5e762f3872fb16a15a4e56b3fe98b2fabb770b"
+  integrity sha512-ZiDHlEVDhPy30UtvsLsUtefOsvDjD2TaR5KIkLTgPXtelqmhOWs26qD8Ldudky34nnqOjlLcokJYmyHltpsxbQ==
+  dependencies:
+    prom-client "^15.1.0"
+
 "@dcl/pg-component@^0.2.0":
   version "0.2.0"
   resolved "https://registry.yarnpkg.com/@dcl/pg-component/-/pg-component-0.2.0.tgz#e4bab822c84b1c0d93823032771f9c78c0f6fdd3"
@@ -2702,13 +2709,6 @@
   version "3.1.3"
   resolved "https://registry.npmjs.org/@well-known-components/logger/-/logger-3.1.3.tgz"
   integrity sha512-tTjD27CdfU4SVe+kPfjRbPSqdrw0Crg+M31RNejinCuMEBtEGbhYLtB1M4gn+PSTy2Oi3cI3iOdeQ1xVhMSerQ==
-
-"@well-known-components/metrics@^2.1.0":
-  version "2.1.0"
-  resolved "https://registry.npmjs.org/@well-known-components/metrics/-/metrics-2.1.0.tgz"
-  integrity sha512-nJ3TdVMiJN2i7TtelndDtxvZERcSE7dtlmRfRV7yYZZshDZrQTC9EFH2uhmCWDWI0qnonvlq++JRSXBNJJfbvg==
-  dependencies:
-    prom-client "^15.1.0"
 
 "@well-known-components/nats-component@^2.0.0":
   version "2.0.0"
