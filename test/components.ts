@@ -16,7 +16,7 @@ import { createWorldsIndexerComponent } from '../src/adapters/worlds-indexer'
 import { IFetchComponent } from '@dcl/core-commons'
 
 import { createValidator } from '../src/logic/validations'
-import { createTestMetricsComponent } from '@well-known-components/metrics'
+import { createTestMetricsComponent } from '@dcl/metrics'
 import { metricDeclarations } from '../src/metrics'
 import { createEntityDeployer } from '../src/adapters/entity-deployer'
 import { createMockNameDenyListChecker } from './mocks/name-deny-list-checker-mock'
