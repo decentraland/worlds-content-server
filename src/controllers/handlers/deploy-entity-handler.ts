@@ -4,6 +4,7 @@ import { FormDataContext, readUploadedFile, toDeploymentFile } from '../../logic
 import { DeploymentFile, HandlerContextWithPath } from '../../types'
 import { extractAuthChain } from '../../logic/extract-auth-chain'
 import { InvalidRequestError } from '@dcl/http-commons'
+import { initPartialDeployment } from './deploy-v2-handlers'
 
 export function requireString(val: string | null | undefined): string {
   if (typeof val !== 'string') throw new InvalidRequestError('A string was expected')
@@ -19,8 +20,18 @@ function parseEntityJson(raw: string) {
 }
 
 export async function deployEntity(
-  ctx: FormDataContext & HandlerContextWithPath<'config' | 'entityDeployer' | 'storage' | 'validator', '/entities'>
+  ctx: FormDataContext &
+    HandlerContextWithPath<
+      'config' | 'entityDeployer' | 'storage' | 'validator' | 'partialDeploymentManager',
+      '/entities'
+    >
 ): Promise<IHttpServerComponent.IResponse> {
+  // v2 init dispatch — capability-based, no /v2/ URL namespace
+  if (ctx.request.headers.get('upload-incomplete') === '?1') {
+    return initPartialDeployment(ctx)
+  }
+
+  // ===== v1 path (unchanged below this line) =====
   const entityId = requireString(ctx.formData.fields.entityId?.value[0])
   const authChain = extractAuthChain(ctx)
 
