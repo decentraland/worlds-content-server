@@ -76,6 +76,12 @@ export type DeploymentToValidate = {
   files: Map<string, DeploymentFile>
   authChain: AuthChain
   contentHashesInStorage: Map<string, boolean>
+  /**
+   * created_at of the pending (partial) upload for this entity, when one exists. The deployment TTL
+   * check validates the entity timestamp against this anchor instead of now, so a multi-request upload
+   * can span longer than the TTL.
+   */
+  pendingCreatedAt?: Date
 }
 
 export type WorldRuntimeMetadata = {
@@ -257,6 +263,11 @@ export type AccessControlList = {
 
 export interface Validator {
   validate(deployment: DeploymentToValidate): Promise<ValidationResult>
+  /**
+   * Validations a partial (staging) scene deployment must pass before its full content set is present:
+   * everything except content-completeness and the storage-backed size check.
+   */
+  validateStaging(deployment: DeploymentToValidate): Promise<ValidationResult>
 }
 
 export type ValidationResult = {
@@ -282,6 +293,71 @@ export type MigratorComponents = Pick<
 >
 
 export type Validation = (deployment: DeploymentToValidate) => ValidationResult | Promise<ValidationResult>
+
+/**
+ * A partial (multi-request) deployment being staged. Content is uploaded across several requests and
+ * the entity only becomes a live world_scenes row once every referenced file is present. Stored in a
+ * standalone `pending_scenes` table (no FK to `worlds`, so a half-uploaded world never leaks into
+ * listings). The authoritative entity *bytes* live in content storage under the entity id.
+ */
+export type PendingScene = {
+  entityId: string
+  worldName: string
+  parcels: string[]
+  entity: Entity
+  deployer: string
+  createdAt: Date
+  updatedAt: Date
+}
+
+export type UpsertPendingScene = {
+  entityId: string
+  worldName: string
+  parcels: string[]
+  entity: Entity
+  deployer: string
+}
+
+export type IPendingScenesManager = {
+  /** Returns the pending scene for an entity id, treating rows past the TTL as absent. */
+  getByEntityId(entityId: string): Promise<PendingScene | undefined>
+  /**
+   * Records/refreshes a pending scene, replacing any non-expired pending scene of the same world whose
+   * parcels overlap (enforces "at most one pending upload per world+parcel"). On conflict of the same
+   * entity id it only bumps updated_at so created_at (the TTL anchor) stays stable across resumes.
+   */
+  upsert(input: UpsertPendingScene): Promise<PendingScene>
+  deleteByEntityId(entityId: string): Promise<void>
+  /** Deletes pending scenes older than `olderThanMs`. Returns the number removed. */
+  deleteExpired(olderThanMs: number): Promise<number>
+}
+
+export type StageDeploymentInput = {
+  baseUrl: string
+  entity: Entity
+  entityRaw: string
+  authChain: AuthChain
+  files: Map<string, DeploymentFile>
+}
+
+export type StageDeploymentResult = {
+  /** Whether this request completed the content set and the scene was deployed. */
+  complete: boolean
+  /** Content hashes still missing (present when `complete` is false). */
+  missing?: string[]
+  /** The deployment result (present when `complete` is true). */
+  result?: DeploymentResult
+}
+
+export type IPartialDeploymentsComponent = {
+  /**
+   * Stages one request of a partial scene deployment: validates everything that doesn't need the full
+   * content set, stores the uploaded files, records/refreshes the pending scene, and — when this
+   * request completes the content set — runs the full validation + deploy and returns the result.
+   * Throws `InvalidRequestError` (HTTP 400) on client errors.
+   */
+  stage(input: StageDeploymentInput): Promise<StageDeploymentResult>
+}
 
 export type INameOwnership = {
   findOwners(worldNames: string[]): Promise<ReadonlyMap<string, EthAddress | undefined>>
@@ -548,6 +624,8 @@ export type BaseComponents = {
   marketplaceSubGraph: ISubgraphComponent
   metrics: IMetricsComponent<keyof typeof metricDeclarations>
   migrationExecutor: MigrationExecutor
+  partialDeployments: IPartialDeploymentsComponent
+  pendingScenesManager: IPendingScenesManager
   nats: INatsComponent
   nameDenyListChecker: INameDenyListChecker
   nameOwnership: INameOwnership

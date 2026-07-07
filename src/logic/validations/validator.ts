@@ -4,10 +4,11 @@ import {
   validateAuthChain,
   validateBaseEntity,
   validateEntityId,
-  validateFiles,
+  validateNoMissingFiles,
   validateSignature,
   validateSigner,
-  validateSupportedEntityType
+  validateSupportedEntityType,
+  validateUploadedFiles
 } from './common'
 import {
   createValidateBannedNames,
@@ -26,35 +27,46 @@ import {
 import { OK, validateAll, validateIfTypeMatches } from './utils'
 import { EntityType } from '@dcl/schemas'
 
+// Common validations that don't depend on the full content set being present (run in both phases).
+function commonValidations(components: ValidatorComponents): Validation[] {
+  return [
+    validateEntityId,
+    validateBaseEntity,
+    validateAuthChain,
+    validateSigner,
+    validateSignature,
+    createValidateDeploymentTtl(components),
+    validateUploadedFiles
+  ]
+}
+
+// Scene structural validations that only inspect the entity / its declared content (run in both phases).
+function sceneStructuralValidations(components: ValidatorComponents): Validation[] {
+  return [
+    validateSceneEntity,
+    validateDeprecatedConfig,
+    createValidateParcelCoordinates(components),
+    createValidateScenePointers(components),
+    createValidateSceneDimensions(components),
+    createValidateFileCount(components),
+    validateMiniMapImages,
+    validateSkyboxTextures,
+    validateThumbnail,
+    createValidateBannedNames(components)
+    // validateSdkVersion(components) TODO re-enable (and test) once SDK7 is ready
+  ]
+}
+
 export function createValidateFns(components: ValidatorComponents): Validation[] {
   return [
     // Common validations to all entity types
-    validateAll([
-      validateEntityId,
-      validateBaseEntity,
-      validateAuthChain,
-      validateSigner,
-      validateSignature,
-      createValidateDeploymentTtl(components),
-      validateFiles,
-      validateSupportedEntityType
-    ]),
+    validateAll([...commonValidations(components), validateNoMissingFiles, validateSupportedEntityType]),
 
     // Scene entity validations
     validateIfTypeMatches(
       EntityType.SCENE,
       validateAll([
-        validateSceneEntity,
-        validateDeprecatedConfig,
-        createValidateParcelCoordinates(components),
-        createValidateScenePointers(components),
-        createValidateSceneDimensions(components),
-        createValidateFileCount(components),
-        validateMiniMapImages,
-        validateSkyboxTextures,
-        validateThumbnail,
-        createValidateBannedNames(components),
-        // validateSdkVersion(components) TODO re-enable (and test) once SDK7 is ready
+        ...sceneStructuralValidations(components),
         createValidateSize(components), // Slow
         createValidateDeploymentPermission(components) // Slow
       ])
@@ -64,16 +76,38 @@ export function createValidateFns(components: ValidatorComponents): Validation[]
   ]
 }
 
+/**
+ * The validations a partial (staging) scene deployment must pass on every request, before all of its
+ * content is necessarily present. Excludes `validateNoMissingFiles` (content completeness) and
+ * `createValidateSize` (needs every file present; the partial-deployments component runs a cumulative
+ * size check instead). Still runs the deployment-permission check so staging is fully authorized.
+ */
+export function createStagingValidateFns(components: ValidatorComponents): Validation[] {
+  return [
+    validateAll([...commonValidations(components), validateSupportedEntityType]),
+
+    validateIfTypeMatches(
+      EntityType.SCENE,
+      validateAll([...sceneStructuralValidations(components), createValidateDeploymentPermission(components)])
+    )
+  ]
+}
+
+async function runValidations(validations: Validation[], deployment: DeploymentToValidate): Promise<ValidationResult> {
+  for (const validation of validations) {
+    const result = await validation(deployment)
+    if (!result.ok()) {
+      return result
+    }
+  }
+  return OK
+}
+
 export const createValidator = (components: ValidatorComponents): Validator => ({
   async validate(deployment: DeploymentToValidate): Promise<ValidationResult> {
-    const validations = createValidateFns(components)
-    for (const validation of validations) {
-      const result = await validation(deployment)
-      if (!result.ok()) {
-        return result
-      }
-    }
-
-    return OK
+    return runValidations(createValidateFns(components), deployment)
+  },
+  async validateStaging(deployment: DeploymentToValidate): Promise<ValidationResult> {
+    return runValidations(createStagingValidateFns(components), deployment)
   }
 })

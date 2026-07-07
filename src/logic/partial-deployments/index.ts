@@ -1,0 +1,1 @@
+export { createPartialDeploymentsComponent } from './component'

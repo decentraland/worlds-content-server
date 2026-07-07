@@ -11,7 +11,8 @@ import {
   validateAuthChain,
   validateBaseEntity,
   validateEntityId,
-  validateFiles,
+  validateUploadedFiles,
+  validateNoMissingFiles,
   validateSignature,
   validateSigner,
   validateSupportedEntityType
@@ -194,32 +195,22 @@ describe('common validations', function () {
     })
   })
 
-  describe('validateFiles', () => {
-    it('validateFiles OK', async () => {
-      const entityFiles = new Map<string, Uint8Array>()
-      entityFiles.set('abc.txt', Buffer.from(stringToUtf8Bytes('asd')))
-
+  describe('validateUploadedFiles', () => {
+    it('validateUploadedFiles OK', async () => {
       const deployment = await createSceneDeployment(identity.authChain)
 
-      const result = await validateFiles(deployment)
+      const result = await validateUploadedFiles(deployment)
       expect(result.ok()).toBeTruthy()
     })
 
-    it('validateFiles with errors', async () => {
-      const entityFiles = new Map<string, Uint8Array>()
-      entityFiles.set('abc.txt', Buffer.from(stringToUtf8Bytes('asd')))
-
+    it('validateUploadedFiles with errors', async () => {
       const deployment = await createSceneDeployment(identity.authChain)
 
-      // Alter the files to make it fail
+      // Alter the files to make it fail: an extra file not in the entity, and a non-CIDv1 hash.
       deployment.files.set(await hashV1(Buffer.from('efg')), bufferToDeploymentFile(Buffer.from('efg')))
       deployment.files.set(await hashV0(Buffer.from('igh')), bufferToDeploymentFile(Buffer.from('igh')))
-      deployment.entity.content.push({
-        file: 'def.txt',
-        hash: 'bafkreie3yaomoex7orli7fumfwgk5abgels5o5fiauxfijzlzoiymqppdi'
-      })
 
-      const result = await validateFiles(deployment)
+      const result = await validateUploadedFiles(deployment)
       expect(result.ok()).toBeFalsy()
       expect(result.errors).toContain('Extra file detected bafkreigu77uot3qljdv2oftqmer2ogd7glvohpolbz3whza6kmzgppmkkm')
       expect(result.errors).toContain(
@@ -228,6 +219,28 @@ describe('common validations', function () {
       expect(result.errors).toContain(
         "The hashed file doesn't match the provided content: QmPeE5zaej9HogrHRfS1NejWsTuh4qcFZCc4Q7LMnwdTMK"
       )
+    })
+  })
+
+  describe('validateNoMissingFiles', () => {
+    it('validateNoMissingFiles OK', async () => {
+      const deployment = await createSceneDeployment(identity.authChain)
+
+      const result = await validateNoMissingFiles(deployment)
+      expect(result.ok()).toBeTruthy()
+    })
+
+    it('validateNoMissingFiles with a referenced-but-absent file', async () => {
+      const deployment = await createSceneDeployment(identity.authChain)
+
+      // Reference a file that is neither uploaded nor stored.
+      deployment.entity.content.push({
+        file: 'def.txt',
+        hash: 'bafkreie3yaomoex7orli7fumfwgk5abgels5o5fiauxfijzlzoiymqppdi'
+      })
+
+      const result = await validateNoMissingFiles(deployment)
+      expect(result.ok()).toBeFalsy()
       expect(result.errors).toContain(
         'The file bafkreie3yaomoex7orli7fumfwgk5abgels5o5fiauxfijzlzoiymqppdi (def.txt) is neither present in the storage or in the provided entity'
       )

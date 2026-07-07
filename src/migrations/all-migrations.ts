@@ -23,6 +23,7 @@ import { migration as migration_0021 } from './0021_migrate_permissions_to_world
 import { migration as migration_0022 } from './0022_normalize_permission_parcels'
 import { migration as migration_0023 } from './0023_add_scene_deployment_status'
 import { migration as migration_0024 } from './0024_denormalize_world_scene_stats'
+import { migration as migration_0025 } from './0025_create_pending_scenes_table'
 
 export const allMigrations: Migration[] = [
   migration_0001,
@@ -48,5 +49,6 @@ export const allMigrations: Migration[] = [
   migration_0021,
   migration_0022,
   migration_0023,
-  migration_0024
+  migration_0024,
+  migration_0025
 ]

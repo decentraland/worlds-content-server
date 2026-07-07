@@ -28,7 +28,11 @@ export const validateBaseEntity: Validation = async (deployment: DeploymentToVal
 
 export function createValidateDeploymentTtl(components: Pick<ValidatorComponents, 'config'>) {
   return async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
-    const ttl = Date.now() - deployment.entity.timestamp
+    // A partial (multi-request) upload can span longer than the deployment TTL, so when a pending
+    // upload exists the entity's freshness is measured against when the upload started
+    // (pendingCreatedAt) rather than now. Full deploys have no pending row and anchor on Date.now().
+    const anchor = deployment.pendingCreatedAt?.getTime() ?? Date.now()
+    const ttl = anchor - deployment.entity.timestamp
     const maxTtl = (await components.config.getNumber('DEPLOYMENT_TTL')) || 300_000
     if (ttl > maxTtl) {
       return createValidationResult([
@@ -62,10 +66,16 @@ export const validateSignature: Validation = async (deployment: DeploymentToVali
   return createValidationResult(result.message ? [result.message] : [])
 }
 
-export const validateFiles: Validation = async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
+/**
+ * Validates the files uploaded in *this* request: each must be referenced by the entity (or be the
+ * entity file), be a CIDv1, and hash to its declared key. Runs in both the full and staging validation
+ * paths — it does not depend on the full content set being present.
+ */
+export const validateUploadedFiles: Validation = async (
+  deployment: DeploymentToValidate
+): Promise<ValidationResult> => {
   const errors: string[] = []
 
-  // validate all files are part of the entity
   for (const [hash] of deployment.files) {
     // detect extra file
     if (!deployment.entity.content!.some(($) => $.hash === hash) && hash !== deployment.entity.id) {
@@ -81,7 +91,19 @@ export const validateFiles: Validation = async (deployment: DeploymentToValidate
     }
   }
 
-  // then ensure that all missing files are uploaded
+  return createValidationResult(errors)
+}
+
+/**
+ * Validates that every file the entity references is present — either uploaded now or already stored.
+ * Only meaningful once the full content set can be present, so it runs in the full validation path but
+ * NOT while staging a partial deployment.
+ */
+export const validateNoMissingFiles: Validation = async (
+  deployment: DeploymentToValidate
+): Promise<ValidationResult> => {
+  const errors: string[] = []
+
   for (const file of deployment.entity.content!) {
     const isFilePresent = deployment.files.has(file.hash) || deployment.contentHashesInStorage.get(file.hash)
     if (!isFilePresent) {

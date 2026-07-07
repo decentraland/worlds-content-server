@@ -11,7 +11,20 @@ The database contains the following main tables:
 3. **`world_permissions`** - Stores deployment and streaming permission grants
 4. **`world_permission_parcels`** - Stores parcel-level permission restrictions (normalized)
 5. **`blocked`** - Stores blocked wallet addresses
-6. **`migrations`** - Tracks executed database migrations (internal, managed automatically)
+6. **`pending_scenes`** - Stores partial (multi-request) deployments still being uploaded (not yet live)
+7. **`migrations`** - Tracks executed database migrations (internal, managed automatically)
+
+### Table: `pending_scenes`
+
+Staging area for partial deployments: a scene's content can be uploaded across several `POST /entities`
+requests (with `partial=true`), and the entity only becomes a live `world_scenes` row once every
+referenced file is present. Intentionally has **no** foreign key to `worlds` — a half-uploaded world must
+not create a `worlds` row (which would leak into listings and world-validity checks) before it goes live.
+The authoritative entity bytes live in content storage under the entity id; the `entity` JSONB here is a
+copy used by garbage collection. Columns: `entity_id` (PK), `world_name`, `parcels` (TEXT[]), `entity`
+(JSONB), `deployer`, `created_at`/`updated_at` (TIMESTAMPTZ). At most one non-expired pending scene may
+exist per world + overlapping parcels; rows expire after `PENDING_DEPLOYMENT_TTL` (default 24h) and are
+removed by the daily eviction job. `created_at` anchors the deployment-TTL check for staged uploads.
 
 ---
 

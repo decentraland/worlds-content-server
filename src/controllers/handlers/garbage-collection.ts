@@ -1,14 +1,17 @@
 import { HandlerContextWithPath } from '../../types'
 import { IHttpServerComponent } from '@dcl/core-commons'
+import SQL from 'sql-template-strings'
 
 function formatSecs(millis: number): string {
   return `${(millis / 1000).toFixed(2)} secs`
 }
 
+const DEFAULT_PENDING_DEPLOYMENT_TTL_MS = 24 * 60 * 60 * 1000 // 24 hours
+
 export async function garbageCollectionHandler(
-  context: HandlerContextWithPath<'database' | 'logs' | 'storage', '/gc'>
+  context: HandlerContextWithPath<'config' | 'database' | 'logs' | 'storage', '/gc'>
 ): Promise<IHttpServerComponent.IResponse> {
-  const { database, logs, storage } = context.components
+  const { config, database, logs, storage } = context.components
   const logger = logs.getLogger('garbage-collection')
 
   async function getAllActiveKeys() {
@@ -43,6 +46,25 @@ export async function garbageCollectionHandler(
     )
     thumbnailsResult.rows.forEach((row) => {
       activeKeys.add(row.thumbnail_hash)
+    })
+
+    // Non-expired partial (pending) deployments: their entity id, auth-chain key, and content hashes
+    // are still referenced even though no world_scenes row exists yet. Cutoff-filtered so staged content
+    // becomes reclaimable exactly when the pending upload expires, even if the eviction job lags.
+    const pendingTtlMs = (await config.getNumber('PENDING_DEPLOYMENT_TTL')) ?? DEFAULT_PENDING_DEPLOYMENT_TTL_MS
+    const cutoff = new Date(Date.now() - pendingTtlMs)
+    const pendingResult = await database.query<{
+      entity_id: string
+      entity: { content?: Array<{ hash: string }> }
+    }>(SQL`SELECT entity_id, entity FROM pending_scenes WHERE created_at >= ${cutoff}`)
+    pendingResult.rows.forEach((row) => {
+      activeKeys.add(row.entity_id)
+      activeKeys.add(`${row.entity_id}.auth`)
+      if (row.entity.content) {
+        for (const file of row.entity.content) {
+          activeKeys.add(file.hash)
+        }
+      }
     })
 
     logger.info(`Done in ${formatSecs(Date.now() - start)}. Database contains ${activeKeys.size} active keys.`)

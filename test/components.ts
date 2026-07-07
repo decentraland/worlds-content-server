@@ -16,6 +16,8 @@ import { createWorldsIndexerComponent } from '../src/adapters/worlds-indexer'
 import { IFetchComponent } from '@dcl/core-commons'
 
 import { createValidator } from '../src/logic/validations'
+import { createPendingScenesManager } from '../src/adapters/pending-scenes-manager'
+import { createPartialDeploymentsComponent } from '../src/logic/partial-deployments'
 import { createTestMetricsComponent } from '@well-known-components/metrics'
 import { metricDeclarations } from '../src/metrics'
 import { createEntityDeployer } from '../src/adapters/entity-deployer'
@@ -208,6 +210,20 @@ async function initComponents(): Promise<TestComponents> {
     storage,
     worldsManager
   })
+
+  const pendingScenesManager = await createPendingScenesManager({ config, database, logs })
+
+  const partialDeployments = createPartialDeploymentsComponent({
+    coordinates,
+    entityDeployer,
+    limitsManager,
+    logs,
+    pendingScenesManager,
+    storage,
+    validator,
+    worldsManager
+  })
+
   const status = createMockStatusComponent()
 
   const updateOwnerJob = await createMockUpdateOwnerJob({})
@@ -268,6 +284,8 @@ async function initComponents(): Promise<TestComponents> {
     nats: createMockNatsComponent(),
     permissionsManager,
     peersRegistry,
+    partialDeployments,
+    pendingScenesManager,
     queueConsumer,
     rateLimiter,
     redis,
