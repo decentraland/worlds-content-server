@@ -1,17 +1,14 @@
 import { HandlerContextWithPath } from '../../types'
 import { IHttpServerComponent } from '@dcl/core-commons'
-import SQL from 'sql-template-strings'
 
 function formatSecs(millis: number): string {
   return `${(millis / 1000).toFixed(2)} secs`
 }
 
-const DEFAULT_PENDING_DEPLOYMENT_TTL_MS = 24 * 60 * 60 * 1000 // 24 hours
-
 export async function garbageCollectionHandler(
-  context: HandlerContextWithPath<'config' | 'database' | 'logs' | 'storage', '/gc'>
+  context: HandlerContextWithPath<'database' | 'logs' | 'pendingScenesManager' | 'storage', '/gc'>
 ): Promise<IHttpServerComponent.IResponse> {
-  const { config, database, logs, storage } = context.components
+  const { database, logs, pendingScenesManager, storage } = context.components
   const logger = logs.getLogger('garbage-collection')
 
   async function getAllActiveKeys() {
@@ -49,23 +46,10 @@ export async function garbageCollectionHandler(
     })
 
     // Non-expired partial (pending) deployments: their entity id, auth-chain key, and content hashes
-    // are still referenced even though no world_scenes row exists yet. Cutoff-filtered so staged content
-    // becomes reclaimable exactly when the pending upload expires, even if the eviction job lags.
-    const pendingTtlMs = (await config.getNumber('PENDING_DEPLOYMENT_TTL')) ?? DEFAULT_PENDING_DEPLOYMENT_TTL_MS
-    const cutoff = new Date(Date.now() - pendingTtlMs)
-    const pendingResult = await database.query<{
-      entity_id: string
-      entity: { content?: Array<{ hash: string }> }
-    }>(SQL`SELECT entity_id, entity FROM pending_scenes WHERE created_at >= ${cutoff}`)
-    pendingResult.rows.forEach((row) => {
-      activeKeys.add(row.entity_id)
-      activeKeys.add(`${row.entity_id}.auth`)
-      if (row.entity.content) {
-        for (const file of row.entity.content) {
-          activeKeys.add(file.hash)
-        }
-      }
-    })
+    // are still referenced even though no world_scenes row exists yet.
+    for (const key of await pendingScenesManager.getActivePendingKeys()) {
+      activeKeys.add(key)
+    }
 
     logger.info(`Done in ${formatSecs(Date.now() - start)}. Database contains ${activeKeys.size} active keys.`)
 
@@ -80,23 +64,36 @@ export async function garbageCollectionHandler(
   const start = Date.now()
   let totalRemovedKeys = 0
   const batch = new Set<string>()
+
+  // Re-check right before deleting: the activeKeys snapshot was taken once, but partial uploads
+  // stage content across a long window and one can START mid-sweep (its pending row is written just
+  // before its content). Subtracting the CURRENT pending keys from each batch keeps a freshly-staged
+  // upload's content from being reclaimed while the sweep is in flight. pending_scenes is tiny, so
+  // this re-query per batch is cheap.
+  const deleteBatch = async (keys: Set<string>): Promise<void> => {
+    const pendingNow = await pendingScenesManager.getActivePendingKeys()
+    const toDelete = [...keys].filter((key) => !pendingNow.has(key))
+    if (toDelete.length === 0) {
+      return
+    }
+    logger.info(`Deleting a batch of ${toDelete.length} keys from storage...`)
+    await storage.delete(toDelete)
+    totalRemovedKeys += toDelete.length
+  }
+
   for await (const key of storage.allFileIds()) {
     if (!activeKeys.has(key)) {
       batch.add(key)
     }
 
     if (batch.size === 1000) {
-      logger.info(`Deleting a batch of ${batch.size} keys from storage...`)
-      await storage.delete([...batch])
-      totalRemovedKeys += batch.size
+      await deleteBatch(batch)
       batch.clear()
     }
   }
 
   if (batch.size > 0) {
-    logger.info(`Deleting a batch of ${batch.size} keys from storage...`)
-    await storage.delete([...batch])
-    totalRemovedKeys += batch.size
+    await deleteBatch(batch)
   }
   logger.info(
     `Done in ${formatSecs(Date.now() - start)}. Deleted ${totalRemovedKeys} keys that are not active in the storage.`

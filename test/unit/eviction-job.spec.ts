@@ -27,7 +27,8 @@ describe('EvictionJob', () => {
       getByEntityId: jest.fn(),
       upsert: jest.fn(),
       deleteByEntityId: jest.fn(),
-      deleteExpired: jest.fn().mockResolvedValue(0)
+      deleteExpired: jest.fn().mockResolvedValue(0),
+      getActivePendingKeys: jest.fn().mockResolvedValue(new Set())
     }
     logs = {
       getLogger: () => ({
@@ -67,6 +68,10 @@ describe('EvictionJob', () => {
 
       it('should call evictUndeployedWorlds with the configured TTL', () => {
         expect(worlds.evictUndeployedWorlds).toHaveBeenCalledWith(3600000)
+      })
+
+      it('should delete expired pending scenes', () => {
+        expect(pendingScenesManager.deleteExpired).toHaveBeenCalledTimes(1)
       })
     })
   })

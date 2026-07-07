@@ -4,7 +4,7 @@ import {
   validateAuthChain,
   validateBaseEntity,
   validateEntityId,
-  validateNoMissingFiles,
+  validateFiles,
   validateSignature,
   validateSigner,
   validateSupportedEntityType,
@@ -28,6 +28,8 @@ import { OK, validateAll, validateIfTypeMatches } from './utils'
 import { EntityType } from '@dcl/schemas'
 
 // Common validations that don't depend on the full content set being present (run in both phases).
+// File validation is added by each phase separately: the full path uses the combined `validateFiles`
+// (uploaded + no-missing, errors merged), while staging uses only `validateUploadedFiles`.
 function commonValidations(components: ValidatorComponents): Validation[] {
   return [
     validateEntityId,
@@ -35,8 +37,7 @@ function commonValidations(components: ValidatorComponents): Validation[] {
     validateAuthChain,
     validateSigner,
     validateSignature,
-    createValidateDeploymentTtl(components),
-    validateUploadedFiles
+    createValidateDeploymentTtl(components)
   ]
 }
 
@@ -60,7 +61,7 @@ function sceneStructuralValidations(components: ValidatorComponents): Validation
 export function createValidateFns(components: ValidatorComponents): Validation[] {
   return [
     // Common validations to all entity types
-    validateAll([...commonValidations(components), validateNoMissingFiles, validateSupportedEntityType]),
+    validateAll([...commonValidations(components), validateFiles, validateSupportedEntityType]),
 
     // Scene entity validations
     validateIfTypeMatches(
@@ -84,7 +85,7 @@ export function createValidateFns(components: ValidatorComponents): Validation[]
  */
 export function createStagingValidateFns(components: ValidatorComponents): Validation[] {
   return [
-    validateAll([...commonValidations(components), validateSupportedEntityType]),
+    validateAll([...commonValidations(components), validateUploadedFiles, validateSupportedEntityType]),
 
     validateIfTypeMatches(
       EntityType.SCENE,

@@ -114,6 +114,18 @@ export const validateNoMissingFiles: Validation = async (
   return createValidationResult(errors)
 }
 
+/**
+ * Full-deployment file validation: runs the uploaded-file checks and the no-missing-files check and
+ * returns their errors combined. Listing the two separately in `validateAll` would short-circuit on
+ * the first failure and hide the missing-file errors behind uploaded-file errors — the original
+ * `validateFiles` reported both together, which this preserves. Not used while staging a partial
+ * deployment (completeness is intentionally not required there).
+ */
+export const validateFiles: Validation = async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
+  const [uploaded, missing] = await Promise.all([validateUploadedFiles(deployment), validateNoMissingFiles(deployment)])
+  return createValidationResult([...uploaded.errors, ...missing.errors])
+}
+
 export const validateSupportedEntityType = async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
   switch (deployment.entity.type) {
     case EntityType.SCENE:

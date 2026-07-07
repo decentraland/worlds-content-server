@@ -75,8 +75,8 @@ export async function createPendingScenesManager(
     await database.query(SQL`DELETE FROM pending_scenes WHERE entity_id = ${entityId}`)
   }
 
-  async function deleteExpired(olderThanMs: number): Promise<number> {
-    const cutoff = new Date(Date.now() - olderThanMs)
+  async function deleteExpired(): Promise<number> {
+    const cutoff = new Date(Date.now() - ttlMs)
     const result = await database.query(SQL`DELETE FROM pending_scenes WHERE created_at < ${cutoff}`)
     const removed = result.rowCount ?? 0
     if (removed > 0) {
@@ -85,5 +85,23 @@ export async function createPendingScenesManager(
     return removed
   }
 
-  return { getByEntityId, upsert, deleteByEntityId, deleteExpired }
+  async function getActivePendingKeys(): Promise<Set<string>> {
+    const cutoff = new Date(Date.now() - ttlMs)
+    const result = await database.query<{ entity_id: string; entity: Entity }>(
+      SQL`SELECT entity_id, entity FROM pending_scenes WHERE created_at >= ${cutoff}`
+    )
+    const keys = new Set<string>()
+    for (const row of result.rows) {
+      // The staged entity JSON, its auth-chain blob, and every content file it references are all
+      // referenced by the in-flight upload even though no world_scenes row exists yet.
+      keys.add(row.entity_id)
+      keys.add(`${row.entity_id}.auth`)
+      for (const file of row.entity.content ?? []) {
+        keys.add(file.hash)
+      }
+    }
+    return keys
+  }
+
+  return { getByEntityId, upsert, deleteByEntityId, deleteExpired, getActivePendingKeys }
 }

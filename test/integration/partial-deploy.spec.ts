@@ -203,4 +203,125 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
       expect(await countPending()).toBe(0)
     })
   })
+
+  // Generic form builder for a second entity (the module-level buildForm is bound to the beforeEach one).
+  function makeForm(id: string, fileMap: Map<string, Uint8Array>, keys: string[], authChain: AuthChain): FormData {
+    const form = new FormData()
+    form.append('entityId', id)
+    form.append('partial', 'true')
+    authChain.forEach((link, i) => {
+      form.append(`authChain[${i}][type]`, link.type)
+      form.append(`authChain[${i}][payload]`, link.payload)
+      form.append(`authChain[${i}][signature]`, link.signature ?? '')
+    })
+    for (const key of keys) {
+      form.append(key, Buffer.from(fileMap.get(key)!), { filename: key })
+    }
+    return form
+  }
+
+  // Builds a scene for the current world on the given parcels at an explicit timestamp (so two scenes
+  // can differ only by timestamp, producing distinct entity ids that order deterministically).
+  async function buildScene(pointers: string[], timestamp: number) {
+    const sceneFiles = new Map<string, Uint8Array>()
+    sceneFiles.set('file1.txt', stringToUtf8Bytes(makeid(100)))
+    const built = await DeploymentBuilder.buildEntity({
+      type: EntityType.SCENE as any,
+      pointers,
+      files: sceneFiles,
+      timestamp,
+      metadata: {
+        main: 'file1.txt',
+        scene: { base: pointers[0], parcels: pointers },
+        worldConfiguration: { name: worldName }
+      }
+    })
+    return {
+      entityId: built.entityId,
+      files: built.files,
+      contentHashes: Array.from(built.files.keys()).filter((k) => k !== built.entityId)
+    }
+  }
+
+  async function deployedEntityIds(): Promise<string[]> {
+    const { database } = components
+    const result = await database.query<{ entity_id: string }>(
+      `SELECT entity_id FROM world_scenes WHERE world_name = '${worldName.toLowerCase()}' AND status = 'DEPLOYED'`
+    )
+    return result.rows.map((r) => r.entity_id)
+  }
+
+  describe('when a stale pending upload would finalize over a newer deployment', () => {
+    let older: { entityId: string; files: Map<string, Uint8Array>; contentHashes: string[] }
+    let newer: { entityId: string; files: Map<string, Uint8Array>; contentHashes: string[] }
+    let completeResponse: Response
+
+    beforeEach(async () => {
+      const now = Date.now()
+      older = await buildScene(['20,24'], now - 60_000)
+      newer = await buildScene(['20,24'], now)
+
+      // Stage the older scene partially (entity only) — no newer scene exists yet, so this is accepted.
+      const olderAuth = Authenticator.signPayload(identity.authChain, older.entityId)
+      const stageOlder = await post(makeForm(older.entityId, older.files, [older.entityId], olderAuth))
+      expect(stageOlder.status).toBe(202)
+
+      // A newer scene is then deployed on the same parcels via a normal single-request deploy.
+      const newerAuth = Authenticator.signPayload(identity.authChain, newer.entityId)
+      const newerForm = new FormData()
+      newerForm.append('entityId', newer.entityId)
+      newerAuth.forEach((link, i) => {
+        newerForm.append(`authChain[${i}][type]`, link.type)
+        newerForm.append(`authChain[${i}][payload]`, link.payload)
+        newerForm.append(`authChain[${i}][signature]`, link.signature ?? '')
+      })
+      for (const key of [newer.entityId, ...newer.contentHashes]) {
+        newerForm.append(key, Buffer.from(newer.files.get(key)!), { filename: key })
+      }
+      expect((await post(newerForm)).status).toBe(200)
+
+      // Now the stalled client completes the older upload.
+      completeResponse = (await post(
+        makeForm(older.entityId, older.files, older.contentHashes, olderAuth)
+      )) as unknown as Response
+    })
+
+    it('should reject the stale finalize', () => {
+      expect(completeResponse.status).toBe(400)
+    })
+
+    it('should keep the newer scene deployed and not install the older one', async () => {
+      const deployed = await deployedEntityIds()
+      expect(deployed).toEqual([newer.entityId])
+    })
+  })
+
+  describe('when an over-budget partial request targets parcels held by another pending upload', () => {
+    let overBudgetResponse: Response
+
+    beforeEach(async () => {
+      // Shrink the world budget so any real content exceeds it.
+      jest.spyOn(components.limitsManager, 'getMaxAllowedSizeInBytesFor').mockResolvedValue(1n)
+
+      // Stage upload A (entity only, zero content bytes so far) — passes the 1-byte budget.
+      const aAuth = Authenticator.signPayload(identity.authChain, entityId)
+      expect((await post(buildForm([entityId], aAuth))).status).toBe(202)
+
+      // Upload B (a different entity on the same parcels) sends real content in one request; it is over
+      // budget and must be rejected WITHOUT destroying A's pending row.
+      const b = await buildScene(['20,24'], Date.now() + 1000)
+      const bAuth = Authenticator.signPayload(identity.authChain, b.entityId)
+      overBudgetResponse = (await post(
+        makeForm(b.entityId, b.files, [b.entityId, ...b.contentHashes], bAuth)
+      )) as unknown as Response
+    })
+
+    it('should reject the over-budget request', () => {
+      expect(overBudgetResponse.status).toBe(400)
+    })
+
+    it("should preserve the other deployer's in-flight pending upload", async () => {
+      expect(await countPending()).toBe(1)
+    })
+  })
 })

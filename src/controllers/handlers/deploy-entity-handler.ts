@@ -22,7 +22,7 @@ function parseEntityJson(raw: string) {
 export async function deployEntity(
   ctx: FormDataContext &
     HandlerContextWithPath<
-      'config' | 'entityDeployer' | 'partialDeployments' | 'pendingScenesManager' | 'storage' | 'validator',
+      'config' | 'entityDeployer' | 'logs' | 'partialDeployments' | 'pendingScenesManager' | 'storage' | 'validator',
       '/entities'
     >
 ): Promise<IHttpServerComponent.IResponse> {
@@ -124,8 +124,19 @@ export async function deployEntity(
     authChain
   )
 
-  // A pending (partial) upload for this entity is now fully deployed; drop its staging row.
-  await ctx.components.pendingScenesManager.deleteByEntityId(entityId)
+  // If this entity had a pending (partial) upload, it is now fully deployed via the vanilla path, so
+  // drop its staging row. Only when one exists (the common vanilla deploy has none), and best-effort:
+  // the deployment already committed, so a cleanup failure must not turn a successful deploy into a
+  // 5xx — the stale row would otherwise expire on its own via PENDING_DEPLOYMENT_TTL.
+  if (pending) {
+    try {
+      await ctx.components.pendingScenesManager.deleteByEntityId(entityId)
+    } catch (error) {
+      ctx.components.logs
+        .getLogger('deploy-entity')
+        .warn(`Failed to delete pending scene after a successful deploy: ${error}`, { entityId })
+    }
+  }
 
   return {
     status: 200,

@@ -328,8 +328,13 @@ export type IPendingScenesManager = {
    */
   upsert(input: UpsertPendingScene): Promise<PendingScene>
   deleteByEntityId(entityId: string): Promise<void>
-  /** Deletes pending scenes older than `olderThanMs`. Returns the number removed. */
-  deleteExpired(olderThanMs: number): Promise<number>
+  /** Deletes pending scenes older than the configured PENDING_DEPLOYMENT_TTL. Returns the number removed. */
+  deleteExpired(): Promise<number>
+  /**
+   * Returns the storage keys referenced by every non-expired pending scene: each entity id, its
+   * `.auth` blob, and its content-file hashes. Used by garbage collection to protect in-flight uploads.
+   */
+  getActivePendingKeys(): Promise<Set<string>>
 }
 
 export type StageDeploymentInput = {
