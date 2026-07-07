@@ -51,6 +51,14 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
     return parseInt(result.rows[0].count)
   }
 
+  async function countDeployedScenes(): Promise<number> {
+    const { database } = components
+    const result = await database.query<{ count: string }>(
+      `SELECT COUNT(*) as count FROM world_scenes WHERE entity_id = '${entityId}' AND status = 'DEPLOYED'`
+    )
+    return parseInt(result.rows[0].count)
+  }
+
   beforeEach(async () => {
     const { worldCreator } = components
     const { namePermissionChecker, nameOwnership, snsClient } = stubComponents
@@ -160,6 +168,38 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
       const authChain = Authenticator.signPayload(identity.authChain, entityId)
       const res = await post(buildForm([contentHashes[0]], authChain))
       expect(res.status).toBe(400)
+      expect(await countPending()).toBe(0)
+    })
+  })
+
+  describe('when staging requests for the same entity run in parallel', () => {
+    it('should accept two distinct content batches uploaded concurrently and deploy the world once', async () => {
+      const authChain = Authenticator.signPayload(identity.authChain, entityId)
+      const [hashA, hashB] = contentHashes
+
+      expect((await post(buildForm([entityId], authChain))).status).toBe(202)
+
+      const [resA, resB] = await Promise.all([post(buildForm([hashA], authChain)), post(buildForm([hashB], authChain))])
+
+      const statuses = [resA.status, resB.status].sort()
+      expect(statuses.every((status) => status === 200 || status === 202)).toBe(true)
+      expect(statuses).toContain(200)
+      expect(await countDeployedScenes()).toBe(1)
+      expect(await countPending()).toBe(0)
+    })
+
+    it('should deploy once when two requests complete the content set at the same time', async () => {
+      const authChain = Authenticator.signPayload(identity.authChain, entityId)
+      const [hashA, hashB] = contentHashes
+
+      // Stage entity + A, leaving only B missing.
+      expect((await post(buildForm([entityId, hashA], authChain))).status).toBe(202)
+
+      // Two identical completing requests (both upload B) race to finalize.
+      const [res1, res2] = await Promise.all([post(buildForm([hashB], authChain)), post(buildForm([hashB], authChain))])
+
+      expect([res1.status, res2.status].sort()).toEqual([200, 200])
+      expect(await countDeployedScenes()).toBe(1)
       expect(await countPending()).toBe(0)
     })
   })
