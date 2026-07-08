@@ -21,7 +21,9 @@ describe('blocking', () => {
     config = createMockedConfig({
       requireString: jest
         .fn()
-        .mockImplementation((key: string) => Promise.resolve(key === 'WHITELIST_URL' ? 'http://whitelist' : 'http://builder'))
+        .mockImplementation((key: string) =>
+          Promise.resolve(key === 'WHITELIST_URL' ? 'http://whitelist' : 'http://builder')
+        )
     })
   })
 

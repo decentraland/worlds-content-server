@@ -32,9 +32,13 @@ describe('UpdateOwnerJob', () => {
   describe('when one wallet fails while its blocking status is evaluated', () => {
     beforeEach(async () => {
       blocking = createMockBlockingComponent({
-        blockIfOverQuota: jest.fn().mockImplementation((wallet: string) =>
-          wallet === badOwner ? Promise.reject(new Error('boom: wallet stats service unavailable')) : Promise.resolve(true)
-        )
+        blockIfOverQuota: jest
+          .fn()
+          .mockImplementation((wallet: string) =>
+            wallet === badOwner
+              ? Promise.reject(new Error('boom: wallet stats service unavailable'))
+              : Promise.resolve(true)
+          )
       })
 
       const nameOwnership = createMockedNameOwnership({
