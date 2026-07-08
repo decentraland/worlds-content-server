@@ -104,8 +104,13 @@ export function createPartialDeploymentsComponent(
     const parcels = Array.from(new Set(coordinates.canonicalizeParcels(entity.pointers)))
     const deployer = authChain[0].payload
 
-    // Reject early (before touching any pending state) if a newer scene already holds these parcels.
-    await assertNoNewerDeployment(worldName, entity, parcels)
+    // Reject a NEW upload early (before it replaces any pending state) if a newer scene already holds
+    // these parcels. Resume batches skip this: they never deploy by themselves — the pre-finalize
+    // re-check right before deployScene is the load-bearing guard — so re-querying world_scenes on
+    // every intermediate batch would be wasted work.
+    if (!pending) {
+      await assertNoNewerDeployment(worldName, entity, parcels)
+    }
 
     // Cumulative size budget: uploaded bytes for this batch + stored sizes for earlier batches. Checked
     // BEFORE the upsert below, because upsert's overlap-replace destroys any other in-flight upload of

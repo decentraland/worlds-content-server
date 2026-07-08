@@ -100,154 +100,329 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
   })
 
   describe('when uploading a scene across multiple partial requests', () => {
-    it('should return 202 until the last request finalizes with 200 and makes the world live', async () => {
-      const { worldsManager } = components
-      const authChain = Authenticator.signPayload(identity.authChain, entityId)
-      const [hash1, hash2] = contentHashes
+    let authChain: AuthChain
 
-      const res1 = await post(buildForm([entityId], authChain))
-      expect(res1.status).toBe(202)
-      expect(new Set((await res1.json()).missing)).toEqual(new Set([hash1, hash2]))
-      expect(await countPending()).toBe(1)
-      // The world is not live yet.
-      expect(await worldsManager.getMetadataForWorld(worldName)).toBeUndefined()
-
-      const res2 = await post(buildForm([hash1], authChain))
-      expect(res2.status).toBe(202)
-      expect((await res2.json()).missing).toEqual([hash2])
-
-      const res3 = await post(buildForm([hash2], authChain))
-      expect(res3.status).toBe(200)
-      expect((await res3.json()).message).toContain(`Your scene was deployed to World "${worldName}"`)
-
-      expect(await countPending()).toBe(0)
-      expect(await worldsManager.getMetadataForWorld(worldName)).toBeDefined()
+    beforeEach(() => {
+      authChain = Authenticator.signPayload(identity.authChain, entityId)
     })
 
-    it('should not require the entity file on requests after the first', async () => {
-      const authChain = Authenticator.signPayload(identity.authChain, entityId)
+    describe('and each content file is uploaded in its own batch', () => {
+      let hash1: string
+      let hash2: string
+      let firstResponse: Awaited<ReturnType<typeof post>>
 
-      const res1 = await post(buildForm([entityId, contentHashes[0]], authChain))
-      expect(res1.status).toBe(202)
+      beforeEach(async () => {
+        ;[hash1, hash2] = contentHashes
+        firstResponse = await post(buildForm([entityId], authChain))
+      })
 
-      // Second request omits the entity file; the server reads it back from storage.
-      const res2 = await post(buildForm([contentHashes[1]], authChain))
-      expect(res2.status).toBe(200)
-      expect(await countPending()).toBe(0)
+      it('should respond 202 with both content hashes missing', async () => {
+        expect(firstResponse.status).toBe(202)
+        expect(new Set((await firstResponse.json()).missing)).toEqual(new Set([hash1, hash2]))
+      })
+
+      it('should create a pending row without making the world live yet', async () => {
+        expect(await countPending()).toBe(1)
+        expect(await components.worldsManager.getMetadataForWorld(worldName)).toBeUndefined()
+      })
+
+      describe('and the second batch uploads the first content file', () => {
+        let secondResponse: Awaited<ReturnType<typeof post>>
+
+        beforeEach(async () => {
+          secondResponse = await post(buildForm([hash1], authChain))
+        })
+
+        it('should respond 202 with only the remaining hash missing', async () => {
+          expect(secondResponse.status).toBe(202)
+          expect((await secondResponse.json()).missing).toEqual([hash2])
+        })
+
+        describe('and the last batch uploads the remaining content file', () => {
+          let thirdResponse: Awaited<ReturnType<typeof post>>
+
+          beforeEach(async () => {
+            thirdResponse = await post(buildForm([hash2], authChain))
+          })
+
+          it('should finalize with 200 and the deployment message', async () => {
+            expect(thirdResponse.status).toBe(200)
+            expect((await thirdResponse.json()).message).toContain(`Your scene was deployed to World "${worldName}"`)
+          })
+
+          it('should delete the pending row and make the world live', async () => {
+            expect(await countPending()).toBe(0)
+            expect(await components.worldsManager.getMetadataForWorld(worldName)).toBeDefined()
+          })
+        })
+      })
+    })
+
+    describe('and requests after the first omit the entity file', () => {
+      let firstResponse: Awaited<ReturnType<typeof post>>
+
+      beforeEach(async () => {
+        firstResponse = await post(buildForm([entityId, contentHashes[0]], authChain))
+      })
+
+      it('should accept the first batch with 202', () => {
+        expect(firstResponse.status).toBe(202)
+      })
+
+      describe('and the remaining content file is uploaded without the entity file', () => {
+        let secondResponse: Awaited<ReturnType<typeof post>>
+
+        beforeEach(async () => {
+          // The request omits the entity file; the server reads it back from storage.
+          secondResponse = await post(buildForm([contentHashes[1]], authChain))
+        })
+
+        it('should finalize with 200 and no pending row', async () => {
+          expect(secondResponse.status).toBe(200)
+          expect(await countPending()).toBe(0)
+        })
+      })
     })
   })
 
   describe('when a single partial request contains all content', () => {
-    it('should finalize immediately and return 200', async () => {
-      const { worldsManager } = components
-      const authChain = Authenticator.signPayload(identity.authChain, entityId)
+    let response: Awaited<ReturnType<typeof post>>
 
-      const res = await post(buildForm([entityId, ...contentHashes], authChain))
-      expect(res.status).toBe(200)
+    beforeEach(async () => {
+      const authChain = Authenticator.signPayload(identity.authChain, entityId)
+      response = await post(buildForm([entityId, ...contentHashes], authChain))
+    })
+
+    it('should finalize immediately and return 200', async () => {
+      expect(response.status).toBe(200)
       expect(await countPending()).toBe(0)
-      expect(await worldsManager.getMetadataForWorld(worldName)).toBeDefined()
+      expect(await components.worldsManager.getMetadataForWorld(worldName)).toBeDefined()
     })
   })
 
   describe('when uploading across multiple requests (resume fast-path)', () => {
-    it('should run the deployment-permission check only on the first request and at finalize, not per batch', async () => {
-      const { namePermissionChecker } = stubComponents
-      const authChain = Authenticator.signPayload(identity.authChain, entityId)
-      const [hashA, hashB] = contentHashes
+    let authChain: AuthChain
+    let hashA: string
+    let hashB: string
 
-      expect((await post(buildForm([entityId], authChain))).status).toBe(202)
-      expect((await post(buildForm([hashA], authChain))).status).toBe(202)
-      expect((await post(buildForm([hashB], authChain))).status).toBe(200)
-
-      // Request 1 (creates the pending record) runs the permission check; requests 2 and 3 are resume
-      // batches by the same deployer that skip it; finalize (inside request 3) re-runs it.
-      expect(namePermissionChecker.checkPermission).toHaveBeenCalledTimes(2)
+    beforeEach(() => {
+      authChain = Authenticator.signPayload(identity.authChain, entityId)
+      ;[hashA, hashB] = contentHashes
     })
 
-    it('should reject the completing request when the deployer loses the name permission mid-upload', async () => {
-      const { namePermissionChecker } = stubComponents
-      const authChain = Authenticator.signPayload(identity.authChain, entityId)
-      const [hashA, hashB] = contentHashes
+    describe('and the same deployer uploads every batch', () => {
+      let firstResponse: Awaited<ReturnType<typeof post>>
 
-      expect((await post(buildForm([entityId, hashA], authChain))).status).toBe(202)
+      beforeEach(async () => {
+        firstResponse = await post(buildForm([entityId], authChain))
+      })
 
-      // The name is traded away mid-upload: the permission checker resolves the CURRENT owner, which is
-      // no longer the deployer. The resume batch itself is accepted for staging (same-deployer fast
-      // path), but the finalize step re-runs the full validation and must reject the deploy.
-      namePermissionChecker.checkPermission.mockResolvedValue(false)
+      it('should accept the request that creates the pending record with 202', () => {
+        expect(firstResponse.status).toBe(202)
+      })
 
-      const res = await post(buildForm([hashB], authChain))
+      describe('and the first content batch is uploaded', () => {
+        let secondResponse: Awaited<ReturnType<typeof post>>
 
-      expect(res.status).toBe(400)
-      expect(await countDeployedScenes()).toBe(0)
+        beforeEach(async () => {
+          secondResponse = await post(buildForm([hashA], authChain))
+        })
+
+        it('should accept the resume batch with 202', () => {
+          expect(secondResponse.status).toBe(202)
+        })
+
+        describe('and the last content batch is uploaded', () => {
+          let thirdResponse: Awaited<ReturnType<typeof post>>
+
+          beforeEach(async () => {
+            thirdResponse = await post(buildForm([hashB], authChain))
+          })
+
+          it('should finalize the upload with 200', () => {
+            expect(thirdResponse.status).toBe(200)
+          })
+
+          it('should run the deployment-permission check only on the first request and at finalize, not per batch', () => {
+            // Request 1 (creates the pending record) runs the permission check; requests 2 and 3 are resume
+            // batches by the same deployer that skip it; finalize (inside request 3) re-runs it.
+            expect(stubComponents.namePermissionChecker.checkPermission).toHaveBeenCalledTimes(2)
+          })
+        })
+      })
     })
 
-    it('should not grant the fast path to a different signer resuming the same entity', async () => {
-      const authChain = Authenticator.signPayload(identity.authChain, entityId)
-      expect((await post(buildForm([entityId], authChain))).status).toBe(202)
+    describe('and the deployer loses the name permission mid-upload', () => {
+      let stagingResponse: Awaited<ReturnType<typeof post>>
 
-      // Another wallet (no deployment permission for this world) signs the same entity id and tries to
-      // continue the upload: it must go through the full staging validation and be rejected.
-      const otherIdentity = await getIdentity()
-      const otherAuthChain = Authenticator.signPayload(otherIdentity.authChain, entityId)
-      const res = await post(buildForm([contentHashes[0]], otherAuthChain))
+      beforeEach(async () => {
+        stagingResponse = await post(buildForm([entityId, hashA], authChain))
+      })
 
-      expect(res.status).toBe(400)
+      it('should accept the staging request with 202', () => {
+        expect(stagingResponse.status).toBe(202)
+      })
+
+      describe('and the name is traded away before the completing request', () => {
+        let completingResponse: Awaited<ReturnType<typeof post>>
+
+        beforeEach(async () => {
+          // The name is traded away mid-upload: the permission checker resolves the CURRENT owner, which is
+          // no longer the deployer. The resume batch itself is accepted for staging (same-deployer fast
+          // path), but the finalize step re-runs the full validation and must reject the deploy.
+          stubComponents.namePermissionChecker.checkPermission.mockResolvedValue(false)
+
+          completingResponse = await post(buildForm([hashB], authChain))
+        })
+
+        it('should reject the completing request and not deploy the scene', async () => {
+          expect(completingResponse.status).toBe(400)
+          expect(await countDeployedScenes()).toBe(0)
+        })
+      })
+    })
+
+    describe('and a different signer resumes the same entity', () => {
+      let stagingResponse: Awaited<ReturnType<typeof post>>
+
+      beforeEach(async () => {
+        stagingResponse = await post(buildForm([entityId], authChain))
+      })
+
+      it('should accept the staging request with 202', () => {
+        expect(stagingResponse.status).toBe(202)
+      })
+
+      describe('and another wallet signs the same entity id and continues the upload', () => {
+        let resumeResponse: Awaited<ReturnType<typeof post>>
+
+        beforeEach(async () => {
+          // Another wallet (no deployment permission for this world) signs the same entity id and tries to
+          // continue the upload: it must go through the full staging validation and be rejected.
+          const otherIdentity = await getIdentity()
+          const otherAuthChain = Authenticator.signPayload(otherIdentity.authChain, entityId)
+          resumeResponse = await post(buildForm([contentHashes[0]], otherAuthChain))
+        })
+
+        it('should reject the resume request with 400', () => {
+          expect(resumeResponse.status).toBe(400)
+        })
+      })
     })
   })
 
   describe('when the same partial request is replayed', () => {
-    it('should respond idempotently and keep a single pending row', async () => {
+    let firstResponse: Awaited<ReturnType<typeof post>>
+    let secondResponse: Awaited<ReturnType<typeof post>>
+
+    beforeEach(async () => {
       const authChain = Authenticator.signPayload(identity.authChain, entityId)
+      firstResponse = await post(buildForm([entityId], authChain))
+      secondResponse = await post(buildForm([entityId], authChain))
+    })
 
-      const res1 = await post(buildForm([entityId], authChain))
-      const res2 = await post(buildForm([entityId], authChain))
+    it('should respond 202 to both requests with the same missing hashes', async () => {
+      expect(firstResponse.status).toBe(202)
+      expect(secondResponse.status).toBe(202)
+      expect(new Set((await secondResponse.json()).missing)).toEqual(new Set(contentHashes))
+    })
 
-      expect(res1.status).toBe(202)
-      expect(res2.status).toBe(202)
-      expect(new Set((await res2.json()).missing)).toEqual(new Set(contentHashes))
+    it('should keep a single pending row', async () => {
       expect(await countPending()).toBe(1)
     })
   })
 
   describe('when the first partial request omits the entity file', () => {
-    it('should return 400', async () => {
+    let response: Awaited<ReturnType<typeof post>>
+
+    beforeEach(async () => {
       const authChain = Authenticator.signPayload(identity.authChain, entityId)
-      const res = await post(buildForm([contentHashes[0]], authChain))
-      expect(res.status).toBe(400)
+      response = await post(buildForm([contentHashes[0]], authChain))
+    })
+
+    it('should return 400 and not create a pending row', async () => {
+      expect(response.status).toBe(400)
       expect(await countPending()).toBe(0)
     })
   })
 
   describe('when staging requests for the same entity run in parallel', () => {
-    it('should accept two distinct content batches uploaded concurrently and deploy the world once', async () => {
-      const authChain = Authenticator.signPayload(identity.authChain, entityId)
-      const [hashA, hashB] = contentHashes
+    let authChain: AuthChain
+    let hashA: string
+    let hashB: string
 
-      expect((await post(buildForm([entityId], authChain))).status).toBe(202)
-
-      const [resA, resB] = await Promise.all([post(buildForm([hashA], authChain)), post(buildForm([hashB], authChain))])
-
-      const statuses = [resA.status, resB.status].sort()
-      expect(statuses.every((status) => status === 200 || status === 202)).toBe(true)
-      expect(statuses).toContain(200)
-      expect(await countDeployedScenes()).toBe(1)
-      expect(await countPending()).toBe(0)
+    beforeEach(() => {
+      authChain = Authenticator.signPayload(identity.authChain, entityId)
+      ;[hashA, hashB] = contentHashes
     })
 
-    it('should deploy once when two requests complete the content set at the same time', async () => {
-      const authChain = Authenticator.signPayload(identity.authChain, entityId)
-      const [hashA, hashB] = contentHashes
+    describe('and two distinct content batches are uploaded concurrently', () => {
+      let stagingResponse: Awaited<ReturnType<typeof post>>
 
-      // Stage entity + A, leaving only B missing.
-      expect((await post(buildForm([entityId, hashA], authChain))).status).toBe(202)
+      beforeEach(async () => {
+        stagingResponse = await post(buildForm([entityId], authChain))
+      })
 
-      // Two identical completing requests (both upload B) race to finalize.
-      const [res1, res2] = await Promise.all([post(buildForm([hashB], authChain)), post(buildForm([hashB], authChain))])
+      it('should accept the staging request with 202', () => {
+        expect(stagingResponse.status).toBe(202)
+      })
 
-      expect([res1.status, res2.status].sort()).toEqual([200, 200])
-      expect(await countDeployedScenes()).toBe(1)
-      expect(await countPending()).toBe(0)
+      describe('and the two remaining batches are sent at the same time', () => {
+        let responseA: Awaited<ReturnType<typeof post>>
+        let responseB: Awaited<ReturnType<typeof post>>
+
+        beforeEach(async () => {
+          ;[responseA, responseB] = await Promise.all([
+            post(buildForm([hashA], authChain)),
+            post(buildForm([hashB], authChain))
+          ])
+        })
+
+        it('should respond to each batch with 200 or 202 and finalize exactly one', () => {
+          expect([responseA.status, responseB.status].every((status) => status === 200 || status === 202)).toBe(true)
+          expect([responseA.status, responseB.status]).toContain(200)
+        })
+
+        it('should deploy the world exactly once with no leftover pending row', async () => {
+          expect(await countDeployedScenes()).toBe(1)
+          expect(await countPending()).toBe(0)
+        })
+      })
+    })
+
+    describe('and two identical completing requests race to finalize', () => {
+      let stagingResponse: Awaited<ReturnType<typeof post>>
+
+      beforeEach(async () => {
+        // Stage entity + A, leaving only B missing.
+        stagingResponse = await post(buildForm([entityId, hashA], authChain))
+      })
+
+      it('should accept the staging request with 202', () => {
+        expect(stagingResponse.status).toBe(202)
+      })
+
+      describe('and both completing requests are sent at the same time', () => {
+        let firstResponse: Awaited<ReturnType<typeof post>>
+        let secondResponse: Awaited<ReturnType<typeof post>>
+
+        beforeEach(async () => {
+          // Two identical completing requests (both upload B) race to finalize.
+          ;[firstResponse, secondResponse] = await Promise.all([
+            post(buildForm([hashB], authChain)),
+            post(buildForm([hashB], authChain))
+          ])
+        })
+
+        it('should return 200 to both requests', () => {
+          expect([firstResponse.status, secondResponse.status].sort()).toEqual([200, 200])
+        })
+
+        it('should deploy the world exactly once with no leftover pending row', async () => {
+          expect(await countDeployedScenes()).toBe(1)
+          expect(await countPending()).toBe(0)
+        })
+      })
     })
   })
 
@@ -301,7 +476,8 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
   describe('when a stale pending upload would finalize over a newer deployment', () => {
     let older: { entityId: string; files: Map<string, Uint8Array>; contentHashes: string[] }
     let newer: { entityId: string; files: Map<string, Uint8Array>; contentHashes: string[] }
-    let completeResponse: Response
+    let olderAuth: AuthChain
+    let stageOlderResponse: Awaited<ReturnType<typeof post>>
 
     beforeEach(async () => {
       const now = Date.now()
@@ -309,42 +485,57 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
       newer = await buildScene(['20,24'], now)
 
       // Stage the older scene partially (entity only) — no newer scene exists yet, so this is accepted.
-      const olderAuth = Authenticator.signPayload(identity.authChain, older.entityId)
-      const stageOlder = await post(makeForm(older.entityId, older.files, [older.entityId], olderAuth))
-      expect(stageOlder.status).toBe(202)
+      olderAuth = Authenticator.signPayload(identity.authChain, older.entityId)
+      stageOlderResponse = await post(makeForm(older.entityId, older.files, [older.entityId], olderAuth))
+    })
 
-      // A newer scene is then deployed on the same parcels via a normal single-request deploy.
-      const newerAuth = Authenticator.signPayload(identity.authChain, newer.entityId)
-      const newerForm = new FormData()
-      newerForm.append('entityId', newer.entityId)
-      newerAuth.forEach((link, i) => {
-        newerForm.append(`authChain[${i}][type]`, link.type)
-        newerForm.append(`authChain[${i}][payload]`, link.payload)
-        newerForm.append(`authChain[${i}][signature]`, link.signature ?? '')
+    it('should accept staging the older scene with 202', () => {
+      expect(stageOlderResponse.status).toBe(202)
+    })
+
+    describe('and a newer scene is then deployed on the same parcels', () => {
+      let newerDeployResponse: Awaited<ReturnType<typeof post>>
+
+      beforeEach(async () => {
+        // The newer scene is deployed on the same parcels via a normal single-request deploy.
+        const newerAuth = Authenticator.signPayload(identity.authChain, newer.entityId)
+        const newerForm = new FormData()
+        newerForm.append('entityId', newer.entityId)
+        newerAuth.forEach((link, i) => {
+          newerForm.append(`authChain[${i}][type]`, link.type)
+          newerForm.append(`authChain[${i}][payload]`, link.payload)
+          newerForm.append(`authChain[${i}][signature]`, link.signature ?? '')
+        })
+        for (const key of [newer.entityId, ...newer.contentHashes]) {
+          newerForm.append(key, Buffer.from(newer.files.get(key)!), { filename: key })
+        }
+        newerDeployResponse = await post(newerForm)
       })
-      for (const key of [newer.entityId, ...newer.contentHashes]) {
-        newerForm.append(key, Buffer.from(newer.files.get(key)!), { filename: key })
-      }
-      expect((await post(newerForm)).status).toBe(200)
 
-      // Now the stalled client completes the older upload.
-      completeResponse = (await post(
-        makeForm(older.entityId, older.files, older.contentHashes, olderAuth)
-      )) as unknown as Response
-    })
+      it('should deploy the newer scene with 200', () => {
+        expect(newerDeployResponse.status).toBe(200)
+      })
 
-    it('should reject the stale finalize', () => {
-      expect(completeResponse.status).toBe(400)
-    })
+      describe('and the stalled client completes the older upload', () => {
+        let completeResponse: Awaited<ReturnType<typeof post>>
 
-    it('should keep the newer scene deployed and not install the older one', async () => {
-      const deployed = await deployedEntityIds()
-      expect(deployed).toEqual([newer.entityId])
+        beforeEach(async () => {
+          completeResponse = await post(makeForm(older.entityId, older.files, older.contentHashes, olderAuth))
+        })
+
+        it('should reject the stale finalize', () => {
+          expect(completeResponse.status).toBe(400)
+        })
+
+        it('should keep the newer scene deployed and not install the older one', async () => {
+          expect(await deployedEntityIds()).toEqual([newer.entityId])
+        })
+      })
     })
   })
 
   describe('when an over-budget partial request targets parcels held by another pending upload', () => {
-    let overBudgetResponse: Response
+    let stagingResponse: Awaited<ReturnType<typeof post>>
 
     beforeEach(async () => {
       // Shrink the world budget so any real content exceeds it.
@@ -352,23 +543,31 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
 
       // Stage upload A (entity only, zero content bytes so far) — passes the 1-byte budget.
       const aAuth = Authenticator.signPayload(identity.authChain, entityId)
-      expect((await post(buildForm([entityId], aAuth))).status).toBe(202)
-
-      // Upload B (a different entity on the same parcels) sends real content in one request; it is over
-      // budget and must be rejected WITHOUT destroying A's pending row.
-      const b = await buildScene(['20,24'], Date.now() + 1000)
-      const bAuth = Authenticator.signPayload(identity.authChain, b.entityId)
-      overBudgetResponse = (await post(
-        makeForm(b.entityId, b.files, [b.entityId, ...b.contentHashes], bAuth)
-      )) as unknown as Response
+      stagingResponse = await post(buildForm([entityId], aAuth))
     })
 
-    it('should reject the over-budget request', () => {
-      expect(overBudgetResponse.status).toBe(400)
+    it('should accept the zero-content staging request with 202', () => {
+      expect(stagingResponse.status).toBe(202)
     })
 
-    it("should preserve the other deployer's in-flight pending upload", async () => {
-      expect(await countPending()).toBe(1)
+    describe('and a different entity on the same parcels sends over-budget content in one request', () => {
+      let overBudgetResponse: Awaited<ReturnType<typeof post>>
+
+      beforeEach(async () => {
+        // Upload B (a different entity on the same parcels) sends real content in one request; it is over
+        // budget and must be rejected WITHOUT destroying A's pending row.
+        const b = await buildScene(['20,24'], Date.now() + 1000)
+        const bAuth = Authenticator.signPayload(identity.authChain, b.entityId)
+        overBudgetResponse = await post(makeForm(b.entityId, b.files, [b.entityId, ...b.contentHashes], bAuth))
+      })
+
+      it('should reject the over-budget request', () => {
+        expect(overBudgetResponse.status).toBe(400)
+      })
+
+      it("should preserve the other deployer's in-flight pending upload", async () => {
+        expect(await countPending()).toBe(1)
+      })
     })
   })
 })

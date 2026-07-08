@@ -87,8 +87,14 @@ export async function createPendingScenesManager(
 
   async function getActivePendingKeys(): Promise<Set<string>> {
     const cutoff = new Date(Date.now() - ttlMs)
-    const result = await database.query<{ entity_id: string; entity: Entity }>(
-      SQL`SELECT entity_id, entity FROM pending_scenes WHERE created_at >= ${cutoff}`
+    // Project only the content hashes out of the entity JSONB instead of shipping every pending
+    // scene's full manifest: GC calls this once per delete batch, so on a large sweep the payload
+    // size matters more than the (tiny) row count.
+    const result = await database.query<{ entity_id: string; hashes: string[] | null }>(
+      SQL`SELECT entity_id,
+                 ARRAY(SELECT jsonb_array_elements(entity->'content')->>'hash') AS hashes
+          FROM pending_scenes
+          WHERE created_at >= ${cutoff}`
     )
     const keys = new Set<string>()
     for (const row of result.rows) {
@@ -96,8 +102,8 @@ export async function createPendingScenesManager(
       // referenced by the in-flight upload even though no world_scenes row exists yet.
       keys.add(row.entity_id)
       keys.add(`${row.entity_id}.auth`)
-      for (const file of row.entity.content ?? []) {
-        keys.add(file.hash)
+      for (const hash of row.hashes ?? []) {
+        keys.add(hash)
       }
     }
     return keys
