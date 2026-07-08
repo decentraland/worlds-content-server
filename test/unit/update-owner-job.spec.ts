@@ -91,7 +91,10 @@ describe('UpdateOwnerJob', () => {
 
     it('logs the error for the failing wallet', () => {
       const errorLogger = logs.getLogger('update-owner-job')
-      expect(errorLogger.error).toHaveBeenCalledWith(expect.stringContaining(badOwner))
+      expect(errorLogger.error).toHaveBeenCalledWith(
+        expect.stringContaining(badOwner),
+        expect.objectContaining({ error: expect.any(String) })
+      )
     })
 
     it('still reaches clearOldBlockingRecords at the end of the run', () => {

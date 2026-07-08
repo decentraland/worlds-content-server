@@ -36,9 +36,9 @@ export async function undeployEntity({
 
   const { records } = await worldsManager.getRawWorldRecords({ worldName: params.world_name })
   if (records.length > 0) {
-    walletStats.clearBlockedIfUnderQuota(records[0].owner).catch((err) =>
+    walletStats.clearBlockedIfUnderQuota(records[0].owner).catch((error) =>
       logger.error(`Failed to recheck blocked status for ${records[0].owner} after undeploy`, {
-        error: String(err)
+        error: error instanceof Error ? error.message : String(error)
       })
     )
   }

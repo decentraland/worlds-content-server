@@ -121,9 +121,9 @@ export async function undeploySceneHandler(
   const { records } = await ctx.components.worldsManager.getRawWorldRecords({ worldName: world_name })
   if (records.length > 0) {
     const logger = ctx.components.logs.getLogger('scenes-handler')
-    ctx.components.walletStats.clearBlockedIfUnderQuota(records[0].owner).catch((err) =>
+    ctx.components.walletStats.clearBlockedIfUnderQuota(records[0].owner).catch((error) =>
       logger.error(`Failed to recheck blocked status for ${records[0].owner} after scene undeploy`, {
-        error: String(err)
+        error: error instanceof Error ? error.message : String(error)
       })
     )
   }

@@ -218,10 +218,10 @@ export async function createUpdateOwnerJob(
           )
           await upsertBlockingRecord(owner)
         }
-      } catch (error: any) {
-        // Isolate failures per wallet so one bad wallet can't prevent clearOldBlockingRecords
-        // from running below and unblocking every other wallet that is no longer over quota.
-        logger.error(`Failed to process blocking status for wallet ${owner}: ${error.message}`)
+      } catch (error) {
+        logger.error(`Failed to process blocking status for wallet ${owner}`, {
+          error: error instanceof Error ? error.message : String(error)
+        })
       }
     }
     await clearOldBlockingRecords(startDate)

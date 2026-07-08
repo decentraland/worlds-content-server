@@ -78,9 +78,9 @@ export function createEntityDeployer(
 
     await worldsManager.deployScene(worldName, entity, owner)
 
-    components.walletStats.clearBlockedIfUnderQuota(owner).catch((err) =>
+    components.walletStats.clearBlockedIfUnderQuota(owner).catch((error) =>
       logger.error(`Failed to recheck blocked status for ${owner} after deploy`, {
-        error: String(err)
+        error: error instanceof Error ? error.message : String(error)
       })
     )
 
