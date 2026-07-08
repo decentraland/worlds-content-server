@@ -11,6 +11,8 @@ import { IContentStorageComponent } from '@dcl/catalyst-storage'
 import { HTTPProvider } from 'eth-connect'
 import { ISubgraphComponent } from '@dcl/thegraph-component'
 import { IStatusComponent } from './adapters/status'
+import { IBlockingComponent } from './adapters/blocking'
+import { IWhitelistComponent } from './adapters/whitelist'
 import { AuthChain, AuthLink, Entity, EthAddress, IPFSv2 } from '@dcl/schemas'
 import { Readable } from 'stream'
 import { MigrationExecutor } from './adapters/migration-executor'
@@ -534,6 +536,7 @@ export type BaseComponents = {
   accessChecker: IAccessCheckerComponent
   accessChangeHandler: IAccessChangeHandler
   awsConfig: AwsConfig
+  blocking: IBlockingComponent
   commsAdapter: ICommsAdapter
   config: IConfigComponent
   coordinates: ICoordinatesComponent
@@ -567,6 +570,7 @@ export type BaseComponents = {
   updateOwnerJob: IRunnable<void>
   validator: Validator
   walletStats: IWalletStats
+  whitelist: IWhitelistComponent
   worldsIndexer: IWorldsIndexer
   worldsManager: IWorldsManager
   settings: ISettingsComponent
@@ -629,14 +633,8 @@ export type WalletStats = {
   blockedSince?: Date
 }
 
-export type ClearBlockedResult = {
-  unblocked: boolean
-  stats: WalletStats
-}
-
 export type IWalletStats = {
   get(wallet: EthAddress): Promise<WalletStats>
-  clearBlockedIfUnderQuota(wallet: EthAddress): Promise<ClearBlockedResult>
 }
 
 export type WorldRecord = {

@@ -1,12 +1,7 @@
-import { AppComponents, BlockedRecord, IRunnable, TWO_DAYS_IN_MS, Whitelist } from '../types'
+import { AppComponents, IRunnable } from '../types'
 import SQL from 'sql-template-strings'
 import { CronJob } from 'cron'
-import {
-  WorldsAccessRestrictedEvent,
-  WorldsAccessRestoredEvent,
-  WorldsMissingResourcesEvent,
-  Events
-} from '@dcl/schemas'
+import { errorMessage } from '../logic/utils'
 
 type WorldData = {
   name: string
@@ -15,135 +10,16 @@ type WorldData = {
 }
 
 export async function createUpdateOwnerJob(
-  components: Pick<
-    AppComponents,
-    'config' | 'database' | 'fetch' | 'logs' | 'nameOwnership' | 'snsClient' | 'walletStats'
-  >
+  components: Pick<AppComponents, 'blocking' | 'database' | 'logs' | 'nameOwnership'>
 ): Promise<IRunnable<void>> {
-  const { config, fetch, logs } = components
+  const { blocking, database, logs, nameOwnership } = components
   const logger = logs.getLogger('update-owner-job')
-
-  const whitelistUrl = await config.requireString('WHITELIST_URL')
-  const builderUrl = await config.requireString('BUILDER_URL')
-
-  function dumpMap(mapName: string, worldWithOwners: ReadonlyMap<string, any>) {
-    for (const [key, value] of worldWithOwners) {
-      logger.debug(`${mapName} - ${key}: ${value}`)
-    }
-  }
-
-  async function upsertBlockingRecord(wallet: string) {
-    const sql = SQL`
-        INSERT INTO blocked (wallet, created_at, updated_at)
-        VALUES (${wallet.toLowerCase()}, ${new Date()}, ${new Date()})
-        ON CONFLICT (wallet)
-            DO UPDATE SET updated_at = ${new Date()}
-        RETURNING wallet, created_at, updated_at
-    `
-    const result = await components.database.query<BlockedRecord>(sql)
-    if (result.rowCount > 0) {
-      const { warning, blocked } = result.rows.reduce(
-        (r, o) => {
-          if (o.updated_at.getTime() - o.created_at.getTime() < TWO_DAYS_IN_MS) {
-            r.warning.push(o)
-          } else {
-            r.blocked.push(o)
-          }
-          return r
-        },
-        { warning: [] as BlockedRecord[], blocked: [] as BlockedRecord[] }
-      )
-
-      const snsEvents: (WorldsMissingResourcesEvent | WorldsAccessRestrictedEvent)[] = []
-
-      logger.info(
-        `Sending SNS events for wallets that are about to be blocked: ${warning.map((r) => r.wallet).join(', ')}`
-      )
-      snsEvents.push(
-        ...warning.map(
-          (record): WorldsMissingResourcesEvent => ({
-            type: Events.Type.WORLD,
-            subType: Events.SubType.Worlds.WORLDS_MISSING_RESOURCES,
-            key: `detected-${record.created_at.toISOString().slice(0, 10)}`,
-            timestamp: record.created_at.getTime(),
-            metadata: {
-              title: 'Missing Resources',
-              description: 'World access at risk in 48hs. Rectify now to prevent disruption.',
-              url: `${builderUrl}/worlds?tab=dcl`,
-              when: record.created_at.getTime() + TWO_DAYS_IN_MS,
-              address: record.wallet
-            }
-          })
-        )
-      )
-
-      logger.info(
-        `Sending SNS events for wallets that have already been blocked: ${blocked.map((r) => r.wallet).join(', ')}`
-      )
-      snsEvents.push(
-        ...blocked.map(
-          (record): WorldsAccessRestrictedEvent => ({
-            type: Events.Type.WORLD,
-            subType: Events.SubType.Worlds.WORLDS_ACCESS_RESTRICTED,
-            key: `detected-${record.created_at.toISOString().slice(0, 10)}`,
-            timestamp: record.created_at.getTime() + TWO_DAYS_IN_MS,
-            metadata: {
-              title: 'Worlds restricted',
-              description: 'Access to your Worlds has been restricted due to insufficient resources.',
-              when: record.created_at.getTime() + TWO_DAYS_IN_MS,
-              address: record.wallet
-            }
-          })
-        )
-      )
-
-      if (snsEvents.length > 0) {
-        await components.snsClient.publishMessages(snsEvents)
-      }
-    }
-  }
-
-  async function clearOldBlockingRecords(startDate: Date, excludeWallets: Set<string>) {
-    const sql =
-      excludeWallets.size > 0
-        ? SQL`
-        DELETE
-        FROM blocked
-        WHERE updated_at < ${startDate}
-          AND wallet != ALL(${Array.from(excludeWallets)})
-        RETURNING wallet, created_at
-    `
-        : SQL`
-        DELETE
-        FROM blocked
-        WHERE updated_at < ${startDate}
-        RETURNING wallet, created_at
-    `
-    const result = await components.database.query(sql)
-    if (result.rowCount > 0) {
-      logger.info(`Sending block removal SNS events for wallets: ${result.rows.map((row) => row.wallet).join(', ')}`)
-      const snsEvents: WorldsAccessRestoredEvent[] = result.rows.map((record) => ({
-        type: Events.Type.WORLD,
-        subType: Events.SubType.Worlds.WORLDS_ACCESS_RESTORED,
-        key: `detected-${record.created_at.toISOString().slice(0, 10)}`,
-        timestamp: Date.now(),
-        metadata: {
-          title: 'Worlds available',
-          description: 'Access to your Worlds has been restored.',
-          url: `${builderUrl}/worlds?tab=dcl`,
-          attendee: record.wallet
-        }
-      }))
-
-      await components.snsClient.publishMessages(snsEvents)
-    }
-  }
 
   async function run() {
     const startDate = new Date()
 
     // Get worlds with at least one scene deployed, aggregating total size from world_scenes
-    const records = await components.database.query<WorldData>(`
+    const records = await database.query<WorldData>(`
       SELECT w.name, w.owner, COALESCE(SUM(ws.size), 0)::text as size
       FROM worlds w
       INNER JOIN world_scenes ws ON w.name = ws.world_name AND ws.status = 'DEPLOYED'
@@ -163,7 +39,7 @@ export async function createUpdateOwnerJob(
       return acc
     }, new Map<string, WorldData>())
 
-    const worldWithOwners = await components.nameOwnership.findOwners([...recordsByName.keys()])
+    const worldWithOwners = await nameOwnership.findOwners([...recordsByName.keys()])
 
     // Step 1
     // Compare the owners of stored vs retrieved from name ownership
@@ -177,66 +53,34 @@ export async function createUpdateOwnerJob(
             UPDATE worlds
             SET owner = ${newOwner?.toLowerCase()}
             WHERE name = ${worldData.name.toLowerCase()}`
-        await components.database.query(sql)
+        await database.query(sql)
         worldData.owner = newOwner
       }
     }
 
     // Step 2
-    // For each wallet:
-    // * Fetch allowance
-    // * Compare with used space
-    // * Create a blocking record if needed
-    // * Finally, clear up all blocking records that were not updated in this run
-    const worldsByOwner = new Map<string, string[]>()
-    for (const [worldName, owner] of worldWithOwners) {
+    // For each owner, (re)create a blocking record when over quota. Errors are isolated per
+    // owner so one failure cannot prevent the others from being processed. Finally, clear up
+    // all blocking records that were not refreshed in this run — except those of owners whose
+    // status could not be evaluated, which must remain blocked until the next run.
+    const owners = new Set<string>()
+    for (const owner of worldWithOwners.values()) {
       if (owner) {
-        const worlds = worldsByOwner.get(owner) || []
-        worlds.push(worldName)
-        worldsByOwner.set(owner, worlds)
+        owners.add(owner)
       }
     }
-    dumpMap('worldsByOwner', worldsByOwner)
-
-    const whiteList = await fetch.fetch(whitelistUrl).then(async (data) => (await data.json()) as unknown as Whitelist)
 
     const failedOwners = new Set<string>()
-
-    for (const [owner, worlds] of worldsByOwner) {
-      if (worlds.length === 0) {
-        continue
-      }
-
+    for (const owner of owners) {
       try {
-        const walletStats = await components.walletStats.get(owner)
-
-        // The size of whitelisted worlds does not count towards the wallet's used space
-        let sizeOfWhitelistedWorlds = 0n
-        for (const world of worlds) {
-          if (world in whiteList) {
-            sizeOfWhitelistedWorlds += BigInt(walletStats.dclNames.find((w) => w.name === world)?.size || 0)
-          }
-        }
-
-        if (walletStats.maxAllowedSpace < walletStats.usedSpace - sizeOfWhitelistedWorlds) {
-          logger.info(
-            `Creating or updating blocking record for ${owner} as maxAllowed is ${
-              walletStats.maxAllowedSpace
-            } and used is ${walletStats.usedSpace - sizeOfWhitelistedWorlds}. Affected worlds: ${walletStats.dclNames
-              .concat(walletStats.ensNames)
-              .map((w) => w.name)
-              .join(', ')}.`
-          )
-          await upsertBlockingRecord(owner)
-        }
+        await blocking.blockIfOverQuota(owner)
       } catch (error) {
         failedOwners.add(owner)
-        logger.error(`Failed to process blocking status for wallet ${owner}`, {
-          error: error instanceof Error ? error.message : String(error)
-        })
+        logger.error(`Failed to process blocking status for wallet ${owner}`, { error: errorMessage(error) })
       }
     }
-    await clearOldBlockingRecords(startDate, failedOwners)
+
+    await blocking.collectStaleBlockingRecords(startDate, failedOwners)
   }
 
   async function start(): Promise<void> {

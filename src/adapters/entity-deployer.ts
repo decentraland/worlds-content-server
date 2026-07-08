@@ -8,7 +8,7 @@ type PostDeploymentHook = (baseUrl: string, entity: Entity, authChain: AuthLink[
 export function createEntityDeployer(
   components: Pick<
     AppComponents,
-    'config' | 'logs' | 'nameOwnership' | 'metrics' | 'storage' | 'snsClient' | 'walletStats' | 'worldsManager'
+    'blocking' | 'config' | 'logs' | 'nameOwnership' | 'metrics' | 'storage' | 'snsClient' | 'worldsManager'
   >
 ): IEntityDeployer {
   const { logs, storage, worldsManager } = components
@@ -78,11 +78,10 @@ export function createEntityDeployer(
 
     await worldsManager.deployScene(worldName, entity, owner)
 
-    components.walletStats.clearBlockedIfUnderQuota(owner).catch((error) =>
-      logger.error(`Failed to recheck blocked status for ${owner} after deploy`, {
-        error: error instanceof Error ? error.message : String(error)
-      })
-    )
+    // A deployment that replaces a larger scene can free enough space to bring a
+    // previously-blocked owner back under quota. The check short-circuits cheaply when the
+    // owner is not blocked and never throws, so a failed recheck cannot fail the deployment.
+    await components.blocking.unblockIfUnderQuota(owner)
 
     const kind = worldName.endsWith('dcl.eth') ? 'dcl-name' : 'ens-name'
     metrics.increment('world_deployments_counter', { kind })

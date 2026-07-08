@@ -1,58 +1,41 @@
 import { createUpdateOwnerJob } from '../../src/adapters/update-owner-job'
 import { createDatabaseMock } from '../mocks/database-mock'
 import { createMockedNameOwnership } from '../mocks/name-ownership-mock'
-import { createMockedSnsClient } from '../mocks/sns-client-mock'
-import { createMockFetch } from '../mocks/fetch-mock'
-import { createMockedConfig } from '../mocks/config-mock'
 import { createMockLogs } from '../mocks/logs-mock'
+import { createMockBlockingComponent } from '../mocks/blocking-mock'
 import { IPgComponent } from '@dcl/pg-component'
-import { IWalletStats } from '../../src/types'
+import { IBlockingComponent } from '../../src/adapters/blocking'
 
 describe('UpdateOwnerJob', () => {
-  const badOwner = '0xbad0000000000000000000000000000000bad0'
-  const goodOwner = '0xgood000000000000000000000000000000d000'
+  const badOwner = '0xbad0000000000000000000000000000000000001'
+  const goodOwner = '0x9000000000000000000000000000000000000002'
 
-  describe('when one wallet fails while calculating its blocking status', () => {
-    let database: jest.Mocked<IPgComponent>
-    let walletStats: jest.Mocked<IWalletStats>
-    let logs: ReturnType<typeof createMockLogs>
+  let database: IPgComponent
+  let blocking: jest.Mocked<IBlockingComponent>
+  let logs: ReturnType<typeof createMockLogs>
 
-    beforeEach(async () => {
-      const databaseMock = createDatabaseMock([
-        // Step 1: worlds with deployed scenes, one per owner
-        {
-          rows: [
-            { name: 'bad-world.dcl.eth', owner: badOwner, size: '100' },
-            { name: 'good-world.dcl.eth', owner: goodOwner, size: '100' }
-          ],
-          rowCount: 2
-        },
-        // upsertBlockingRecord for goodOwner (only one reached, since badOwner throws)
-        { rows: [], rowCount: 0 },
-        // clearOldBlockingRecords
-        { rows: [], rowCount: 0 }
-      ])
-      database = {
-        ...databaseMock,
-        query: jest.fn(databaseMock.query)
-      } as any
-
-      walletStats = {
-        get: jest.fn().mockImplementation((wallet: string) => {
-          if (wallet === badOwner) {
-            return Promise.reject(new Error('boom: wallet stats service unavailable'))
-          }
-          return Promise.resolve({
-            wallet: goodOwner,
-            dclNames: [{ name: 'good-world.dcl.eth', size: 1000n }],
-            ensNames: [],
-            usedSpace: 1000n,
-            maxAllowedSpace: 100n,
-            blockedSince: undefined
-          })
-        }),
-        clearBlockedIfUnderQuota: jest.fn().mockResolvedValue({ unblocked: false, stats: {} })
+  beforeEach(() => {
+    logs = createMockLogs()
+    // Owners already match name ownership, so Step 1 performs no UPDATE and the only DB query
+    // is the initial enumeration of worlds with deployed scenes.
+    database = createDatabaseMock([
+      {
+        rows: [
+          { name: 'bad-world.dcl.eth', owner: badOwner, size: '100' },
+          { name: 'good-world.dcl.eth', owner: goodOwner, size: '100' }
+        ],
+        rowCount: 2
       }
+    ])
+  })
+
+  describe('when one wallet fails while its blocking status is evaluated', () => {
+    beforeEach(async () => {
+      blocking = createMockBlockingComponent({
+        blockIfOverQuota: jest.fn().mockImplementation((wallet: string) =>
+          wallet === badOwner ? Promise.reject(new Error('boom: wallet stats service unavailable')) : Promise.resolve(true)
+        )
+      })
 
       const nameOwnership = createMockedNameOwnership({
         findOwners: jest.fn().mockResolvedValue(
@@ -62,50 +45,60 @@ describe('UpdateOwnerJob', () => {
           ])
         )
       })
-      const snsClient = createMockedSnsClient()
-      const fetch = createMockFetch({
-        fetch: jest.fn().mockResolvedValue({ json: () => Promise.resolve({}) })
-      })
-      const config = createMockedConfig({
-        requireString: jest.fn().mockResolvedValue('http://example.com/whatever')
-      })
-      logs = createMockLogs()
 
-      const job = await createUpdateOwnerJob({
-        config,
-        database,
-        fetch,
-        logs,
-        nameOwnership,
-        snsClient,
-        walletStats
-      })
-
+      const job = await createUpdateOwnerJob({ blocking, database, logs, nameOwnership })
       await job.run()
     })
 
-    it('does not throw and still processes the wallet after the failing one', () => {
-      expect(walletStats.get).toHaveBeenCalledWith(badOwner)
-      expect(walletStats.get).toHaveBeenCalledWith(goodOwner)
+    it('should still evaluate the wallets after the failing one', () => {
+      expect(blocking.blockIfOverQuota).toHaveBeenCalledWith(badOwner)
+      expect(blocking.blockIfOverQuota).toHaveBeenCalledWith(goodOwner)
     })
 
-    it('logs the error for the failing wallet', () => {
-      const errorLogger = logs.getLogger('update-owner-job')
-      expect(errorLogger.error).toHaveBeenCalledWith(
+    it('should log the error for the failing wallet', () => {
+      const logger = logs.getLogger('update-owner-job')
+      expect(logger.error).toHaveBeenCalledWith(
         expect.stringContaining(badOwner),
         expect.objectContaining({ error: expect.any(String) })
       )
     })
 
-    it('still reaches clearOldBlockingRecords at the end of the run', () => {
-      // 1 select + 1 upsertBlockingRecord (goodOwner only) + 1 clearOldBlockingRecords = 3 queries
-      expect(database.query).toHaveBeenCalledTimes(3)
+    it('should still collect stale blocking records at the end of the run', () => {
+      expect(blocking.collectStaleBlockingRecords).toHaveBeenCalledTimes(1)
     })
 
-    it('excludes the failed wallet from clearOldBlockingRecords', () => {
-      const lastCall = database.query.mock.calls[2][0]
-      expect(lastCall.text).toContain('ALL')
-      expect(lastCall.values).toEqual(expect.arrayContaining([expect.arrayContaining([badOwner])]))
+    it('should exclude the failed wallet, but not the processed one, from the cleanup', () => {
+      const [, keepWallets] = blocking.collectStaleBlockingRecords.mock.calls[0]
+      expect(keepWallets.has(badOwner)).toBe(true)
+      expect(keepWallets.has(goodOwner)).toBe(false)
+    })
+  })
+
+  describe('when every wallet is evaluated successfully', () => {
+    beforeEach(async () => {
+      blocking = createMockBlockingComponent()
+
+      const nameOwnership = createMockedNameOwnership({
+        findOwners: jest.fn().mockResolvedValue(
+          new Map([
+            ['bad-world.dcl.eth', badOwner],
+            ['good-world.dcl.eth', goodOwner]
+          ])
+        )
+      })
+
+      const job = await createUpdateOwnerJob({ blocking, database, logs, nameOwnership })
+      await job.run()
+    })
+
+    it('should evaluate the blocking status of every distinct owner', () => {
+      expect(blocking.blockIfOverQuota).toHaveBeenCalledWith(badOwner)
+      expect(blocking.blockIfOverQuota).toHaveBeenCalledWith(goodOwner)
+    })
+
+    it('should collect stale blocking records excluding no wallet', () => {
+      const [, keepWallets] = blocking.collectStaleBlockingRecords.mock.calls[0]
+      expect(keepWallets.size).toBe(0)
     })
   })
 })

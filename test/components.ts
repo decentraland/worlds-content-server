@@ -48,6 +48,8 @@ import { createRateLimiterComponent } from '../src/logic/rate-limiter'
 import { createMockDenyList } from './mocks/denylist-mock'
 import { createMockBans } from './mocks/bans-mock'
 import { createMockWalletStatsComponent } from './mocks/wallet-stats-mock'
+import { createMockBlockingComponent } from './mocks/blocking-mock'
+import { createMockWhitelistComponent } from './mocks/whitelist-mock'
 
 /**
  * The npm `form-data` package (used by dcl-catalyst-client to build deploy bodies) exposes its
@@ -191,14 +193,18 @@ async function initComponents(): Promise<TestComponents> {
 
   const walletStats = createMockWalletStatsComponent()
 
+  const whitelist = createMockWhitelistComponent()
+
+  const blocking = createMockBlockingComponent()
+
   const entityDeployer = createEntityDeployer({
+    blocking,
     config,
     logs,
     nameOwnership,
     metrics,
     storage,
     snsClient,
-    walletStats,
     worldsManager
   })
 
@@ -228,7 +234,7 @@ async function initComponents(): Promise<TestComponents> {
     worldsManager
   })
 
-  const worlds = createWorldsComponent({ worldsManager, snsClient })
+  const worlds = createWorldsComponent({ blocking, worldsManager, snsClient })
 
   const evictionJob = { start: jest.fn(), stop: jest.fn() }
 
@@ -254,6 +260,7 @@ async function initComponents(): Promise<TestComponents> {
     ...components,
     access,
     bans,
+    blocking,
     comms,
     config,
     commsAdapter,
@@ -284,6 +291,7 @@ async function initComponents(): Promise<TestComponents> {
     updateOwnerJob,
     validator,
     walletStats,
+    whitelist,
     worldCreator,
     worlds,
     worldsIndexer,

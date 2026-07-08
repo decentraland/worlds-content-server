@@ -31,6 +31,8 @@ import { createNameOwnership } from './adapters/name-ownership'
 import { createEthereumProvider } from './adapters/rpc-provider'
 import { createNameChecker } from './adapters/dcl-name-checker'
 import { createWalletStatsComponent } from './adapters/wallet-stats'
+import { createWhitelistComponent } from './adapters/whitelist'
+import { createBlockingComponent } from './adapters/blocking'
 import { createUpdateOwnerJob } from './adapters/update-owner-job'
 import { createSnsComponent } from '@dcl/sns-component'
 import { createAwsConfig } from './adapters/aws-config'
@@ -154,12 +156,15 @@ export async function initComponents(): Promise<AppComponents> {
 
   const walletStats = await createWalletStatsComponent({ config, database, fetch, logs, worldsManager })
 
+  const whitelist = await createWhitelistComponent({ config, fetch, logs })
+
+  const blocking = await createBlockingComponent({ config, database, logs, snsClient, walletStats, whitelist })
+
   const limitsManager = await createLimitsManagerComponent({
     config,
-    fetch,
-    logs,
     nameOwnership,
     walletStats,
+    whitelist,
     worldsManager
   })
   const worldsIndexer = await createWorldsIndexerComponent({ worldsManager })
@@ -198,13 +203,13 @@ export async function initComponents(): Promise<AppComponents> {
   })
 
   const entityDeployer = createEntityDeployer({
+    blocking,
     config,
     logs,
     nameOwnership,
     metrics,
     storage,
     snsClient,
-    walletStats,
     worldsManager
   })
   const validator = createValidator({
@@ -223,13 +228,10 @@ export async function initComponents(): Promise<AppComponents> {
   const notificationService = await createNotificationsClientComponent({ config, fetch, logs })
 
   const updateOwnerJob = await createUpdateOwnerJob({
-    config,
+    blocking,
     database,
-    fetch,
     logs,
-    nameOwnership,
-    snsClient,
-    walletStats
+    nameOwnership
   })
 
   const settings = await createSettingsComponent({
@@ -243,7 +245,7 @@ export async function initComponents(): Promise<AppComponents> {
   })
   const schemaValidator = createSchemaValidatorComponent()
 
-  const worlds = createWorldsComponent({ worldsManager, snsClient })
+  const worlds = createWorldsComponent({ blocking, snsClient, worldsManager })
 
   const evictionJob = await createEvictionJob({ config, logs, worlds })
 
@@ -297,6 +299,7 @@ export async function initComponents(): Promise<AppComponents> {
     marketplaceSubGraph,
     metrics,
     migrationExecutor,
+    blocking,
     nameDenyListChecker,
     nameOwnership,
     namePermissionChecker,
@@ -321,6 +324,7 @@ export async function initComponents(): Promise<AppComponents> {
     updateOwnerJob,
     validator,
     walletStats,
+    whitelist,
     bans,
     worlds,
     worldsIndexer,
