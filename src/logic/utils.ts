@@ -3,6 +3,10 @@ import { ILoggerComponent } from '@well-known-components/interfaces'
 import { WorldMetadata } from '../types'
 import { stringToUtf8Bytes } from 'eth-connect'
 
+export function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
 export function deepEqual(a: any, b: any) {
   if (typeof a === 'object' && a !== null && typeof b === 'object' && b !== null) {
     const count = [0, 0]

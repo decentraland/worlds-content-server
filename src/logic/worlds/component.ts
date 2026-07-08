@@ -10,14 +10,15 @@ import { IWorldsComponent } from './types'
  * 2. Validates blocked status and grace period
  * 3. Composes world manifest from parcels and settings
  * 4. Handles world and scene undeployment with event publishing
+ * 5. Rechecks the owner's blocked status after freeing space
  *
- * @param components Required components: worldsManager, snsClient
+ * @param components Required components: blocking, snsClient, worldsManager
  * @returns IWorldsComponent implementation
  */
 export const createWorldsComponent = (
-  components: Pick<AppComponents, 'worldsManager' | 'snsClient'>
+  components: Pick<AppComponents, 'blocking' | 'snsClient' | 'worldsManager'>
 ): IWorldsComponent => {
-  const { worldsManager, snsClient } = components
+  const { blocking, snsClient, worldsManager } = components
 
   /**
    * Checks if a world is blocked and beyond the grace period
@@ -115,11 +116,44 @@ export const createWorldsComponent = (
   }
 
   /**
+   * Captures the world owner before an undeployment, but only when that owner is currently
+   * blocked — so callers can cheaply skip the (expensive) quota recheck for the common case
+   * of an owner that was never blocked. Must be called before the scenes are removed, since
+   * the world record is needed to resolve the owner.
+   *
+   * @param worldName - The name of the world about to be undeployed
+   * @returns The owner address when it is currently blocked, undefined otherwise
+   */
+  async function getBlockedOwner(worldName: string): Promise<string | undefined> {
+    const { records } = await worldsManager.getRawWorldRecords({ worldName })
+    const record = records[0]
+    if (!record || !record.owner || !record.blocked_since) {
+      return undefined
+    }
+    return record.owner
+  }
+
+  /**
+   * Rechecks a (previously blocked) owner's quota after space was freed, unblocking them when
+   * they are back under quota. Best-effort: unblockIfUnderQuota logs and swallows its own
+   * errors, so a failed recheck never affects the undeployment that triggered it.
+   *
+   * @param blockedOwner - The owner returned by getBlockedOwner, or undefined to skip
+   */
+  async function recheckBlockedOwner(blockedOwner: string | undefined): Promise<void> {
+    if (blockedOwner) {
+      await blocking.unblockIfUnderQuota(blockedOwner)
+    }
+  }
+
+  /**
    * Undeploys an entire world by removing all its scenes and publishing a WorldUndeploymentEvent
    *
    * @param worldName - The name of the world to undeploy
    */
   async function undeployWorld(worldName: string): Promise<void> {
+    const blockedOwner = await getBlockedOwner(worldName)
+
     await worldsManager.undeployWorld(worldName)
 
     const event: WorldUndeploymentEvent = {
@@ -133,6 +167,8 @@ export const createWorldsComponent = (
     }
 
     await snsClient.publishMessages([event])
+
+    await recheckBlockedOwner(blockedOwner)
   }
 
   /**
@@ -147,6 +183,7 @@ export const createWorldsComponent = (
   async function undeployWorldScenes(worldName: string, parcels: string[]): Promise<void> {
     // Query affected scenes before deletion to get entity IDs and base parcels
     const { scenes } = await worldsManager.getWorldScenes({ worldName, coordinates: parcels })
+    const blockedOwner = await getBlockedOwner(worldName)
 
     await worldsManager.undeployScene(worldName, parcels)
 
@@ -167,6 +204,8 @@ export const createWorldsComponent = (
 
       await snsClient.publishMessages([event])
     }
+
+    await recheckBlockedOwner(blockedOwner)
   }
 
   async function getWorldSceneBaseParcelIncludingUndeployed(

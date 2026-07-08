@@ -1,17 +1,20 @@
 import { createWorldsComponent } from '../../src/logic/worlds/component'
 import { IWorldsComponent } from '../../src/logic/worlds/types'
 import { IWorldsManager, TWO_DAYS_IN_MS, SceneDeploymentStatus } from '../../src/types'
+import { IBlockingComponent } from '../../src/adapters/blocking'
 import { EntityType, Events } from '@dcl/schemas'
 import { IPublisherComponent } from '@dcl/sns-component'
+import { createMockBlockingComponent } from '../mocks/blocking-mock'
 
 describe('WorldsComponent', () => {
   let worldsComponent: IWorldsComponent
   let worldsManager: jest.Mocked<IWorldsManager>
   let snsClient: jest.Mocked<IPublisherComponent>
+  let blocking: jest.Mocked<IBlockingComponent>
 
   beforeEach(() => {
     worldsManager = {
-      getRawWorldRecords: jest.fn(),
+      getRawWorldRecords: jest.fn().mockResolvedValue({ records: [], total: 0 }),
       getWorldScenes: jest.fn(),
       undeployWorld: jest.fn(),
       undeployScene: jest.fn(),
@@ -23,7 +26,9 @@ describe('WorldsComponent', () => {
       publishMessages: jest.fn()
     } as jest.Mocked<IPublisherComponent>
 
-    worldsComponent = createWorldsComponent({ worldsManager, snsClient })
+    blocking = createMockBlockingComponent()
+
+    worldsComponent = createWorldsComponent({ blocking, worldsManager, snsClient })
   })
 
   afterEach(() => {
@@ -323,6 +328,36 @@ describe('WorldsComponent', () => {
         })
       ])
     })
+
+    describe('and the world owner is currently blocked', () => {
+      beforeEach(() => {
+        worldsManager.getRawWorldRecords.mockResolvedValue({
+          records: [{ owner: '0xowner00000000000000000000000000000000001', blocked_since: new Date() }] as any,
+          total: 1
+        })
+      })
+
+      it('should recheck the owner quota after freeing space', async () => {
+        await worldsComponent.undeployWorld('my-world')
+
+        expect(blocking.unblockIfUnderQuota).toHaveBeenCalledWith('0xowner00000000000000000000000000000000001')
+      })
+    })
+
+    describe('and the world owner is not blocked', () => {
+      beforeEach(() => {
+        worldsManager.getRawWorldRecords.mockResolvedValue({
+          records: [{ owner: '0xowner00000000000000000000000000000000001', blocked_since: null }] as any,
+          total: 1
+        })
+      })
+
+      it('should not recheck the owner quota', async () => {
+        await worldsComponent.undeployWorld('my-world')
+
+        expect(blocking.unblockIfUnderQuota).not.toHaveBeenCalled()
+      })
+    })
   })
 
   describe('when undeploying specific scenes from a world', () => {
@@ -412,6 +447,27 @@ describe('WorldsComponent', () => {
             }
           })
         ])
+      })
+
+      it('should not recheck the owner quota when the owner is not blocked', async () => {
+        await worldsComponent.undeployWorldScenes('test-world', ['0,0', '5,5'])
+
+        expect(blocking.unblockIfUnderQuota).not.toHaveBeenCalled()
+      })
+
+      describe('and the world owner is currently blocked', () => {
+        beforeEach(() => {
+          worldsManager.getRawWorldRecords.mockResolvedValue({
+            records: [{ owner: '0xowner00000000000000000000000000000000001', blocked_since: new Date() }] as any,
+            total: 1
+          })
+        })
+
+        it('should recheck the owner quota after freeing space', async () => {
+          await worldsComponent.undeployWorldScenes('test-world', ['0,0', '5,5'])
+
+          expect(blocking.unblockIfUnderQuota).toHaveBeenCalledWith('0xowner00000000000000000000000000000000001')
+        })
       })
     })
 

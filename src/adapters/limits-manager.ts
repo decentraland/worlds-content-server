@@ -1,62 +1,49 @@
 import { AppComponents, ILimitsManager, MB_BigInt, Whitelist } from '../types'
-import { LRUCache } from 'lru-cache'
 
 const bigIntMax = (...args: bigint[]) => args.reduce((m, e) => (e > m ? e : m))
 
 export async function createLimitsManagerComponent({
   config,
-  fetch,
-  logs,
   nameOwnership,
   walletStats,
+  whitelist,
   worldsManager
 }: Pick<
   AppComponents,
-  'config' | 'fetch' | 'logs' | 'nameOwnership' | 'walletStats' | 'worldsManager'
+  'config' | 'nameOwnership' | 'walletStats' | 'whitelist' | 'worldsManager'
 >): Promise<ILimitsManager> {
-  const logger = logs.getLogger('limits-manager')
   const hardMaxParcels = await config.requireNumber('MAX_PARCELS')
   const hardMaxSize = await config.requireNumber('MAX_SIZE')
   const hardMaxSizeForEns = await config.requireNumber('ENS_MAX_SIZE')
   const hardAllowSdk6 = (await config.requireString('ALLOW_SDK6')) === 'true'
-  const whitelistUrl = await config.requireString('WHITELIST_URL')
 
-  const CONFIG_KEY = 'config'
-  const cache = new LRUCache<any, Whitelist>({
-    max: 1,
-    ttl: 10 * 60 * 1000, // cache for 10 minutes
-    fetchMethod: async (_, staleValue): Promise<Whitelist> => {
-      return await fetch
-        .fetch(whitelistUrl)
-        .then(async (data) => (await data.json()) as unknown as Whitelist)
-        .catch((_: any) => {
-          logger.warn(
-            `Error fetching the whitelist: ${_.message}. Returning last known whitelist: ${JSON.stringify(
-              staleValue || {}
-            )}`
-          )
-          return staleValue || {}
-        })
+  // Limits fall back to the hard defaults when the whitelist is unavailable, so deployments keep
+  // working during a whitelist outage instead of erroring on a missing override.
+  async function resolveWhitelist(): Promise<Whitelist> {
+    try {
+      return await whitelist.get()
+    } catch {
+      return {}
     }
-  })
+  }
 
   return {
     async getAllowSdk6For(worldName: string): Promise<boolean> {
-      const whitelist = (await cache.fetch(CONFIG_KEY))!
-      return whitelist[worldName]?.allow_sdk6 || hardAllowSdk6
+      const currentWhitelist = await resolveWhitelist()
+      return currentWhitelist[worldName]?.allow_sdk6 || hardAllowSdk6
     },
     async getMaxAllowedParcelsFor(worldName: string): Promise<number> {
-      const whitelist = (await cache.fetch(CONFIG_KEY))!
-      return whitelist[worldName]?.max_parcels || hardMaxParcels
+      const currentWhitelist = await resolveWhitelist()
+      return currentWhitelist[worldName]?.max_parcels || hardMaxParcels
     },
     async getMaxAllowedSizeInBytesFor(worldName: string, parcels?: string[]): Promise<bigint> {
       if (worldName.endsWith('.eth') && !worldName.endsWith('.dcl.eth')) {
         return BigInt(hardMaxSizeForEns) * MB_BigInt
       }
 
-      const whitelist = (await cache.fetch(CONFIG_KEY))!
-      if (whitelist[worldName]) {
-        return BigInt(whitelist[worldName]!.max_size_in_mb || hardMaxSize) * MB_BigInt
+      const currentWhitelist = await resolveWhitelist()
+      if (currentWhitelist[worldName]) {
+        return BigInt(currentWhitelist[worldName]!.max_size_in_mb || hardMaxSize) * MB_BigInt
       }
 
       const owners = await nameOwnership.findOwners([worldName])
