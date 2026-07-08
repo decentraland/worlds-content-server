@@ -47,6 +47,7 @@ import { createRedisMock } from './mocks/redis-mock'
 import { createRateLimiterComponent } from '../src/logic/rate-limiter'
 import { createMockDenyList } from './mocks/denylist-mock'
 import { createMockBans } from './mocks/bans-mock'
+import { createMockWalletStatsComponent } from './mocks/wallet-stats-mock'
 
 /**
  * The npm `form-data` package (used by dcl-catalyst-client to build deploy bodies) exposes its
@@ -188,6 +189,8 @@ async function initComponents(): Promise<TestComponents> {
     snsClient
   })
 
+  const walletStats = createMockWalletStatsComponent()
+
   const entityDeployer = createEntityDeployer({
     config,
     logs,
@@ -195,6 +198,7 @@ async function initComponents(): Promise<TestComponents> {
     metrics,
     storage,
     snsClient,
+    walletStats,
     worldsManager
   })
 
@@ -279,6 +283,7 @@ async function initComponents(): Promise<TestComponents> {
     storage,
     updateOwnerJob,
     validator,
+    walletStats,
     worldCreator,
     worlds,
     worldsIndexer,
