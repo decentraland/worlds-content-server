@@ -5,9 +5,12 @@ import { DecentralandSignatureContext } from '@dcl/crypto-middleware'
 
 export async function undeployEntity({
   params,
-  components: { logs, namePermissionChecker, permissions, worlds },
+  components: { logs, namePermissionChecker, permissions, walletStats, worlds, worldsManager },
   verification
-}: HandlerContextWithPath<'logs' | 'namePermissionChecker' | 'permissions' | 'worlds', '/entities/:world_name'> &
+}: HandlerContextWithPath<
+  'logs' | 'namePermissionChecker' | 'permissions' | 'walletStats' | 'worlds' | 'worldsManager',
+  '/entities/:world_name'
+> &
   DecentralandSignatureContext<any>): Promise<IHttpServerComponent.IResponse> {
   const logger = logs.getLogger('worlds-manager')
 
@@ -30,6 +33,15 @@ export async function undeployEntity({
 
   logger.info(`Un-deploying world ${params.world_name}`)
   await worlds.undeployWorld(params.world_name)
+
+  const { records } = await worldsManager.getRawWorldRecords({ worldName: params.world_name })
+  if (records.length > 0) {
+    walletStats.clearBlockedIfUnderQuota(records[0].owner).catch((err) =>
+      logger.error(`Failed to recheck blocked status for ${records[0].owner} after undeploy`, {
+        error: String(err)
+      })
+    )
+  }
 
   return {
     status: 200,

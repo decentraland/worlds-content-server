@@ -8,7 +8,7 @@ type PostDeploymentHook = (baseUrl: string, entity: Entity, authChain: AuthLink[
 export function createEntityDeployer(
   components: Pick<
     AppComponents,
-    'config' | 'logs' | 'nameOwnership' | 'metrics' | 'storage' | 'snsClient' | 'worldsManager'
+    'config' | 'logs' | 'nameOwnership' | 'metrics' | 'storage' | 'snsClient' | 'walletStats' | 'worldsManager'
   >
 ): IEntityDeployer {
   const { logs, storage, worldsManager } = components
@@ -77,6 +77,12 @@ export function createEntityDeployer(
     }
 
     await worldsManager.deployScene(worldName, entity, owner)
+
+    components.walletStats.clearBlockedIfUnderQuota(owner).catch((err) =>
+      logger.error(`Failed to recheck blocked status for ${owner} after deploy`, {
+        error: String(err)
+      })
+    )
 
     const kind = worldName.endsWith('dcl.eth') ? 'dcl-name' : 'ens-name'
     metrics.increment('world_deployments_counter', { kind })

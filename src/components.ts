@@ -204,6 +204,7 @@ export async function initComponents(): Promise<AppComponents> {
     metrics,
     storage,
     snsClient,
+    walletStats,
     worldsManager
   })
   const validator = createValidator({
