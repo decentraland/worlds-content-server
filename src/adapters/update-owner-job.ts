@@ -196,26 +196,32 @@ export async function createUpdateOwnerJob(
         continue
       }
 
-      const walletStats = await components.walletStats.get(owner)
+      try {
+        const walletStats = await components.walletStats.get(owner)
 
-      // The size of whitelisted worlds does not count towards the wallet's used space
-      let sizeOfWhitelistedWorlds = 0n
-      for (const world of worlds) {
-        if (world in whiteList) {
-          sizeOfWhitelistedWorlds += BigInt(walletStats.dclNames.find((w) => w.name === world)?.size || 0)
+        // The size of whitelisted worlds does not count towards the wallet's used space
+        let sizeOfWhitelistedWorlds = 0n
+        for (const world of worlds) {
+          if (world in whiteList) {
+            sizeOfWhitelistedWorlds += BigInt(walletStats.dclNames.find((w) => w.name === world)?.size || 0)
+          }
         }
-      }
 
-      if (walletStats.maxAllowedSpace < walletStats.usedSpace - sizeOfWhitelistedWorlds) {
-        logger.info(
-          `Creating or updating blocking record for ${owner} as maxAllowed is ${
-            walletStats.maxAllowedSpace
-          } and used is ${walletStats.usedSpace - sizeOfWhitelistedWorlds}. Affected worlds: ${walletStats.dclNames
-            .concat(walletStats.ensNames)
-            .map((w) => w.name)
-            .join(', ')}.`
-        )
-        await upsertBlockingRecord(owner)
+        if (walletStats.maxAllowedSpace < walletStats.usedSpace - sizeOfWhitelistedWorlds) {
+          logger.info(
+            `Creating or updating blocking record for ${owner} as maxAllowed is ${
+              walletStats.maxAllowedSpace
+            } and used is ${walletStats.usedSpace - sizeOfWhitelistedWorlds}. Affected worlds: ${walletStats.dclNames
+              .concat(walletStats.ensNames)
+              .map((w) => w.name)
+              .join(', ')}.`
+          )
+          await upsertBlockingRecord(owner)
+        }
+      } catch (error: any) {
+        // Isolate failures per wallet so one bad wallet can't prevent clearOldBlockingRecords
+        // from running below and unblocking every other wallet that is no longer over quota.
+        logger.error(`Failed to process blocking status for wallet ${owner}: ${error.message}`)
       }
     }
     await clearOldBlockingRecords(startDate)
