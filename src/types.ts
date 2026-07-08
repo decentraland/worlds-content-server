@@ -629,8 +629,14 @@ export type WalletStats = {
   blockedSince?: Date
 }
 
+export type ClearBlockedResult = {
+  unblocked: boolean
+  stats: WalletStats
+}
+
 export type IWalletStats = {
   get(wallet: EthAddress): Promise<WalletStats>
+  clearBlockedIfUnderQuota(wallet: EthAddress): Promise<ClearBlockedResult>
 }
 
 export type WorldRecord = {

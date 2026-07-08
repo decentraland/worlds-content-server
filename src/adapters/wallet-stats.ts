@@ -1,4 +1,4 @@
-import { AppComponents, IWalletStats, MB_BigInt, WalletStats, WorldRecord } from '../types'
+import { AppComponents, ClearBlockedResult, IWalletStats, MB_BigInt, WalletStats, WorldRecord } from '../types'
 import { EthAddress } from '@dcl/schemas'
 import SQL from 'sql-template-strings'
 import { withRetry } from '../logic/utils'
@@ -97,7 +97,17 @@ export async function createWalletStatsComponent(
     }
   }
 
+  async function clearBlockedIfUnderQuota(wallet: EthAddress): Promise<ClearBlockedResult> {
+    const stats = await get(wallet)
+    if (stats.blockedSince && stats.usedSpace <= stats.maxAllowedSpace) {
+      await components.database.query(SQL`DELETE FROM blocked WHERE wallet = ${wallet.toLowerCase()}`)
+      return { unblocked: true, stats: { ...stats, blockedSince: undefined } }
+    }
+    return { unblocked: false, stats }
+  }
+
   return {
-    get
+    get,
+    clearBlockedIfUnderQuota
   }
 }

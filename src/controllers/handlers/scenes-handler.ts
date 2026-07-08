@@ -80,7 +80,7 @@ export async function getScenesHandler(
 
 export async function undeploySceneHandler(
   ctx: HandlerContextWithPath<
-    'namePermissionChecker' | 'permissions' | 'worlds' | 'worldsManager',
+    'logs' | 'namePermissionChecker' | 'permissions' | 'walletStats' | 'worlds' | 'worldsManager',
     '/world/:world_name/scenes/:coordinate'
   > &
     DecentralandSignatureContext<any>
@@ -117,6 +117,18 @@ export async function undeploySceneHandler(
   }
 
   await ctx.components.worlds.undeployWorldScenes(world_name, [coordinate])
+
+  const { records } = await ctx.components.worldsManager.getRawWorldRecords({ worldName: world_name })
+  if (records.length > 0) {
+    const logger = ctx.components.logs.getLogger('scenes-handler')
+    ctx.components.walletStats
+      .clearBlockedIfUnderQuota(records[0].owner)
+      .catch((err) =>
+        logger.error(`Failed to recheck blocked status for ${records[0].owner} after scene undeploy`, {
+          error: String(err)
+        })
+      )
+  }
 
   return {
     status: 200,

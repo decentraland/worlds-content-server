@@ -23,6 +23,7 @@ import {
   putPermissionsAddressHandler
 } from './handlers/permissions-handlers'
 import { walletStatsHandler } from './handlers/wallet-stats-handler'
+import { walletRecheckHandler } from './handlers/wallet-recheck-handler'
 import { undeployEntity } from './handlers/undeploy-entity-handler'
 import { bearerTokenMiddleware, errorHandler } from '@dcl/http-commons'
 import { reprocessABHandler } from './handlers/reprocess-ab-handler'
@@ -161,6 +162,7 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   )
 
   router.get('/wallet/:wallet/stats', walletStatsHandler)
+  router.post('/wallet/:wallet/recheck-blocked', signedFetchMiddleware, walletRecheckHandler)
   router.get('/wallet/:wallet/connected-world', walletConnectedWorldHandler)
   router.get('/status', statusHandler)
 
