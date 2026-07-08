@@ -50,7 +50,8 @@ describe('UpdateOwnerJob', () => {
             maxAllowedSpace: 100n,
             blockedSince: undefined
           })
-        })
+        }),
+        clearBlockedIfUnderQuota: jest.fn().mockResolvedValue({ unblocked: false, stats: {} })
       }
 
       const nameOwnership = createMockedNameOwnership({
