@@ -149,6 +149,35 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
     })
   })
 
+  describe('when uploading across multiple requests (resume fast-path)', () => {
+    it('should run the deployment-permission check only on the first request and at finalize, not per batch', async () => {
+      const { namePermissionChecker } = stubComponents
+      const authChain = Authenticator.signPayload(identity.authChain, entityId)
+      const [hashA, hashB] = contentHashes
+
+      expect((await post(buildForm([entityId], authChain))).status).toBe(202)
+      expect((await post(buildForm([hashA], authChain))).status).toBe(202)
+      expect((await post(buildForm([hashB], authChain))).status).toBe(200)
+
+      // Request 1 (creates the pending record) runs the permission check; requests 2 and 3 are resume
+      // batches by the same deployer that skip it; finalize (inside request 3) re-runs it.
+      expect(namePermissionChecker.checkPermission).toHaveBeenCalledTimes(2)
+    })
+
+    it('should not grant the fast path to a different signer resuming the same entity', async () => {
+      const authChain = Authenticator.signPayload(identity.authChain, entityId)
+      expect((await post(buildForm([entityId], authChain))).status).toBe(202)
+
+      // Another wallet (no deployment permission for this world) signs the same entity id and tries to
+      // continue the upload: it must go through the full staging validation and be rejected.
+      const otherIdentity = await getIdentity()
+      const otherAuthChain = Authenticator.signPayload(otherIdentity.authChain, entityId)
+      const res = await post(buildForm([contentHashes[0]], otherAuthChain))
+
+      expect(res.status).toBe(400)
+    })
+  })
+
   describe('when the same partial request is replayed', () => {
     it('should respond idempotently and keep a single pending row', async () => {
       const authChain = Authenticator.signPayload(identity.authChain, entityId)

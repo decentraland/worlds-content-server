@@ -83,14 +83,21 @@ export function createValidateFns(components: ValidatorComponents): Validation[]
  * `createValidateSize` (needs every file present; the partial-deployments component runs a cumulative
  * size check instead). Still runs the deployment-permission check so staging is fully authorized.
  */
-export function createStagingValidateFns(components: ValidatorComponents): Validation[] {
+export function createStagingValidateFns(
+  components: ValidatorComponents,
+  options?: { skipPermissionCheck?: boolean }
+): Validation[] {
+  const sceneValidations = sceneStructuralValidations(components)
+  // The permission check is the slow, external call of the staging path. Resume batches of an upload
+  // that already holds a pending record skip it (see Validator.validateStaging docs) so each batch of a
+  // multi-request upload doesn't repeat it; the first request and the finalize step always run it.
+  if (!options?.skipPermissionCheck) {
+    sceneValidations.push(createValidateDeploymentPermission(components))
+  }
   return [
     validateAll([...commonValidations(components), validateUploadedFiles, validateSupportedEntityType]),
 
-    validateIfTypeMatches(
-      EntityType.SCENE,
-      validateAll([...sceneStructuralValidations(components), createValidateDeploymentPermission(components)])
-    )
+    validateIfTypeMatches(EntityType.SCENE, validateAll(sceneValidations))
   ]
 }
 
@@ -108,7 +115,10 @@ export const createValidator = (components: ValidatorComponents): Validator => (
   async validate(deployment: DeploymentToValidate): Promise<ValidationResult> {
     return runValidations(createValidateFns(components), deployment)
   },
-  async validateStaging(deployment: DeploymentToValidate): Promise<ValidationResult> {
-    return runValidations(createStagingValidateFns(components), deployment)
+  async validateStaging(
+    deployment: DeploymentToValidate,
+    options?: { skipPermissionCheck?: boolean }
+  ): Promise<ValidationResult> {
+    return runValidations(createStagingValidateFns(components, options), deployment)
   }
 })

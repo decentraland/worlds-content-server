@@ -266,8 +266,16 @@ export interface Validator {
   /**
    * Validations a partial (staging) scene deployment must pass before its full content set is present:
    * everything except content-completeness and the storage-backed size check.
+   *
+   * `skipPermissionCheck` skips the (slow, external) deployment-permission check. Safe only when the
+   * upload already has a non-expired pending record: creating that record required passing the
+   * permission check, uploaded bytes are hash-verified against the staged manifest, and the finalize
+   * step re-runs the full validation (including permission) before anything goes live.
    */
-  validateStaging(deployment: DeploymentToValidate): Promise<ValidationResult>
+  validateStaging(
+    deployment: DeploymentToValidate,
+    options?: { skipPermissionCheck?: boolean }
+  ): Promise<ValidationResult>
 }
 
 export type ValidationResult = {

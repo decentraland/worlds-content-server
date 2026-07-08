@@ -79,13 +79,23 @@ export function createPartialDeploymentsComponent(
 
     // Content-independent validations (structure, signature, scene rules, permission), anchoring the
     // deployment-TTL check on when the upload started when a pending row already exists.
-    const stagingValidation = await validator.validateStaging({
-      entity,
-      files,
-      authChain,
-      contentHashesInStorage,
-      pendingCreatedAt: pending?.createdAt
-    })
+    //
+    // Resume batches skip the slow external permission check, but only when the signer is the deployer
+    // who created the pending record: that creation required passing the check, every uploaded byte is
+    // hash-verified against the staged manifest, and finalize re-runs the full validation (including
+    // permission) before going live. Any other signer goes through the full staging validation, so a
+    // third party can't ride an existing upload's fast path.
+    const isResumeBySameDeployer = !!pending && pending.deployer === authChain[0].payload.toLowerCase()
+    const stagingValidation = await validator.validateStaging(
+      {
+        entity,
+        files,
+        authChain,
+        contentHashesInStorage,
+        pendingCreatedAt: pending?.createdAt
+      },
+      { skipPermissionCheck: isResumeBySameDeployer }
+    )
     if (!stagingValidation.ok()) {
       throw new InvalidRequestError(`Deployment failed: ${stagingValidation.errors.join(', ')}`)
     }
@@ -112,9 +122,12 @@ export function createPartialDeploymentsComponent(
       )
     }
 
-    // Record/refresh the pending scene BEFORE storing files, so staged content is protected from the
-    // garbage collector as soon as it lands. Replaces any overlapping pending upload of this world.
-    const upserted = await pendingScenesManager.upsert({ entityId: entity.id, worldName, parcels, entity, deployer })
+    // Record/refresh the pending scene on EVERY batch, always BEFORE storing files: it is what protects
+    // the staged content from the garbage collector, and re-asserting it per batch resurrects the row
+    // if a competing overlapping upload replaced it between requests — otherwise this batch's files
+    // would be written with no GC protection for the remainder of the upload. (On conflict the upsert
+    // preserves created_at, so the TTL anchor stays stable across resumes.)
+    const pendingRow = await pendingScenesManager.upsert({ entityId: entity.id, worldName, parcels, entity, deployer })
 
     // Store this batch's files (content-addressed, so concurrent identical writes are idempotent),
     // skipping content already stored. The entity JSON (keyed by entity.id, not in contentHashes) is
@@ -130,20 +143,22 @@ export function createPartialDeploymentsComponent(
       return { complete: false, missing }
     }
 
-    // Everything is present — re-check for a newer deployment (one may have landed while this upload was
-    // in flight) and run the full validation before deploying in this same request.
-    await assertNoNewerDeployment(worldName, entity, parcels)
-
+    // Everything is present — run the full validation before deploying in this same request.
     const fullValidation = await validator.validate({
       entity,
       files,
       authChain,
       contentHashesInStorage: present,
-      pendingCreatedAt: upserted.createdAt
+      pendingCreatedAt: pendingRow.createdAt
     })
     if (!fullValidation.ok()) {
       throw new InvalidRequestError(`Deployment failed: ${fullValidation.errors.join(', ')}`)
     }
+
+    // Re-check for a newer deployment immediately before the write — AFTER the slow full validation —
+    // so the window between the check and deployScene's last-write-wins transaction is as small as
+    // possible (a newer vanilla deploy landing inside that window would be silently undeployed).
+    await assertNoNewerDeployment(worldName, entity, parcels)
 
     try {
       const result = await entityDeployer.deployEntity(baseUrl, entity, present, files, entityRaw, authChain)
