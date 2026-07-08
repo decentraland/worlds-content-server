@@ -31,13 +31,15 @@ export async function undeployEntity({
     }
   }
 
+  const { records } = await worldsManager.getRawWorldRecords({ worldName: params.world_name })
+  const owner = records.length > 0 ? records[0].owner : undefined
+
   logger.info(`Un-deploying world ${params.world_name}`)
   await worlds.undeployWorld(params.world_name)
 
-  const { records } = await worldsManager.getRawWorldRecords({ worldName: params.world_name })
-  if (records.length > 0) {
-    walletStats.clearBlockedIfUnderQuota(records[0].owner).catch((error) =>
-      logger.error(`Failed to recheck blocked status for ${records[0].owner} after undeploy`, {
+  if (owner) {
+    walletStats.clearBlockedIfUnderQuota(owner).catch((error) =>
+      logger.error(`Failed to recheck blocked status for ${owner} after undeploy`, {
         error: error instanceof Error ? error.message : String(error)
       })
     )

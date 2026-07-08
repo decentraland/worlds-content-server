@@ -103,8 +103,17 @@ export async function createUpdateOwnerJob(
     }
   }
 
-  async function clearOldBlockingRecords(startDate: Date) {
-    const sql = SQL`
+  async function clearOldBlockingRecords(startDate: Date, excludeWallets: Set<string>) {
+    const sql =
+      excludeWallets.size > 0
+        ? SQL`
+        DELETE
+        FROM blocked
+        WHERE updated_at < ${startDate}
+          AND wallet != ALL(${Array.from(excludeWallets)})
+        RETURNING wallet, created_at
+    `
+        : SQL`
         DELETE
         FROM blocked
         WHERE updated_at < ${startDate}
@@ -191,6 +200,8 @@ export async function createUpdateOwnerJob(
 
     const whiteList = await fetch.fetch(whitelistUrl).then(async (data) => (await data.json()) as unknown as Whitelist)
 
+    const failedOwners = new Set<string>()
+
     for (const [owner, worlds] of worldsByOwner) {
       if (worlds.length === 0) {
         continue
@@ -219,12 +230,13 @@ export async function createUpdateOwnerJob(
           await upsertBlockingRecord(owner)
         }
       } catch (error) {
+        failedOwners.add(owner)
         logger.error(`Failed to process blocking status for wallet ${owner}`, {
           error: error instanceof Error ? error.message : String(error)
         })
       }
     }
-    await clearOldBlockingRecords(startDate)
+    await clearOldBlockingRecords(startDate, failedOwners)
   }
 
   async function start(): Promise<void> {

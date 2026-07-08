@@ -101,5 +101,11 @@ describe('UpdateOwnerJob', () => {
       // 1 select + 1 upsertBlockingRecord (goodOwner only) + 1 clearOldBlockingRecords = 3 queries
       expect(database.query).toHaveBeenCalledTimes(3)
     })
+
+    it('excludes the failed wallet from clearOldBlockingRecords', () => {
+      const lastCall = database.query.mock.calls[2][0]
+      expect(lastCall.text).toContain('ALL')
+      expect(lastCall.values).toEqual(expect.arrayContaining([expect.arrayContaining([badOwner])]))
+    })
   })
 })
