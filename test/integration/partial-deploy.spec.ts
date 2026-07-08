@@ -164,6 +164,24 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
       expect(namePermissionChecker.checkPermission).toHaveBeenCalledTimes(2)
     })
 
+    it('should reject the completing request when the deployer loses the name permission mid-upload', async () => {
+      const { namePermissionChecker } = stubComponents
+      const authChain = Authenticator.signPayload(identity.authChain, entityId)
+      const [hashA, hashB] = contentHashes
+
+      expect((await post(buildForm([entityId, hashA], authChain))).status).toBe(202)
+
+      // The name is traded away mid-upload: the permission checker resolves the CURRENT owner, which is
+      // no longer the deployer. The resume batch itself is accepted for staging (same-deployer fast
+      // path), but the finalize step re-runs the full validation and must reject the deploy.
+      namePermissionChecker.checkPermission.mockResolvedValue(false)
+
+      const res = await post(buildForm([hashB], authChain))
+
+      expect(res.status).toBe(400)
+      expect(await countDeployedScenes()).toBe(0)
+    })
+
     it('should not grant the fast path to a different signer resuming the same entity', async () => {
       const authChain = Authenticator.signPayload(identity.authChain, entityId)
       expect((await post(buildForm([entityId], authChain))).status).toBe(202)
