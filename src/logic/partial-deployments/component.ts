@@ -54,11 +54,14 @@ export function createPartialDeploymentsComponent(
     }
   }
 
-  async function storeFiles(
-    files: Map<string, DeploymentFile>,
-    alreadyStored: (hash: string) => boolean
-  ): Promise<void> {
-    const toStore = Array.from(files).filter(([hash]) => !alreadyStored(hash))
+  async function storeFiles(files: Map<string, DeploymentFile>): Promise<void> {
+    // Store every file the client sent this batch, in bounded-parallel batches. We do NOT skip files a
+    // pre-request snapshot said were already stored: that snapshot predates the pending row (and its GC
+    // protection), so a file present then could be swept before we store, and skipping it would discard
+    // bytes uploaded in this very batch. Storage is content-addressed (re-store is an idempotent no-op)
+    // and the client already omits files reported by /available-content, so this rarely re-sends
+    // present content anyway.
+    const toStore = Array.from(files)
     for (let i = 0; i < toStore.length; i += STORE_CONCURRENCY) {
       await Promise.all(
         toStore.slice(i, i + STORE_CONCURRENCY).map(([hash, file]) => storage.storeStream(hash, file.getStream()))
@@ -134,10 +137,8 @@ export function createPartialDeploymentsComponent(
     // preserves created_at, so the TTL anchor stays stable across resumes.)
     const pendingRow = await pendingScenesManager.upsert({ entityId: entity.id, worldName, parcels, entity, deployer })
 
-    // Store this batch's files (content-addressed, so concurrent identical writes are idempotent),
-    // skipping content already stored. The entity JSON (keyed by entity.id, not in contentHashes) is
-    // small and always (re)stored, which covers the first request.
-    await storeFiles(files, (hash) => hash !== entity.id && storedInfo.get(hash) !== undefined)
+    // Store this batch's files (content-addressed, so concurrent identical writes are idempotent).
+    await storeFiles(files)
 
     // Completeness must be a fresh read, not derived from the start-of-request snapshot: a concurrent
     // partial request for the same entity may have stored the remaining files while this one ran, and

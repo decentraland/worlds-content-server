@@ -89,10 +89,15 @@ export async function createPendingScenesManager(
     const cutoff = new Date(Date.now() - ttlMs)
     // Project only the content hashes out of the entity JSONB instead of shipping every pending
     // scene's full manifest: GC calls this once per delete batch, so on a large sweep the payload
-    // size matters more than the (tiny) row count.
+    // size matters more than the (tiny) row count. The jsonb_typeof guard keeps a row whose `content`
+    // is absent, null, or a non-array from erroring `jsonb_array_elements` ('cannot extract elements
+    // from a scalar') — one such row would otherwise fail the whole query and wedge GC server-wide.
     const result = await database.query<{ entity_id: string; hashes: string[] | null }>(
       SQL`SELECT entity_id,
-                 ARRAY(SELECT jsonb_array_elements(entity->'content')->>'hash') AS hashes
+                 ARRAY(
+                   SELECT jsonb_array_elements(entity->'content')->>'hash'
+                   WHERE jsonb_typeof(entity->'content') = 'array'
+                 ) AS hashes
           FROM pending_scenes
           WHERE created_at >= ${cutoff}`
     )
