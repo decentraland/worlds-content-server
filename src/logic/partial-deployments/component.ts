@@ -16,9 +16,15 @@ function isUniqueViolation(error: unknown): boolean {
   return typeof error === 'object' && error !== null && (error as { code?: string }).code === '23505'
 }
 
-export function createPartialDeploymentsComponent(
+// Default cap on the number of concurrent non-expired pending uploads a single deployer may have in
+// flight. Bounds the storage a deployer can pin at once (each upload is already bounded by the
+// per-world size limit) without throttling legitimate parallel deploys. Override via config.
+const DEFAULT_MAX_PENDING_PER_DEPLOYER = 10
+
+export async function createPartialDeploymentsComponent(
   components: Pick<
     AppComponents,
+    | 'config'
     | 'coordinates'
     | 'entityDeployer'
     | 'limitsManager'
@@ -28,10 +34,21 @@ export function createPartialDeploymentsComponent(
     | 'validator'
     | 'worldsManager'
   >
-): IPartialDeploymentsComponent {
-  const { coordinates, entityDeployer, limitsManager, logs, pendingScenesManager, storage, validator, worldsManager } =
-    components
+): Promise<IPartialDeploymentsComponent> {
+  const {
+    config,
+    coordinates,
+    entityDeployer,
+    limitsManager,
+    logs,
+    pendingScenesManager,
+    storage,
+    validator,
+    worldsManager
+  } = components
   const logger = logs.getLogger('partial-deployments')
+  const maxPendingPerDeployer =
+    (await config.getNumber('MAX_PENDING_DEPLOYMENTS_PER_DEPLOYER')) ?? DEFAULT_MAX_PENDING_PER_DEPLOYER
 
   /**
    * Rejects the deployment if a strictly-newer scene already occupies any of these parcels. "Newer"
@@ -113,6 +130,15 @@ export function createPartialDeploymentsComponent(
     // every intermediate batch would be wasted work.
     if (!pending) {
       await assertNoNewerDeployment(worldName, entity, parcels)
+
+      // Cap concurrent staged uploads per deployer so one account can't pin storage across many
+      // worlds/parcel-sets for the full TTL. Only NEW uploads count — a resume reuses an existing slot.
+      const activePending = await pendingScenesManager.countActiveByDeployer(deployer)
+      if (activePending >= maxPendingPerDeployer) {
+        throw new InvalidRequestError(
+          `Too many partial uploads in progress for this account (max ${maxPendingPerDeployer}). Finalize or abandon an existing upload before starting another.`
+        )
+      }
     }
 
     // Cumulative size budget: uploaded bytes for this batch + stored sizes for earlier batches. Checked

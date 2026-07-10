@@ -28,7 +28,8 @@ describe('EvictionJob', () => {
       upsert: jest.fn(),
       deleteByEntityId: jest.fn(),
       deleteExpired: jest.fn().mockResolvedValue(0),
-      getActivePendingKeys: jest.fn().mockResolvedValue(new Set())
+      getActivePendingKeys: jest.fn().mockResolvedValue(new Set()),
+      countActiveByDeployer: jest.fn().mockResolvedValue(0)
     }
     logs = {
       getLogger: () => ({

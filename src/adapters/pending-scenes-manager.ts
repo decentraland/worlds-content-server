@@ -1,5 +1,6 @@
 import SQL from 'sql-template-strings'
 import { Entity } from '@dcl/schemas'
+import { InvalidRequestError } from '@dcl/http-commons'
 import { AppComponents, IPendingScenesManager, PendingScene, UpsertPendingScene } from '../types'
 
 const DEFAULT_PENDING_DEPLOYMENT_TTL_MS = 24 * 60 * 60 * 1000 // 24 hours
@@ -53,8 +54,28 @@ export async function createPendingScenesManager(
       // processes) so two concurrent uploads for the same world+parcels can't both insert.
       await database.query(SQL`SELECT pg_advisory_xact_lock(hashtextextended(${'pending_scenes:' + worldName}, 0))`)
 
+      // The single pending slot per parcel set goes to the NEWEST scene (Decentraland deployment
+      // ordering: greater entity.timestamp, tie broken by greater entity id). Reject rather than
+      // replace when a strictly-newer overlapping upload is already in flight, so a stale/older upload
+      // can't evict a newer competitor's staged content (and two clients can't ping-pong evicting each
+      // other). A resume (same entity id) is excluded and never conflicts with itself.
+      const newer = await database.query(SQL`
+        SELECT 1 FROM pending_scenes
+        WHERE world_name = ${worldName}
+          AND parcels && ${input.parcels}::text[]
+          AND entity_id != ${input.entityId}
+          AND created_at >= ${expiryCutoff}
+          AND ( (entity->>'timestamp')::bigint > ${input.entity.timestamp}
+                OR ((entity->>'timestamp')::bigint = ${input.entity.timestamp} AND entity_id > ${input.entityId}) )
+        LIMIT 1
+      `)
+      if (newer.rowCount > 0) {
+        throw new InvalidRequestError('A newer partial upload is already in progress for one or more of these parcels.')
+      }
+
       // Purge expired rows and replace any non-expired pending scene of this world whose parcels
-      // overlap the new one (a different entity id) — enforcing one pending upload per world+parcel.
+      // overlap the new one (a different entity id). Having rejected the newer-conflict above, every
+      // remaining overlapping row is strictly older, so replacing it is the intended "newest wins".
       await database.query(SQL`
         DELETE FROM pending_scenes
         WHERE created_at < ${expiryCutoff}
@@ -73,6 +94,15 @@ export async function createPendingScenesManager(
 
   async function deleteByEntityId(entityId: string): Promise<void> {
     await database.query(SQL`DELETE FROM pending_scenes WHERE entity_id = ${entityId}`)
+  }
+
+  async function countActiveByDeployer(deployer: string): Promise<number> {
+    const cutoff = new Date(Date.now() - ttlMs)
+    const result = await database.query<{ count: string }>(
+      SQL`SELECT COUNT(*) as count FROM pending_scenes
+          WHERE deployer = ${deployer.toLowerCase()} AND created_at >= ${cutoff}`
+    )
+    return parseInt(result.rows[0].count, 10)
   }
 
   async function deleteExpired(): Promise<number> {
@@ -114,5 +144,5 @@ export async function createPendingScenesManager(
     return keys
   }
 
-  return { getByEntityId, upsert, deleteByEntityId, deleteExpired, getActivePendingKeys }
+  return { getByEntityId, upsert, deleteByEntityId, deleteExpired, getActivePendingKeys, countActiveByDeployer }
 }

@@ -6,6 +6,11 @@ import { stringToUtf8Bytes } from 'eth-connect'
 import { getIdentity, Identity, makeid, cleanup } from '../utils'
 import FormData from 'form-data'
 
+// Lower the per-deployer concurrent-pending cap so it's exercisable without staging 10+ uploads.
+// Runs at module evaluation, before the test harness initializes components in beforeAll, and
+// process.env wins over .env.default in env-config-provider.
+process.env.MAX_PENDING_DEPLOYMENTS_PER_DEPLOYER = '3'
+
 test('Partial deployments POST /entities (partial=true)', function ({ components, stubComponents }) {
   let identity: Identity
   let worldName: string
@@ -568,6 +573,86 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
       it("should preserve the other deployer's in-flight pending upload", async () => {
         expect(await countPending()).toBe(1)
       })
+    })
+  })
+
+  describe('when a second partial upload targets parcels held by a pending upload', () => {
+    let older: { entityId: string; files: Map<string, Uint8Array>; contentHashes: string[] }
+    let newer: { entityId: string; files: Map<string, Uint8Array>; contentHashes: string[] }
+    let olderAuth: AuthChain
+    let newerAuth: AuthChain
+
+    beforeEach(async () => {
+      const now = Date.now()
+      older = await buildScene(['20,24'], now - 60_000)
+      newer = await buildScene(['20,24'], now)
+      olderAuth = Authenticator.signPayload(identity.authChain, older.entityId)
+      newerAuth = Authenticator.signPayload(identity.authChain, newer.entityId)
+    })
+
+    describe('and the incoming upload is newer than the pending one', () => {
+      let replaceResponse: Awaited<ReturnType<typeof post>>
+
+      beforeEach(async () => {
+        await post(makeForm(older.entityId, older.files, [older.entityId], olderAuth))
+        replaceResponse = await post(makeForm(newer.entityId, newer.files, [newer.entityId], newerAuth))
+      })
+
+      it('should accept it and replace the older pending upload', async () => {
+        expect(replaceResponse.status).toBe(202)
+        expect(await countPending()).toBe(1)
+      })
+
+      it('should leave the newer upload as the pending one', async () => {
+        const { database } = components
+        const result = await database.query<{ entity_id: string }>('SELECT entity_id FROM pending_scenes')
+        expect(result.rows.map((r) => r.entity_id)).toEqual([newer.entityId])
+      })
+    })
+
+    describe('and the incoming upload is older than the pending one', () => {
+      let rejectResponse: Awaited<ReturnType<typeof post>>
+
+      beforeEach(async () => {
+        await post(makeForm(newer.entityId, newer.files, [newer.entityId], newerAuth))
+        rejectResponse = await post(makeForm(older.entityId, older.files, [older.entityId], olderAuth))
+      })
+
+      it('should reject the older upload with 400', () => {
+        expect(rejectResponse.status).toBe(400)
+      })
+
+      it('should keep the newer upload as the sole pending one', async () => {
+        const { database } = components
+        const result = await database.query<{ entity_id: string }>('SELECT entity_id FROM pending_scenes')
+        expect(result.rows.map((r) => r.entity_id)).toEqual([newer.entityId])
+      })
+    })
+  })
+
+  describe('when a deployer exceeds the concurrent-pending upload cap', () => {
+    // Test config sets MAX_PENDING_DEPLOYMENTS_PER_DEPLOYER=3.
+    let overCapResponse: Awaited<ReturnType<typeof post>>
+
+    beforeEach(async () => {
+      // Stage three distinct uploads (same deployer + world, disjoint parcels so none replace another).
+      const parcels = [['20,24'], ['20,25'], ['20,26'], ['20,27']]
+      const scenes = await Promise.all(parcels.map((p, i) => buildScene(p, Date.now() + i)))
+      for (let i = 0; i < 3; i++) {
+        const auth = Authenticator.signPayload(identity.authChain, scenes[i].entityId)
+        await post(makeForm(scenes[i].entityId, scenes[i].files, [scenes[i].entityId], auth))
+      }
+      // The fourth new upload exceeds the cap.
+      const fourthAuth = Authenticator.signPayload(identity.authChain, scenes[3].entityId)
+      overCapResponse = await post(makeForm(scenes[3].entityId, scenes[3].files, [scenes[3].entityId], fourthAuth))
+    })
+
+    it('should reject the upload beyond the cap with 400', () => {
+      expect(overCapResponse.status).toBe(400)
+    })
+
+    it('should not create a pending row for the rejected upload', async () => {
+      expect(await countPending()).toBe(3)
     })
   })
 })

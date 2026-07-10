@@ -221,7 +221,8 @@ export async function initComponents(): Promise<AppComponents> {
 
   const pendingScenesManager = await createPendingScenesManager({ config, database, logs })
 
-  const partialDeployments = createPartialDeploymentsComponent({
+  const partialDeployments = await createPartialDeploymentsComponent({
+    config,
     coordinates,
     entityDeployer,
     limitsManager,

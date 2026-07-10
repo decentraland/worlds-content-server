@@ -331,8 +331,11 @@ export type IPendingScenesManager = {
   getByEntityId(entityId: string): Promise<PendingScene | undefined>
   /**
    * Records/refreshes a pending scene, replacing any non-expired pending scene of the same world whose
-   * parcels overlap (enforces "at most one pending upload per world+parcel"). On conflict of the same
-   * entity id it only bumps updated_at so created_at (the TTL anchor) stays stable across resumes.
+   * parcels overlap (enforces "at most one pending upload per world+parcel"), but only when the incoming
+   * scene is newer (deployment ordering) than the overlapping ones — a strictly-newer overlapping upload
+   * causes a rejection instead. On conflict of the same entity id it only bumps updated_at so created_at
+   * (the TTL anchor) stays stable across resumes.
+   * @throws InvalidRequestError if a strictly-newer overlapping pending upload is already in progress.
    */
   upsert(input: UpsertPendingScene): Promise<PendingScene>
   deleteByEntityId(entityId: string): Promise<void>
@@ -343,6 +346,8 @@ export type IPendingScenesManager = {
    * `.auth` blob, and its content-file hashes. Used by garbage collection to protect in-flight uploads.
    */
   getActivePendingKeys(): Promise<Set<string>>
+  /** Counts a deployer's non-expired pending uploads. Used to cap concurrent staged uploads per deployer. */
+  countActiveByDeployer(deployer: string): Promise<number>
 }
 
 export type StageDeploymentInput = {
