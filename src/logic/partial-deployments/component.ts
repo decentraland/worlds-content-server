@@ -154,7 +154,7 @@ export async function createPartialDeploymentsComponent(
     // preserves created_at, so the TTL anchor stays stable across resumes.)
     const pendingRow = await pendingScenesManager.upsert(
       { entityId: entity.id, worldName, parcels, entity, deployer },
-      { maxPendingPerDeployer, isNewUpload: !pending }
+      { maxPendingPerDeployer }
     )
 
     // Store this batch's files (content-addressed, so concurrent identical writes are idempotent).
@@ -185,8 +185,21 @@ export async function createPartialDeploymentsComponent(
     // atomically under a per-world lock (rejecting an older deploy that would overwrite a newer scene),
     // so a separate check would be both racy and redundant. The early assertNoNewerDeployment above is
     // kept only as a fast-fail for new uploads.
+
+    // Re-verify content presence immediately before the deploy commits. The completeness check above ran
+    // before the (slow) full validation, and a garbage-collection sweep could have reclaimed a reused,
+    // already-stored file in that window (the pending row protects content, but a GC batch whose
+    // snapshot predates this row would not see it). Committing a scene that references deleted content
+    // would corrupt it, so if anything is missing now, return incomplete and let the client re-upload —
+    // this shrinks the DB-row-vs-object-storage window to the gap between this check and the commit.
+    const stillPresent = await storage.existMultiple(contentHashes)
+    const nowMissing = contentHashes.filter((hash) => !stillPresent.get(hash))
+    if (nowMissing.length > 0) {
+      return { complete: false, missing: nowMissing }
+    }
+
     try {
-      const result = await entityDeployer.deployEntity(baseUrl, entity, present, files, entityRaw, authChain)
+      const result = await entityDeployer.deployEntity(baseUrl, entity, stillPresent, files, entityRaw, authChain)
       await pendingScenesManager.deleteByEntityId(entity.id)
       return { complete: true, result }
     } catch (error) {

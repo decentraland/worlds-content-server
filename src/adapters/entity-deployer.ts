@@ -2,6 +2,7 @@ import { AppComponents, DeploymentFile, DeploymentResult, IEntityDeployer } from
 import { AuthLink, Entity, EntityType, Events, WorldDeploymentEvent } from '@dcl/schemas'
 import { bufferToStream } from '@dcl/catalyst-storage/dist/content-item'
 import { stringToUtf8Bytes } from 'eth-connect'
+import { InvalidRequestError } from '@dcl/http-commons'
 
 type PostDeploymentHook = (baseUrl: string, entity: Entity, authChain: AuthLink[]) => Promise<DeploymentResult>
 
@@ -22,6 +23,18 @@ export function createEntityDeployer(
     entityJson: string,
     authChain: AuthLink[]
   ): Promise<DeploymentResult> {
+    // Fast-fail BEFORE writing anything to storage if a newer scene already holds these parcels. This is
+    // non-authoritative (deployScene re-checks atomically under a lock), but it keeps a rejected older
+    // deploy from leaving its content/entity/auth objects orphaned in storage until the next GC. Only
+    // scenes carry a world name; other entity types skip it.
+    if (entity.metadata?.worldConfiguration?.name) {
+      if (await worldsManager.hasNewerDeployedScene(entity.metadata.worldConfiguration.name, entity)) {
+        throw new InvalidRequestError(
+          `Deployment failed: a newer scene is already deployed on one or more of these parcels.`
+        )
+      }
+    }
+
     // store all files
     const content = entity.content || []
     logger.info(`Storing ${content.length} files`, { entityId: entity.id })

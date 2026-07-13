@@ -6,6 +6,13 @@ import { DeploymentFile, HandlerContextWithPath } from '../../types'
 import { extractAuthChain } from '../../logic/extract-auth-chain'
 import { InvalidRequestError } from '@dcl/http-commons'
 
+// The entity file is the scene manifest (JSON): pointers, the content-hash list, and metadata — always
+// small, independent of how large the content itself is. Cap it so it can be safely read fully into
+// memory. This is important on a partial-resume request, where the entity is read back from storage and
+// its size is NOT covered by the multipart in-flight-bytes budget (the resume body is tiny), so without
+// a cap many concurrent resumes could each buffer a large stored entity and exhaust memory.
+const MAX_ENTITY_FILE_SIZE_BYTES = 10 * 1024 * 1024 // 10 MB
+
 export function requireString(val: string | null | undefined): string {
   if (typeof val !== 'string') throw new InvalidRequestError('A string was expected')
   return val
@@ -39,6 +46,13 @@ export async function deployEntity(
     ? toDeploymentFile(ctx.formData.files[entityId])
     : undefined
   if (!entityFile && isPartial) {
+    // Resume request: read the entity back from storage. Check its size FIRST — the resume body is tiny
+    // so this read isn't covered by the multipart in-flight budget; buffering a large stored entity
+    // (across many concurrent resumes) would otherwise exhaust memory.
+    const storedInfo = (await ctx.components.storage.fileInfoMultiple([entityId])).get(entityId)
+    if (storedInfo && storedInfo.size !== null && storedInfo.size > MAX_ENTITY_FILE_SIZE_BYTES) {
+      throw new InvalidRequestError(`The stored entity file "${entityId}" is too large (${storedInfo.size} bytes).`)
+    }
     const stored = await ctx.components.storage.retrieve(entityId)
     if (stored) {
       const buf = await streamToBuffer(await stored.asStream())
@@ -51,6 +65,9 @@ export async function deployEntity(
         ? `The first partial request for an entity must include the entity file "${entityId}".`
         : `Entity file "${entityId}" is missing from the request.`
     )
+  }
+  if (entityFile.size > MAX_ENTITY_FILE_SIZE_BYTES) {
+    throw new InvalidRequestError(`The entity file "${entityId}" is too large (${entityFile.size} bytes).`)
   }
 
   // The entity JSON is small, so it is safe to read fully into memory.

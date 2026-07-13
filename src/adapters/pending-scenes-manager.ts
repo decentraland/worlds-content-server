@@ -45,10 +45,7 @@ export async function createPendingScenesManager(
     return result.rows.length > 0 ? toPendingScene(result.rows[0]) : undefined
   }
 
-  async function upsert(
-    input: UpsertPendingScene,
-    limit: { maxPendingPerDeployer: number; isNewUpload: boolean }
-  ): Promise<PendingScene> {
+  async function upsert(input: UpsertPendingScene, limit: { maxPendingPerDeployer: number }): Promise<PendingScene> {
     const worldName = input.worldName.toLowerCase()
     const deployer = input.deployer.toLowerCase()
     const expiryCutoff = new Date(Date.now() - ttlMs)
@@ -56,17 +53,9 @@ export async function createPendingScenesManager(
     return await database.withAsyncContextTransaction(async () => {
       // Per-deployer lock FIRST (acquired before the per-world lock below, a consistent order that can't
       // deadlock). It serializes a deployer's concurrent staging requests — even to different worlds —
-      // so the concurrent-pending cap can't be raced: without it, several new uploads could each read a
-      // count below the cap and then all insert.
+      // so the concurrent-pending cap (checked below, after the overlap-replace) can't be raced: without
+      // it, several new uploads could each read a count below the cap and then all insert.
       await database.query(SQL`SELECT pg_advisory_xact_lock(hashtextextended(${'pending_deployer:' + deployer}, 0))`)
-      if (limit.isNewUpload) {
-        const active = await countActiveByDeployer(deployer)
-        if (active >= limit.maxPendingPerDeployer) {
-          throw new InvalidRequestError(
-            `Too many partial uploads in progress for this account (max ${limit.maxPendingPerDeployer}). Finalize or abandon an existing upload before starting another.`
-          )
-        }
-      }
 
       // Serialize the "replace overlapping + insert" critical section per world (also across
       // processes) so two concurrent uploads for the same world+parcels can't both insert.
@@ -100,6 +89,22 @@ export async function createPendingScenesManager(
            OR (world_name = ${worldName} AND parcels && ${input.parcels}::text[] AND entity_id != ${input.entityId})
       `)
 
+      // Enforce the per-deployer concurrent-pending cap on the NET row-count change, decided here (under
+      // the deployer lock, after the overlap-replace) rather than from a stale "is this new?" flag. After
+      // this upsert the deployer will have `others + 1` non-expired rows, where `others` excludes this
+      // entity id (which contributes exactly one row whether the upsert inserts or updates). This lets a
+      // resume of the same entity — or a newer scene that replaced one of the deployer's own overlapping
+      // rows above — through without over-counting, while still capping genuinely new uploads.
+      const others = await database.query<{ count: string }>(SQL`
+        SELECT COUNT(*) AS count FROM pending_scenes
+        WHERE deployer = ${deployer} AND created_at >= ${expiryCutoff} AND entity_id != ${input.entityId}
+      `)
+      if (parseInt(others.rows[0].count, 10) + 1 > limit.maxPendingPerDeployer) {
+        throw new InvalidRequestError(
+          `Too many partial uploads in progress for this account (max ${limit.maxPendingPerDeployer}). Finalize or abandon an existing upload before starting another.`
+        )
+      }
+
       const result = await database.query<PendingSceneRow>(SQL`
         INSERT INTO pending_scenes (entity_id, world_name, parcels, entity, deployer, created_at, updated_at)
         VALUES (${input.entityId}, ${worldName}, ${input.parcels}::text[], ${input.entity}::jsonb, ${input.deployer.toLowerCase()}, now(), now())
@@ -112,15 +117,6 @@ export async function createPendingScenesManager(
 
   async function deleteByEntityId(entityId: string): Promise<void> {
     await database.query(SQL`DELETE FROM pending_scenes WHERE entity_id = ${entityId}`)
-  }
-
-  async function countActiveByDeployer(deployer: string): Promise<number> {
-    const cutoff = new Date(Date.now() - ttlMs)
-    const result = await database.query<{ count: string }>(
-      SQL`SELECT COUNT(*) as count FROM pending_scenes
-          WHERE deployer = ${deployer.toLowerCase()} AND created_at >= ${cutoff}`
-    )
-    return parseInt(result.rows[0].count, 10)
   }
 
   async function deleteExpired(): Promise<number> {
@@ -162,5 +158,5 @@ export async function createPendingScenesManager(
     return keys
   }
 
-  return { getByEntityId, upsert, deleteByEntityId, deleteExpired, getActivePendingKeys, countActiveByDeployer }
+  return { getByEntityId, upsert, deleteByEntityId, deleteExpired, getActivePendingKeys }
 }

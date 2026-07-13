@@ -336,16 +336,14 @@ export type IPendingScenesManager = {
    * causes a rejection instead. On conflict of the same entity id it only bumps updated_at so created_at
    * (the TTL anchor) stays stable across resumes.
    *
-   * When `limit.isNewUpload` is set, the per-deployer concurrent-pending cap (`maxPendingPerDeployer`) is
-   * enforced inside the same transaction under a per-deployer lock, so concurrent new uploads can't race
-   * past it.
+   * The per-deployer concurrent-pending cap (`limit.maxPendingPerDeployer`) is enforced inside the same
+   * transaction under a per-deployer lock, on the NET row-count change (so a resume or a newer scene that
+   * replaces one of the deployer's own overlapping rows is not counted as an increase), so concurrent
+   * uploads can't race past it.
    * @throws InvalidRequestError if a strictly-newer overlapping pending upload is already in progress,
-   *   or if a new upload would exceed the per-deployer cap.
+   *   or if the upsert would put the deployer over the per-deployer cap.
    */
-  upsert(
-    input: UpsertPendingScene,
-    limit: { maxPendingPerDeployer: number; isNewUpload: boolean }
-  ): Promise<PendingScene>
+  upsert(input: UpsertPendingScene, limit: { maxPendingPerDeployer: number }): Promise<PendingScene>
   deleteByEntityId(entityId: string): Promise<void>
   /** Deletes pending scenes older than the configured PENDING_DEPLOYMENT_TTL. Returns the number removed. */
   deleteExpired(): Promise<number>
@@ -354,8 +352,6 @@ export type IPendingScenesManager = {
    * `.auth` blob, and its content-file hashes. Used by garbage collection to protect in-flight uploads.
    */
   getActivePendingKeys(): Promise<Set<string>>
-  /** Counts a deployer's non-expired pending uploads. Used to cap concurrent staged uploads per deployer. */
-  countActiveByDeployer(deployer: string): Promise<number>
 }
 
 export type StageDeploymentInput = {
@@ -494,6 +490,12 @@ export type IWorldsManager = {
   getDeployedWorldCount(): Promise<{ ens: number; dcl: number }>
   getMetadataForWorld(worldName: string): Promise<WorldMetadata | undefined>
   getEntityForWorlds(worldNames: string[]): Promise<Entity[]>
+  /**
+   * Whether a strictly-newer scene (deployment ordering) is already deployed on this scene's parcels.
+   * A non-authoritative fast-fail for the deploy path (reject before storing content); deployScene
+   * performs the authoritative, race-free check under a per-world lock.
+   */
+  hasNewerDeployedScene(worldName: string, scene: Entity): Promise<boolean>
   deployScene(worldName: string, scene: Entity, owner: EthAddress): Promise<void>
   undeployScene(worldName: string, parcels: string[]): Promise<void>
   storeAccess(worldName: string, access: AccessSetting): Promise<void>

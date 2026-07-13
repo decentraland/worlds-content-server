@@ -19,6 +19,8 @@ export const migration: Migration = {
       CREATE INDEX pending_scenes_world_name_idx ON pending_scenes(world_name);
       CREATE INDEX pending_scenes_parcels_idx ON pending_scenes USING GIN(parcels);
       CREATE INDEX pending_scenes_created_at_idx ON pending_scenes(created_at);
+      -- Backs the per-deployer concurrent-pending cap check (WHERE deployer = $ AND created_at >= $).
+      CREATE INDEX pending_scenes_deployer_created_at_idx ON pending_scenes(deployer, created_at);
     `)
   }
 }

@@ -175,6 +175,40 @@ export async function createWorldsManagerComponent({
     return metadata
   }
 
+  // Whether a strictly-newer DEPLOYED scene (Decentraland ordering: greater entity.timestamp, tie broken
+  // by greater entity id) already occupies any of the given parcels. Shared by deployScene's atomic
+  // in-transaction guard and the public hasNewerDeployedScene fast-fail. Runs in the ambient transaction
+  // when called from within one. Parcels are expected already canonicalized.
+  async function newerDeployedSceneExists(
+    worldNameLower: string,
+    sceneId: string,
+    sceneTimestamp: number,
+    parcels: string[]
+  ): Promise<boolean> {
+    const result = await database.query(SQL`
+      SELECT 1 FROM world_scenes
+      WHERE world_name = ${worldNameLower}
+        AND status = 'DEPLOYED'
+        AND parcels && ${parcels}::text[]
+        AND entity_id != ${sceneId}
+        AND ( (entity->>'timestamp')::bigint > ${sceneTimestamp}
+              OR ((entity->>'timestamp')::bigint = ${sceneTimestamp} AND entity_id > ${sceneId}) )
+      LIMIT 1
+    `)
+    return result.rowCount > 0
+  }
+
+  // Non-authoritative fast-fail for the deploy path: lets a caller reject a stale deploy BEFORE storing
+  // its content, so a rejected older deploy doesn't leave orphaned objects in storage until GC. The
+  // authoritative, race-free check is inside deployScene (under the per-world lock).
+  async function hasNewerDeployedScene(worldName: string, scene: Entity): Promise<boolean> {
+    const parcels = coordinates.canonicalizeParcels(scene.metadata?.scene?.parcels || [])
+    if (!parcels.length) {
+      return false
+    }
+    return newerDeployedSceneExists(worldName.toLowerCase(), scene.id, scene.timestamp, parcels)
+  }
+
   /**
    * Deploys a scene to a world
    *
@@ -241,18 +275,9 @@ export async function createWorldsManagerComponent({
       // Reject if a strictly-newer scene (Decentraland ordering: greater entity.timestamp, tie broken
       // by greater entity id) already occupies any of these parcels. This makes an older deploy — most
       // importantly a stale partial finalize — unable to overwrite a newer one, atomically under the
-      // lock above rather than via a racy pre-write check in the caller.
-      const newer = await database.query(SQL`
-        SELECT 1 FROM world_scenes
-        WHERE world_name = ${worldName.toLowerCase()}
-          AND status = 'DEPLOYED'
-          AND parcels && ${parcels}::text[]
-          AND entity_id != ${scene.id}
-          AND ( (entity->>'timestamp')::bigint > ${scene.timestamp}
-                OR ((entity->>'timestamp')::bigint = ${scene.timestamp} AND entity_id > ${scene.id}) )
-        LIMIT 1
-      `)
-      if (newer.rowCount > 0) {
+      // lock above rather than via a racy pre-write check in the caller. The query runs in this
+      // transaction (ambient context), so it observes the state the lock protects.
+      if (await newerDeployedSceneExists(worldName.toLowerCase(), scene.id, scene.timestamp, parcels)) {
         throw new InvalidRequestError(
           `Deployment failed: a newer scene is already deployed on one or more of these parcels.`
         )
@@ -1160,6 +1185,7 @@ export async function createWorldsManagerComponent({
     getDeployedWorldCount,
     getMetadataForWorld,
     getEntityForWorlds,
+    hasNewerDeployedScene,
     deployScene,
     undeployScene,
     storeAccess,

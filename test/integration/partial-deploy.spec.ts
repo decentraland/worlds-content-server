@@ -666,6 +666,40 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
     it('should keep the newer scene deployed', async () => {
       expect(await deployedEntityIds()).toEqual([newer.entityId])
     })
+
+    it('should not leave the rejected scene content in storage (rejected before storing)', async () => {
+      const stored = await components.storage.existMultiple(older.contentHashes)
+      expect([...stored.values()].some((present) => present)).toBe(false)
+    })
+  })
+
+  describe('when a deployer at the cap replaces one of their own pending uploads with a newer one', () => {
+    // Test config sets MAX_PENDING_DEPLOYMENTS_PER_DEPLOYER=3.
+    let replaceResponse: Awaited<ReturnType<typeof post>>
+
+    beforeEach(async () => {
+      const now = Date.now()
+      // Fill the cap: three distinct uploads on disjoint parcels.
+      const parcels = [['20,24'], ['20,25'], ['20,26']]
+      const scenes = await Promise.all(parcels.map((p) => buildScene(p, now)))
+      for (const scene of scenes) {
+        const auth = Authenticator.signPayload(identity.authChain, scene.entityId)
+        await post(makeForm(scene.entityId, scene.files, [scene.entityId], auth))
+      }
+      // A newer upload overlapping the first one replaces it — the deployer's row count stays at 3, so
+      // the cap must NOT reject it (the decision is the net change, not a stale "is this new?" flag).
+      const replacement = await buildScene(['20,24'], now + 1000)
+      const replAuth = Authenticator.signPayload(identity.authChain, replacement.entityId)
+      replaceResponse = await post(makeForm(replacement.entityId, replacement.files, [replacement.entityId], replAuth))
+    })
+
+    it('should accept the replacement with 202 rather than rejecting it as over-cap', () => {
+      expect(replaceResponse.status).toBe(202)
+    })
+
+    it('should keep the deployer at the cap (net count unchanged)', async () => {
+      expect(await countPending()).toBe(3)
+    })
   })
 
   describe('when a deployer exceeds the concurrent-pending upload cap', () => {
