@@ -2,7 +2,7 @@ import { createEvictionJob } from '../../src/adapters/eviction-job'
 import { createMockWorlds } from '../mocks/worlds-mock'
 import { createMockedConfig } from '../mocks/config-mock'
 import { IWorldsComponent } from '../../src/logic/worlds/types'
-import { IPendingScenesManager } from '../../src/types'
+import { IPendingScenesManager } from '../../src/adapters/pending-scenes-manager/types'
 import { IConfigComponent, ILoggerComponent } from '@well-known-components/interfaces'
 import { createJobComponent } from '@dcl/job-component'
 

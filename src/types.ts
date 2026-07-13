@@ -23,6 +23,10 @@ import { IPublisherComponent } from '@dcl/sns-component'
 import { ISettingsComponent } from './logic/settings'
 import { ISchemaValidatorComponent } from '@dcl/schema-validator-component'
 import { ICoordinatesComponent } from './logic/coordinates'
+// Type-only imports so the central types module can reference these component interfaces (for
+// AppComponents below) without a runtime import cycle through their component.ts factories.
+import type { IPendingScenesManager } from './adapters/pending-scenes-manager/types'
+import type { IPartialDeploymentsComponent } from './logic/partial-deployments/types'
 import { ISearchComponent } from './adapters/search'
 import {
   IPermissionsComponent,
@@ -302,93 +306,9 @@ export type MigratorComponents = Pick<
 
 export type Validation = (deployment: DeploymentToValidate) => ValidationResult | Promise<ValidationResult>
 
-/**
- * A partial (multi-request) deployment being staged. Content is uploaded across several requests and
- * the entity only becomes a live world_scenes row once every referenced file is present. Stored in a
- * standalone `pending_scenes` table (no FK to `worlds`, so a half-uploaded world never leaks into
- * listings). The authoritative entity *bytes* live in content storage under the entity id.
- */
-export type PendingScene = {
-  entityId: string
-  worldName: string
-  parcels: string[]
-  entity: Entity
-  deployer: string
-  createdAt: Date
-  updatedAt: Date
-}
-
-export type UpsertPendingScene = {
-  entityId: string
-  worldName: string
-  parcels: string[]
-  entity: Entity
-  deployer: string
-}
-
-export type IPendingScenesManager = {
-  /** Returns the pending scene for an entity id, treating rows past the TTL as absent. */
-  getByEntityId(entityId: string): Promise<PendingScene | undefined>
-  /**
-   * Records/refreshes a pending scene, replacing any non-expired pending scene of the same world whose
-   * parcels overlap (enforces "at most one pending upload per world+parcel"), but only when the incoming
-   * scene is newer (deployment ordering) than the overlapping ones — a strictly-newer overlapping upload
-   * causes a rejection instead. On conflict of the same entity id it only bumps updated_at so created_at
-   * (the TTL anchor) stays stable across resumes.
-   *
-   * The per-deployer concurrent-pending cap (`limit.maxPendingPerDeployer`) is enforced inside the same
-   * transaction under a per-deployer lock, on the NET row-count change (so a resume or a newer scene that
-   * replaces one of the deployer's own overlapping rows is not counted as an increase), so concurrent
-   * uploads can't race past it.
-   * @throws InvalidRequestError if a strictly-newer overlapping pending upload is already in progress,
-   *   or if the upsert would put the deployer over the per-deployer cap.
-   */
-  upsert(input: UpsertPendingScene, limit: { maxPendingPerDeployer: number }): Promise<PendingScene>
-  deleteByEntityId(entityId: string): Promise<void>
-  /** Deletes pending scenes older than the configured PENDING_DEPLOYMENT_TTL. Returns the number removed. */
-  deleteExpired(): Promise<number>
-  /**
-   * Returns the storage keys referenced by every non-expired pending scene: each entity id, its
-   * `.auth` blob, and its content-file hashes. Used by garbage collection to protect in-flight uploads.
-   */
-  getActivePendingKeys(): Promise<Set<string>>
-  /**
-   * Atomically claims the finalization lease for a pending upload (flips UPLOADING → FINALIZING, or
-   * takes over a stale FINALIZING lease). Returns true if this caller holds the lease and should run the
-   * finalization; false if another request is already finalizing. Ensures only one request runs the
-   * expensive validation + deploy for a completed upload.
-   */
-  acquireFinalizationLease(entityId: string): Promise<boolean>
-  /** Releases the finalization lease (FINALIZING → UPLOADING) when a finalize attempt fails without deploying. */
-  releaseFinalizationLease(entityId: string): Promise<void>
-}
-
-export type StageDeploymentInput = {
-  baseUrl: string
-  entity: Entity
-  entityRaw: string
-  authChain: AuthChain
-  files: Map<string, DeploymentFile>
-}
-
-export type StageDeploymentResult = {
-  /** Whether this request completed the content set and the scene was deployed. */
-  complete: boolean
-  /** Content hashes still missing (present when `complete` is false). */
-  missing?: string[]
-  /** The deployment result (present when `complete` is true). */
-  result?: DeploymentResult
-}
-
-export type IPartialDeploymentsComponent = {
-  /**
-   * Stages one request of a partial scene deployment: validates everything that doesn't need the full
-   * content set, stores the uploaded files, records/refreshes the pending scene, and — when this
-   * request completes the content set — runs the full validation + deploy and returns the result.
-   * Throws `InvalidRequestError` (HTTP 400) on client errors.
-   */
-  stage(input: StageDeploymentInput): Promise<StageDeploymentResult>
-}
+// PendingScene / UpsertPendingScene / IPendingScenesManager live in ./adapters/pending-scenes-manager/types
+// StageDeploymentInput / StageDeploymentResult / IPartialDeploymentsComponent live in
+// ./logic/partial-deployments/types (both imported above for AppComponents).
 
 export type INameOwnership = {
   findOwners(worldNames: string[]): Promise<ReadonlyMap<string, EthAddress | undefined>>

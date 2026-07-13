@@ -1,7 +1,8 @@
 import SQL from 'sql-template-strings'
 import { Entity } from '@dcl/schemas'
 import { InvalidRequestError } from '@dcl/http-commons'
-import { AppComponents, IPendingScenesManager, PendingScene, UpsertPendingScene } from '../types'
+import { AppComponents } from '../../types'
+import { IPendingScenesManager, PendingScene, UpsertPendingScene } from './types'
 
 const DEFAULT_PENDING_DEPLOYMENT_TTL_MS = 24 * 60 * 60 * 1000 // 24 hours
 

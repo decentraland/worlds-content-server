@@ -1,12 +1,7 @@
 import { Entity } from '@dcl/schemas'
 import { InvalidRequestError } from '@dcl/http-commons'
-import {
-  AppComponents,
-  DeploymentFile,
-  IPartialDeploymentsComponent,
-  StageDeploymentInput,
-  StageDeploymentResult
-} from '../../types'
+import { AppComponents, DeploymentFile } from '../../types'
+import { IPartialDeploymentsComponent, StageDeploymentInput, StageDeploymentResult } from './types'
 
 // How many content files to store to storage at once. They are independent content-addressed objects,
 // so storing them concurrently (rather than one awaited PUT at a time) keeps a large batch fast.
