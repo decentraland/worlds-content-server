@@ -45,11 +45,29 @@ export async function createPendingScenesManager(
     return result.rows.length > 0 ? toPendingScene(result.rows[0]) : undefined
   }
 
-  async function upsert(input: UpsertPendingScene): Promise<PendingScene> {
+  async function upsert(
+    input: UpsertPendingScene,
+    limit: { maxPendingPerDeployer: number; isNewUpload: boolean }
+  ): Promise<PendingScene> {
     const worldName = input.worldName.toLowerCase()
+    const deployer = input.deployer.toLowerCase()
     const expiryCutoff = new Date(Date.now() - ttlMs)
 
     return await database.withAsyncContextTransaction(async () => {
+      // Per-deployer lock FIRST (acquired before the per-world lock below, a consistent order that can't
+      // deadlock). It serializes a deployer's concurrent staging requests — even to different worlds —
+      // so the concurrent-pending cap can't be raced: without it, several new uploads could each read a
+      // count below the cap and then all insert.
+      await database.query(SQL`SELECT pg_advisory_xact_lock(hashtextextended(${'pending_deployer:' + deployer}, 0))`)
+      if (limit.isNewUpload) {
+        const active = await countActiveByDeployer(deployer)
+        if (active >= limit.maxPendingPerDeployer) {
+          throw new InvalidRequestError(
+            `Too many partial uploads in progress for this account (max ${limit.maxPendingPerDeployer}). Finalize or abandon an existing upload before starting another.`
+          )
+        }
+      }
+
       // Serialize the "replace overlapping + insert" critical section per world (also across
       // processes) so two concurrent uploads for the same world+parcels can't both insert.
       await database.query(SQL`SELECT pg_advisory_xact_lock(hashtextextended(${'pending_scenes:' + worldName}, 0))`)

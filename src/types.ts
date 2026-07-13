@@ -335,9 +335,17 @@ export type IPendingScenesManager = {
    * scene is newer (deployment ordering) than the overlapping ones — a strictly-newer overlapping upload
    * causes a rejection instead. On conflict of the same entity id it only bumps updated_at so created_at
    * (the TTL anchor) stays stable across resumes.
-   * @throws InvalidRequestError if a strictly-newer overlapping pending upload is already in progress.
+   *
+   * When `limit.isNewUpload` is set, the per-deployer concurrent-pending cap (`maxPendingPerDeployer`) is
+   * enforced inside the same transaction under a per-deployer lock, so concurrent new uploads can't race
+   * past it.
+   * @throws InvalidRequestError if a strictly-newer overlapping pending upload is already in progress,
+   *   or if a new upload would exceed the per-deployer cap.
    */
-  upsert(input: UpsertPendingScene): Promise<PendingScene>
+  upsert(
+    input: UpsertPendingScene,
+    limit: { maxPendingPerDeployer: number; isNewUpload: boolean }
+  ): Promise<PendingScene>
   deleteByEntityId(entityId: string): Promise<void>
   /** Deletes pending scenes older than the configured PENDING_DEPLOYMENT_TTL. Returns the number removed. */
   deleteExpired(): Promise<number>

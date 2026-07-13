@@ -125,20 +125,11 @@ export async function createPartialDeploymentsComponent(
     const deployer = authChain[0].payload
 
     // Reject a NEW upload early (before it replaces any pending state) if a newer scene already holds
-    // these parcels. Resume batches skip this: they never deploy by themselves — the pre-finalize
-    // re-check right before deployScene is the load-bearing guard — so re-querying world_scenes on
-    // every intermediate batch would be wasted work.
+    // these parcels. Fast-fail only: deployScene enforces ordering atomically at finalize. Resume
+    // batches skip it (they never deploy by themselves) to avoid a per-batch world_scenes query.
+    // (The per-deployer concurrent-pending cap is enforced atomically inside upsert below.)
     if (!pending) {
       await assertNoNewerDeployment(worldName, entity, parcels)
-
-      // Cap concurrent staged uploads per deployer so one account can't pin storage across many
-      // worlds/parcel-sets for the full TTL. Only NEW uploads count — a resume reuses an existing slot.
-      const activePending = await pendingScenesManager.countActiveByDeployer(deployer)
-      if (activePending >= maxPendingPerDeployer) {
-        throw new InvalidRequestError(
-          `Too many partial uploads in progress for this account (max ${maxPendingPerDeployer}). Finalize or abandon an existing upload before starting another.`
-        )
-      }
     }
 
     // Cumulative size budget: uploaded bytes for this batch + stored sizes for earlier batches. Checked
@@ -161,7 +152,10 @@ export async function createPartialDeploymentsComponent(
     // if a competing overlapping upload replaced it between requests — otherwise this batch's files
     // would be written with no GC protection for the remainder of the upload. (On conflict the upsert
     // preserves created_at, so the TTL anchor stays stable across resumes.)
-    const pendingRow = await pendingScenesManager.upsert({ entityId: entity.id, worldName, parcels, entity, deployer })
+    const pendingRow = await pendingScenesManager.upsert(
+      { entityId: entity.id, worldName, parcels, entity, deployer },
+      { maxPendingPerDeployer, isNewUpload: !pending }
+    )
 
     // Store this batch's files (content-addressed, so concurrent identical writes are idempotent).
     await storeFiles(files)
@@ -187,11 +181,10 @@ export async function createPartialDeploymentsComponent(
       throw new InvalidRequestError(`Deployment failed: ${fullValidation.errors.join(', ')}`)
     }
 
-    // Re-check for a newer deployment immediately before the write — AFTER the slow full validation —
-    // so the window between the check and deployScene's last-write-wins transaction is as small as
-    // possible (a newer vanilla deploy landing inside that window would be silently undeployed).
-    await assertNoNewerDeployment(worldName, entity, parcels)
-
+    // No pre-write newer-deployment re-check here: deployScene now enforces deployment ordering
+    // atomically under a per-world lock (rejecting an older deploy that would overwrite a newer scene),
+    // so a separate check would be both racy and redundant. The early assertNoNewerDeployment above is
+    // kept only as a fast-fail for new uploads.
     try {
       const result = await entityDeployer.deployEntity(baseUrl, entity, present, files, entityRaw, authChain)
       await pendingScenesManager.deleteByEntityId(entity.id)

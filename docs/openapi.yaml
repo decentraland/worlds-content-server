@@ -306,8 +306,19 @@ paths:
         - Content Server
       summary: /entities
       description: |
-        Deploy a new scene to a world. The deployment must include entity metadata and all content files.
-        Requires authentication via auth chain.
+        Deploy a new scene to a world. Requires authentication via auth chain.
+
+        A standard deployment includes the entity metadata file and every content file it references
+        in a single request, and returns `200`.
+
+        **Partial (multi-request) deployments.** For scenes too large for one request, send `partial`
+        set to `"true"` and split the content files across several requests. The first partial request
+        must include the entity metadata file; later requests may omit it (it is read back from
+        storage). Each request stores the files it carries; the scene only goes live once every
+        referenced file is present. A request that still leaves files missing returns `202` with the
+        list of outstanding hashes; the request that completes the set runs full validation, deploys,
+        and returns `200`. At most one in-flight partial deployment is kept per set of parcels (a newer
+        one replaces it), and staged content expires if the upload is not completed in time.
       operationId: worldsContentServer_deployEntity
       requestBody:
         required: true
@@ -322,13 +333,19 @@ paths:
                   type: string
                   description: The entity ID (IPFS hash)
                   example: bafkreiabi74jam7uh5gmm6x4hox664j53bmt7dy4alrltkhyj3ozcxs2iu
+                partial:
+                  type: string
+                  enum: ['true']
+                  description: >
+                    Set to "true" to mark this request as a staging request of a partial
+                    (multi-request) deployment. Omit for a standard single-request deployment.
               additionalProperties:
                 type: string
                 format: binary
                 description: Content files referenced by the entity
       responses:
         '200':
-          description: Entity deployed successfully
+          description: Entity deployed successfully (all content present)
           content:
             application/json:
               schema:
@@ -340,6 +357,20 @@ paths:
                   message:
                     type: string
                     description: Deployment confirmation message
+        '202':
+          description: >
+            Partial deployment accepted but not yet complete: some referenced content files are still
+            missing. Send them in further requests to complete the deployment.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  missing:
+                    type: array
+                    items:
+                      type: string
+                    description: Content hashes still missing before the scene can go live
         '400':
           description: Invalid request or deployment failed validation
           content:

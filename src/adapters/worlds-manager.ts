@@ -29,6 +29,7 @@ import {
 } from '../types'
 import { streamToBuffer } from '@dcl/catalyst-storage'
 import { Entity, EthAddress } from '@dcl/schemas'
+import { InvalidRequestError } from '@dcl/http-commons'
 import SQL from 'sql-template-strings'
 import { buildWorldRuntimeMetadata, shouldShowInPlaces } from '../logic/world-runtime-metadata-utils'
 import { AccessSetting, defaultAccess } from '../logic/access'
@@ -228,6 +229,35 @@ export async function createWorldsManagerComponent({
     const thumbnailHash = thumbnailContent?.hash || null
 
     await database.withAsyncContextTransaction(async () => {
+      // Serialize concurrent deploys to the same world so the "reject if a newer scene already holds
+      // these parcels" check below is atomic with the soft-delete + insert. Both the vanilla and the
+      // partial-finalize paths reach deployScene, so this is the single place deployment ordering is
+      // enforced for world scenes — without the lock, a newer deploy could commit between another
+      // deploy's check and its write, and the older one would silently undeploy it.
+      await database.query(
+        SQL`SELECT pg_advisory_xact_lock(hashtextextended(${'world_scene_deploy:' + worldName.toLowerCase()}, 0))`
+      )
+
+      // Reject if a strictly-newer scene (Decentraland ordering: greater entity.timestamp, tie broken
+      // by greater entity id) already occupies any of these parcels. This makes an older deploy — most
+      // importantly a stale partial finalize — unable to overwrite a newer one, atomically under the
+      // lock above rather than via a racy pre-write check in the caller.
+      const newer = await database.query(SQL`
+        SELECT 1 FROM world_scenes
+        WHERE world_name = ${worldName.toLowerCase()}
+          AND status = 'DEPLOYED'
+          AND parcels && ${parcels}::text[]
+          AND entity_id != ${scene.id}
+          AND ( (entity->>'timestamp')::bigint > ${scene.timestamp}
+                OR ((entity->>'timestamp')::bigint = ${scene.timestamp} AND entity_id > ${scene.id}) )
+        LIMIT 1
+      `)
+      if (newer.rowCount > 0) {
+        throw new InvalidRequestError(
+          `Deployment failed: a newer scene is already deployed on one or more of these parcels.`
+        )
+      }
+
       // Ensure world record exists, update if it does
       // On first deployment (INSERT), set settings from scene metadata
       // On subsequent deployments (UPDATE), preserve existing settings

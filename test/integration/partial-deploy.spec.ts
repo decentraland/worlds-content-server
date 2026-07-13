@@ -432,10 +432,18 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
   })
 
   // Generic form builder for a second entity (the module-level buildForm is bound to the beforeEach one).
-  function makeForm(id: string, fileMap: Map<string, Uint8Array>, keys: string[], authChain: AuthChain): FormData {
+  function makeForm(
+    id: string,
+    fileMap: Map<string, Uint8Array>,
+    keys: string[],
+    authChain: AuthChain,
+    partial = true
+  ): FormData {
     const form = new FormData()
     form.append('entityId', id)
-    form.append('partial', 'true')
+    if (partial) {
+      form.append('partial', 'true')
+    }
     authChain.forEach((link, i) => {
       form.append(`authChain[${i}][type]`, link.type)
       form.append(`authChain[${i}][payload]`, link.payload)
@@ -627,6 +635,36 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
         const result = await database.query<{ entity_id: string }>('SELECT entity_id FROM pending_scenes')
         expect(result.rows.map((r) => r.entity_id)).toEqual([newer.entityId])
       })
+    })
+  })
+
+  describe('when a vanilla deploy targets parcels already held by a newer scene', () => {
+    let older: { entityId: string; files: Map<string, Uint8Array>; contentHashes: string[] }
+    let newer: { entityId: string; files: Map<string, Uint8Array>; contentHashes: string[] }
+    let olderResponse: Awaited<ReturnType<typeof post>>
+
+    beforeEach(async () => {
+      const now = Date.now()
+      older = await buildScene(['20,24'], now - 60_000)
+      newer = await buildScene(['20,24'], now)
+
+      // Deploy the newer scene first (full, single-request vanilla deploy).
+      const newerAuth = Authenticator.signPayload(identity.authChain, newer.entityId)
+      await post(makeForm(newer.entityId, newer.files, [newer.entityId, ...newer.contentHashes], newerAuth, false))
+
+      // Then a vanilla deploy of the older scene on the same parcels.
+      const olderAuth = Authenticator.signPayload(identity.authChain, older.entityId)
+      olderResponse = await post(
+        makeForm(older.entityId, older.files, [older.entityId, ...older.contentHashes], olderAuth, false)
+      )
+    })
+
+    it('should reject the older vanilla deploy with 400 (deployScene enforces ordering atomically)', () => {
+      expect(olderResponse.status).toBe(400)
+    })
+
+    it('should keep the newer scene deployed', async () => {
+      expect(await deployedEntityIds()).toEqual([newer.entityId])
     })
   })
 
