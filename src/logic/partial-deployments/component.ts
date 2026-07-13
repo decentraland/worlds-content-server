@@ -169,42 +169,59 @@ export async function createPartialDeploymentsComponent(
       return { complete: false, missing }
     }
 
-    // Everything is present — run the full validation before deploying in this same request.
-    const fullValidation = await validator.validate({
-      entity,
-      files,
-      authChain,
-      contentHashesInStorage: present,
-      pendingCreatedAt: pendingRow.createdAt
-    })
-    if (!fullValidation.ok()) {
-      throw new InvalidRequestError(`Deployment failed: ${fullValidation.errors.join(', ')}`)
-    }
-
-    // No pre-write newer-deployment re-check here: deployScene now enforces deployment ordering
-    // atomically under a per-world lock (rejecting an older deploy that would overwrite a newer scene),
-    // so a separate check would be both racy and redundant. The early assertNoNewerDeployment above is
-    // kept only as a fast-fail for new uploads.
-
-    // Re-verify content presence immediately before the deploy commits. The completeness check above ran
-    // before the (slow) full validation, and a garbage-collection sweep could have reclaimed a reused,
-    // already-stored file in that window (the pending row protects content, but a GC batch whose
-    // snapshot predates this row would not see it). Committing a scene that references deleted content
-    // would corrupt it, so if anything is missing now, return incomplete and let the client re-upload —
-    // this shrinks the DB-row-vs-object-storage window to the gap between this check and the commit.
-    const stillPresent = await storage.existMultiple(contentHashes)
-    const nowMissing = contentHashes.filter((hash) => !stillPresent.get(hash))
-    if (nowMissing.length > 0) {
-      return { complete: false, missing: nowMissing }
+    // Everything is present — claim the finalization lease so only ONE request runs the expensive
+    // validation + deploy for this completed upload (the client's parallel worker pool and retries mean
+    // several completing requests can arrive at once).
+    const gotLease = await pendingScenesManager.acquireFinalizationLease(entity.id)
+    if (!gotLease) {
+      // Another request is finalizing (or already did). If the scene is live now, report the idempotent
+      // success; otherwise report not-yet-complete so the client backs off and retries — it converges
+      // once the winner finishes (or its lease expires and this request can take over).
+      const existing = await worldsManager.getWorldScenes({ worldName, entityId: entity.id }, { limit: 1 })
+      if (existing.scenes.length > 0) {
+        await pendingScenesManager.deleteByEntityId(entity.id).catch(() => undefined)
+        return { complete: true, result: { message: `Your scene was deployed to World "${worldName}".` } }
+      }
+      return { complete: false, missing: [] }
     }
 
     try {
+      // Run the full validation before deploying, in this same request.
+      const fullValidation = await validator.validate({
+        entity,
+        files,
+        authChain,
+        contentHashesInStorage: present,
+        pendingCreatedAt: pendingRow.createdAt
+      })
+      if (!fullValidation.ok()) {
+        throw new InvalidRequestError(`Deployment failed: ${fullValidation.errors.join(', ')}`)
+      }
+
+      // No pre-write newer-deployment re-check here: deployScene enforces deployment ordering atomically
+      // under a per-world lock (rejecting an older deploy that would overwrite a newer scene), so a
+      // separate check would be both racy and redundant. The early assertNoNewerDeployment above is kept
+      // only as a fast-fail for new uploads.
+
+      // Re-verify content presence immediately before the deploy commits. The completeness check above
+      // ran before the (slow) full validation, and a garbage-collection sweep could have reclaimed a
+      // reused, already-stored file in that window (the pending row protects content, but a GC batch
+      // whose snapshot predates this row would not see it). Committing a scene that references deleted
+      // content would corrupt it, so if anything is missing now, release the lease and return incomplete
+      // so the client re-uploads — shrinking the DB-row-vs-object-storage window to check-to-commit.
+      const stillPresent = await storage.existMultiple(contentHashes)
+      const nowMissing = contentHashes.filter((hash) => !stillPresent.get(hash))
+      if (nowMissing.length > 0) {
+        await pendingScenesManager.releaseFinalizationLease(entity.id)
+        return { complete: false, missing: nowMissing }
+      }
+
       const result = await entityDeployer.deployEntity(baseUrl, entity, stillPresent, files, entityRaw, authChain)
       await pendingScenesManager.deleteByEntityId(entity.id)
       return { complete: true, result }
     } catch (error) {
-      // Concurrent finalize: another request completing the same upload won the world_scenes PK insert.
-      // If the scene is now deployed, treat this request as an idempotent success.
+      // Concurrent finalize: another request won the world_scenes PK insert (e.g. a stale lease was taken
+      // over by two requests). If the scene is now deployed, treat this request as an idempotent success.
       if (isUniqueViolation(error)) {
         const existing = await worldsManager.getWorldScenes({ worldName, entityId: entity.id }, { limit: 1 })
         if (existing.scenes.length > 0) {
@@ -216,6 +233,9 @@ export async function createPartialDeploymentsComponent(
           return { complete: true, result: { message: `Your scene was deployed to World "${worldName}".` } }
         }
       }
+      // Finalize failed without deploying: release the lease so a later request can retry. A terminal
+      // validation error still propagates as a 4xx (the client won't retry; the row expires via TTL).
+      await pendingScenesManager.releaseFinalizationLease(entity.id).catch(() => undefined)
       throw error
     }
   }

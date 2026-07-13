@@ -5,6 +5,12 @@ import { AppComponents, IPendingScenesManager, PendingScene, UpsertPendingScene 
 
 const DEFAULT_PENDING_DEPLOYMENT_TTL_MS = 24 * 60 * 60 * 1000 // 24 hours
 
+// How long a finalization lease is honored before it is considered stale and can be taken over by
+// another request. Must comfortably exceed a real finalization (full validation — including the
+// external permission check — plus the deploy), so a slow-but-alive finalizer isn't pre-empted, while a
+// crashed one doesn't wedge the upload for long.
+const FINALIZATION_LEASE_TTL_MS = 2 * 60 * 1000 // 2 minutes
+
 type PendingSceneRow = {
   entity_id: string
   world_name: string
@@ -119,6 +125,32 @@ export async function createPendingScenesManager(
     await database.query(SQL`DELETE FROM pending_scenes WHERE entity_id = ${entityId}`)
   }
 
+  async function acquireFinalizationLease(entityId: string): Promise<boolean> {
+    // Atomically flip the row to FINALIZING, but only if it isn't already being finalized by a live
+    // lease. A single UPDATE ... RETURNING is the whole critical section — the row lock serializes
+    // competing acquirers — so exactly one completing request proceeds to the expensive validation +
+    // deploy; the others get `false` and back off. A lease older than the TTL (a crashed finalizer) is
+    // reclaimable.
+    const staleCutoff = new Date(Date.now() - FINALIZATION_LEASE_TTL_MS)
+    const result = await database.query(SQL`
+      UPDATE pending_scenes
+      SET status = 'FINALIZING', finalizing_at = now()
+      WHERE entity_id = ${entityId}
+        AND (status = 'UPLOADING' OR (status = 'FINALIZING' AND finalizing_at < ${staleCutoff}))
+      RETURNING entity_id
+    `)
+    return result.rowCount > 0
+  }
+
+  async function releaseFinalizationLease(entityId: string): Promise<void> {
+    // Return a still-present row to UPLOADING so a later request can finalize it. Used when a finalize
+    // attempt fails without deploying (transient error, or content reclaimed under it). A successful
+    // deploy deletes the row instead, so this no-ops there.
+    await database.query(SQL`
+      UPDATE pending_scenes SET status = 'UPLOADING', finalizing_at = NULL WHERE entity_id = ${entityId}
+    `)
+  }
+
   async function deleteExpired(): Promise<number> {
     const cutoff = new Date(Date.now() - ttlMs)
     const result = await database.query(SQL`DELETE FROM pending_scenes WHERE created_at < ${cutoff}`)
@@ -158,5 +190,13 @@ export async function createPendingScenesManager(
     return keys
   }
 
-  return { getByEntityId, upsert, deleteByEntityId, deleteExpired, getActivePendingKeys }
+  return {
+    getByEntityId,
+    upsert,
+    deleteByEntityId,
+    acquireFinalizationLease,
+    releaseFinalizationLease,
+    deleteExpired,
+    getActivePendingKeys
+  }
 }

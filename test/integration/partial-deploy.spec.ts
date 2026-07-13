@@ -727,4 +727,46 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
       expect(await countPending()).toBe(3)
     })
   })
+
+  describe('when a completing request arrives while finalization is already in progress', () => {
+    let completingResponse: Awaited<ReturnType<typeof post>>
+
+    beforeEach(async () => {
+      const authChain = Authenticator.signPayload(identity.authChain, entityId)
+      const [hash1, hash2] = contentHashes
+      // Stage the entity + first content file (incomplete → pending row, status UPLOADING).
+      await post(buildForm([entityId, hash1], authChain))
+      // Simulate another request holding a FRESH finalization lease on this upload.
+      await components.database.query(
+        `UPDATE pending_scenes SET status = 'FINALIZING', finalizing_at = now() WHERE entity_id = '${entityId}'`
+      )
+      // The completing request uploads the last file but can't claim the lease.
+      completingResponse = await post(buildForm([hash2], authChain))
+    })
+
+    it('should respond 202 (finalization in progress) without deploying the scene', async () => {
+      expect(completingResponse.status).toBe(202)
+      expect(await countDeployedScenes()).toBe(0)
+    })
+  })
+
+  describe('when a completing request finds a stale (crashed) finalization lease', () => {
+    let completingResponse: Awaited<ReturnType<typeof post>>
+
+    beforeEach(async () => {
+      const authChain = Authenticator.signPayload(identity.authChain, entityId)
+      const [hash1, hash2] = contentHashes
+      await post(buildForm([entityId, hash1], authChain))
+      // A crashed finalizer left a lease older than the 2-minute TTL.
+      await components.database.query(
+        `UPDATE pending_scenes SET status = 'FINALIZING', finalizing_at = now() - interval '10 minutes' WHERE entity_id = '${entityId}'`
+      )
+      completingResponse = await post(buildForm([hash2], authChain))
+    })
+
+    it('should take over the stale lease and finalize with 200', async () => {
+      expect(completingResponse.status).toBe(200)
+      expect(await countDeployedScenes()).toBe(1)
+    })
+  })
 })
