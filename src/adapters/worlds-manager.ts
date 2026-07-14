@@ -191,8 +191,10 @@ export async function createWorldsManagerComponent({
         AND status = 'DEPLOYED'
         AND parcels && ${parcels}::text[]
         AND entity_id != ${sceneId}
-        AND ( (entity->>'timestamp')::bigint > ${sceneTimestamp}
-              OR ((entity->>'timestamp')::bigint = ${sceneTimestamp} AND entity_id > ${sceneId}) )
+        -- ::numeric, not ::bigint: the schema allows a fractional entity.timestamp, and a bigint cast
+        -- would make this query (and with it every overlapping deploy) error on such a stored entity.
+        AND ( (entity->>'timestamp')::numeric > ${sceneTimestamp}
+              OR ((entity->>'timestamp')::numeric = ${sceneTimestamp} AND entity_id > ${sceneId}) )
       LIMIT 1
     `)
     return result.rowCount > 0
@@ -321,6 +323,17 @@ export async function createWorldsManagerComponent({
         WHERE world_name = ${worldName.toLowerCase()}
         AND parcels && ${parcels}::text[]
         AND status = 'DEPLOYED'
+      `)
+
+      // A previous undeploy of this same entity soft-deletes its row, which still owns the
+      // (world_name, entity_id) primary key and would make the insert below fail forever for a
+      // redeploy. Remove it. A DEPLOYED self-row is deliberately left alone so a concurrent
+      // finalize of the same entity still hits the unique violation (its idempotency signal).
+      await database.query(SQL`
+        DELETE FROM world_scenes
+        WHERE world_name = ${worldName.toLowerCase()}
+        AND entity_id = ${scene.id}
+        AND status = 'UNDEPLOYED'
       `)
 
       // Insert new scene

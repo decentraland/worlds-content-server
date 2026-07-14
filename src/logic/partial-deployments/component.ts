@@ -1,4 +1,3 @@
-import { Entity } from '@dcl/schemas'
 import { InvalidRequestError } from '@dcl/http-commons'
 import { AppComponents, DeploymentFile } from '../../types'
 import { IPartialDeploymentsComponent, StageDeploymentInput, StageDeploymentResult } from './types'
@@ -45,24 +44,15 @@ export async function createPartialDeploymentsComponent(
   const maxPendingPerDeployer =
     (await config.getNumber('MAX_PENDING_DEPLOYMENTS_PER_DEPLOYER')) ?? DEFAULT_MAX_PENDING_PER_DEPLOYER
 
-  /**
-   * Rejects the deployment if a strictly-newer scene already occupies any of these parcels. "Newer"
-   * follows the deployment ordering used across Decentraland: greater entity timestamp, breaking ties
-   * by greater entity id. Without this a stale pending upload (its TTL anchored on when it started,
-   * up to 24h ago) could finalize and silently overwrite a newer scene deployed while it was in flight.
-   */
-  async function assertNoNewerDeployment(worldName: string, entity: Entity, parcels: string[]): Promise<void> {
-    const { scenes } = await worldsManager.getWorldScenes({ worldName, coordinates: parcels })
-    const newer = scenes.find(
-      (scene) =>
-        scene.entityId !== entity.id &&
-        (scene.entity.timestamp > entity.timestamp ||
-          (scene.entity.timestamp === entity.timestamp && scene.entityId > entity.id))
-    )
-    if (newer) {
-      throw new InvalidRequestError(
-        `Deployment failed: a newer scene (${newer.entityId}) is already deployed on one or more of these parcels.`
-      )
+  async function deletePendingRowBestEffort(entityId: string, worldName: string): Promise<void> {
+    try {
+      await pendingScenesManager.deleteByEntityId(entityId)
+    } catch (error: any) {
+      logger.warn('Failed to delete pending scene after a successful deploy; it will expire via TTL', {
+        entityId,
+        worldName,
+        error: error?.message ?? `${error}`
+      })
     }
   }
 
@@ -123,8 +113,10 @@ export async function createPartialDeploymentsComponent(
     // these parcels. Fast-fail only: deployScene enforces ordering atomically at finalize. Resume
     // batches skip it (they never deploy by themselves) to avoid a per-batch world_scenes query.
     // (The per-deployer concurrent-pending cap is enforced atomically inside upsert below.)
-    if (!pending) {
-      await assertNoNewerDeployment(worldName, entity, parcels)
+    if (!pending && (await worldsManager.hasNewerDeployedScene(worldName, entity))) {
+      throw new InvalidRequestError(
+        'Deployment failed: a newer scene is already deployed on one or more of these parcels.'
+      )
     }
 
     // Cumulative size budget: uploaded bytes for this batch + stored sizes for earlier batches. Checked
@@ -164,22 +156,11 @@ export async function createPartialDeploymentsComponent(
       return { complete: false, missing }
     }
 
-    // Everything is present — claim the finalization lease so only ONE request runs the expensive
-    // validation + deploy for this completed upload (the client's parallel worker pool and retries mean
-    // several completing requests can arrive at once).
-    const gotLease = await pendingScenesManager.acquireFinalizationLease(entity.id)
-    if (!gotLease) {
-      // Another request is finalizing (or already did). If the scene is live now, report the idempotent
-      // success; otherwise report not-yet-complete so the client backs off and retries — it converges
-      // once the winner finishes (or its lease expires and this request can take over).
-      const existing = await worldsManager.getWorldScenes({ worldName, entityId: entity.id }, { limit: 1 })
-      if (existing.scenes.length > 0) {
-        await pendingScenesManager.deleteByEntityId(entity.id).catch(() => undefined)
-        return { complete: true, result: { message: `Your scene was deployed to World "${worldName}".` } }
-      }
-      return { complete: false, missing: [] }
-    }
-
+    // Everything is present — run the full validation + deploy in this same request. Concurrent
+    // completing requests (the client's parallel worker pool, retries) may race here; the world_scenes
+    // primary key serializes them, and the loser's unique-violation is mapped to an idempotent success
+    // in the catch below. The duplicated validation in that rare race is accepted — a coordination
+    // mechanism to avoid it costs more in failure modes than the validation it saves.
     try {
       // Run the full validation before deploying, in this same request.
       const fullValidation = await validator.validate({
@@ -207,20 +188,21 @@ export async function createPartialDeploymentsComponent(
       const stillPresent = await storage.existMultiple(contentHashes)
       const nowMissing = contentHashes.filter((hash) => !stillPresent.get(hash))
       if (nowMissing.length > 0) {
-        await pendingScenesManager.releaseFinalizationLease(entity.id)
         return { complete: false, missing: nowMissing }
       }
 
       const result = await entityDeployer.deployEntity(baseUrl, entity, stillPresent, files, entityRaw, authChain)
-      await pendingScenesManager.deleteByEntityId(entity.id)
+      // The deploy has committed: from here on the response must be success. A failed pending-row delete
+      // only leaves a row the eviction job will expire, so it must not surface as an error.
+      await deletePendingRowBestEffort(entity.id, worldName)
       return { complete: true, result }
     } catch (error) {
-      // Concurrent finalize: another request won the world_scenes PK insert (e.g. a stale lease was taken
-      // over by two requests). If the scene is now deployed, treat this request as an idempotent success.
+      // Concurrent finalize: another completing request won the world_scenes PK insert. The scene is
+      // deployed, so treat this request as an idempotent success.
       if (isUniqueViolation(error)) {
         const existing = await worldsManager.getWorldScenes({ worldName, entityId: entity.id }, { limit: 1 })
         if (existing.scenes.length > 0) {
-          await pendingScenesManager.deleteByEntityId(entity.id)
+          await deletePendingRowBestEffort(entity.id, worldName)
           logger.info(`Partial deployment finalized concurrently; returning idempotent success`, {
             entityId: entity.id,
             worldName
@@ -228,9 +210,9 @@ export async function createPartialDeploymentsComponent(
           return { complete: true, result: { message: `Your scene was deployed to World "${worldName}".` } }
         }
       }
-      // Finalize failed without deploying: release the lease so a later request can retry. A terminal
-      // validation error still propagates as a 4xx (the client won't retry; the row expires via TTL).
-      await pendingScenesManager.releaseFinalizationLease(entity.id).catch(() => undefined)
+      // Finalize failed without deploying: the pending row stays, so a later completing request retries.
+      // A terminal validation error still propagates as a 4xx (the client won't retry; the row expires
+      // via TTL).
       throw error
     }
   }

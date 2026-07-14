@@ -320,6 +320,10 @@ export async function createWorldsManagerMockComponent({
     return 0
   }
 
+  async function hasNewerDeployedScene(_worldName: string, _scene: Entity): Promise<boolean> {
+    return false
+  }
+
   async function modifyAccessAtomically(
     worldName: string,
     modifier: (currentAccess: AccessSetting) => AccessSetting
@@ -358,7 +362,8 @@ export async function createWorldsManagerMockComponent({
     worldExists,
     getWorldNamesByCommunityId,
     modifyAccessAtomically,
-    evictUndeployedScenes
+    evictUndeployedScenes,
+    hasNewerDeployedScene
   }
 }
 
@@ -386,6 +391,7 @@ export function createMockedWorldsManager(
     getWorldNamesByCommunityId: jest.fn(),
     modifyAccessAtomically: jest.fn(),
     evictUndeployedScenes: jest.fn(),
+    hasNewerDeployedScene: jest.fn(),
     ...overrides
   } as jest.Mocked<IWorldsManager>
 }

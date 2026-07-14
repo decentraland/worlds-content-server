@@ -26,6 +26,11 @@ export const validateBaseEntity: Validation = async (deployment: DeploymentToVal
   return OK
 }
 
+// Forward tolerance for entity timestamps (client clock skew). Deployment ordering is
+// newest-timestamp-wins, so a far-future-dated entity would permanently "win" the parcels it occupies,
+// blocking every honestly-dated deploy until it is manually undeployed. Mirrors catalyst's forward TTL.
+const MAX_TIMESTAMP_FORWARD_TOLERANCE_MS = 15 * 60 * 1000 // 15 minutes
+
 export function createValidateDeploymentTtl(components: Pick<ValidatorComponents, 'config'>) {
   return async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
     // A partial (multi-request) upload can span longer than the deployment TTL, so when a pending
@@ -37,6 +42,11 @@ export function createValidateDeploymentTtl(components: Pick<ValidatorComponents
     if (ttl > maxTtl) {
       return createValidationResult([
         `Deployment was created ${ttl / 1000} secs ago. Max allowed: ${maxTtl / 1000} secs.`
+      ])
+    }
+    if (-ttl > MAX_TIMESTAMP_FORWARD_TOLERANCE_MS) {
+      return createValidationResult([
+        `Deployment timestamp is ${-ttl / 1000} secs in the future. Max allowed: ${MAX_TIMESTAMP_FORWARD_TOLERANCE_MS / 1000} secs.`
       ])
     }
     return OK

@@ -13,11 +13,6 @@ export const migration: Migration = {
         parcels    TEXT[]  NOT NULL,
         entity     JSONB   NOT NULL,
         deployer   VARCHAR NOT NULL,
-        -- Finalization lease: 'UPLOADING' while content is being staged; a completing request flips it
-        -- to 'FINALIZING' (recording finalizing_at) so only one request runs the expensive validation +
-        -- deploy. A stale lease (finalizing_at older than the lease TTL) can be taken over after a crash.
-        status     VARCHAR NOT NULL DEFAULT 'UPLOADING',
-        finalizing_at TIMESTAMPTZ NULL,
         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
       );

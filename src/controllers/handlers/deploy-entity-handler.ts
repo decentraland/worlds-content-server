@@ -1,6 +1,6 @@
 import { Entity } from '@dcl/schemas'
 import { IHttpServerComponent } from '@dcl/core-commons'
-import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage'
+import { bufferToStream } from '@dcl/catalyst-storage'
 import { FormDataContext, toDeploymentFile } from '../../logic/multipart'
 import { DeploymentFile, HandlerContextWithPath } from '../../types'
 import { extractAuthChain } from '../../logic/extract-auth-chain'
@@ -24,6 +24,23 @@ function parseEntityJson(raw: string) {
   } catch {
     throw new InvalidRequestError('The entity file is not valid JSON.')
   }
+}
+
+// Buffers a stream but aborts as soon as it exceeds maxBytes. The storage metadata size can be null
+// (unknown), so the size cap must be enforced while reading — buffering first and checking after would
+// hold the whole blob in memory exactly in the case the cap exists for.
+async function streamToBufferCapped(stream: AsyncIterable<Buffer | string>, maxBytes: number): Promise<Buffer> {
+  const chunks: Buffer[] = []
+  let total = 0
+  for await (const chunk of stream) {
+    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+    total += buf.length
+    if (total > maxBytes) {
+      throw new InvalidRequestError(`The stored entity file is too large (over ${maxBytes} bytes).`)
+    }
+    chunks.push(buf)
+  }
+  return Buffer.concat(chunks)
 }
 
 export async function deployEntity(
@@ -55,7 +72,9 @@ export async function deployEntity(
     }
     const stored = await ctx.components.storage.retrieve(entityId)
     if (stored) {
-      const buf = await streamToBuffer(await stored.asStream())
+      // The metadata check above is only a cheap fast path — storage can report size as null — so the
+      // capped read below is what actually enforces the limit.
+      const buf = await streamToBufferCapped(await stored.asStream(), MAX_ENTITY_FILE_SIZE_BYTES)
       entityFile = { size: buf.length, getStream: () => bufferToStream(buf), asBuffer: async () => buf }
     }
   }

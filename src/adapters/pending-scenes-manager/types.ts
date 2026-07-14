@@ -35,11 +35,10 @@ export type IPendingScenesManager = {
    * (the TTL anchor) stays stable across resumes.
    *
    * The per-deployer concurrent-pending cap (`limit.maxPendingPerDeployer`) is enforced inside the same
-   * transaction under a per-deployer lock, on the NET row-count change (so a resume or a newer scene that
-   * replaces one of the deployer's own overlapping rows is not counted as an increase), so concurrent
-   * uploads can't race past it.
+   * transaction under a per-deployer lock, and only when the upsert would create a NEW row — a resume of
+   * an existing upload is always allowed through, so lowering the cap can never wedge in-flight uploads.
    * @throws InvalidRequestError if a strictly-newer overlapping pending upload is already in progress,
-   *   or if the upsert would put the deployer over the per-deployer cap.
+   *   or if creating this new pending upload would put the deployer over the per-deployer cap.
    */
   upsert(input: UpsertPendingScene, limit: { maxPendingPerDeployer: number }): Promise<PendingScene>
   deleteByEntityId(entityId: string): Promise<void>
@@ -50,13 +49,4 @@ export type IPendingScenesManager = {
    * `.auth` blob, and its content-file hashes. Used by garbage collection to protect in-flight uploads.
    */
   getActivePendingKeys(): Promise<Set<string>>
-  /**
-   * Atomically claims the finalization lease for a pending upload (flips UPLOADING → FINALIZING, or
-   * takes over a stale FINALIZING lease). Returns true if this caller holds the lease and should run the
-   * finalization; false if another request is already finalizing. Ensures only one request runs the
-   * expensive validation + deploy for a completed upload.
-   */
-  acquireFinalizationLease(entityId: string): Promise<boolean>
-  /** Releases the finalization lease (FINALIZING → UPLOADING) when a finalize attempt fails without deploying. */
-  releaseFinalizationLease(entityId: string): Promise<void>
 }
