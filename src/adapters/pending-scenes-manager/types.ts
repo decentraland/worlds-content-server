@@ -10,7 +10,6 @@ export type PendingScene = {
   entityId: string
   worldName: string
   parcels: string[]
-  entity: Entity
   deployer: string
   createdAt: Date
   updatedAt: Date

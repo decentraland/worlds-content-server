@@ -1,16 +1,18 @@
 import SQL from 'sql-template-strings'
-import { Entity } from '@dcl/schemas'
 import { InvalidRequestError } from '@dcl/http-commons'
 import { AppComponents } from '../../types'
 import { IPendingScenesManager, PendingScene, UpsertPendingScene } from './types'
 
 const DEFAULT_PENDING_DEPLOYMENT_TTL_MS = 24 * 60 * 60 * 1000 // 24 hours
 
+// The `entity` JSONB (the full scene manifest, up to a few MB) is deliberately NOT selected/returned by
+// getByEntityId or upsert: no caller reads it off the result (they use deployer/createdAt), and shipping
+// it every batch would cost multiple MB of wire traffic + a node-pg JSON.parse per request. It is only
+// written on the first INSERT and read in-SQL by getActivePendingKeys / the newer-conflict check.
 type PendingSceneRow = {
   entity_id: string
   world_name: string
   parcels: string[]
-  entity: Entity
   deployer: string
   created_at: Date
   updated_at: Date
@@ -21,7 +23,6 @@ function toPendingScene(row: PendingSceneRow): PendingScene {
     entityId: row.entity_id,
     worldName: row.world_name,
     parcels: row.parcels,
-    entity: row.entity,
     deployer: row.deployer,
     createdAt: row.created_at,
     updatedAt: row.updated_at
@@ -38,7 +39,7 @@ export async function createPendingScenesManager(
   async function getByEntityId(entityId: string): Promise<PendingScene | undefined> {
     const cutoff = new Date(Date.now() - ttlMs)
     const result = await database.query<PendingSceneRow>(
-      SQL`SELECT entity_id, world_name, parcels, entity, deployer, created_at, updated_at
+      SQL`SELECT entity_id, world_name, parcels, deployer, created_at, updated_at
           FROM pending_scenes
           WHERE entity_id = ${entityId} AND created_at >= ${cutoff}
           LIMIT 1`
@@ -102,13 +103,24 @@ export async function createPendingScenesManager(
       // every resume batch and wedge those uploads until they expire, instead of only preventing new
       // ones. The count runs under the per-deployer lock taken above, so concurrent new uploads can't
       // race past the cap.
+      // One existence check drives both the cap decision AND insert-vs-update. It runs after the
+      // overlap-delete (which removed any expired self-row), all under the per-deployer + per-world
+      // locks, so it can't race a concurrent insert of the same entity id.
       const existing = await database.query(
         SQL`SELECT 1 FROM pending_scenes WHERE entity_id = ${input.entityId} LIMIT 1`
       )
-      if (existing.rowCount === 0) {
+      const isResume = existing.rowCount > 0
+
+      // Enforce the per-deployer concurrent-pending cap only when this upsert would CREATE a row. A
+      // resume never changes the deployer's row count, so it is exempt — otherwise lowering the cap
+      // below a deployer's current in-flight count would reject every resume batch and wedge those
+      // uploads until they expire, instead of only preventing new ones.
+      if (!isResume) {
+        // No self-row exists here (isResume is false), so every non-expired row of this deployer is an
+        // "other" upload; +1 accounts for the row this call is about to insert.
         const others = await database.query<{ count: string }>(SQL`
           SELECT COUNT(*) AS count FROM pending_scenes
-          WHERE deployer = ${deployer} AND created_at >= ${expiryCutoff} AND entity_id != ${input.entityId}
+          WHERE deployer = ${deployer} AND created_at >= ${expiryCutoff}
         `)
         if (parseInt(others.rows[0].count, 10) + 1 > limit.maxPendingPerDeployer) {
           throw new InvalidRequestError(
@@ -117,12 +129,20 @@ export async function createPendingScenesManager(
         }
       }
 
-      const result = await database.query<PendingSceneRow>(SQL`
-        INSERT INTO pending_scenes (entity_id, world_name, parcels, entity, deployer, created_at, updated_at)
-        VALUES (${input.entityId}, ${worldName}, ${input.parcels}::text[], ${input.entity}::jsonb, ${input.deployer.toLowerCase()}, now(), now())
-        ON CONFLICT (entity_id) DO UPDATE SET updated_at = now()
-        RETURNING entity_id, world_name, parcels, entity, deployer, created_at, updated_at
-      `)
+      // Resume: only bump updated_at (created_at, the TTL anchor, stays stable). Do NOT re-send the
+      // multi-MB entity JSONB — it is immutable for a content-addressed entity id and already stored.
+      // First batch: INSERT the full row including the manifest.
+      const result = isResume
+        ? await database.query<PendingSceneRow>(SQL`
+            UPDATE pending_scenes SET updated_at = now()
+            WHERE entity_id = ${input.entityId}
+            RETURNING entity_id, world_name, parcels, deployer, created_at, updated_at
+          `)
+        : await database.query<PendingSceneRow>(SQL`
+            INSERT INTO pending_scenes (entity_id, world_name, parcels, entity, deployer, created_at, updated_at)
+            VALUES (${input.entityId}, ${worldName}, ${input.parcels}::text[], ${input.entity}::jsonb, ${deployer}, now(), now())
+            RETURNING entity_id, world_name, parcels, deployer, created_at, updated_at
+          `)
       return toPendingScene(result.rows[0])
     })
   }

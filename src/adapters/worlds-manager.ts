@@ -317,18 +317,24 @@ export async function createWorldsManagerComponent({
           updated_at = ${new Date()}
       `)
 
-      // Soft-delete any existing deployed scenes on these parcels
+      // Soft-delete any existing deployed scenes on these parcels — but NOT this entity's own row.
+      // Excluding the self-row is what makes a concurrent re-deploy of an already-DEPLOYED entity
+      // collide on the (world_name, entity_id) primary key below (the idempotency signal the partial
+      // finalize relies on): without the exclusion this UPDATE would flip the winner's fresh row to
+      // UNDEPLOYED, the DELETE below would remove it, and a second finalize would deploy again —
+      // double-publishing the SNS event and double-counting the deployment.
       await database.query(SQL`
         UPDATE world_scenes SET status = 'UNDEPLOYED', updated_at = NOW()
         WHERE world_name = ${worldName.toLowerCase()}
         AND parcels && ${parcels}::text[]
         AND status = 'DEPLOYED'
+        AND entity_id != ${scene.id}
       `)
 
       // A previous undeploy of this same entity soft-deletes its row, which still owns the
       // (world_name, entity_id) primary key and would make the insert below fail forever for a
-      // redeploy. Remove it. A DEPLOYED self-row is deliberately left alone so a concurrent
-      // finalize of the same entity still hits the unique violation (its idempotency signal).
+      // redeploy. Remove it. A DEPLOYED self-row is deliberately left alone (the soft-delete above
+      // excludes it) so a concurrent finalize of the same entity still hits the unique violation.
       await database.query(SQL`
         DELETE FROM world_scenes
         WHERE world_name = ${worldName.toLowerCase()}

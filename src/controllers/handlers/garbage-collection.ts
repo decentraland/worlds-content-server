@@ -1,3 +1,4 @@
+import SQL from 'sql-template-strings'
 import { HandlerContextWithPath } from '../../types'
 import { IHttpServerComponent } from '@dcl/core-commons'
 
@@ -10,6 +11,27 @@ export async function garbageCollectionHandler(
 ): Promise<IHttpServerComponent.IResponse> {
   const { database, logs, pendingScenesManager, storage } = context.components
   const logger = logs.getLogger('garbage-collection')
+
+  // Keys (entity file, its auth blob, and referenced content hashes) of world_scenes rows deployed/
+  // touched at or after `since`. The activeKeys snapshot is taken once at the start of the sweep; a
+  // partial upload that FINALIZES mid-sweep moves its protection from pending_scenes (row deleted at
+  // finalize) into world_scenes (a row the snapshot predates), so without this the just-deployed
+  // scene's reused content could be reclaimed. Bounded by `updated_at >= since` so it only scans the
+  // few scenes deployed during this sweep, not the whole table.
+  async function getKeysDeployedSince(since: Date): Promise<Set<string>> {
+    const result = await database.query<{ entity_id: string; entity: { content?: Array<{ hash: string }> } }>(
+      SQL`SELECT entity_id, entity FROM world_scenes WHERE entity IS NOT NULL AND updated_at >= ${since}`
+    )
+    const keys = new Set<string>()
+    for (const row of result.rows) {
+      keys.add(row.entity_id)
+      keys.add(`${row.entity_id}.auth`)
+      for (const file of row.entity.content ?? []) {
+        keys.add(file.hash)
+      }
+    }
+    return keys
+  }
 
   async function getAllActiveKeys() {
     const start = Date.now()
@@ -58,6 +80,10 @@ export async function garbageCollectionHandler(
 
   logger.info('Starting garbage collection...')
 
+  // Anchor the mid-sweep world_scenes re-check strictly BEFORE the activeKeys snapshot (minus a margin
+  // for app/DB clock skew), so any scene finalized during the sweep is caught by getKeysDeployedSince.
+  const sweepStart = new Date(Date.now() - 60_000)
+
   const activeKeys = await getAllActiveKeys()
 
   logger.info('Getting keys from storage that are not currently active...')
@@ -65,14 +91,17 @@ export async function garbageCollectionHandler(
   let totalRemovedKeys = 0
   const batch = new Set<string>()
 
-  // Re-check right before deleting: the activeKeys snapshot was taken once, but partial uploads
-  // stage content across a long window and one can START mid-sweep (its pending row is written just
-  // before its content). Subtracting the CURRENT pending keys from each batch keeps a freshly-staged
-  // upload's content from being reclaimed while the sweep is in flight. pending_scenes is tiny, so
-  // this re-query per batch is cheap.
+  // Re-check right before deleting: the activeKeys snapshot was taken once, but a partial upload can
+  // START (its pending row) or FINALIZE (a new world_scenes row) mid-sweep. Subtract both the current
+  // pending keys and the keys of scenes deployed since the sweep began, so neither a freshly-staged nor
+  // a just-finalized upload's content is reclaimed in flight. Both sets are small (pending_scenes is
+  // tiny; the deployed-since set is bounded by updated_at), so the per-batch re-query is cheap.
   const deleteBatch = async (keys: Set<string>): Promise<void> => {
-    const pendingNow = await pendingScenesManager.getActivePendingKeys()
-    const toDelete = [...keys].filter((key) => !pendingNow.has(key))
+    const [pendingNow, deployedSinceStart] = await Promise.all([
+      pendingScenesManager.getActivePendingKeys(),
+      getKeysDeployedSince(sweepStart)
+    ])
+    const toDelete = [...keys].filter((key) => !pendingNow.has(key) && !deployedSinceStart.has(key))
     if (toDelete.length === 0) {
       return
     }

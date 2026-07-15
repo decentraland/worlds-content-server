@@ -75,11 +75,14 @@ export async function createPartialDeploymentsComponent(
     const { baseUrl, entity, entityRaw, authChain, files } = input
     const contentHashes = Array.from(new Set((entity.content ?? []).map((c) => c.hash)))
 
-    const pending = await pendingScenesManager.getByEntityId(entity.id)
-
-    // Single storage metadata lookup over the referenced content: presence is `info !== undefined`
-    // and size is `info.size`, so this subsumes a separate existence probe.
-    const storedInfo = await storage.fileInfoMultiple(contentHashes)
+    // These two lookups are independent (the pending row vs. the content metadata), so run them
+    // concurrently — one is a DB round-trip, the other a batched storage HEAD. The single metadata
+    // lookup also subsumes a separate existence probe: presence is `info !== undefined`, size is
+    // `info.size`.
+    const [pending, storedInfo] = await Promise.all([
+      pendingScenesManager.getByEntityId(entity.id),
+      storage.fileInfoMultiple(contentHashes)
+    ])
     const contentHashesInStorage = new Map(contentHashes.map((hash) => [hash, storedInfo.get(hash) !== undefined]))
 
     // Content-independent validations (structure, signature, scene rules, permission), anchoring the
@@ -176,15 +179,15 @@ export async function createPartialDeploymentsComponent(
 
       // No pre-write newer-deployment re-check here: deployScene enforces deployment ordering atomically
       // under a per-world lock (rejecting an older deploy that would overwrite a newer scene), so a
-      // separate check would be both racy and redundant. The early assertNoNewerDeployment above is kept
-      // only as a fast-fail for new uploads.
+      // separate check would be both racy and redundant. The early hasNewerDeployedScene check above is
+      // kept only as a fast-fail for new uploads.
 
       // Re-verify content presence immediately before the deploy commits. The completeness check above
       // ran before the (slow) full validation, and a garbage-collection sweep could have reclaimed a
       // reused, already-stored file in that window (the pending row protects content, but a GC batch
       // whose snapshot predates this row would not see it). Committing a scene that references deleted
-      // content would corrupt it, so if anything is missing now, release the lease and return incomplete
-      // so the client re-uploads — shrinking the DB-row-vs-object-storage window to check-to-commit.
+      // content would corrupt it, so if anything is missing now, return incomplete (the pending row
+      // stays, so the client re-uploads) — shrinking the DB-row-vs-object-storage window to check-to-commit.
       const stillPresent = await storage.existMultiple(contentHashes)
       const nowMissing = contentHashes.filter((hash) => !stillPresent.get(hash))
       if (nowMissing.length > 0) {

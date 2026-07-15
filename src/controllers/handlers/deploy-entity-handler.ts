@@ -1,4 +1,5 @@
 import { Entity } from '@dcl/schemas'
+import { Authenticator } from '@dcl/crypto'
 import { IHttpServerComponent } from '@dcl/core-commons'
 import { bufferToStream } from '@dcl/catalyst-storage'
 import { FormDataContext, toDeploymentFile } from '../../logic/multipart'
@@ -63,17 +64,20 @@ export async function deployEntity(
     ? toDeploymentFile(ctx.formData.files[entityId])
     : undefined
   if (!entityFile && isPartial) {
-    // Resume request: read the entity back from storage. Check its size FIRST — the resume body is tiny
-    // so this read isn't covered by the multipart in-flight budget; buffering a large stored entity
-    // (across many concurrent resumes) would otherwise exhaust memory.
-    const storedInfo = (await ctx.components.storage.fileInfoMultiple([entityId])).get(entityId)
-    if (storedInfo && storedInfo.size !== null && storedInfo.size > MAX_ENTITY_FILE_SIZE_BYTES) {
-      throw new InvalidRequestError(`The stored entity file "${entityId}" is too large (${storedInfo.size} bytes).`)
+    // Resume request: read the entity back from storage for an entity id the CLIENT supplied. Verify the
+    // request is validly signed for that entity id BEFORE the read — the resume body is tiny so this read
+    // is not covered by the multipart in-flight-bytes budget, and without this gate an unauthenticated
+    // caller could make us retrieve and buffer up to MAX_ENTITY_FILE_SIZE_BYTES of storage per request
+    // (memory + egress amplification). The full permission check still runs later in validateStaging;
+    // this is only the cheap, local signature check (no provider), matching validateSignature.
+    const signatureResult = await Authenticator.validateSignature(entityId, authChain, null, Date.now())
+    if (!signatureResult.ok) {
+      throw new InvalidRequestError(`Invalid auth chain: ${signatureResult.message}`)
     }
     const stored = await ctx.components.storage.retrieve(entityId)
     if (stored) {
-      // The metadata check above is only a cheap fast path — storage can report size as null — so the
-      // capped read below is what actually enforces the limit.
+      // streamToBufferCapped aborts past the cap while reading, so storage reporting size as null (the
+      // metadata is not trustworthy for enforcement) can't let an oversized blob through.
       const buf = await streamToBufferCapped(await stored.asStream(), MAX_ENTITY_FILE_SIZE_BYTES)
       entityFile = { size: buf.length, getStream: () => bufferToStream(buf), asBuffer: async () => buf }
     }
@@ -85,7 +89,11 @@ export async function deployEntity(
         : `Entity file "${entityId}" is missing from the request.`
     )
   }
-  if (entityFile.size > MAX_ENTITY_FILE_SIZE_BYTES) {
+  // Cap the manifest size only on the partial path. Its purpose is to bound the storage read-back and
+  // the first partial request's buffered manifest so a multi-request upload can't be wedged (resume caps
+  // the same way); the vanilla single-request path is already bounded by the multipart in-flight budget,
+  // so applying the cap there would wrongly reject a large-but-legitimate manifest that deployed before.
+  if (isPartial && entityFile.size > MAX_ENTITY_FILE_SIZE_BYTES) {
     throw new InvalidRequestError(`The entity file "${entityId}" is too large (${entityFile.size} bytes).`)
   }
 
