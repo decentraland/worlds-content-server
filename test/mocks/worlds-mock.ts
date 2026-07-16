@@ -9,6 +9,7 @@ export const createMockWorlds = (overrides?: Partial<jest.Mocked<IWorldsComponen
     getWorldManifest: jest.fn(),
     undeployWorld: jest.fn(),
     undeployWorldScenes: jest.fn(),
+    undeployOtherWorldScenes: jest.fn(),
     getWorldSceneBaseParcelIncludingUndeployed: jest.fn(),
     evictUndeployedWorlds: jest.fn(),
     ...overrides

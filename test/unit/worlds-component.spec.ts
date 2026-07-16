@@ -494,6 +494,104 @@ describe('WorldsComponent', () => {
     })
   })
 
+  describe('when undeploying all other scenes in a world (single-scene deploy)', () => {
+    const makeScene = (entityId: string, parcels: string[]) => ({
+      worldName: 'test-world',
+      entityId,
+      deployer: '0x1234',
+      deploymentAuthChain: [],
+      entity: {
+        id: entityId,
+        version: 'v3',
+        type: EntityType.SCENE,
+        pointers: parcels,
+        timestamp: Date.now(),
+        content: []
+      },
+      parcels,
+      size: BigInt(1000),
+      status: SceneDeploymentStatus.Deployed,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    })
+
+    describe('and the world has other scenes besides the kept one', () => {
+      beforeEach(() => {
+        worldsManager.getWorldScenes
+          // 1) undeployOtherWorldScenes lists every scene currently in the world
+          .mockResolvedValueOnce({
+            scenes: [makeScene('kept', ['0,0']), makeScene('other-1', ['5,5']), makeScene('other-2', ['10,10'])],
+            total: 3
+          })
+          // 2) undeployWorldScenes re-queries the affected (other) scenes for the event payload
+          .mockResolvedValueOnce({
+            scenes: [makeScene('other-1', ['5,5']), makeScene('other-2', ['10,10'])],
+            total: 2
+          })
+        worldsManager.undeployScene.mockResolvedValue(undefined)
+        snsClient.publishMessages.mockResolvedValue({
+          Successful: [{ Id: 'id', MessageId: 'msg-id', SequenceNumber: '1' }],
+          Failed: [],
+          $metadata: {}
+        } as any)
+      })
+
+      it('should undeploy every scene except the one at the kept base parcel', async () => {
+        await worldsComponent.undeployOtherWorldScenes('test-world', '0,0')
+
+        expect(worldsManager.undeployScene).toHaveBeenCalledWith('test-world', ['5,5', '10,10'])
+      })
+
+      it('should publish a WorldScenesUndeploymentEvent for the removed scenes only', async () => {
+        await worldsComponent.undeployOtherWorldScenes('test-world', '0,0')
+
+        expect(snsClient.publishMessages).toHaveBeenCalledWith([
+          expect.objectContaining({
+            type: Events.Type.WORLD,
+            subType: Events.SubType.Worlds.WORLD_SCENES_UNDEPLOYMENT,
+            key: 'test-world',
+            metadata: {
+              worldName: 'test-world',
+              scenes: [
+                { entityId: 'other-1', baseParcel: '5,5' },
+                { entityId: 'other-2', baseParcel: '10,10' }
+              ]
+            }
+          })
+        ])
+      })
+
+      it('should never publish a WorldUndeploymentEvent (the place must be preserved)', async () => {
+        await worldsComponent.undeployOtherWorldScenes('test-world', '0,0')
+
+        const published = snsClient.publishMessages.mock.calls.flatMap((call) => call[0] as any[])
+        expect(published.every((event) => event.subType !== Events.SubType.Worlds.WORLD_UNDEPLOYMENT)).toBe(true)
+      })
+    })
+
+    describe('and the kept scene is the only scene in the world', () => {
+      beforeEach(() => {
+        worldsManager.getWorldScenes.mockResolvedValueOnce({
+          scenes: [makeScene('kept', ['0,0'])],
+          total: 1
+        })
+        worldsManager.undeployScene.mockResolvedValue(undefined)
+      })
+
+      it('should not undeploy anything', async () => {
+        await worldsComponent.undeployOtherWorldScenes('test-world', '0,0')
+
+        expect(worldsManager.undeployScene).not.toHaveBeenCalled()
+      })
+
+      it('should not publish any event', async () => {
+        await worldsComponent.undeployOtherWorldScenes('test-world', '0,0')
+
+        expect(snsClient.publishMessages).not.toHaveBeenCalled()
+      })
+    })
+  })
+
   describe('when getting the base parcel of a scene including undeployed', () => {
     describe('and the scene exists', () => {
       beforeEach(() => {

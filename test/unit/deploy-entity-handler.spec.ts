@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'fs'
 import os from 'os'
 import path from 'path'
 import { deployEntity } from '../../src/controllers/handlers/deploy-entity-handler'
-import { InvalidRequestError } from '@dcl/http-commons'
+import { InvalidRequestError, NotAuthorizedError } from '@dcl/http-commons'
 
 type DeployContext = Parameters<typeof deployEntity>[0]
 
@@ -91,6 +91,91 @@ describe('deployEntity', () => {
 
       expect(error).toBeInstanceOf(InvalidRequestError)
       expect(error.message).toBe('The entity file is not valid JSON.')
+    })
+  })
+
+  describe('when deploying a world scene with ?singleWorldScene=true', () => {
+    const worldEntityJson = JSON.stringify({
+      type: 'scene',
+      pointers: ['0,0'],
+      timestamp: 1,
+      content: [],
+      metadata: {
+        worldConfiguration: { name: 'test-world' },
+        scene: { base: '0,0', parcels: ['0,0'] }
+      }
+    })
+
+    // Builds a full deploy context that reaches the singleWorldScene branch: validation passes, the
+    // entity deploys, and the permission checks resolve per the given options.
+    function createSingleSceneContext(opts: { isOwner: boolean; hasWorldWide: boolean; singleWorldScene?: boolean }) {
+      const deployEntityFn = jest.fn().mockResolvedValue({})
+      const undeployOtherWorldScenes = jest.fn().mockResolvedValue(undefined)
+      const base = createContext(entityId, { [entityId]: makeFile(Buffer.from(worldEntityJson)) })
+      const searchParams = new URLSearchParams((opts.singleWorldScene ?? true) ? 'singleWorldScene=true' : '')
+
+      const context = {
+        ...base,
+        url: { host: 'localhost', searchParams },
+        components: {
+          config: { getString: jest.fn().mockResolvedValue('https://worlds-content-server.decentraland.org') },
+          logs: {
+            getLogger: () => ({ warn: jest.fn(), info: jest.fn(), error: jest.fn(), debug: jest.fn(), log: jest.fn() })
+          },
+          storage: { existMultiple: jest.fn().mockResolvedValue({}) },
+          validator: { validate: jest.fn().mockResolvedValue({ ok: () => true, errors: [] }) },
+          entityDeployer: { deployEntity: deployEntityFn },
+          namePermissionChecker: { checkPermission: jest.fn().mockResolvedValue(opts.isOwner) },
+          permissions: { hasWorldWidePermission: jest.fn().mockResolvedValue(opts.hasWorldWide) },
+          worlds: { undeployOtherWorldScenes }
+        }
+      } as unknown as DeployContext
+
+      return { context, deployEntityFn, undeployOtherWorldScenes }
+    }
+
+    describe('and the deployer owns the world', () => {
+      it('should deploy the scene and then undeploy every other scene, keeping the deployed base parcel', async () => {
+        const { context, deployEntityFn, undeployOtherWorldScenes } = createSingleSceneContext({
+          isOwner: true,
+          hasWorldWide: false
+        })
+
+        await deployEntity(context)
+
+        expect(deployEntityFn).toHaveBeenCalledTimes(1)
+        expect(undeployOtherWorldScenes).toHaveBeenCalledWith('test-world', '0,0')
+      })
+    })
+
+    describe('and the deployer has only per-parcel permission (not owner, not world-wide)', () => {
+      it('should reject with NotAuthorizedError before deploying', async () => {
+        const { context, deployEntityFn, undeployOtherWorldScenes } = createSingleSceneContext({
+          isOwner: false,
+          hasWorldWide: false
+        })
+
+        const error = await deployEntity(context).catch((e) => e)
+
+        expect(error).toBeInstanceOf(NotAuthorizedError)
+        expect(deployEntityFn).not.toHaveBeenCalled()
+        expect(undeployOtherWorldScenes).not.toHaveBeenCalled()
+      })
+    })
+
+    describe('and the flag is not set (normal deploy)', () => {
+      it('should not undeploy any other scenes', async () => {
+        const { context, deployEntityFn, undeployOtherWorldScenes } = createSingleSceneContext({
+          isOwner: true,
+          hasWorldWide: false,
+          singleWorldScene: false
+        })
+
+        await deployEntity(context)
+
+        expect(deployEntityFn).toHaveBeenCalledTimes(1)
+        expect(undeployOtherWorldScenes).not.toHaveBeenCalled()
+      })
     })
   })
 })

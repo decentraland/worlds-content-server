@@ -59,6 +59,18 @@ export interface IWorldsComponent {
   undeployWorldScenes(worldName: string, parcels: string[]): Promise<void>
 
   /**
+   * Undeploys every scene in the world EXCEPT the one at `keepBaseParcel`.
+   *
+   * Publishes a WorldScenesUndeploymentEvent for the removed scenes (never a WorldUndeploymentEvent),
+   * so the world's place — and any env variables bound to its placeId — are preserved. Used by
+   * single-scene deploys that replace the whole world with one scene without tearing the place down.
+   *
+   * @param worldName - The name of the world
+   * @param keepBaseParcel - The base parcel of the scene to keep (typically the just-deployed one)
+   */
+  undeployOtherWorldScenes(worldName: string, keepBaseParcel: string): Promise<void>
+
+  /**
    * Gets the base parcel of a scene in a world by its entity ID, including undeployed scenes
    *
    * @param worldName - The name of the world

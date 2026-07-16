@@ -208,6 +208,27 @@ export const createWorldsComponent = (
     await recheckBlockedOwner(blockedOwner)
   }
 
+  /**
+   * Undeploys every scene in the world except the one at `keepBaseParcel`.
+   *
+   * Delegates to undeployWorldScenes (which publishes a WorldScenesUndeploymentEvent — never a
+   * WorldUndeploymentEvent), so the world's place is only "some scenes removed", never "world gone".
+   * The kept scene's place stays enabled and keeps its placeId, so env variables bound to it survive.
+   *
+   * @param worldName - The name of the world
+   * @param keepBaseParcel - The base parcel of the scene to keep (typically the just-deployed one)
+   */
+  async function undeployOtherWorldScenes(worldName: string, keepBaseParcel: string): Promise<void> {
+    const { scenes } = await worldsManager.getWorldScenes({ worldName })
+    const otherBaseParcels = scenes
+      .map((scene) => scene.parcels[0])
+      .filter((baseParcel) => baseParcel !== keepBaseParcel)
+
+    if (otherBaseParcels.length > 0) {
+      await undeployWorldScenes(worldName, otherBaseParcels)
+    }
+  }
+
   async function getWorldSceneBaseParcelIncludingUndeployed(
     worldName: string,
     sceneId: string
@@ -231,6 +252,7 @@ export const createWorldsComponent = (
     getWorldManifest,
     undeployWorld,
     undeployWorldScenes,
+    undeployOtherWorldScenes,
     getWorldSceneBaseParcelIncludingUndeployed,
     evictUndeployedWorlds
   }
