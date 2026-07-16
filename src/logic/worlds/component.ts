@@ -1,6 +1,18 @@
 import { Events, WorldScenesUndeploymentEvent, WorldUndeploymentEvent } from '@dcl/schemas'
-import { AppComponents, TWO_DAYS_IN_MS, WorldManifest } from '../../types'
+import { AppComponents, TWO_DAYS_IN_MS, WorldManifest, WorldScene } from '../../types'
 import { IWorldsComponent } from './types'
+
+/**
+ * The scene's DECLARED base parcel (metadata.scene.base) — the value both the Places service
+ * (place base_position) and the comms-gatekeeper scene-ban lookup key scene identity on. Falls back
+ * to parcels[0] only when the stored entity lacks a valid (non-empty string) base. Using parcels[0]
+ * directly is wrong when the base isn't the first parcel in the array: it points at a different
+ * scene identity, so places/ban lookups keyed on the base would miss.
+ */
+function declaredBaseParcel(scene: WorldScene): string {
+  const base = scene.entity.metadata?.scene?.base
+  return typeof base === 'string' && base.length > 0 ? base : scene.parcels[0]
+}
 
 /**
  * Creates the Worlds component
@@ -78,7 +90,7 @@ export const createWorldsComponent = (
    */
   async function getWorldSceneBaseParcel(worldName: string, sceneId: string): Promise<string | undefined> {
     const { scenes } = await worldsManager.getWorldScenes({ worldName, entityId: sceneId }, { limit: 1 })
-    return scenes.length > 0 ? scenes[0].parcels[0] : undefined
+    return scenes.length > 0 ? declaredBaseParcel(scenes[0]) : undefined
   }
 
   /**
@@ -197,12 +209,10 @@ export const createWorldsComponent = (
           worldName,
           scenes: scenes.map((scene) => ({
             entityId: scene.entityId,
-            // Emit the scene's DECLARED base parcel (metadata.scene.base) — the value the Places
-            // service keys its place records on — not parcels[0]. The two differ when the base is
-            // not the first entry of the parcels array; using parcels[0] there would not match the
-            // place, so the undeployment would fail to disable it. Fall back to parcels[0] only if
-            // the stored entity somehow lacks scene.base.
-            baseParcel: scene.entity.metadata?.scene?.base ?? scene.parcels[0]
+            // Emit the scene's DECLARED base parcel (see declaredBaseParcel) — the value Places keys
+            // its place records on — not parcels[0]; otherwise the undeployment would fail to disable
+            // the place for scenes whose base isn't the first parcel.
+            baseParcel: declaredBaseParcel(scene)
           }))
         }
       }
@@ -221,7 +231,7 @@ export const createWorldsComponent = (
       { worldName, entityId: sceneId, includeUndeployed: true },
       { limit: 1 }
     )
-    return scenes.length > 0 ? scenes[0].parcels[0] : undefined
+    return scenes.length > 0 ? declaredBaseParcel(scenes[0]) : undefined
   }
 
   async function evictUndeployedWorlds(olderThanMs: number): Promise<number> {

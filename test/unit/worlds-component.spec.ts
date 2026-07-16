@@ -545,6 +545,89 @@ describe('WorldsComponent', () => {
     })
   })
 
+  describe('when undeploying a scene whose stored base is missing or malformed', () => {
+    beforeEach(() => {
+      worldsManager.getWorldScenes.mockResolvedValueOnce({
+        scenes: [
+          {
+            worldName: 'test-world',
+            entityId: 'entity-y',
+            deployer: '0x1234',
+            deploymentAuthChain: [],
+            entity: {
+              id: 'entity-y',
+              version: 'v3',
+              type: EntityType.SCENE,
+              pointers: ['2,2', '1,1'],
+              timestamp: Date.now(),
+              content: [],
+              metadata: { scene: { base: '', parcels: ['2,2', '1,1'] } } // empty/invalid base
+            } as any,
+            parcels: ['2,2', '1,1'],
+            size: BigInt(1000),
+            status: SceneDeploymentStatus.Deployed,
+            createdAt: new Date(),
+            updatedAt: new Date()
+          }
+        ],
+        total: 1
+      })
+      worldsManager.undeployScene.mockResolvedValue(undefined)
+      snsClient.publishMessages.mockResolvedValue({
+        Successful: [{ Id: 'id', MessageId: 'msg-id', SequenceNumber: '1' }],
+        Failed: [],
+        $metadata: {}
+      } as any)
+    })
+
+    it('should fall back to parcels[0] as baseParcel', async () => {
+      await worldsComponent.undeployWorldScenes('test-world', ['2,2'])
+
+      expect(snsClient.publishMessages).toHaveBeenCalledWith([
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            scenes: [{ entityId: 'entity-y', baseParcel: '2,2' }]
+          })
+        })
+      ])
+    })
+  })
+
+  describe('when getting the base parcel of a scene whose declared base is not the first parcel', () => {
+    beforeEach(() => {
+      worldsManager.getWorldScenes.mockResolvedValueOnce({
+        scenes: [
+          {
+            worldName: 'test-world',
+            entityId: 'scene-123',
+            deployer: '0x1234',
+            deploymentAuthChain: [],
+            entity: {
+              id: 'scene-123',
+              version: 'v3',
+              type: EntityType.SCENE,
+              pointers: ['2,2', '1,1'],
+              timestamp: Date.now(),
+              content: [],
+              metadata: { scene: { base: '1,1', parcels: ['2,2', '1,1'] } }
+            } as any,
+            parcels: ['2,2', '1,1'],
+            size: BigInt(1000),
+            status: SceneDeploymentStatus.Deployed,
+            createdAt: new Date(),
+            updatedAt: new Date()
+          }
+        ],
+        total: 1
+      })
+    })
+
+    it('should return the declared scene.base, not parcels[0]', async () => {
+      const result = await worldsComponent.getWorldSceneBaseParcelIncludingUndeployed('test-world', 'scene-123')
+      expect(result).toBe('1,1')
+    })
+  })
+
   describe('when getting the base parcel of a scene including undeployed', () => {
     describe('and the scene exists', () => {
       beforeEach(() => {
