@@ -108,10 +108,16 @@ describe('deployEntity', () => {
 
     // Builds a full deploy context that reaches the singleWorldScene branch: validation passes, the
     // entity deploys, and the permission checks resolve per the given options.
-    function createSingleSceneContext(opts: { isOwner: boolean; hasWorldWide: boolean; singleWorldScene?: boolean }) {
+    function createSingleSceneContext(opts: {
+      isOwner: boolean
+      hasWorldWide: boolean
+      singleWorldScene?: boolean
+      entityJson?: string
+    }) {
       const deployEntityFn = jest.fn().mockResolvedValue({})
       const undeployOtherWorldScenes = jest.fn().mockResolvedValue(undefined)
-      const base = createContext(entityId, { [entityId]: makeFile(Buffer.from(worldEntityJson)) })
+      const checkPermission = jest.fn().mockResolvedValue(opts.isOwner)
+      const base = createContext(entityId, { [entityId]: makeFile(Buffer.from(opts.entityJson ?? worldEntityJson)) })
       const searchParams = new URLSearchParams((opts.singleWorldScene ?? true) ? 'single_world_scene=true' : '')
 
       const context = {
@@ -125,13 +131,13 @@ describe('deployEntity', () => {
           storage: { existMultiple: jest.fn().mockResolvedValue({}) },
           validator: { validate: jest.fn().mockResolvedValue({ ok: () => true, errors: [] }) },
           entityDeployer: { deployEntity: deployEntityFn },
-          namePermissionChecker: { checkPermission: jest.fn().mockResolvedValue(opts.isOwner) },
+          namePermissionChecker: { checkPermission },
           permissions: { hasWorldWidePermission: jest.fn().mockResolvedValue(opts.hasWorldWide) },
           worlds: { undeployOtherWorldScenes }
         }
       } as unknown as DeployContext
 
-      return { context, deployEntityFn, undeployOtherWorldScenes }
+      return { context, deployEntityFn, undeployOtherWorldScenes, checkPermission }
     }
 
     describe('and the deployer owns the world', () => {
@@ -174,6 +180,30 @@ describe('deployEntity', () => {
         await deployEntity(context)
 
         expect(deployEntityFn).toHaveBeenCalledTimes(1)
+        expect(undeployOtherWorldScenes).not.toHaveBeenCalled()
+      })
+    })
+
+    describe('and it is not a world deploy (Genesis City, no worldConfiguration)', () => {
+      const genesisEntityJson = JSON.stringify({
+        type: 'scene',
+        pointers: ['10,20'],
+        timestamp: 1,
+        content: [],
+        metadata: { scene: { base: '10,20', parcels: ['10,20'] } }
+      })
+
+      it('should ignore the flag: deploy normally, with no authorization check or cleanup', async () => {
+        const { context, deployEntityFn, undeployOtherWorldScenes, checkPermission } = createSingleSceneContext({
+          isOwner: true,
+          hasWorldWide: false,
+          entityJson: genesisEntityJson
+        })
+
+        await deployEntity(context)
+
+        expect(deployEntityFn).toHaveBeenCalledTimes(1)
+        expect(checkPermission).not.toHaveBeenCalled()
         expect(undeployOtherWorldScenes).not.toHaveBeenCalled()
       })
     })
