@@ -81,7 +81,6 @@ export async function deployEntity(
   // grantee cannot wipe scenes outside its grant.
   const singleWorldScene = ctx.url.searchParams.get('single_world_scene') === 'true'
   const worldName: string | undefined = entity.metadata?.worldConfiguration?.name
-  const baseParcel: string | undefined = entity.metadata?.scene?.base ?? entity.pointers?.[0]
   if (singleWorldScene && worldName) {
     const deployer = Authenticator.ownerAddress(authChain)
     const isOwner = await ctx.components.namePermissionChecker.checkPermission(deployer, worldName)
@@ -109,9 +108,9 @@ export async function deployEntity(
   // this one remains. Best-effort — the deploy is already committed, and because this publishes a
   // WorldScenesUndeploymentEvent (never a WorldUndeploymentEvent) the world's place is preserved
   // regardless, so a failure here just leaves stale scenes; it must not turn a successful deploy into a 5xx.
-  if (singleWorldScene && worldName && baseParcel) {
+  if (singleWorldScene && worldName) {
     try {
-      await ctx.components.worlds.undeployOtherWorldScenes(worldName, baseParcel)
+      await ctx.components.worlds.undeployOtherWorldScenes(worldName, entityId)
     } catch (error) {
       ctx.components.logs
         .getLogger('deploy-entity')

@@ -135,7 +135,7 @@ describe('deployEntity', () => {
     }
 
     describe('and the deployer owns the world', () => {
-      it('should deploy the scene and then undeploy every other scene, keeping the deployed base parcel', async () => {
+      it('should deploy the scene and then undeploy every other scene, keeping the deployed scene by entity id', async () => {
         const { context, deployEntityFn, undeployOtherWorldScenes } = createSingleSceneContext({
           isOwner: true,
           hasWorldWide: false
@@ -144,7 +144,7 @@ describe('deployEntity', () => {
         await deployEntity(context)
 
         expect(deployEntityFn).toHaveBeenCalledTimes(1)
-        expect(undeployOtherWorldScenes).toHaveBeenCalledWith('test-world', '0,0')
+        expect(undeployOtherWorldScenes).toHaveBeenCalledWith('test-world', entityId)
       })
     })
 

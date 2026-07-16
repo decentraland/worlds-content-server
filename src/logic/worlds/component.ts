@@ -209,20 +209,20 @@ export const createWorldsComponent = (
   }
 
   /**
-   * Undeploys every scene in the world except the one at `keepBaseParcel`.
+   * Undeploys every scene in the world except the one with `keepEntityId`.
    *
-   * Delegates to undeployWorldScenes (which publishes a WorldScenesUndeploymentEvent — never a
-   * WorldUndeploymentEvent), so the world's place is only "some scenes removed", never "world gone".
-   * The kept scene's place stays enabled and keeps its placeId, so env variables bound to it survive.
+   * The kept scene is identified by its entity id (the just-deployed one) rather than by base parcel,
+   * so it doesn't depend on how the base parcel is derived from the scene metadata. Delegates to
+   * undeployWorldScenes (which publishes a WorldScenesUndeploymentEvent — never a WorldUndeploymentEvent),
+   * so the world's place is only "some scenes removed", never "world gone". The kept scene's place stays
+   * enabled and keeps its placeId, so env variables bound to it survive.
    *
    * @param worldName - The name of the world
-   * @param keepBaseParcel - The base parcel of the scene to keep (typically the just-deployed one)
+   * @param keepEntityId - The entity id of the scene to keep (the just-deployed one)
    */
-  async function undeployOtherWorldScenes(worldName: string, keepBaseParcel: string): Promise<void> {
+  async function undeployOtherWorldScenes(worldName: string, keepEntityId: string): Promise<void> {
     const { scenes } = await worldsManager.getWorldScenes({ worldName })
-    const otherBaseParcels = scenes
-      .map((scene) => scene.parcels[0])
-      .filter((baseParcel) => baseParcel !== keepBaseParcel)
+    const otherBaseParcels = scenes.filter((scene) => scene.entityId !== keepEntityId).map((scene) => scene.parcels[0])
 
     if (otherBaseParcels.length > 0) {
       await undeployWorldScenes(worldName, otherBaseParcels)

@@ -537,13 +537,13 @@ describe('WorldsComponent', () => {
       })
 
       it('should undeploy every scene except the one at the kept base parcel', async () => {
-        await worldsComponent.undeployOtherWorldScenes('test-world', '0,0')
+        await worldsComponent.undeployOtherWorldScenes('test-world', 'kept')
 
         expect(worldsManager.undeployScene).toHaveBeenCalledWith('test-world', ['5,5', '10,10'])
       })
 
       it('should publish a WorldScenesUndeploymentEvent for the removed scenes only', async () => {
-        await worldsComponent.undeployOtherWorldScenes('test-world', '0,0')
+        await worldsComponent.undeployOtherWorldScenes('test-world', 'kept')
 
         expect(snsClient.publishMessages).toHaveBeenCalledWith([
           expect.objectContaining({
@@ -562,7 +562,7 @@ describe('WorldsComponent', () => {
       })
 
       it('should never publish a WorldUndeploymentEvent (the place must be preserved)', async () => {
-        await worldsComponent.undeployOtherWorldScenes('test-world', '0,0')
+        await worldsComponent.undeployOtherWorldScenes('test-world', 'kept')
 
         const published = snsClient.publishMessages.mock.calls.flatMap((call) => call[0] as any[])
         expect(published.every((event) => event.subType !== Events.SubType.Worlds.WORLD_UNDEPLOYMENT)).toBe(true)
@@ -579,13 +579,13 @@ describe('WorldsComponent', () => {
       })
 
       it('should not undeploy anything', async () => {
-        await worldsComponent.undeployOtherWorldScenes('test-world', '0,0')
+        await worldsComponent.undeployOtherWorldScenes('test-world', 'kept')
 
         expect(worldsManager.undeployScene).not.toHaveBeenCalled()
       })
 
       it('should not publish any event', async () => {
-        await worldsComponent.undeployOtherWorldScenes('test-world', '0,0')
+        await worldsComponent.undeployOtherWorldScenes('test-world', 'kept')
 
         expect(snsClient.publishMessages).not.toHaveBeenCalled()
       })
