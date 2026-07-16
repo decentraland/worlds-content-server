@@ -94,7 +94,7 @@ describe('deployEntity', () => {
     })
   })
 
-  describe('when deploying a world scene with ?singleWorldScene=true', () => {
+  describe('when deploying a world scene with ?single_world_scene=true', () => {
     const worldEntityJson = JSON.stringify({
       type: 'scene',
       pointers: ['0,0'],
@@ -112,7 +112,7 @@ describe('deployEntity', () => {
       const deployEntityFn = jest.fn().mockResolvedValue({})
       const undeployOtherWorldScenes = jest.fn().mockResolvedValue(undefined)
       const base = createContext(entityId, { [entityId]: makeFile(Buffer.from(worldEntityJson)) })
-      const searchParams = new URLSearchParams((opts.singleWorldScene ?? true) ? 'singleWorldScene=true' : '')
+      const searchParams = new URLSearchParams((opts.singleWorldScene ?? true) ? 'single_world_scene=true' : '')
 
       const context = {
         ...base,

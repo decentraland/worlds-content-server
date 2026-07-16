@@ -79,7 +79,7 @@ export async function deployEntity(
   // not just those parcels. Gate it up front (fail fast, before the deploy commits) on world ownership
   // or world-wide deployment permission, mirroring the world-wide undeploy endpoint, so a per-parcel
   // grantee cannot wipe scenes outside its grant.
-  const singleWorldScene = ctx.url.searchParams.get('singleWorldScene') === 'true'
+  const singleWorldScene = ctx.url.searchParams.get('single_world_scene') === 'true'
   const worldName: string | undefined = entity.metadata?.worldConfiguration?.name
   const baseParcel: string | undefined = entity.metadata?.scene?.base ?? entity.pointers?.[0]
   if (singleWorldScene && worldName) {
