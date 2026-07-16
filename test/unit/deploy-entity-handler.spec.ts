@@ -207,5 +207,35 @@ describe('deployEntity', () => {
         expect(undeployOtherWorldScenes).not.toHaveBeenCalled()
       })
     })
+
+    describe('and the deployer is not the owner but has world-wide deployment permission', () => {
+      it('should deploy the scene and undeploy the other scenes', async () => {
+        const { context, deployEntityFn, undeployOtherWorldScenes } = createSingleSceneContext({
+          isOwner: false,
+          hasWorldWide: true
+        })
+
+        await deployEntity(context)
+
+        expect(deployEntityFn).toHaveBeenCalledTimes(1)
+        expect(undeployOtherWorldScenes).toHaveBeenCalledWith('test-world', entityId)
+      })
+    })
+
+    describe('and the other-scene cleanup fails', () => {
+      it('should still return 200 (cleanup is best-effort; the deploy already committed)', async () => {
+        const { context, deployEntityFn, undeployOtherWorldScenes } = createSingleSceneContext({
+          isOwner: true,
+          hasWorldWide: false
+        })
+        undeployOtherWorldScenes.mockRejectedValue(new Error('undeploy failed'))
+
+        const response = await deployEntity(context)
+
+        expect(deployEntityFn).toHaveBeenCalledTimes(1)
+        expect(undeployOtherWorldScenes).toHaveBeenCalled()
+        expect(response.status).toBe(200)
+      })
+    })
   })
 })
