@@ -494,6 +494,57 @@ describe('WorldsComponent', () => {
     })
   })
 
+  describe('when undeploying a scene whose declared base is not the first parcel', () => {
+    beforeEach(() => {
+      worldsManager.getWorldScenes.mockResolvedValueOnce({
+        scenes: [
+          {
+            worldName: 'test-world',
+            entityId: 'entity-x',
+            deployer: '0x1234',
+            deploymentAuthChain: [],
+            entity: {
+              id: 'entity-x',
+              version: 'v3',
+              type: EntityType.SCENE,
+              pointers: ['2,2', '1,1'],
+              timestamp: Date.now(),
+              content: [],
+              // Declared base ('1,1') is NOT the first parcel ('2,2') — like a world whose parcels
+              // array doesn't start at its base. Places keys base_position on metadata.scene.base.
+              metadata: { scene: { base: '1,1', parcels: ['2,2', '1,1'] } }
+            } as any,
+            parcels: ['2,2', '1,1'],
+            size: BigInt(1000),
+            status: SceneDeploymentStatus.Deployed,
+            createdAt: new Date(),
+            updatedAt: new Date()
+          }
+        ],
+        total: 1
+      })
+      worldsManager.undeployScene.mockResolvedValue(undefined)
+      snsClient.publishMessages.mockResolvedValue({
+        Successful: [{ Id: 'id', MessageId: 'msg-id', SequenceNumber: '1' }],
+        Failed: [],
+        $metadata: {}
+      } as any)
+    })
+
+    it('should publish the declared scene.base as baseParcel, not parcels[0]', async () => {
+      await worldsComponent.undeployWorldScenes('test-world', ['2,2'])
+
+      expect(snsClient.publishMessages).toHaveBeenCalledWith([
+        expect.objectContaining({
+          subType: Events.SubType.Worlds.WORLD_SCENES_UNDEPLOYMENT,
+          metadata: expect.objectContaining({
+            scenes: [{ entityId: 'entity-x', baseParcel: '1,1' }]
+          })
+        })
+      ])
+    })
+  })
+
   describe('when getting the base parcel of a scene including undeployed', () => {
     describe('and the scene exists', () => {
       beforeEach(() => {

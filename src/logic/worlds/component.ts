@@ -197,7 +197,12 @@ export const createWorldsComponent = (
           worldName,
           scenes: scenes.map((scene) => ({
             entityId: scene.entityId,
-            baseParcel: scene.parcels[0]
+            // Emit the scene's DECLARED base parcel (metadata.scene.base) — the value the Places
+            // service keys its place records on — not parcels[0]. The two differ when the base is
+            // not the first entry of the parcels array; using parcels[0] there would not match the
+            // place, so the undeployment would fail to disable it. Fall back to parcels[0] only if
+            // the stored entity somehow lacks scene.base.
+            baseParcel: scene.entity.metadata?.scene?.base ?? scene.parcels[0]
           }))
         }
       }
