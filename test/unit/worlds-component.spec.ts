@@ -1,10 +1,42 @@
 import { createWorldsComponent } from '../../src/logic/worlds/component'
 import { IWorldsComponent } from '../../src/logic/worlds/types'
-import { IWorldsManager, TWO_DAYS_IN_MS, SceneDeploymentStatus } from '../../src/types'
+import { IWorldsManager, TWO_DAYS_IN_MS, SceneDeploymentStatus, WorldScene } from '../../src/types'
 import { IBlockingComponent } from '../../src/adapters/blocking'
-import { EntityType, Events } from '@dcl/schemas'
+import { Entity, EntityType, Events, SceneParcels } from '@dcl/schemas'
 import { IPublisherComponent } from '@dcl/sns-component'
 import { createMockBlockingComponent } from '../mocks/blocking-mock'
+
+/**
+ * Builds a deployed WorldScene fixture with a scene metadata whose `base` and `parcels`
+ * are type-checked against SceneParcels — the exact shape the base-parcel derivation reads.
+ * Pass `base` to exercise the case where the declared base differs from parcels[0]; omit it
+ * to default the base to parcels[0].
+ */
+function createWorldScene(overrides: { entityId: string; parcels: string[]; base?: string }): WorldScene {
+  const { entityId, parcels } = overrides
+  const scene: SceneParcels = { base: overrides.base ?? parcels[0], parcels }
+  const entity: Entity = {
+    id: entityId,
+    version: 'v3',
+    type: EntityType.SCENE,
+    pointers: parcels,
+    timestamp: Date.now(),
+    content: [],
+    metadata: { scene }
+  }
+  return {
+    worldName: 'test-world',
+    entityId,
+    deployer: '0x1234',
+    deploymentAuthChain: [],
+    entity,
+    parcels,
+    size: BigInt(1000),
+    status: SceneDeploymentStatus.Deployed,
+    createdAt: new Date(),
+    updatedAt: new Date()
+  }
+}
 
 describe('WorldsComponent', () => {
   let worldsComponent: IWorldsComponent
@@ -491,6 +523,78 @@ describe('WorldsComponent', () => {
 
         expect(snsClient.publishMessages).not.toHaveBeenCalled()
       })
+    })
+  })
+
+  describe('when undeploying a scene whose declared base is not the first parcel', () => {
+    beforeEach(() => {
+      // Declared base ('1,1') is NOT the first parcel ('2,2') — like a world whose parcels
+      // array doesn't start at its base. Places keys base_position on metadata.scene.base.
+      worldsManager.getWorldScenes.mockResolvedValueOnce({
+        scenes: [createWorldScene({ entityId: 'entity-x', base: '1,1', parcels: ['2,2', '1,1'] })],
+        total: 1
+      })
+      worldsManager.undeployScene.mockResolvedValue(undefined)
+      snsClient.publishMessages.mockResolvedValue({
+        Successful: [{ Id: 'id', MessageId: 'msg-id', SequenceNumber: '1' }],
+        Failed: [],
+        $metadata: {}
+      } as any)
+    })
+
+    it('should publish the declared scene.base as baseParcel, not parcels[0]', async () => {
+      await worldsComponent.undeployWorldScenes('test-world', ['2,2'])
+
+      expect(snsClient.publishMessages).toHaveBeenCalledWith([
+        expect.objectContaining({
+          subType: Events.SubType.Worlds.WORLD_SCENES_UNDEPLOYMENT,
+          metadata: expect.objectContaining({
+            scenes: [{ entityId: 'entity-x', baseParcel: '1,1' }]
+          })
+        })
+      ])
+    })
+  })
+
+  describe('when undeploying a scene whose stored base is missing or malformed', () => {
+    beforeEach(() => {
+      // Empty/invalid declared base — the derivation must fall back to parcels[0].
+      worldsManager.getWorldScenes.mockResolvedValueOnce({
+        scenes: [createWorldScene({ entityId: 'entity-y', base: '', parcels: ['2,2', '1,1'] })],
+        total: 1
+      })
+      worldsManager.undeployScene.mockResolvedValue(undefined)
+      snsClient.publishMessages.mockResolvedValue({
+        Successful: [{ Id: 'id', MessageId: 'msg-id', SequenceNumber: '1' }],
+        Failed: [],
+        $metadata: {}
+      } as any)
+    })
+
+    it('should fall back to parcels[0] as baseParcel', async () => {
+      await worldsComponent.undeployWorldScenes('test-world', ['2,2'])
+
+      expect(snsClient.publishMessages).toHaveBeenCalledWith([
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            scenes: [{ entityId: 'entity-y', baseParcel: '2,2' }]
+          })
+        })
+      ])
+    })
+  })
+
+  describe('when getting the base parcel of a scene whose declared base is not the first parcel', () => {
+    beforeEach(() => {
+      worldsManager.getWorldScenes.mockResolvedValueOnce({
+        scenes: [createWorldScene({ entityId: 'scene-123', base: '1,1', parcels: ['2,2', '1,1'] })],
+        total: 1
+      })
+    })
+
+    it('should return the declared scene.base, not parcels[0]', async () => {
+      const result = await worldsComponent.getWorldSceneBaseParcelIncludingUndeployed('test-world', 'scene-123')
+      expect(result).toBe('1,1')
     })
   })
 
