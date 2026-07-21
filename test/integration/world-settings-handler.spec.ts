@@ -156,6 +156,30 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
         )
       })
 
+      describe('and the settings request completes', () => {
+        let limiterState: { reservedBytes: number; activeUploads: number }
+
+        beforeEach(async () => {
+          const { localFetch, metrics } = components
+
+          await makeSignedMultipartRequest(localFetch, `/world/${worldName}/settings`, identity, {
+            spawn_coordinates: '20,24'
+          })
+          const [reservedBytesMetric, activeUploadsMetric] = await Promise.all([
+            metrics.getValue('multipart_upload_reserved_bytes'),
+            metrics.getValue('multipart_upload_active')
+          ])
+          limiterState = {
+            reservedBytes: reservedBytesMetric.values[0]?.value,
+            activeUploads: activeUploadsMetric.values[0]?.value
+          }
+        })
+
+        it('should release all reserved bytes and the upload slot', () => {
+          expect(limiterState).toEqual({ reservedBytes: 0, activeUploads: 0 })
+        })
+      })
+
       it('should update the world settings successfully', async () => {
         const { localFetch, worldsManager } = components
 
@@ -797,6 +821,44 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
           expect(await response.json()).toMatchObject({
             error: `Invalid thumbnail: size ${largeBuffer.length} bytes exceeds maximum of 1048576 bytes (1MB).`
           })
+        })
+      })
+
+      describe('and the multipart request exceeds the settings route limit', () => {
+        let response: Response
+        let limiterState: { reservedBytes: number; activeUploads: number }
+
+        beforeEach(async () => {
+          const { localFetch, metrics } = components
+          const oversizedBuffer = Buffer.alloc(2 * 1024 * 1024 + 1)
+
+          response = await makeSignedMultipartRequest(
+            localFetch,
+            `/world/${worldName}/settings`,
+            identity,
+            {},
+            { thumbnail: { buffer: oversizedBuffer, filename: 'thumbnail.png' } }
+          )
+          const [reservedBytesMetric, activeUploadsMetric] = await Promise.all([
+            metrics.getValue('multipart_upload_reserved_bytes'),
+            metrics.getValue('multipart_upload_active')
+          ])
+          limiterState = {
+            reservedBytes: reservedBytesMetric.values[0]?.value,
+            activeUploads: activeUploadsMetric.values[0]?.value
+          }
+        })
+
+        it('should respond with 400', () => {
+          expect(response.status).toBe(400)
+        })
+
+        it('should report that the uploaded file is too large', async () => {
+          expect(await response.json()).toMatchObject({ message: 'An uploaded file exceeds the maximum allowed size.' })
+        })
+
+        it('should release all reserved bytes and the upload slot', () => {
+          expect(limiterState).toEqual({ reservedBytes: 0, activeUploads: 0 })
         })
       })
 

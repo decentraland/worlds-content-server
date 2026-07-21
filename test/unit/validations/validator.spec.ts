@@ -95,4 +95,49 @@ describe('validator', function () {
       'The deployment has too many files. The maximum allowed is 1 but the deployment has 2.'
     )
   })
+
+  describe('when malformed entity content is validated before storage access', () => {
+    let result: Awaited<ReturnType<ReturnType<typeof createValidator>['validateBeforeStorage']>>
+
+    beforeEach(async () => {
+      const validator = createValidator(components)
+      const deployment = await createSceneDeployment(identity.authChain)
+      deployment.entity.content = {} as any
+
+      result = await validator.validateBeforeStorage(deployment)
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should reject the malformed content as a validation error', () => {
+      expect(result.ok()).toBe(false)
+    })
+  })
+
+  describe('when the pre-storage file-count limit is exceeded', () => {
+    let result: Awaited<ReturnType<ReturnType<typeof createValidator>['validateBeforeStorage']>>
+
+    beforeEach(async () => {
+      const validator = createValidator({
+        ...components,
+        config: createConfigComponent({ DEPLOYMENT_TTL: '10000', MAX_FILE_COUNT: '1' })
+      })
+      const deployment = await createSceneDeployment(identity.authChain)
+      deployment.entity.content!.push({ ...deployment.entity.content![0], file: 'second.txt' })
+
+      result = await validator.validateBeforeStorage(deployment)
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should reject the entity before storage-dependent validation', () => {
+      expect(result.errors).toContain(
+        'The deployment has too many files. The maximum allowed is 1 but the deployment has 2.'
+      )
+    })
+  })
 })

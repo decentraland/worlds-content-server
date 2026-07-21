@@ -86,6 +86,29 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
         files = result.files
       })
 
+      describe('and the deployment request completes', () => {
+        let limiterState: { reservedBytes: number; activeUploads: number }
+
+        beforeEach(async () => {
+          const { metrics } = components
+          const authChain = Authenticator.signPayload(identity.authChain, entityId)
+
+          await contentClient.deploy({ files, entityId, authChain })
+          const [reservedBytesMetric, activeUploadsMetric] = await Promise.all([
+            metrics.getValue('multipart_upload_reserved_bytes'),
+            metrics.getValue('multipart_upload_active')
+          ])
+          limiterState = {
+            reservedBytes: reservedBytesMetric.values[0]?.value,
+            activeUploads: activeUploadsMetric.values[0]?.value
+          }
+        })
+
+        it('should release all reserved bytes and the upload slot', () => {
+          expect(limiterState).toEqual({ reservedBytes: 0, activeUploads: 0 })
+        })
+      })
+
       it('should deploy successfully and return a success message with world access URL', async () => {
         const authChain = Authenticator.signPayload(identity.authChain, entityId)
 
