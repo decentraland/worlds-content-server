@@ -9,6 +9,50 @@ test('WorldManagerAdapter', function ({ components }) {
     jest.resetAllMocks()
   })
 
+  describe('when deploying a scene with prevalidated deployment metadata', () => {
+    let deploymentAuthChain: unknown
+    let deployedScene: Awaited<ReturnType<typeof components.worldsManager.getWorldScenes>>['scenes'][number]
+    let fileInfoMultipleSpy: jest.SpyInstance
+    let retrieveSpy: jest.SpyInstance
+
+    beforeEach(async () => {
+      const { storage, worldCreator, worldsManager } = components
+      const created = await worldCreator.createWorldWithScene()
+      const redeployedEntity = { ...created.entity, id: `${created.entity.id}-with-metadata` }
+      const deploymentSize = 123
+      deploymentAuthChain = created.owner.authChain
+      retrieveSpy = jest.spyOn(storage, 'retrieve')
+      fileInfoMultipleSpy = jest.spyOn(storage, 'fileInfoMultiple')
+
+      await worldsManager.deployScene(created.worldName, redeployedEntity, created.owner.authChain[0].payload, {
+        authChain: created.owner.authChain,
+        size: deploymentSize
+      })
+      const result = await worldsManager.getWorldScenes({ worldName: created.worldName })
+      deployedScene = result.scenes[0]
+    })
+
+    afterEach(() => {
+      jest.restoreAllMocks()
+    })
+
+    it('should persist the supplied auth chain and size without rereading them from storage', () => {
+      expect({
+        authChain: deployedScene.deploymentAuthChain,
+        deployer: deployedScene.deployer,
+        metadataReads: fileInfoMultipleSpy.mock.calls.length,
+        authReads: retrieveSpy.mock.calls.length,
+        size: deployedScene.size
+      }).toEqual({
+        authChain: deploymentAuthChain,
+        deployer: (deploymentAuthChain as { payload: string }[])[0].payload.toLowerCase(),
+        metadataReads: 0,
+        authReads: 0,
+        size: BigInt(123)
+      })
+    })
+  })
+
   describe('when getting the total size of a world', function () {
     describe('when a world has a single deployed scene', function () {
       let worldName: string

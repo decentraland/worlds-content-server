@@ -202,4 +202,96 @@ describe('entity deployer', () => {
       })
     })
   })
+
+  describe('when some referenced content is already stored', () => {
+    let storedFileGetStream: jest.Mock
+    let uploadedContentHashes: string[]
+
+    beforeEach(async () => {
+      const storedHash = 'stored-hash'
+      const missingHash = 'missing-hash'
+      const contentHashes = new Set([storedHash, missingHash])
+      storedFileGetStream = jest.fn(() => Readable.from('stored'))
+      const storageStoreStream = jest.fn().mockResolvedValue(undefined)
+      const entity = {
+        id: 'entity-id',
+        type: EntityType.SCENE,
+        pointers: ['0,0'],
+        timestamp: Date.now(),
+        content: [
+          { hash: storedHash, file: 'stored' },
+          { hash: missingHash, file: 'missing' }
+        ],
+        metadata: { worldConfiguration: { name: 'world.dcl.eth' }, scene: { parcels: ['0,0'] } }
+      } as Entity
+      const files = new Map<string, DeploymentFile>([
+        [
+          storedHash,
+          {
+            size: 1,
+            getStream: storedFileGetStream,
+            getHash: async () => storedHash,
+            asBuffer: async () => Buffer.from('stored')
+          }
+        ],
+        [
+          missingHash,
+          {
+            size: 1,
+            getStream: () => Readable.from('missing'),
+            getHash: async () => missingHash,
+            asBuffer: async () => Buffer.from('missing')
+          }
+        ]
+      ])
+      const components = {
+        blocking: { unblockIfUnderQuota: jest.fn().mockResolvedValue(undefined) },
+        config: {
+          getNumber: jest.fn().mockResolvedValue(2),
+          getString: jest.fn().mockResolvedValue(undefined)
+        },
+        logs: {
+          getLogger: jest.fn().mockReturnValue({ debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() })
+        },
+        metrics: { increment: jest.fn() },
+        nameOwnership: {
+          findOwners: jest.fn().mockResolvedValue(new Map([['world.dcl.eth', '0xowner']]))
+        },
+        snsClient: { publishMessage: jest.fn() },
+        storage: { storeStream: storageStoreStream },
+        worldsManager: { deployScene: jest.fn().mockResolvedValue(undefined) }
+      } as unknown as Pick<
+        AppComponents,
+        'blocking' | 'config' | 'logs' | 'nameOwnership' | 'metrics' | 'storage' | 'snsClient' | 'worldsManager'
+      >
+      const deployer = createEntityDeployer(components)
+
+      await deployer.deployEntity(
+        'https://worlds.example',
+        entity,
+        new Map([
+          [storedHash, true],
+          [missingHash, false]
+        ]),
+        files,
+        JSON.stringify(entity),
+        [],
+        2
+      )
+      uploadedContentHashes = storageStoreStream.mock.calls
+        .map(([hash]) => hash)
+        .filter((hash) => contentHashes.has(hash))
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should upload only missing content without opening the stored file', () => {
+      expect({ storedFileReads: storedFileGetStream.mock.calls.length, uploadedContentHashes }).toEqual({
+        storedFileReads: 0,
+        uploadedContentHashes: ['missing-hash']
+      })
+    })
+  })
 })

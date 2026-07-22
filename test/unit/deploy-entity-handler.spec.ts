@@ -120,6 +120,81 @@ describe('deployEntity', () => {
       )
     })
   })
+
+  describe('when a valid deployment contains uploaded and stored content', () => {
+    let availability: Array<[string, boolean]>
+    let contentFileInfos: Array<[string, FileInfo | undefined]>
+    let deploymentSize: number
+    let fileInfo: jest.Mock
+    let metadataRequests: string[]
+    let responseStatus: number
+
+    beforeEach(async () => {
+      const uploadedHash = 'uploaded-hash'
+      const storedHash = 'stored-hash'
+      const entity = {
+        type: 'scene',
+        pointers: ['0,0'],
+        timestamp: Date.now(),
+        content: [
+          { hash: uploadedHash, file: 'uploaded.bin' },
+          { hash: storedHash, file: 'stored.bin' },
+          { hash: storedHash, file: 'stored-copy.bin' }
+        ],
+        metadata: { worldConfiguration: { name: 'world.dcl.eth' }, scene: { parcels: ['0,0'] } }
+      }
+      const entityFile = makeFile(Buffer.from(JSON.stringify(entity)))
+      const uploadedFile = makeFile(Buffer.from('12345'))
+      fileInfo = jest.fn(async (hash: string) =>
+        hash === storedHash ? { contentSize: 7, encoding: null, size: 7 } : undefined
+      )
+      const validateBeforeStorage = jest.fn().mockResolvedValue({ errors: [], ok: () => true })
+      const validateAfterStorage = jest.fn().mockResolvedValue({ errors: [], ok: () => true })
+      const entityDeployerDeploy = jest.fn().mockResolvedValue({ message: 'deployed' })
+      const context = {
+        ...createContext(entityId, { [entityId]: entityFile, [uploadedHash]: uploadedFile }),
+        components: {
+          config: {
+            getNumber: jest.fn().mockResolvedValue(2),
+            getString: jest.fn().mockResolvedValue('https://configured.example')
+          },
+          entityDeployer: { deployEntity: entityDeployerDeploy },
+          storage: { fileInfo },
+          validator: { validateAfterStorage, validateBeforeStorage }
+        },
+        url: { host: 'request.example' }
+      } as unknown as DeployContext
+
+      const response = await deployEntity(context)
+      const validatedDeployment = validateAfterStorage.mock.calls[0][0]
+      const deployerArguments = entityDeployerDeploy.mock.calls[0]
+      availability = Array.from(validatedDeployment.contentHashesInStorage)
+      contentFileInfos = Array.from(validatedDeployment.contentFileInfos)
+      deploymentSize = deployerArguments[6]
+      metadataRequests = fileInfo.mock.calls.map(([hash]) => hash)
+      responseStatus = response.status
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should reuse one metadata snapshot for validation and deployment size', () => {
+      expect({ availability, contentFileInfos, deploymentSize, metadataRequests, responseStatus }).toEqual({
+        availability: [
+          ['uploaded-hash', false],
+          ['stored-hash', true]
+        ],
+        contentFileInfos: [
+          ['uploaded-hash', undefined],
+          ['stored-hash', { contentSize: 7, encoding: null, size: 7 }]
+        ],
+        deploymentSize: 12,
+        metadataRequests: ['uploaded-hash', 'stored-hash'],
+        responseStatus: 200
+      })
+    })
+  })
 })
 
 describe('getContentFileInfos', () => {
