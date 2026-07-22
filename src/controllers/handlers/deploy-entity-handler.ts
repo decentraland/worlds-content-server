@@ -37,7 +37,10 @@ function parseEntityJson(raw: string) {
  * @param storage Content storage used for metadata checks.
  * @param hashes Content hashes referenced by the deployment.
  * @param concurrency Maximum number of concurrent checks delegated to storage.
+ * @param signal Optional deadline or request-disconnect signal.
+ * @param trackWorker Optional worker telemetry wrapper.
  * @returns Storage metadata for every unique content hash.
+ * @throws The cancellation reason without waiting for active metadata calls, which own no request files.
  */
 export async function getContentFileInfos(
   storage: Pick<IContentStorageComponent, 'fileInfo'>,
@@ -51,14 +54,15 @@ export async function getContentFileInfos(
     uniqueHashes,
     concurrency,
     (hash) => (trackWorker ? trackWorker(() => storage.fileInfo(hash)) : storage.fileInfo(hash)),
-    { signal }
+    { signal, waitForActiveOnAbort: false }
   )
   return new Map(uniqueHashes.map((hash, index) => [hash, fileInfos[index]]))
 }
 
 async function deployEntityWithSignal(
   ctx: DeployEntityContext,
-  signal: AbortSignal
+  signal: AbortSignal,
+  deadlineAt: number
 ): Promise<IHttpServerComponent.IResponse> {
   const { deploymentProcessing } = ctx.components
   const entityId = requireString(ctx.formData.fields.entityId?.value[0])
@@ -132,7 +136,8 @@ async function deployEntityWithSignal(
     entityRaw,
     authChain,
     deploymentSize,
-    signal
+    signal,
+    deadlineAt
   )
 
   return {
@@ -147,7 +152,9 @@ async function deployEntityWithSignal(
 export async function deployEntity(ctx: DeployEntityContext): Promise<IHttpServerComponent.IResponse> {
   const abortContext = ctx.components.deploymentProcessing.createAbortContext(ctx.request?.signal)
   try {
-    return await deployEntityWithSignal(ctx, abortContext.signal)
+    return await ctx.components.deploymentProcessing.trackStage('total', Object.keys(ctx.formData.files).length, () =>
+      deployEntityWithSignal(ctx, abortContext.signal, abortContext.deadlineAt)
+    )
   } catch (error) {
     const timeoutError =
       error instanceof DeploymentProcessingTimeoutError

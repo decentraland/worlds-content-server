@@ -1,5 +1,5 @@
 import { IConfigComponent } from '@well-known-components/interfaces'
-import { getConcurrency, mapWithConcurrency } from '../../src/logic/concurrency'
+import { getConcurrency, mapWithConcurrency, raceWithSignal } from '../../src/logic/concurrency'
 
 describe('concurrency helpers', () => {
   describe('when tasks have uneven durations', () => {
@@ -196,6 +196,56 @@ describe('concurrency helpers', () => {
         error: caughtError instanceof Error ? caughtError.message : caughtError,
         startedItems
       }).toEqual({ completedItems: [0, 1], error: 'request aborted', startedItems: [0, 1] })
+    })
+  })
+
+  describe('when aborted work does not own request-scoped resources', () => {
+    let caughtError: unknown
+    let startedItems: number[]
+
+    beforeEach(async () => {
+      const controller = new AbortController()
+      startedItems = []
+      caughtError = await mapWithConcurrency(
+        [0, 1],
+        1,
+        async (item) => {
+          startedItems.push(item)
+          controller.abort(new Error('deadline exceeded'))
+          return new Promise<never>(() => undefined)
+        },
+        { signal: controller.signal, waitForActiveOnAbort: false }
+      ).catch((error) => error)
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should reject immediately without starting queued work', () => {
+      expect({
+        error: caughtError instanceof Error ? caughtError.message : caughtError,
+        startedItems
+      }).toEqual({ error: 'deadline exceeded', startedItems: [0] })
+    })
+  })
+
+  describe('when a non-cancellable operation outlives its signal', () => {
+    let caughtError: unknown
+
+    beforeEach(async () => {
+      const controller = new AbortController()
+      const result = raceWithSignal(new Promise<never>(() => undefined), controller.signal)
+      controller.abort(new Error('request ended'))
+      caughtError = await result.catch((error) => error)
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should reject with the abort reason without waiting for the operation', () => {
+      expect(caughtError).toEqual(new Error('request ended'))
     })
   })
 })

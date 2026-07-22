@@ -11,7 +11,7 @@ export const validateEntityId: Validation = async (deployment: DeploymentToValid
     return createValidationResult(['Entity not found in files.'])
   }
 
-  const actualHash = await entityFile.getHash()
+  const actualHash = await entityFile.getHash(deployment.signal)
   return createValidationResult(
     actualHash !== deployment.entity.id
       ? [`Invalid entity hash: expected ${actualHash} but got ${deployment.entity.id}`]

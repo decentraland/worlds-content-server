@@ -142,4 +142,46 @@ describe('validator', function () {
       )
     })
   })
+
+  describe('when a signed deployment requires delegated authorization', () => {
+    let contentHashCalls: number
+    let permissionChecks: jest.Mock
+    let result: Awaited<ReturnType<ReturnType<typeof createValidator>['validateBeforeStorage']>>
+
+    beforeEach(async () => {
+      contentHashCalls = 0
+      permissionChecks = jest.fn().mockResolvedValue(false)
+      const deployment = await createSceneDeployment(identity.authChain)
+      for (const [hash, file] of deployment.files) {
+        if (hash !== deployment.entity.id) {
+          file.getHash = async () => {
+            contentHashCalls++
+            return hash
+          }
+        }
+      }
+      const validator = createValidator({
+        ...components,
+        namePermissionChecker: { checkPermission: permissionChecks } as IWorldNamePermissionChecker,
+        permissions: {
+          ...permissions,
+          hasPermissionForParcels: jest.fn().mockResolvedValue(true)
+        }
+      })
+
+      result = await validator.validateBeforeStorage(deployment)
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should authorize the signer before hashing content files', () => {
+      expect({
+        contentHashCalls,
+        permissionChecks: permissionChecks.mock.calls.length,
+        valid: result.ok()
+      }).toEqual({ contentHashCalls: 0, permissionChecks: 1, valid: true })
+    })
+  })
 })

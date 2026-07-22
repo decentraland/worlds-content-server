@@ -86,10 +86,12 @@ export type DeploymentToValidate = {
   signal?: AbortSignal
 }
 
-export type DeploymentProcessingStage = 'metadata' | 'hash' | 'storage'
+export type DeploymentProcessingStage = 'total' | 'authorization' | 'metadata' | 'hash' | 'storage' | 'persistence'
 
 export type DeploymentAbortContext = {
   signal: AbortSignal
+  /** Absolute wall-clock deadline for bounding the persistence transaction. */
+  deadlineAt: number
   dispose(): void
 }
 
@@ -115,6 +117,8 @@ export type SceneDeploymentData = {
   authChain: AuthChain
   /** Total unique content size already calculated during validation. */
   size: number
+  /** Absolute processing deadline used to bound the persistence transaction. */
+  deadlineAt?: number
 }
 
 export type WorldRuntimeMetadata = {
@@ -533,7 +537,8 @@ export type IEntityDeployer = {
     entityJson: string,
     authChain: AuthLink[],
     deploymentSize: number,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    deadlineAt?: number
   ): Promise<DeploymentResult>
 }
 

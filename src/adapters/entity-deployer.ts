@@ -2,13 +2,15 @@ import { AppComponents, DeploymentFile, DeploymentResult, IEntityDeployer } from
 import { AuthLink, Entity, EntityType, Events, WorldDeploymentEvent } from '@dcl/schemas'
 import { bufferToStream } from '@dcl/catalyst-storage/dist/content-item'
 import { stringToUtf8Bytes } from 'eth-connect'
-import { mapWithConcurrency } from '../logic/concurrency'
+import { mapWithConcurrency, raceWithSignal } from '../logic/concurrency'
 
 type PostDeploymentHook = (
   baseUrl: string,
   entity: Entity,
   authChain: AuthLink[],
-  deploymentSize: number
+  deploymentSize: number,
+  signal?: AbortSignal,
+  deadlineAt?: number
 ) => Promise<DeploymentResult>
 
 /** Maximum number of independent content-addressed objects uploaded concurrently. */
@@ -49,7 +51,8 @@ export function createEntityDeployer(
     entityJson: string,
     authChain: AuthLink[],
     deploymentSize: number,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    deadlineAt?: number
   ): Promise<DeploymentResult> {
     const contentByHash = new Map((entity.content || []).map((file) => [file.hash, file]))
     const filesToStore = Array.from(contentByHash).filter(([hash]) => !allContentHashesInStorage.get(hash))
@@ -70,18 +73,24 @@ export function createEntityDeployer(
 
       signal?.throwIfAborted()
       logger.info(`Storing entity`, { cid: entity.id })
-      await Promise.all([
-        deploymentProcessing.trackWorker('storage', () =>
-          storage.storeStream(entity.id, bufferToStream(stringToUtf8Bytes(entityJson)))
-        ),
-        deploymentProcessing.trackWorker('storage', () =>
-          storage.storeStream(entity.id + '.auth', bufferToStream(stringToUtf8Bytes(JSON.stringify(authChain))))
-        )
-      ])
+      await mapWithConcurrency(
+        [
+          [entity.id, entityJson],
+          [entity.id + '.auth', JSON.stringify(authChain)]
+        ] as const,
+        2,
+        ([id, content]) =>
+          deploymentProcessing.trackWorker('storage', () =>
+            storage.storeStream(id, bufferToStream(stringToUtf8Bytes(content)))
+          ),
+        { signal, waitForActiveOnAbort: false }
+      )
     })
 
     signal?.throwIfAborted()
-    return await postDeployment(baseUrl, entity, authChain, deploymentSize)
+    return await deploymentProcessing.trackStage('persistence', 1, () =>
+      postDeployment(baseUrl, entity, authChain, deploymentSize, signal, deadlineAt)
+    )
   }
 
   const postDeploymentHooks: Partial<Record<EntityType, PostDeploymentHook>> = {
@@ -92,22 +101,33 @@ export function createEntityDeployer(
     baseUrl: string,
     entity: Entity,
     authChain: AuthLink[],
-    deploymentSize: number
+    deploymentSize: number,
+    signal?: AbortSignal,
+    deadlineAt?: number
   ): Promise<DeploymentResult> {
     const hookForType = postDeploymentHooks[entity.type] || noPostDeploymentHook
-    return hookForType(baseUrl, entity, authChain, deploymentSize)
+    return hookForType(baseUrl, entity, authChain, deploymentSize, signal, deadlineAt)
   }
 
   async function noPostDeploymentHook(
     _baseUrl: string,
     _entity: Entity,
     _authChain: AuthLink[],
-    _deploymentSize: number
+    _deploymentSize: number,
+    _signal?: AbortSignal,
+    _deadlineAt?: number
   ): Promise<DeploymentResult> {
     return { message: 'No post deployment hook for this entity type' }
   }
 
-  async function postSceneDeployment(baseUrl: string, entity: Entity, authChain: AuthLink[], deploymentSize: number) {
+  async function postSceneDeployment(
+    baseUrl: string,
+    entity: Entity,
+    authChain: AuthLink[],
+    deploymentSize: number,
+    signal?: AbortSignal,
+    deadlineAt?: number
+  ) {
     const { config, metrics, snsClient } = components
 
     // determine the name to use for deploying the world
@@ -115,7 +135,7 @@ export function createEntityDeployer(
     const parcels = entity.metadata?.scene?.parcels || []
     logger.debug(`Deployment for scene "${entity.id}" under world name "${worldName}" at parcels ${parcels.join(', ')}`)
 
-    const owner = (await components.nameOwnership.findOwners([worldName])).get(worldName)
+    const owner = (await raceWithSignal(components.nameOwnership.findOwners([worldName]), signal)).get(worldName)
 
     if (!owner) {
       throw new Error(
@@ -123,7 +143,12 @@ export function createEntityDeployer(
       )
     }
 
-    await worldsManager.deployScene(worldName, entity, owner, { authChain, size: deploymentSize })
+    signal?.throwIfAborted()
+    await worldsManager.deployScene(worldName, entity, owner, {
+      authChain,
+      size: deploymentSize,
+      ...(deadlineAt === undefined ? {} : { deadlineAt })
+    })
 
     // A deployment that replaces a larger scene can free enough space to bring a
     // previously-blocked owner back under quota. The check short-circuits cheaply when the

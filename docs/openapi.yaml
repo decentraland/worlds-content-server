@@ -347,7 +347,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '408':
-          description: Multipart upload timed out
+          description: Multipart upload or post-body deployment processing timed out
           content:
             application/json:
               schema:

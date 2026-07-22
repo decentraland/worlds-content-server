@@ -25,8 +25,13 @@ import {
 } from './scene'
 import { OK, validateAll, validateIfTypeMatches } from './utils'
 import { EntityType } from '@dcl/schemas'
+import { raceWithSignal } from '../concurrency'
 
 export function createBeforeStorageValidateFns(components: ValidatorComponents): Validation[] {
+  const authorizeScene = validateAll([
+    createValidateBannedNames(components),
+    createValidateDeploymentPermission(components)
+  ])
   return [
     validateBaseEntity,
     validateSupportedEntityType,
@@ -35,7 +40,24 @@ export function createBeforeStorageValidateFns(components: ValidatorComponents):
     validateSigner,
     createValidateDeploymentTtl(components),
     validateEntityId,
-    validateSignature
+    validateSignature,
+    validateIfTypeMatches(
+      EntityType.SCENE,
+      validateAll([
+        validateSceneEntity,
+        validateDeprecatedConfig,
+        createValidateParcelCoordinates(components),
+        createValidateScenePointers(components),
+        async (deployment) =>
+          components.deploymentProcessing.trackStage('authorization', 1, () =>
+            Promise.resolve(authorizeScene(deployment))
+          ),
+        createValidateSceneDimensions(components),
+        validateMiniMapImages,
+        validateSkyboxTextures,
+        validateThumbnail
+      ])
+    )
   ]
 }
 
@@ -50,28 +72,23 @@ export function createAfterStorageValidateFns(components: ValidatorComponents): 
       ),
     validateIfTypeMatches(
       EntityType.SCENE,
-      validateAll([
-        validateSceneEntity,
-        validateDeprecatedConfig,
-        createValidateParcelCoordinates(components),
-        createValidateScenePointers(components),
-        createValidateSceneDimensions(components),
-        validateMiniMapImages,
-        validateSkyboxTextures,
-        validateThumbnail,
-        createValidateBannedNames(components),
-        // validateSdkVersion(components) TODO re-enable (and test) once SDK7 is ready
-        createValidateSize(components), // Slow
-        createValidateDeploymentPermission(components) // Slow
-      ])
+      // validateSdkVersion(components) TODO re-enable (and test) once SDK7 is ready
+      createValidateSize(components)
     )
   ]
 }
 
-async function runValidations(validations: Validation[], deployment: DeploymentToValidate): Promise<ValidationResult> {
+async function runValidations(
+  validations: Validation[],
+  deployment: DeploymentToValidate,
+  returnImmediatelyOnAbort: boolean = false
+): Promise<ValidationResult> {
   for (const validation of validations) {
     deployment.signal?.throwIfAborted()
-    const result = await validation(deployment)
+    const validationResult = Promise.resolve(validation(deployment))
+    const result = await (returnImmediatelyOnAbort
+      ? raceWithSignal(validationResult, deployment.signal)
+      : validationResult)
     deployment.signal?.throwIfAborted()
     if (!result.ok()) {
       return result
@@ -92,20 +109,25 @@ export const createValidator = (components: ValidatorComponents): Validator => {
   const beforeStorageValidations = createBeforeStorageValidateFns(components)
   const afterStorageValidations = createAfterStorageValidateFns(components)
 
+  async function runAfterStorageValidations(deployment: DeploymentToValidate): Promise<ValidationResult> {
+    const hashResult = await runValidations(afterStorageValidations.slice(0, 1), deployment)
+    return hashResult.ok() ? runValidations(afterStorageValidations.slice(1), deployment, true) : hashResult
+  }
+
   return {
     async validateBeforeStorage(deployment: DeploymentToValidate): Promise<ValidationResult> {
-      return runValidations(beforeStorageValidations, deployment)
+      return runValidations(beforeStorageValidations, deployment, true)
     },
     async validateAfterStorage(deployment: DeploymentToValidate): Promise<ValidationResult> {
-      return runValidations(afterStorageValidations, deployment)
+      return runAfterStorageValidations(deployment)
     },
     async validate(deployment: DeploymentToValidate): Promise<ValidationResult> {
-      const beforeStorageResult = await runValidations(beforeStorageValidations, deployment)
+      const beforeStorageResult = await runValidations(beforeStorageValidations, deployment, true)
       if (!beforeStorageResult.ok()) {
         return beforeStorageResult
       }
 
-      return runValidations(afterStorageValidations, deployment)
+      return runAfterStorageValidations(deployment)
     }
   }
 }

@@ -236,7 +236,7 @@ describe('deployEntity', () => {
       controller.abort(new DeploymentProcessingTimeoutError(10))
       const context = createContext(entityId, { [entityId]: makeFile(Buffer.from(JSON.stringify(entity))) })
       context.components.deploymentProcessing = createDeploymentProcessingMock({
-        createAbortContext: jest.fn(() => ({ signal: controller.signal, dispose: jest.fn() }))
+        createAbortContext: jest.fn(() => ({ signal: controller.signal, deadlineAt: Date.now(), dispose: jest.fn() }))
       })
 
       response = await deployEntity(context)
@@ -317,6 +317,30 @@ describe('getContentFileInfos', () => {
       expect({ requested: fileInfo.mock.calls.map(([hash]) => hash), results: Array.from(fileInfos.keys()) }).toEqual({
         requested: ['a', 'b'],
         results: ['a', 'b']
+      })
+    })
+  })
+
+  describe('when an active metadata request outlives the processing deadline', () => {
+    let caughtError: unknown
+    let fileInfo: jest.Mock
+
+    beforeEach(async () => {
+      const controller = new AbortController()
+      fileInfo = jest.fn(async () => new Promise<never>(() => undefined))
+      const result = getContentFileInfos({ fileInfo }, ['a', 'b'], 1, controller.signal)
+      controller.abort(new DeploymentProcessingTimeoutError(10))
+      caughtError = await result.catch((error) => error)
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should reject promptly and leave queued metadata requests unstarted', () => {
+      expect({ caughtError, requests: fileInfo.mock.calls.length }).toEqual({
+        caughtError: new DeploymentProcessingTimeoutError(10),
+        requests: 1
       })
     })
   })

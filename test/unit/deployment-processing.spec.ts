@@ -1,6 +1,7 @@
 import { IConfigComponent, ILoggerComponent, IMetricsComponent } from '@well-known-components/interfaces'
 import {
   createDeploymentProcessingComponent,
+  DeploymentProcessingAbortedError,
   DeploymentProcessingTimeoutError
 } from '../../src/logic/deployment-processing'
 import { metricDeclarations } from '../../src/metrics'
@@ -104,6 +105,44 @@ describe('deployment processing component', () => {
 
     it('should abort with a typed timeout error', () => {
       expect(abortContext.signal.reason).toEqual(new DeploymentProcessingTimeoutError(10))
+    })
+  })
+
+  describe('when the parent request is aborted', () => {
+    let abortContext: ReturnType<IDeploymentProcessingComponent['createAbortContext']>
+    let caughtError: unknown
+    let increment: jest.Mock
+
+    beforeEach(async () => {
+      increment = jest.fn()
+      const component = await createDeploymentProcessingComponent({
+        config: { getNumber: jest.fn().mockResolvedValue(undefined) } as unknown as IConfigComponent,
+        logs: { getLogger: jest.fn().mockReturnValue({ info: jest.fn() }) } as unknown as ILoggerComponent,
+        metrics: { increment, observe: jest.fn() } as unknown as IMetricsComponent<keyof typeof metricDeclarations>
+      })
+      const parent = new AbortController()
+      abortContext = component.createAbortContext(parent.signal)
+      parent.abort(new DOMException('Client disconnected.', 'AbortError'))
+      caughtError = await component
+        .trackStage('total', 1, async () => {
+          throw abortContext.signal.reason
+        })
+        .catch((error) => error)
+    })
+
+    afterEach(() => {
+      abortContext.dispose()
+      jest.resetAllMocks()
+    })
+
+    it('should propagate a typed abort and record an aborted outcome', () => {
+      expect({
+        error: caughtError,
+        failure: increment.mock.calls[0]
+      }).toEqual({
+        error: new DeploymentProcessingAbortedError(new DOMException('Client disconnected.', 'AbortError')),
+        failure: ['deployment_processing_failures', { outcome: 'aborted', stage: 'total' }]
+      })
     })
   })
 

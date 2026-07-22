@@ -26,7 +26,8 @@ test('WorldManagerAdapter', function ({ components }) {
 
       await worldsManager.deployScene(created.worldName, redeployedEntity, created.owner.authChain[0].payload, {
         authChain: created.owner.authChain,
-        size: deploymentSize
+        size: deploymentSize,
+        deadlineAt: Date.now() + 30_000
       })
       const result = await worldsManager.getWorldScenes({ worldName: created.worldName })
       deployedScene = result.scenes[0]

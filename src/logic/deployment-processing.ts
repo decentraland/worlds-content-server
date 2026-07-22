@@ -18,15 +18,31 @@ export class DeploymentProcessingTimeoutError extends Error {
   }
 }
 
+/** Typed wrapper used to distinguish request disconnects from operational failures in telemetry. */
+export class DeploymentProcessingAbortedError extends Error {
+  readonly reason: unknown
+
+  constructor(reason?: unknown) {
+    super(reason instanceof Error ? reason.message : 'Deployment processing was aborted.')
+    this.name = 'DeploymentProcessingAbortedError'
+    this.reason = reason
+  }
+}
+
 function abortReason(signal: AbortSignal): unknown {
-  return signal.reason ?? new Error('Deployment processing was aborted.')
+  return signal.reason instanceof DeploymentProcessingTimeoutError
+    ? signal.reason
+    : new DeploymentProcessingAbortedError(signal.reason)
 }
 
 function outcomeFor(error: unknown): 'timeout' | 'aborted' | 'error' {
   if (error instanceof DeploymentProcessingTimeoutError) {
     return 'timeout'
   }
-  if (error instanceof DOMException && error.name === 'AbortError') {
+  if (
+    error instanceof DeploymentProcessingAbortedError ||
+    (error instanceof DOMException && error.name === 'AbortError')
+  ) {
     return 'aborted'
   }
   return 'error'
@@ -76,6 +92,7 @@ export async function createDeploymentProcessingComponent(
 
   function createAbortContext(parentSignal?: AbortSignal): DeploymentAbortContext {
     const controller = new AbortController()
+    const deadlineAt = Date.now() + timeoutMs
     const abortFromParent = (): void => controller.abort(parentSignal ? abortReason(parentSignal) : undefined)
     if (parentSignal?.aborted) {
       abortFromParent()
@@ -87,6 +104,7 @@ export async function createDeploymentProcessingComponent(
 
     return {
       signal: controller.signal,
+      deadlineAt,
       dispose(): void {
         clearTimeout(timeout)
         parentSignal?.removeEventListener('abort', abortFromParent)

@@ -239,6 +239,11 @@ export async function createWorldsManagerComponent({
     const thumbnailHash = thumbnailContent?.hash || null
 
     await database.withAsyncContextTransaction(async () => {
+      if (deployment?.deadlineAt !== undefined) {
+        const remainingMs = Math.max(1, deployment.deadlineAt - Date.now())
+        await database.query(SQL`SELECT set_config('statement_timeout', ${remainingMs.toString()}, true)`)
+      }
+
       // Ensure world record exists, update if it does
       // On first deployment (INSERT), set settings from scene metadata
       // On subsequent deployments (UPDATE), preserve existing settings
