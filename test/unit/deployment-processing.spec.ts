@@ -1,4 +1,5 @@
 import { IConfigComponent, ILoggerComponent, IMetricsComponent } from '@well-known-components/interfaces'
+import { InvalidRequestError } from '@dcl/http-commons'
 import {
   createDeploymentProcessingComponent,
   DeploymentProcessingAbortedError,
@@ -259,6 +260,85 @@ describe('deployment processing component', () => {
         failure: ['deployment_processing_failures', { outcome: 'timeout', stage: 'storage' }],
         stageActivity: [1, 0]
       })
+    })
+  })
+
+  describe('when a processing stage fails because the request is invalid', () => {
+    let caughtError: unknown
+    let increment: jest.Mock
+
+    beforeEach(async () => {
+      increment = jest.fn()
+      const component = await createDeploymentProcessingComponent({
+        config: { getNumber: jest.fn().mockResolvedValue(undefined) } as unknown as IConfigComponent,
+        logs: { getLogger: jest.fn().mockReturnValue({ info: jest.fn() }) } as unknown as ILoggerComponent,
+        metrics: { increment, observe: jest.fn() } as unknown as IMetricsComponent<keyof typeof metricDeclarations>
+      })
+
+      caughtError = await component
+        .trackStage('total', 1, async () => {
+          throw new InvalidRequestError('The entity file is not valid JSON.')
+        })
+        .catch((error) => error)
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should report a client-error outcome so operational alerts exclude client mistakes', () => {
+      expect({
+        error: caughtError instanceof Error ? caughtError.message : caughtError,
+        failure: increment.mock.calls[0]
+      }).toEqual({
+        error: 'The entity file is not valid JSON.',
+        failure: ['deployment_processing_failures', { outcome: 'client-error', stage: 'total' }]
+      })
+    })
+  })
+
+  describe('when a Node API consumes the signal and rejects with its own abort error', () => {
+    let increment: jest.Mock
+
+    beforeEach(async () => {
+      increment = jest.fn()
+      const component = await createDeploymentProcessingComponent({
+        config: { getNumber: jest.fn().mockResolvedValue(undefined) } as unknown as IConfigComponent,
+        logs: { getLogger: jest.fn().mockReturnValue({ info: jest.fn() }) } as unknown as ILoggerComponent,
+        metrics: { increment, observe: jest.fn() } as unknown as IMetricsComponent<keyof typeof metricDeclarations>
+      })
+      // fs rejects with a plain-Error AbortError carrying the signal reason in `cause` instead of
+      // being the reason itself, exactly like fs.promises.readFile with an aborted signal.
+      const timeoutAbortError = Object.assign(new Error('The operation was aborted'), {
+        name: 'AbortError',
+        cause: new DeploymentProcessingTimeoutError(10)
+      })
+      const disconnectAbortError = Object.assign(new Error('The operation was aborted'), {
+        name: 'AbortError',
+        cause: new DeploymentProcessingAbortedError(new Error('client disconnected'))
+      })
+
+      await component
+        .trackStage('hash', 1, async () => {
+          throw timeoutAbortError
+        })
+        .catch(() => undefined)
+      await component
+        .trackStage('hash', 1, async () => {
+          throw disconnectAbortError
+        })
+        .catch(() => undefined)
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should classify the failure by the cancellation it wraps instead of an operational error', () => {
+      expect(increment.mock.calls).toEqual([
+        ['deployment_processing_failures', { outcome: 'timeout', stage: 'hash' }],
+        ['deployment_processing_failures', { outcome: 'aborted', stage: 'hash' }]
+      ])
     })
   })
 })

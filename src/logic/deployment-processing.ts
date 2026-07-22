@@ -4,7 +4,8 @@ import type {
   DeploymentProcessingStage,
   IDeploymentProcessingComponent
 } from '../types'
-import { getConcurrency } from './concurrency'
+import { InvalidRequestError } from '@dcl/http-commons'
+import { getPositiveInteger } from './concurrency'
 
 export const DEFAULT_STORAGE_UPLOAD_CONCURRENCY = 10
 export const DEFAULT_FILE_HASH_CONCURRENCY = 4
@@ -41,15 +42,44 @@ function abortReason(signal: AbortSignal): unknown {
     : new DeploymentProcessingAbortedError(signal.reason)
 }
 
-function outcomeFor(error: unknown): 'timeout' | 'aborted' | 'error' {
-  if (error instanceof DeploymentProcessingTimeoutError) {
+/**
+ * Matches both DOMException-based abort errors and Node's internal AbortError (fs, streams),
+ * which is a plain Error subclass carrying the signal reason in `cause` rather than being it.
+ */
+function isAbortError(error: unknown): boolean {
+  return (error instanceof DOMException || error instanceof Error) && error.name === 'AbortError'
+}
+
+/**
+ * Whether an error represents expected request cancellation (client disconnect or the processing
+ * deadline) rather than an operational failure. Cancellation surfaces either as the typed errors
+ * installed on the abort signal or as an AbortError when a Node API consumes the signal directly.
+ *
+ * @param error Error to classify.
+ * @returns True when the error is a cancellation, false for genuine failures.
+ */
+export function isProcessingCancellationError(error: unknown): boolean {
+  return (
+    error instanceof DeploymentProcessingTimeoutError ||
+    error instanceof DeploymentProcessingAbortedError ||
+    isAbortError(error)
+  )
+}
+
+function outcomeFor(error: unknown): 'timeout' | 'aborted' | 'client-error' | 'error' {
+  if (
+    error instanceof DeploymentProcessingTimeoutError ||
+    (isAbortError(error) && (error as Error & { cause?: unknown }).cause instanceof DeploymentProcessingTimeoutError)
+  ) {
     return 'timeout'
   }
-  if (
-    error instanceof DeploymentProcessingAbortedError ||
-    (error instanceof DOMException && error.name === 'AbortError')
-  ) {
+  if (error instanceof DeploymentProcessingAbortedError || isAbortError(error)) {
     return 'aborted'
+  }
+  // Client mistakes (invalid entities, failed validations) are kept out of the operational-failure
+  // outcome so dashboards and alerts on `outcome="error"` only reflect server-side problems.
+  if (error instanceof InvalidRequestError) {
+    return 'client-error'
   }
   return 'error'
 }
@@ -69,10 +99,10 @@ export async function createDeploymentProcessingComponent(
 ): Promise<IDeploymentProcessingComponent> {
   const { config, logs, metrics } = components
   const [storageConcurrency, hashConcurrency, fileInfoConcurrency, timeoutMs] = await Promise.all([
-    getConcurrency(config, 'DEPLOYMENT_STORAGE_CONCURRENCY', DEFAULT_STORAGE_UPLOAD_CONCURRENCY),
-    getConcurrency(config, 'DEPLOYMENT_HASH_CONCURRENCY', DEFAULT_FILE_HASH_CONCURRENCY),
-    getConcurrency(config, 'DEPLOYMENT_FILE_INFO_CONCURRENCY', DEFAULT_CONTENT_FILE_INFO_CONCURRENCY),
-    getConcurrency(config, 'DEPLOYMENT_PROCESSING_TIMEOUT_MS', DEFAULT_DEPLOYMENT_PROCESSING_TIMEOUT_MS)
+    getPositiveInteger(config, 'DEPLOYMENT_STORAGE_CONCURRENCY', DEFAULT_STORAGE_UPLOAD_CONCURRENCY),
+    getPositiveInteger(config, 'DEPLOYMENT_HASH_CONCURRENCY', DEFAULT_FILE_HASH_CONCURRENCY),
+    getPositiveInteger(config, 'DEPLOYMENT_FILE_INFO_CONCURRENCY', DEFAULT_CONTENT_FILE_INFO_CONCURRENCY),
+    getPositiveInteger(config, 'DEPLOYMENT_PROCESSING_TIMEOUT_MS', DEFAULT_DEPLOYMENT_PROCESSING_TIMEOUT_MS)
   ])
   if (timeoutMs > MAX_DEPLOYMENT_PROCESSING_TIMEOUT_MS) {
     throw new Error(
@@ -131,7 +161,7 @@ export async function createDeploymentProcessingComponent(
     const startedAt = performance.now()
     updateActive(activeStages, 'deployment_processing_stage_active', stage, 1)
     metrics.observe('deployment_processing_stage_items', { stage }, items)
-    let outcome: 'success' | 'timeout' | 'aborted' | 'error' = 'success'
+    let outcome: 'success' | 'timeout' | 'aborted' | 'client-error' | 'error' = 'success'
     try {
       return await operation()
     } catch (error) {

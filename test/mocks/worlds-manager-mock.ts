@@ -129,7 +129,7 @@ export async function createWorldsManagerMockComponent({
     const newScene: WorldScene = {
       worldName: worldName.toLowerCase(),
       entityId: scene.id,
-      deployer: deployment?.authChain[0]?.payload ?? owner,
+      deployer: (deployment?.authChain[0]?.payload ?? owner).toLowerCase(),
       deploymentAuthChain: deployment?.authChain ?? [],
       entity: scene,
       parcels,

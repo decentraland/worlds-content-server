@@ -59,7 +59,13 @@ function createDeploymentFileStream(filepath: string, signal?: AbortSignal): Rea
   return stream
 }
 
-/** Wraps an uploaded file as a {@link DeploymentFile}, memoizing the full-buffer read. */
+/**
+ * Wraps an uploaded file as a {@link DeploymentFile}, memoizing the full-buffer read and the hash.
+ *
+ * Memoization assumes every call shares the single request-scoped signal: the first caller's
+ * signal is baked into the memoized promise, and an aborted first read stays rejected for later
+ * callers. Both are correct while the file never outlives its request.
+ */
 export function toDeploymentFile(file: UploadedFile): DeploymentFile {
   let buffered: Promise<Buffer> | undefined
   let hash: Promise<string> | undefined

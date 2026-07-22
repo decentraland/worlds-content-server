@@ -1,5 +1,5 @@
 import { IConfigComponent } from '@well-known-components/interfaces'
-import { getConcurrency, mapWithConcurrency, raceWithSignal } from '../../src/logic/concurrency'
+import { getPositiveInteger, mapWithConcurrency, raceWithSignal } from '../../src/logic/concurrency'
 
 describe('concurrency helpers', () => {
   describe('when tasks have uneven durations', () => {
@@ -78,7 +78,7 @@ describe('concurrency helpers', () => {
     beforeEach(async () => {
       getNumber = jest.fn().mockResolvedValue(7)
       config = { getNumber }
-      concurrency = await getConcurrency(config, 'TEST_CONCURRENCY', 2)
+      concurrency = await getPositiveInteger(config, 'TEST_CONCURRENCY', 2)
     })
 
     afterEach(() => {
@@ -99,7 +99,7 @@ describe('concurrency helpers', () => {
 
     beforeEach(async () => {
       config = { getNumber: jest.fn().mockResolvedValue(undefined) }
-      concurrency = await getConcurrency(config, 'TEST_CONCURRENCY', 2)
+      concurrency = await getPositiveInteger(config, 'TEST_CONCURRENCY', 2)
     })
 
     afterEach(() => {
@@ -120,7 +120,7 @@ describe('concurrency helpers', () => {
       errors = await Promise.all(
         invalidValues.map(async (value) => {
           const config = { getNumber: jest.fn().mockResolvedValue(value) }
-          const error = await getConcurrency(config, 'TEST_CONCURRENCY', 2).catch((caught) => caught)
+          const error = await getPositiveInteger(config, 'TEST_CONCURRENCY', 2).catch((caught) => caught)
           return error instanceof Error ? error.message : String(error)
         })
       )

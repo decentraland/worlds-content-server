@@ -105,7 +105,9 @@ describe('entity deployer', () => {
         12
       )
       contentUploadCalls = storageStoreStream.mock.calls.filter(([hash]) => contentHashes.includes(hash)).length
-    })
+      // The real-timer paced uploads can exceed the default 5s hook budget when jest runs the
+      // full suite with many parallel workers on a loaded machine.
+    }, 30_000)
 
     afterEach(() => {
       jest.resetAllMocks()

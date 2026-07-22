@@ -66,7 +66,10 @@ describe('deployEntity', () => {
   function createContext(id: string, files: Record<string, ReturnType<typeof makeFile>>): DeployContext {
     return {
       components: {
-        deploymentProcessing: createDeploymentProcessingMock()
+        deploymentProcessing: createDeploymentProcessingMock(),
+        logs: {
+          getLogger: jest.fn().mockReturnValue({ debug: jest.fn(), error: jest.fn(), info: jest.fn(), warn: jest.fn() })
+        }
       },
       formData: {
         fields: {
@@ -292,6 +295,59 @@ describe('deployEntity', () => {
           error: 'Client Closed Request',
           message: 'Client disconnected.'
         }
+      })
+    })
+  })
+
+  describe('when a genuine failure races with a client disconnect', () => {
+    let loggerError: jest.Mock
+    let response: Awaited<ReturnType<typeof deployEntity>>
+
+    beforeEach(async () => {
+      const entity = {
+        type: 'scene',
+        pointers: ['0,0'],
+        timestamp: Date.now(),
+        content: [],
+        metadata: { worldConfiguration: { name: 'world.dcl.eth' }, scene: { parcels: ['0,0'] } }
+      }
+      const controller = new AbortController()
+      loggerError = jest.fn()
+      const baseContext = createContext(entityId, { [entityId]: makeFile(Buffer.from(JSON.stringify(entity))) })
+      const context = {
+        ...baseContext,
+        components: {
+          ...baseContext.components,
+          deploymentProcessing: createDeploymentProcessingMock({
+            createAbortContext: jest.fn(() => ({
+              signal: controller.signal,
+              deadlineAt: Date.now() + 1000,
+              dispose: jest.fn()
+            }))
+          }),
+          logs: { getLogger: jest.fn().mockReturnValue({ error: loggerError }) },
+          validator: {
+            validateBeforeStorage: jest.fn(async () => {
+              controller.abort(
+                new DeploymentProcessingAbortedError(new DOMException('Client disconnected.', 'AbortError'))
+              )
+              throw new Error('database exploded')
+            })
+          }
+        }
+      } as unknown as DeployContext
+
+      response = await deployEntity(context)
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should log the underlying failure and still return the client-closed response', () => {
+      expect({ logged: loggerError.mock.calls[0], status: response.status }).toEqual({
+        logged: ['Deployment failed while cancelled', { entityId, error: 'database exploded' }],
+        status: 499
       })
     })
   })

@@ -10,14 +10,18 @@ import { mapWithConcurrency } from '../../logic/concurrency'
 import {
   DEFAULT_CONTENT_FILE_INFO_CONCURRENCY,
   DeploymentProcessingAbortedError,
-  DeploymentProcessingTimeoutError
+  DeploymentProcessingTimeoutError,
+  isProcessingCancellationError
 } from '../../logic/deployment-processing'
 
 export { DEFAULT_CONTENT_FILE_INFO_CONCURRENCY } from '../../logic/deployment-processing'
 export const MAX_ENTITY_FILE_SIZE_IN_BYTES = 5 * 1024 * 1024
 
 type DeployEntityContext = FormDataContext &
-  HandlerContextWithPath<'config' | 'deploymentProcessing' | 'entityDeployer' | 'storage' | 'validator', '/entities'>
+  HandlerContextWithPath<
+    'config' | 'deploymentProcessing' | 'entityDeployer' | 'logs' | 'storage' | 'validator',
+    '/entities'
+  >
 
 export function requireString(val: string | null | undefined): string {
   if (typeof val !== 'string') throw new InvalidRequestError('A string was expected')
@@ -163,6 +167,14 @@ export async function deployEntity(ctx: DeployEntityContext): Promise<IHttpServe
         : abortContext.signal.reason instanceof DeploymentProcessingAbortedError
           ? abortContext.signal.reason
           : undefined
+    // A genuine failure can race with a disconnect or the deadline; the cancellation response
+    // below would otherwise be the only trace of it, since the global error handler never runs.
+    if (abortContext.signal.aborted && !isProcessingCancellationError(error)) {
+      ctx.components.logs.getLogger('deploy-entity-handler').error('Deployment failed while cancelled', {
+        entityId: ctx.formData.fields.entityId?.value[0] ?? 'unknown',
+        error: error instanceof Error ? error.message : String(error)
+      })
+    }
     if (abortedError) {
       // The transport is already gone in production. Returning a typed response keeps the expected
       // cancellation out of the global error handler's warning/500 path in direct or mocked callers.

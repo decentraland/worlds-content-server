@@ -1,15 +1,15 @@
 import { IConfigComponent } from '@well-known-components/interfaces'
 
 /**
- * Reads and validates a positive integer concurrency setting.
+ * Reads and validates a positive integer setting, such as a concurrency limit or a timeout.
  *
  * @param config Configuration provider.
  * @param key Environment variable name.
  * @param fallback Value used when the setting is absent.
- * @returns Configured concurrency.
+ * @returns Configured value.
  * @throws When the configured or fallback value is not a positive safe integer.
  */
-export async function getConcurrency(
+export async function getPositiveInteger(
   config: Pick<IConfigComponent, 'getNumber'>,
   key: string,
   fallback: number
