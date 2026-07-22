@@ -8,6 +8,7 @@ import {
   IWorldNamePermissionChecker,
   IWorldsManager,
   Validation,
+  ValidationResult,
   ValidatorComponents
 } from '../../../src/types'
 import { stringToUtf8Bytes } from 'eth-connect'
@@ -803,12 +804,67 @@ describe('scene validations', function () {
         })
       })
 
-      it('should return an error requiring the thumbnail to be a deployment file', async () => {
+      it('should return an error requiring the thumbnail to be a relative path', async () => {
         const result = await validateThumbnail(deployment)
         expect(result.ok()).toBeFalsy()
         expect(result.errors).toContain(
-          "Scene thumbnail 'https://example.com/image.png' must be a file included in the deployment."
+          "Scene thumbnail 'https://example.com/image.png' must be a relative path to a file included in the deployment, not an absolute URL."
         )
+      })
+    })
+
+    describe('and the thumbnail is an absolute URL with HTML-breakout characters that is also declared as a content file', () => {
+      let result: ValidationResult
+      let breakoutThumbnail: string
+
+      beforeEach(async () => {
+        breakoutThumbnail = 'https://example.com/x"><script>alert(1)</script><meta name="y'
+        const files = new Map<string, Uint8Array>()
+        files.set(breakoutThumbnail, Buffer.from(stringToUtf8Bytes('img')))
+        deployment = await createSceneDeployment(identity.authChain, {
+          type: EntityType.SCENE,
+          pointers: ['0,0'],
+          timestamp: Date.now(),
+          metadata: {
+            display: {
+              navmapThumbnail: breakoutThumbnail
+            }
+          },
+          files
+        })
+        result = await validateThumbnail(deployment)
+      })
+
+      it('should reject the deployment instead of accepting the crafted filename', () => {
+        expect(result.ok()).toBeFalsy()
+        expect(result.errors).toContain(
+          `Scene thumbnail '${breakoutThumbnail}' must be a relative path to a file included in the deployment, not an absolute URL.`
+        )
+      })
+    })
+
+    describe('and the thumbnail is a relative path inside a subdirectory', () => {
+      let result: ValidationResult
+
+      beforeEach(async () => {
+        const files = new Map<string, Uint8Array>()
+        files.set('images/thumbnail.png', Buffer.from(stringToUtf8Bytes('img')))
+        deployment = await createSceneDeployment(identity.authChain, {
+          type: EntityType.SCENE,
+          pointers: ['0,0'],
+          timestamp: Date.now(),
+          metadata: {
+            display: {
+              navmapThumbnail: 'images/thumbnail.png'
+            }
+          },
+          files
+        })
+        result = await validateThumbnail(deployment)
+      })
+
+      it('should return a successful result', () => {
+        expect(result.ok()).toBeTruthy()
       })
     })
 
