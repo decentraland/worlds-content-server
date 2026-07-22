@@ -277,7 +277,9 @@ export async function createWorldsManagerComponent({
    *
    * The transaction ensures atomicity - if any step fails, all changes are rolled back. When a
    * signal is provided, cancellation destroys the dedicated PostgreSQL connection and rolls the
-   * transaction back until COMMIT begins. Starting COMMIT is the deployment's success boundary.
+   * transaction back until COMMIT begins. Starting COMMIT is the deployment's success boundary:
+   * the deadline-based statement timeout is armed for every business statement and cleared right
+   * before COMMIT, so PostgreSQL cannot cancel the commit itself after the boundary is crossed.
    *
    * @param worldName - The name of the world to deploy the scene to
    * @param scene - The scene entity containing metadata, content, and parcel information
@@ -398,6 +400,13 @@ export async function createWorldsManagerComponent({
 
       // Update denormalized scene stats
       await query(buildRecalculateWorldSceneStatsQuery(worldName.toLowerCase()))
+
+      if (deployment?.deadlineAt !== undefined) {
+        // COMMIT is the deployment's success boundary: clear the transaction-local deadline so
+        // PostgreSQL cannot cancel the COMMIT itself and report a possibly-committed deployment
+        // as a pre-commit failure. Request cancellation still applies until COMMIT begins.
+        await query(SQL`SELECT set_config('statement_timeout', ${'0'}, true)`)
+      }
     })
   }
 

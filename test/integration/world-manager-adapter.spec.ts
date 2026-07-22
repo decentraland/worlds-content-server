@@ -117,6 +117,209 @@ test('WorldManagerAdapter', function ({ components }) {
     })
   })
 
+  describe('when deploying with a processing deadline over a dedicated cancellable connection', () => {
+    let armingValueIsPositiveMs: boolean
+    let finalStatements: string[]
+    let persistedEntityIds: string[]
+
+    beforeEach(async () => {
+      const { database, worldCreator, worldsManager } = components
+      const created = await worldCreator.createWorldWithScene()
+      const redeployedEntity = { ...created.entity, id: `${created.entity.id}-deadline` }
+      const statements: { text: string; values?: unknown[] }[] = []
+      const pool = database.getPool()
+      const originalConnect = pool.connect.bind(pool)
+      jest.spyOn(pool, 'connect').mockImplementation((async () => {
+        const client = await originalConnect()
+        const originalQuery = client.query.bind(client)
+        jest.spyOn(client, 'query').mockImplementation(((statement: string | { text: string; values?: unknown[] }) => {
+          statements.push(typeof statement === 'string' ? { text: statement } : statement)
+          return originalQuery(statement as never)
+        }) as never)
+        return client
+      }) as never)
+
+      await worldsManager.deployScene(created.worldName, redeployedEntity, created.owner.authChain[0].payload, {
+        authChain: created.owner.authChain,
+        size: 123,
+        deadlineAt: Date.now() + 30_000,
+        signal: new AbortController().signal
+      })
+
+      const describeStatement = (statement: { text: string; values?: unknown[] }): string =>
+        statement.text.includes('set_config') ? `set_config:${statement.values?.[0]}` : statement.text
+      const armingStatement = statements.find((statement) => statement.text.includes('set_config'))
+      armingValueIsPositiveMs = Number(armingStatement?.values?.[0]) > 0
+      finalStatements = statements.slice(-2).map(describeStatement)
+      jest.restoreAllMocks()
+      const result = await worldsManager.getWorldScenes({ worldName: created.worldName })
+      persistedEntityIds = result.scenes.map((scene) => scene.entityId)
+    })
+
+    afterEach(() => {
+      jest.restoreAllMocks()
+    })
+
+    it('should clear the transaction-local statement timeout immediately before COMMIT', () => {
+      expect({ armingValueIsPositiveMs, finalStatements, persistedEntityIds }).toEqual({
+        armingValueIsPositiveMs: true,
+        finalStatements: ['set_config:0', 'COMMIT'],
+        persistedEntityIds: [expect.stringContaining('-deadline')]
+      })
+    })
+  })
+
+  describe('when deploying with a processing deadline and no cancellation signal', () => {
+    let lastTransactionStatement: string
+    let persistedEntityIds: string[]
+
+    beforeEach(async () => {
+      const { database, worldCreator, worldsManager } = components
+      const created = await worldCreator.createWorldWithScene()
+      const redeployedEntity = { ...created.entity, id: `${created.entity.id}-deadline-no-signal` }
+      const querySpy = jest.spyOn(database, 'query')
+
+      await worldsManager.deployScene(created.worldName, redeployedEntity, created.owner.authChain[0].payload, {
+        authChain: created.owner.authChain,
+        size: 123,
+        deadlineAt: Date.now() + 30_000
+      })
+
+      const lastCall = querySpy.mock.calls[querySpy.mock.calls.length - 1]?.[0] as
+        | string
+        | { text: string; values?: unknown[] }
+      lastTransactionStatement =
+        typeof lastCall === 'string'
+          ? lastCall
+          : lastCall.text.includes('set_config')
+            ? `set_config:${lastCall.values?.[0]}`
+            : lastCall.text
+      jest.restoreAllMocks()
+      const result = await worldsManager.getWorldScenes({ worldName: created.worldName })
+      persistedEntityIds = result.scenes.map((scene) => scene.entityId)
+    })
+
+    afterEach(() => {
+      jest.restoreAllMocks()
+    })
+
+    it('should end the transaction work with the statement timeout reset so COMMIT is unbounded', () => {
+      expect({ lastTransactionStatement, persistedEntityIds }).toEqual({
+        lastTransactionStatement: 'set_config:0',
+        persistedEntityIds: [expect.stringContaining('-deadline-no-signal')]
+      })
+    })
+  })
+
+  describe('when cancellation wins while the connection pool is saturated', () => {
+    let caughtError: unknown
+    let lateClient: { query: jest.Mock; release: jest.Mock }
+
+    beforeEach(async () => {
+      const { database, worldCreator, worldsManager } = components
+      const created = await worldCreator.createWorldWithScene()
+      const redeployedEntity = { ...created.entity, id: `${created.entity.id}-saturated` }
+      const controller = new AbortController()
+      lateClient = { query: jest.fn(), release: jest.fn() }
+      let resolveConnect: (client: unknown) => void = () => undefined
+      const pool = database.getPool()
+      jest
+        .spyOn(pool, 'connect')
+        .mockImplementation((() => new Promise((resolve) => (resolveConnect = resolve))) as never)
+
+      const deployment = worldsManager.deployScene(
+        created.worldName,
+        redeployedEntity,
+        created.owner.authChain[0].payload,
+        {
+          authChain: created.owner.authChain,
+          size: 123,
+          deadlineAt: Date.now() + 30_000,
+          signal: controller.signal
+        }
+      )
+      controller.abort(new Error('client disconnected while waiting for a connection'))
+      caughtError = await deployment.catch((error) => error)
+      resolveConnect(lateClient)
+      await new Promise<void>((resolve) => setImmediate(resolve))
+      jest.restoreAllMocks()
+    })
+
+    afterEach(() => {
+      jest.restoreAllMocks()
+    })
+
+    it('should reject with the cancellation reason and release the late-acquired connection unused', () => {
+      expect({
+        caughtError,
+        lateQueries: lateClient.query.mock.calls.length,
+        released: lateClient.release.mock.calls.length
+      }).toEqual({
+        caughtError: new Error('client disconnected while waiting for a connection'),
+        lateQueries: 0,
+        released: 1
+      })
+    })
+  })
+
+  describe('when COMMIT fails after the success boundary is crossed', () => {
+    let caughtError: unknown
+    let release: jest.Mock
+    let statements: string[]
+
+    beforeEach(async () => {
+      const { database, worldCreator, worldsManager } = components
+      const created = await worldCreator.createWorldWithScene()
+      const redeployedEntity = { ...created.entity, id: `${created.entity.id}-commit-failure` }
+      statements = []
+      release = jest.fn()
+      // The rollback failure also exercises the rollback-error logging without hiding the commit
+      // error, mirroring a connection lost exactly at the commit boundary.
+      const fakeClient = {
+        query: jest.fn(async (statement: string | { text: string }) => {
+          const text = typeof statement === 'string' ? statement : statement.text
+          statements.push(text)
+          if (text === 'COMMIT') {
+            throw new Error('the connection was lost during COMMIT')
+          }
+          if (text === 'ROLLBACK') {
+            throw new Error('the connection is already gone')
+          }
+          return { rows: [], rowCount: 0 }
+        }),
+        release
+      }
+      const pool = database.getPool()
+      jest.spyOn(pool, 'connect').mockImplementation((async () => fakeClient) as never)
+
+      caughtError = await worldsManager
+        .deployScene(created.worldName, redeployedEntity, created.owner.authChain[0].payload, {
+          authChain: created.owner.authChain,
+          size: 123,
+          deadlineAt: Date.now() + 30_000,
+          signal: new AbortController().signal
+        })
+        .catch((error) => error)
+      jest.restoreAllMocks()
+    })
+
+    afterEach(() => {
+      jest.restoreAllMocks()
+    })
+
+    it('should rethrow the commit failure after attempting rollback and release the connection', () => {
+      expect({
+        caughtError,
+        released: release.mock.calls,
+        rollbackAttempted: statements.includes('ROLLBACK')
+      }).toEqual({
+        caughtError: new Error('the connection was lost during COMMIT'),
+        released: [[]],
+        rollbackAttempted: true
+      })
+    })
+  })
+
   describe('when getting the total size of a world', function () {
     describe('when a world has a single deployed scene', function () {
       let worldName: string
