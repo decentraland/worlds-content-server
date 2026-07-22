@@ -896,10 +896,10 @@
     "@dcl/schemas" "^18.0.0"
     "@well-known-components/interfaces" "^1.4.3"
 
-"@dcl/http-server@^2.1.0":
-  version "2.1.0"
-  resolved "https://registry.yarnpkg.com/@dcl/http-server/-/http-server-2.1.0.tgz#5385ba3319356d32d468365a84530f24e245fa65"
-  integrity sha512-UqIFIo18JeKklM/RM0wEJ0u/DCGjikBHtQ1LzuQKjDK6SP9XgeVhukgCg5BmdW0D3Qzlql2i5CGpW4EdyfUiWQ==
+"@dcl/http-server@^2.3.0":
+  version "2.3.0"
+  resolved "https://registry.yarnpkg.com/@dcl/http-server/-/http-server-2.3.0.tgz#661c1901edbb3abea789f25392b16fa453d50764"
+  integrity sha512-P/Vo+PaqM/KU4VwJynUk82wTBw4IMu7SX1QWgeinUfUv9q2MXqJczZAPje2r9RwoPfm/S4htEjJk/WhQn4KY9g==
   dependencies:
     "@dcl/core-commons" "0.10.1"
     "@well-known-components/interfaces" "^1.5.1"

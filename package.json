@@ -22,7 +22,7 @@
     "@dcl/fetch-component": "^1.1.1",
     "@dcl/hashing": "^3.0.4",
     "@dcl/http-commons": "^2.0.0",
-    "@dcl/http-server": "^2.1.0",
+    "@dcl/http-server": "^2.3.0",
     "@dcl/job-component": "^0.3.5",
     "@dcl/metrics": "^1.0.1",
     "@dcl/pg-component": "^0.2.0",
