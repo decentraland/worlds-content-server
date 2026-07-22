@@ -302,6 +302,38 @@ describe('concurrency helpers', () => {
     })
   })
 
+  describe('when a signal is aborted with a null reason', () => {
+    let midFlightError: unknown
+    let preAbortedError: unknown
+
+    beforeEach(async () => {
+      // abort() and abort(undefined) natively substitute a DOMException reason, so null is the
+      // only nullish reason a signal can carry. The helper deliberately normalizes it to a real
+      // Error on both abort paths instead of throwing null like native throwIfAborted() would.
+      const preAborted = new AbortController()
+      preAborted.abort(null)
+      preAbortedError = await raceWithSignal(new Promise<never>(() => undefined), preAborted.signal).catch(
+        (error) => error
+      )
+
+      const midFlight = new AbortController()
+      const racing = raceWithSignal(new Promise<never>(() => undefined), midFlight.signal)
+      midFlight.abort(null)
+      midFlightError = await racing.catch((error) => error)
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should normalize the nullish reason to the fallback error on both abort paths', () => {
+      expect({ midFlightError, preAbortedError }).toEqual({
+        midFlightError: new Error('Operation was aborted.'),
+        preAbortedError: new Error('Operation was aborted.')
+      })
+    })
+  })
+
   describe('when concurrent work starts with an already-aborted signal', () => {
     let caughtError: unknown
     let mapper: jest.Mock
