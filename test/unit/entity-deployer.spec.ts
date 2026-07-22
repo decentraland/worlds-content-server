@@ -379,4 +379,75 @@ describe('entity deployer', () => {
       })
     })
   })
+
+  describe('when deploying an entity type without a post-deployment hook', () => {
+    let deploymentResult: unknown
+    let worldsDeployScene: jest.Mock
+
+    beforeEach(async () => {
+      const setup = createComponents(jest.fn().mockResolvedValue(undefined), 2)
+      worldsDeployScene = setup.worldsDeployScene
+      const entity = {
+        id: 'entity-id',
+        type: EntityType.PROFILE,
+        pointers: ['0xdeployer'],
+        timestamp: Date.now(),
+        content: [],
+        metadata: {}
+      } as Entity
+      const deployer = createEntityDeployer(setup.components)
+
+      deploymentResult = await deployer.deployEntity(
+        'https://worlds.example',
+        entity,
+        new Map(),
+        new Map(),
+        JSON.stringify(entity),
+        [],
+        0
+      )
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should store the entity without running scene persistence and report the missing hook', () => {
+      expect({ deploymentResult, worldDeployments: worldsDeployScene.mock.calls.length }).toEqual({
+        deploymentResult: { message: 'No post deployment hook for this entity type' },
+        worldDeployments: 0
+      })
+    })
+  })
+
+  describe('when the world name has no resolvable owner', () => {
+    let caughtError: unknown
+    let worldsDeployScene: jest.Mock
+
+    beforeEach(async () => {
+      const setup = createComponents(jest.fn().mockResolvedValue(undefined), 2)
+      worldsDeployScene = setup.worldsDeployScene
+      ;(setup.components.nameOwnership.findOwners as jest.Mock).mockResolvedValue(new Map())
+      const entity = createScene([])
+      const deployer = createEntityDeployer(setup.components)
+
+      caughtError = await deployer
+        .deployEntity('https://worlds.example', entity, new Map(), new Map(), JSON.stringify(entity), [], 0)
+        .catch((error) => error)
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should reject the deployment before persisting the scene', () => {
+      expect({
+        error: caughtError instanceof Error ? caughtError.message : caughtError,
+        worldDeployments: worldsDeployScene.mock.calls.length
+      }).toEqual({
+        error: 'Cannot deploy scene "entity-id" to world "world.dcl.eth": owner address could not be resolved.',
+        worldDeployments: 0
+      })
+    })
+  })
 })

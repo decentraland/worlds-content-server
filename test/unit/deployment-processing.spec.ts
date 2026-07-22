@@ -263,6 +263,74 @@ describe('deployment processing component', () => {
     })
   })
 
+  describe('when the abort context is created after the request already disconnected', () => {
+    let component: IDeploymentProcessingComponent
+    let context: ReturnType<IDeploymentProcessingComponent['createAbortContext']>
+
+    beforeEach(async () => {
+      component = await createDeploymentProcessingComponent({
+        config: { getNumber: jest.fn().mockResolvedValue(undefined) } as unknown as IConfigComponent,
+        logs: { getLogger: jest.fn().mockReturnValue({ info: jest.fn() }) } as unknown as ILoggerComponent,
+        metrics: { increment: jest.fn(), observe: jest.fn() } as unknown as IMetricsComponent<
+          keyof typeof metricDeclarations
+        >
+      })
+      const parent = new AbortController()
+      parent.abort(new Error('socket closed'))
+
+      context = component.createAbortContext(parent.signal)
+    })
+
+    afterEach(() => {
+      context.dispose()
+      jest.resetAllMocks()
+    })
+
+    it('should start aborted with a typed cancellation carrying the parent reason', () => {
+      expect({
+        aborted: context.signal.aborted,
+        reason: context.signal.reason
+      }).toEqual({
+        aborted: true,
+        reason: new DeploymentProcessingAbortedError(new Error('socket closed'))
+      })
+    })
+  })
+
+  describe('when a processing stage fails with an operational error', () => {
+    let caughtError: unknown
+    let increment: jest.Mock
+
+    beforeEach(async () => {
+      increment = jest.fn()
+      const component = await createDeploymentProcessingComponent({
+        config: { getNumber: jest.fn().mockResolvedValue(undefined) } as unknown as IConfigComponent,
+        logs: { getLogger: jest.fn().mockReturnValue({ info: jest.fn() }) } as unknown as ILoggerComponent,
+        metrics: { increment, observe: jest.fn() } as unknown as IMetricsComponent<keyof typeof metricDeclarations>
+      })
+
+      caughtError = await component
+        .trackStage('persistence', 1, async () => {
+          throw new Error('database exploded')
+        })
+        .catch((error) => error)
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should report an operational-error outcome and rethrow the failure', () => {
+      expect({
+        error: caughtError instanceof Error ? caughtError.message : caughtError,
+        failure: increment.mock.calls[0]
+      }).toEqual({
+        error: 'database exploded',
+        failure: ['deployment_processing_failures', { outcome: 'error', stage: 'persistence' }]
+      })
+    })
+  })
+
   describe('when a processing stage fails because the request is invalid', () => {
     let caughtError: unknown
     let increment: jest.Mock

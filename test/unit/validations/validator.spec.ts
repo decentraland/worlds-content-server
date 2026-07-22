@@ -184,4 +184,34 @@ describe('validator', function () {
       }).toEqual({ contentHashCalls: 0, permissionChecks: 1, valid: true })
     })
   })
+
+  describe('when the request is aborted while a slow authorization check is running', () => {
+    let abortReason: Error
+    let caughtError: unknown
+
+    beforeEach(async () => {
+      abortReason = new Error('client disconnected')
+      const controller = new AbortController()
+      const hangingPermissionCheck = jest.fn(() => {
+        queueMicrotask(() => controller.abort(abortReason))
+        return new Promise<boolean>(() => undefined)
+      })
+      const deployment = await createSceneDeployment(identity.authChain)
+      deployment.signal = controller.signal
+      const validator = createValidator({
+        ...components,
+        namePermissionChecker: { checkPermission: hangingPermissionCheck } as IWorldNamePermissionChecker
+      })
+
+      caughtError = await validator.validateBeforeStorage(deployment).catch((error) => error)
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should reject with the cancellation reason without waiting for the hung validation', () => {
+      expect(caughtError).toBe(abortReason)
+    })
+  })
 })

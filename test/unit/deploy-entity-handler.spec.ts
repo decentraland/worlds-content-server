@@ -227,6 +227,57 @@ describe('deployEntity', () => {
     })
   })
 
+  describe('when after-storage validation rejects the deployment', () => {
+    let caughtError: unknown
+    let entityDeployerDeploy: jest.Mock
+
+    beforeEach(async () => {
+      const entity = {
+        type: 'scene',
+        pointers: ['0,0'],
+        timestamp: Date.now(),
+        content: [{ hash: 'uploaded-hash', file: 'uploaded.bin' }],
+        metadata: { worldConfiguration: { name: 'world.dcl.eth' }, scene: { parcels: ['0,0'] } }
+      }
+      entityDeployerDeploy = jest.fn()
+      const baseContext = createContext(entityId, {
+        [entityId]: makeFile(Buffer.from(JSON.stringify(entity))),
+        'uploaded-hash': makeFile(Buffer.from('12345'))
+      })
+      const context = {
+        ...baseContext,
+        components: {
+          ...baseContext.components,
+          config: { getString: jest.fn().mockResolvedValue(undefined) },
+          entityDeployer: { deployEntity: entityDeployerDeploy },
+          storage: { fileInfo: jest.fn().mockResolvedValue(undefined) },
+          validator: {
+            validateBeforeStorage: jest.fn().mockResolvedValue({ errors: [], ok: () => true }),
+            validateAfterStorage: jest.fn().mockResolvedValue({
+              errors: ["The hashed file doesn't match the provided content: uploaded-hash"],
+              ok: () => false
+            })
+          }
+        }
+      } as unknown as DeployContext
+
+      caughtError = await deployEntity(context).catch((error) => error)
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should reject with the validation errors without deploying the entity', () => {
+      expect({ caughtError, deployments: entityDeployerDeploy.mock.calls.length }).toEqual({
+        caughtError: new InvalidRequestError(
+          "Deployment failed: The hashed file doesn't match the provided content: uploaded-hash"
+        ),
+        deployments: 0
+      })
+    })
+  })
+
   describe('when deployment processing has exceeded its deadline', () => {
     let response: Awaited<ReturnType<typeof deployEntity>>
 

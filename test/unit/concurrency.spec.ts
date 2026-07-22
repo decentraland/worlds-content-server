@@ -248,4 +248,46 @@ describe('concurrency helpers', () => {
       expect(caughtError).toEqual(new Error('request ended'))
     })
   })
+
+  describe('when a raced operation fails before its signal aborts', () => {
+    let caughtError: unknown
+
+    beforeEach(async () => {
+      const controller = new AbortController()
+      caughtError = await raceWithSignal(Promise.reject(new Error('operation failed')), controller.signal).catch(
+        (error) => error
+      )
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should reject with the operation error instead of a cancellation', () => {
+      expect(caughtError).toEqual(new Error('operation failed'))
+    })
+  })
+
+  describe('when concurrent work starts with an already-aborted signal', () => {
+    let caughtError: unknown
+    let mapper: jest.Mock
+
+    beforeEach(async () => {
+      const controller = new AbortController()
+      controller.abort(new Error('aborted before start'))
+      mapper = jest.fn()
+      caughtError = await mapWithConcurrency([0, 1], 2, mapper, { signal: controller.signal }).catch((error) => error)
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should reject with the abort reason without starting any work', () => {
+      expect({ caughtError, startedItems: mapper.mock.calls.length }).toEqual({
+        caughtError: new Error('aborted before start'),
+        startedItems: 0
+      })
+    })
+  })
 })
