@@ -3,6 +3,7 @@ import { createValidationResult, OK } from './utils'
 import { AuthChain, Entity, EntityType, EthAddress, IPFSv2 } from '@dcl/schemas'
 import { Authenticator } from '@dcl/crypto'
 import { mapWithConcurrency } from '../concurrency'
+import { DEFAULT_FILE_HASH_CONCURRENCY } from '../deployment-processing'
 
 export const validateEntityId: Validation = async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
   const entityFile = deployment.files.get(deployment.entity.id)
@@ -19,7 +20,7 @@ export const validateEntityId: Validation = async (deployment: DeploymentToValid
 }
 
 /** Maximum number of temp-backed files hashed concurrently during deployment validation. */
-export const DEFAULT_FILE_HASH_CONCURRENCY = 4
+export { DEFAULT_FILE_HASH_CONCURRENCY } from '../deployment-processing'
 
 export const validateBaseEntity: Validation = async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
   if (!Entity.validate(deployment.entity)) {
@@ -67,13 +68,20 @@ export const validateSignature: Validation = async (deployment: DeploymentToVali
 
 export const validateFiles = async (
   deployment: DeploymentToValidate,
-  concurrency: number = DEFAULT_FILE_HASH_CONCURRENCY
+  concurrency: number = DEFAULT_FILE_HASH_CONCURRENCY,
+  signal: AbortSignal | undefined = deployment.signal,
+  trackWorker?: (operation: () => Promise<string>) => Promise<string>
 ): Promise<ValidationResult> => {
   const errors: string[] = []
   const contentHashes = new Set(deployment.entity.content!.map(($) => $.hash))
   const uploadedFiles = Array.from(deployment.files)
 
-  const actualHashes = await mapWithConcurrency(uploadedFiles, concurrency, ([, file]) => file.getHash())
+  const actualHashes = await mapWithConcurrency(
+    uploadedFiles,
+    concurrency,
+    ([, file]) => (trackWorker ? trackWorker(() => file.getHash(signal)) : file.getHash(signal)),
+    { signal }
+  )
 
   // validate all files are part of the entity
   for (let index = 0; index < uploadedFiles.length; index++) {

@@ -2,7 +2,7 @@ import { AppComponents, DeploymentFile, DeploymentResult, IEntityDeployer } from
 import { AuthLink, Entity, EntityType, Events, WorldDeploymentEvent } from '@dcl/schemas'
 import { bufferToStream } from '@dcl/catalyst-storage/dist/content-item'
 import { stringToUtf8Bytes } from 'eth-connect'
-import { getConcurrency, mapWithConcurrency } from '../logic/concurrency'
+import { mapWithConcurrency } from '../logic/concurrency'
 
 type PostDeploymentHook = (
   baseUrl: string,
@@ -12,12 +12,12 @@ type PostDeploymentHook = (
 ) => Promise<DeploymentResult>
 
 /** Maximum number of independent content-addressed objects uploaded concurrently. */
-export const DEFAULT_STORAGE_UPLOAD_CONCURRENCY = 10
+export { DEFAULT_STORAGE_UPLOAD_CONCURRENCY } from '../logic/deployment-processing'
 
 /**
  * Creates the deployment component that uploads content and commits validated scenes.
  *
- * Content objects are stored in bounded-parallel batches before the entity and auth-chain objects.
+ * Content objects are stored through a continuous bounded worker pool before the entity and auth-chain objects.
  * The already-calculated deployment size and auth chain are forwarded to the worlds manager so it
  * does not need to retrieve the same storage metadata again.
  *
@@ -27,12 +27,19 @@ export const DEFAULT_STORAGE_UPLOAD_CONCURRENCY = 10
 export function createEntityDeployer(
   components: Pick<
     AppComponents,
-    'blocking' | 'config' | 'logs' | 'nameOwnership' | 'metrics' | 'storage' | 'snsClient' | 'worldsManager'
+    | 'blocking'
+    | 'config'
+    | 'deploymentProcessing'
+    | 'logs'
+    | 'nameOwnership'
+    | 'metrics'
+    | 'storage'
+    | 'snsClient'
+    | 'worldsManager'
   >
 ): IEntityDeployer {
-  const { logs, storage, worldsManager } = components
+  const { deploymentProcessing, logs, storage, worldsManager } = components
   const logger = logs.getLogger('entity-deployer')
-  let storageConcurrency: Promise<number> | undefined
 
   async function deployEntity(
     baseUrl: string,
@@ -41,28 +48,39 @@ export function createEntityDeployer(
     files: Map<string, DeploymentFile>,
     entityJson: string,
     authChain: AuthLink[],
-    deploymentSize: number
+    deploymentSize: number,
+    signal?: AbortSignal
   ): Promise<DeploymentResult> {
-    storageConcurrency ??= getConcurrency(
-      components.config,
-      'DEPLOYMENT_STORAGE_CONCURRENCY',
-      DEFAULT_STORAGE_UPLOAD_CONCURRENCY
-    )
     const contentByHash = new Map((entity.content || []).map((file) => [file.hash, file]))
     const filesToStore = Array.from(contentByHash).filter(([hash]) => !allContentHashesInStorage.get(hash))
     logger.info(`Storing ${filesToStore.length} files`, { entityId: entity.id })
 
-    await mapWithConcurrency(filesToStore, await storageConcurrency, async ([hash]) => {
-      await storage.storeStream(hash, files.get(hash)!.getStream())
-      allContentHashesInStorage.set(hash, true)
+    await deploymentProcessing.trackStage('storage', filesToStore.length + 2, async () => {
+      await mapWithConcurrency(
+        filesToStore,
+        deploymentProcessing.storageConcurrency,
+        async ([hash]) => {
+          await deploymentProcessing.trackWorker('storage', () =>
+            storage.storeStream(hash, files.get(hash)!.getStream(signal))
+          )
+          allContentHashesInStorage.set(hash, true)
+        },
+        { signal }
+      )
+
+      signal?.throwIfAborted()
+      logger.info(`Storing entity`, { cid: entity.id })
+      await Promise.all([
+        deploymentProcessing.trackWorker('storage', () =>
+          storage.storeStream(entity.id, bufferToStream(stringToUtf8Bytes(entityJson)))
+        ),
+        deploymentProcessing.trackWorker('storage', () =>
+          storage.storeStream(entity.id + '.auth', bufferToStream(stringToUtf8Bytes(JSON.stringify(authChain))))
+        )
+      ])
     })
 
-    logger.info(`Storing entity`, { cid: entity.id })
-    await Promise.all([
-      storage.storeStream(entity.id, bufferToStream(stringToUtf8Bytes(entityJson))),
-      storage.storeStream(entity.id + '.auth', bufferToStream(stringToUtf8Bytes(JSON.stringify(authChain))))
-    ])
-
+    signal?.throwIfAborted()
     return await postDeployment(baseUrl, entity, authChain, deploymentSize)
   }
 

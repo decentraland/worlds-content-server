@@ -159,4 +159,43 @@ describe('concurrency helpers', () => {
       expect(errors).toEqual(invalidValues.map((value) => `Concurrency must be a positive safe integer, got ${value}`))
     })
   })
+
+  describe('when concurrent work is aborted', () => {
+    let caughtError: unknown
+    let completedItems: number[]
+    let startedItems: number[]
+
+    beforeEach(async () => {
+      const controller = new AbortController()
+      completedItems = []
+      startedItems = []
+      caughtError = await mapWithConcurrency(
+        [0, 1, 2],
+        2,
+        async (item) => {
+          startedItems.push(item)
+          if (item === 0) {
+            await new Promise<void>((resolve) => setImmediate(resolve))
+            controller.abort(new Error('request aborted'))
+          } else {
+            await new Promise<void>((resolve) => setTimeout(resolve, 5))
+          }
+          completedItems.push(item)
+        },
+        { signal: controller.signal }
+      ).catch((error) => error)
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should settle active work and leave queued work unstarted before rejecting with the abort reason', () => {
+      expect({
+        completedItems,
+        error: caughtError instanceof Error ? caughtError.message : caughtError,
+        startedItems
+      }).toEqual({ completedItems: [0, 1], error: 'request aborted', startedItems: [0, 1] })
+    })
+  })
 })

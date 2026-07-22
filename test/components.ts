@@ -200,6 +200,7 @@ async function initComponents(): Promise<TestComponents> {
   const entityDeployer = createEntityDeployer({
     blocking,
     config,
+    deploymentProcessing: components.deploymentProcessing,
     logs,
     nameOwnership,
     metrics,
@@ -211,6 +212,7 @@ async function initComponents(): Promise<TestComponents> {
   const validator = createValidator({
     config,
     coordinates,
+    deploymentProcessing: components.deploymentProcessing,
     limitsManager,
     nameDenyListChecker,
     namePermissionChecker,
@@ -265,6 +267,7 @@ async function initComponents(): Promise<TestComponents> {
     config,
     commsAdapter,
     coordinates,
+    deploymentProcessing: components.deploymentProcessing,
     denyList,
     entityDeployer,
     evictionJob,

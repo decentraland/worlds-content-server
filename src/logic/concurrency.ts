@@ -36,7 +36,8 @@ export async function getConcurrency(
 export async function mapWithConcurrency<T, R>(
   items: readonly T[],
   concurrency: number,
-  mapper: (item: T, index: number) => Promise<R>
+  mapper: (item: T, index: number) => Promise<R>,
+  options?: { signal?: AbortSignal }
 ): Promise<R[]> {
   if (!Number.isSafeInteger(concurrency) || concurrency <= 0) {
     throw new Error(`Concurrency must be a positive safe integer, got ${concurrency}`)
@@ -46,6 +47,19 @@ export async function mapWithConcurrency<T, R>(
   let nextIndex = 0
   let failed = false
   let firstError: unknown
+  const signal = options?.signal
+
+  const abort = (): void => {
+    if (!failed) {
+      failed = true
+      firstError = signal?.reason ?? new Error('Concurrent work was aborted.')
+    }
+  }
+  if (signal?.aborted) {
+    abort()
+  } else {
+    signal?.addEventListener('abort', abort, { once: true })
+  }
 
   async function worker(): Promise<void> {
     while (!failed) {
@@ -66,7 +80,11 @@ export async function mapWithConcurrency<T, R>(
   }
 
   const workerCount = Math.min(concurrency, items.length)
-  await Promise.all(Array.from({ length: workerCount }, () => worker()))
+  try {
+    await Promise.all(Array.from({ length: workerCount }, () => worker()))
+  } finally {
+    signal?.removeEventListener('abort', abort)
+  }
   if (failed) {
     throw firstError
   }

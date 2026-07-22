@@ -40,6 +40,7 @@ import { createSceneDeployment } from './shared'
 import { createMockNameDenyListChecker } from '../../mocks/name-deny-list-checker-mock'
 import { createMockedPermissionsComponent } from '../../mocks/permissions-component-mock'
 import { IPermissionsComponent } from '../../../src/logic/permissions'
+import { createDeploymentProcessingMock } from '../../mocks/deployment-processing-mock'
 
 describe('scene validations', function () {
   let config: IConfigComponent
@@ -68,6 +69,7 @@ describe('scene validations', function () {
     components = {
       config,
       coordinates,
+      deploymentProcessing: createDeploymentProcessingMock(),
       storage,
       limitsManager,
       nameDenyListChecker,

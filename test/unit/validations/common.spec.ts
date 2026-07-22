@@ -242,6 +242,7 @@ describe('common validations', function () {
       let configuredConcurrency: number
       let hashes: string[]
       let files: Map<string, DeploymentFile>
+      let receivedSignals: Array<AbortSignal | undefined>
 
       beforeEach(async () => {
         deployment = await createSceneDeployment(identity.authChain)
@@ -251,13 +252,16 @@ describe('common validations', function () {
         configuredConcurrency = 2
         hashes = Array.from({ length: DEFAULT_FILE_HASH_CONCURRENCY * 2 + 1 }, (_, index) => `hash-${index}`)
         files = new Map<string, DeploymentFile>()
+        receivedSignals = []
+        const controller = new AbortController()
         for (const hash of hashes) {
           files.set(hash, {
             size: 1,
             getStream: () => {
               throw new Error('validation should use the memoized hash accessor')
             },
-            getHash: async () => {
+            getHash: async (signal) => {
+              receivedSignals.push(signal)
               hashCalls++
               activeHashes++
               maximumActiveHashes = Math.max(maximumActiveHashes, activeHashes)
@@ -269,6 +273,7 @@ describe('common validations', function () {
           })
         }
         deployment.files = files
+        deployment.signal = controller.signal
         deployment.entity.content = hashes.map((hash) => ({ hash, file: hash }))
         deployment.contentHashesInStorage = new Map(hashes.map((hash) => [hash, false]))
 
@@ -280,9 +285,14 @@ describe('common validations', function () {
       })
 
       it('should hash every file with bounded concurrency', () => {
-        expect({ hashCalls, maximumActiveHashes }).toEqual({
+        expect({
+          hashCalls,
+          maximumActiveHashes,
+          receivedSignalCount: receivedSignals.filter((signal) => signal === deployment.signal).length
+        }).toEqual({
           hashCalls: DEFAULT_FILE_HASH_CONCURRENCY * 2 + 1,
-          maximumActiveHashes: configuredConcurrency
+          maximumActiveHashes: configuredConcurrency,
+          receivedSignalCount: hashes.length
         })
       })
     })

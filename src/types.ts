@@ -68,11 +68,11 @@ export type DeploymentFile = {
   /** Size in bytes of the uploaded file. */
   size: number
   /** Opens a fresh read stream over the file's bytes (for hashing and storing). */
-  getStream(): Readable
+  getStream(signal?: AbortSignal): Readable
   /** Calculates and memoizes the file's CIDv1. */
-  getHash(): Promise<string>
+  getHash(signal?: AbortSignal): Promise<string>
   /** Reads the full file into a Buffer. Intended for small files such as the entity JSON. */
-  asBuffer(): Promise<Buffer>
+  asBuffer(signal?: AbortSignal): Promise<Buffer>
 }
 
 export type DeploymentToValidate = {
@@ -82,6 +82,32 @@ export type DeploymentToValidate = {
   contentHashesInStorage: Map<string, boolean>
   /** Storage metadata fetched once before validation, keyed by unique content hash. */
   contentFileInfos?: Map<string, FileInfo | undefined>
+  /** Cancels request-scoped processing after disconnect or the configured processing deadline. */
+  signal?: AbortSignal
+}
+
+export type DeploymentProcessingStage = 'metadata' | 'hash' | 'storage'
+
+export type DeploymentAbortContext = {
+  signal: AbortSignal
+  dispose(): void
+}
+
+export interface IDeploymentProcessingComponent extends IBaseComponent {
+  /** Maximum number of content files uploaded concurrently by one deployment. */
+  readonly storageConcurrency: number
+  /** Maximum number of deployment files hashed concurrently by one deployment. */
+  readonly hashConcurrency: number
+  /** Maximum number of storage metadata lookups run concurrently by one deployment. */
+  readonly fileInfoConcurrency: number
+  /** Maximum time spent processing a deployment after its multipart body has been parsed. */
+  readonly timeoutMs: number
+  /** Combines an optional request signal with the configured processing deadline. */
+  createAbortContext(parentSignal?: AbortSignal): DeploymentAbortContext
+  /** Records the duration, item count, outcome, and active count for a processing stage. */
+  trackStage<T>(stage: DeploymentProcessingStage, items: number, operation: () => Promise<T>): Promise<T>
+  /** Records the number of workers currently active in a bounded processing stage. */
+  trackWorker<T>(stage: DeploymentProcessingStage, operation: () => Promise<T>): Promise<T>
 }
 
 export type SceneDeploymentData = {
@@ -286,6 +312,7 @@ export type ValidatorComponents = Pick<
   AppComponents,
   | 'config'
   | 'coordinates'
+  | 'deploymentProcessing'
   | 'limitsManager'
   | 'nameDenyListChecker'
   | 'namePermissionChecker'
@@ -505,7 +532,8 @@ export type IEntityDeployer = {
     files: Map<string, DeploymentFile>,
     entityJson: string,
     authChain: AuthLink[],
-    deploymentSize: number
+    deploymentSize: number,
+    signal?: AbortSignal
   ): Promise<DeploymentResult>
 }
 
@@ -559,6 +587,7 @@ export type BaseComponents = {
   config: IConfigComponent
   coordinates: ICoordinatesComponent
   database: IPgComponent
+  deploymentProcessing: IDeploymentProcessingComponent
   entityDeployer: IEntityDeployer
   ethereumProvider: HTTPProvider
   evictionJob: IJobComponent

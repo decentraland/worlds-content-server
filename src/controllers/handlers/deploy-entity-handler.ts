@@ -1,15 +1,22 @@
 import { Entity } from '@dcl/schemas'
 import { IHttpServerComponent } from '@dcl/core-commons'
-import { FormDataContext, readUploadedFile, toDeploymentFile } from '../../logic/multipart'
+import { FormDataContext, toDeploymentFile } from '../../logic/multipart'
 import { DeploymentFile, HandlerContextWithPath } from '../../types'
 import { extractAuthChain } from '../../logic/extract-auth-chain'
 import { InvalidRequestError } from '@dcl/http-commons'
 import { FileInfo, IContentStorageComponent } from '@dcl/catalyst-storage'
 import { calculateDeploymentSizeFromFileInfos } from '../../logic/validations/scene'
-import { getConcurrency, mapWithConcurrency } from '../../logic/concurrency'
+import { mapWithConcurrency } from '../../logic/concurrency'
+import {
+  DEFAULT_CONTENT_FILE_INFO_CONCURRENCY,
+  DeploymentProcessingTimeoutError
+} from '../../logic/deployment-processing'
 
-export const DEFAULT_CONTENT_FILE_INFO_CONCURRENCY = 64
+export { DEFAULT_CONTENT_FILE_INFO_CONCURRENCY } from '../../logic/deployment-processing'
 export const MAX_ENTITY_FILE_SIZE_IN_BYTES = 5 * 1024 * 1024
+
+type DeployEntityContext = FormDataContext &
+  HandlerContextWithPath<'config' | 'deploymentProcessing' | 'entityDeployer' | 'storage' | 'validator', '/entities'>
 
 export function requireString(val: string | null | undefined): string {
   if (typeof val !== 'string') throw new InvalidRequestError('A string was expected')
@@ -35,16 +42,25 @@ function parseEntityJson(raw: string) {
 export async function getContentFileInfos(
   storage: Pick<IContentStorageComponent, 'fileInfo'>,
   hashes: string[],
-  concurrency: number = DEFAULT_CONTENT_FILE_INFO_CONCURRENCY
+  concurrency: number = DEFAULT_CONTENT_FILE_INFO_CONCURRENCY,
+  signal?: AbortSignal,
+  trackWorker?: (operation: () => Promise<FileInfo | undefined>) => Promise<FileInfo | undefined>
 ): Promise<Map<string, FileInfo | undefined>> {
   const uniqueHashes = Array.from(new Set(hashes))
-  const fileInfos = await mapWithConcurrency(uniqueHashes, concurrency, (hash) => storage.fileInfo(hash))
+  const fileInfos = await mapWithConcurrency(
+    uniqueHashes,
+    concurrency,
+    (hash) => (trackWorker ? trackWorker(() => storage.fileInfo(hash)) : storage.fileInfo(hash)),
+    { signal }
+  )
   return new Map(uniqueHashes.map((hash, index) => [hash, fileInfos[index]]))
 }
 
-export async function deployEntity(
-  ctx: FormDataContext & HandlerContextWithPath<'config' | 'entityDeployer' | 'storage' | 'validator', '/entities'>
+async function deployEntityWithSignal(
+  ctx: DeployEntityContext,
+  signal: AbortSignal
 ): Promise<IHttpServerComponent.IResponse> {
+  const { deploymentProcessing } = ctx.components
   const entityId = requireString(ctx.formData.fields.entityId?.value[0])
   const authChain = extractAuthChain(ctx)
 
@@ -58,23 +74,22 @@ export async function deployEntity(
     )
   }
 
-  // The entity JSON is small, so it is safe to read fully into memory.
-  const entityRaw = (await readUploadedFile(entityFile)).toString()
-  const entityMetadataJson = parseEntityJson(entityRaw)
-
-  const entity: Entity = { ...entityMetadataJson, id: entityId }
-
   const uploadedFiles: Map<string, DeploymentFile> = new Map()
   for (const filesKey in ctx.formData.files) {
     uploadedFiles.set(filesKey, toDeploymentFile(ctx.formData.files[filesKey]))
   }
+
+  // The entity JSON is small, so it is safe to buffer. Its hash reuses this same read.
+  const entityRaw = (await uploadedFiles.get(entityId)!.asBuffer(signal)).toString()
+  const entityMetadataJson = parseEntityJson(entityRaw)
+  const entity: Entity = { ...entityMetadataJson, id: entityId }
 
   const deployment = {
     entity,
     files: uploadedFiles,
     authChain,
     contentHashesInStorage: new Map<string, boolean>(),
-    contentFileInfos: new Map<string, FileInfo | undefined>()
+    signal
   }
 
   const preStorageValidationResult = await ctx.components.validator.validateBeforeStorage(deployment)
@@ -82,15 +97,16 @@ export async function deployEntity(
     throw new InvalidRequestError(`Deployment failed: ${preStorageValidationResult.errors.join(', ')}`)
   }
 
-  const fileInfoConcurrency = await getConcurrency(
-    ctx.components.config,
-    'DEPLOYMENT_FILE_INFO_CONCURRENCY',
-    DEFAULT_CONTENT_FILE_INFO_CONCURRENCY
-  )
-  const contentFileInfos = await getContentFileInfos(
-    ctx.components.storage,
-    entity.content!.map(($) => $.hash),
-    fileInfoConcurrency
+  signal.throwIfAborted()
+  const contentHashes = entity.content!.map(($) => $.hash)
+  const contentFileInfos = await deploymentProcessing.trackStage('metadata', new Set(contentHashes).size, () =>
+    getContentFileInfos(
+      ctx.components.storage,
+      contentHashes,
+      deploymentProcessing.fileInfoConcurrency,
+      signal,
+      (operation) => deploymentProcessing.trackWorker('metadata', operation)
+    )
   )
   const contentHashesInStorage = new Map(Array.from(contentFileInfos, ([hash, info]) => [hash, info !== undefined]))
 
@@ -107,6 +123,7 @@ export async function deployEntity(
   // Store the entity
   const baseUrl = (await ctx.components.config.getString('HTTP_BASE_URL')) || `https://${ctx.url.host}`
   const deploymentSize = calculateDeploymentSizeFromFileInfos(entity, uploadedFiles, contentFileInfos)
+  signal.throwIfAborted()
   const message = await ctx.components.entityDeployer.deployEntity(
     baseUrl,
     entity,
@@ -114,7 +131,8 @@ export async function deployEntity(
     uploadedFiles,
     entityRaw,
     authChain,
-    deploymentSize
+    deploymentSize,
+    signal
   )
 
   return {
@@ -123,5 +141,31 @@ export async function deployEntity(
       creationTimestamp: Date.now(),
       ...message
     }
+  }
+}
+
+export async function deployEntity(ctx: DeployEntityContext): Promise<IHttpServerComponent.IResponse> {
+  const abortContext = ctx.components.deploymentProcessing.createAbortContext(ctx.request?.signal)
+  try {
+    return await deployEntityWithSignal(ctx, abortContext.signal)
+  } catch (error) {
+    const timeoutError =
+      error instanceof DeploymentProcessingTimeoutError
+        ? error
+        : abortContext.signal.reason instanceof DeploymentProcessingTimeoutError
+          ? abortContext.signal.reason
+          : undefined
+    if (timeoutError) {
+      return {
+        status: 408,
+        body: {
+          error: 'Request Timeout',
+          message: timeoutError.message
+        }
+      }
+    }
+    throw error
+  } finally {
+    abortContext.dispose()
   }
 }

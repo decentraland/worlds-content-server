@@ -1,7 +1,6 @@
 import { DeploymentToValidate, Validation, ValidationResult, Validator, ValidatorComponents } from '../../types'
 import {
   createValidateDeploymentTtl,
-  DEFAULT_FILE_HASH_CONCURRENCY,
   validateAuthChain,
   validateBaseEntity,
   validateEntityId,
@@ -26,7 +25,6 @@ import {
 } from './scene'
 import { OK, validateAll, validateIfTypeMatches } from './utils'
 import { EntityType } from '@dcl/schemas'
-import { getConcurrency } from '../concurrency'
 
 export function createBeforeStorageValidateFns(components: ValidatorComponents): Validation[] {
   return [
@@ -41,13 +39,15 @@ export function createBeforeStorageValidateFns(components: ValidatorComponents):
   ]
 }
 
-export function createAfterStorageValidateFns(
-  components: ValidatorComponents,
-  getHashConcurrency: () => Promise<number> = () =>
-    getConcurrency(components.config, 'DEPLOYMENT_HASH_CONCURRENCY', DEFAULT_FILE_HASH_CONCURRENCY)
-): Validation[] {
+export function createAfterStorageValidateFns(components: ValidatorComponents): Validation[] {
+  const { deploymentProcessing } = components
   return [
-    async (deployment) => validateFiles(deployment, await getHashConcurrency()),
+    async (deployment) =>
+      deploymentProcessing.trackStage('hash', deployment.files.size, () =>
+        validateFiles(deployment, deploymentProcessing.hashConcurrency, deployment.signal, (operation) =>
+          deploymentProcessing.trackWorker('hash', operation)
+        )
+      ),
     validateIfTypeMatches(
       EntityType.SCENE,
       validateAll([
@@ -70,7 +70,9 @@ export function createAfterStorageValidateFns(
 
 async function runValidations(validations: Validation[], deployment: DeploymentToValidate): Promise<ValidationResult> {
   for (const validation of validations) {
+    deployment.signal?.throwIfAborted()
     const result = await validation(deployment)
+    deployment.signal?.throwIfAborted()
     if (!result.ok()) {
       return result
     }
@@ -88,11 +90,7 @@ async function runValidations(validations: Validation[], deployment: DeploymentT
  */
 export const createValidator = (components: ValidatorComponents): Validator => {
   const beforeStorageValidations = createBeforeStorageValidateFns(components)
-  let hashConcurrency: Promise<number> | undefined
-  const afterStorageValidations = createAfterStorageValidateFns(components, () => {
-    hashConcurrency ??= getConcurrency(components.config, 'DEPLOYMENT_HASH_CONCURRENCY', DEFAULT_FILE_HASH_CONCURRENCY)
-    return hashConcurrency
-  })
+  const afterStorageValidations = createAfterStorageValidateFns(components)
 
   return {
     async validateBeforeStorage(deployment: DeploymentToValidate): Promise<ValidationResult> {

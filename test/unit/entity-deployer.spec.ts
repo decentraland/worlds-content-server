@@ -2,32 +2,85 @@ import { Readable } from 'stream'
 import { Entity, EntityType } from '@dcl/schemas'
 import { createEntityDeployer, DEFAULT_STORAGE_UPLOAD_CONCURRENCY } from '../../src/adapters/entity-deployer'
 import { AppComponents, DeploymentFile, IEntityDeployer } from '../../src/types'
+import { createDeploymentProcessingMock } from '../mocks/deployment-processing-mock'
+
+type EntityDeployerComponents = Pick<
+  AppComponents,
+  | 'blocking'
+  | 'config'
+  | 'deploymentProcessing'
+  | 'logs'
+  | 'nameOwnership'
+  | 'metrics'
+  | 'storage'
+  | 'snsClient'
+  | 'worldsManager'
+>
+
+function createScene(contentHashes: string[], duplicateFirstHash: boolean = false): Entity {
+  return {
+    id: 'entity-id',
+    type: EntityType.SCENE,
+    pointers: ['0,0'],
+    timestamp: Date.now(),
+    content: [
+      ...contentHashes.map((hash, index) => ({ hash, file: `file-${index}` })),
+      ...(duplicateFirstHash ? [{ hash: contentHashes[0], file: 'duplicate-reference' }] : [])
+    ],
+    metadata: { worldConfiguration: { name: 'world.dcl.eth' }, scene: { parcels: ['0,0'] } }
+  } as Entity
+}
+
+function createDeploymentFile(
+  hash: string,
+  getStream: DeploymentFile['getStream'] = () => Readable.from('x')
+): DeploymentFile {
+  return {
+    size: 1,
+    getStream,
+    getHash: async () => hash,
+    asBuffer: async () => Buffer.from('x')
+  }
+}
+
+function createComponents(
+  storageStoreStream: jest.Mock,
+  storageConcurrency: number
+): { components: EntityDeployerComponents; worldsDeployScene: jest.Mock } {
+  const worldsDeployScene = jest.fn().mockResolvedValue(undefined)
+  const components = {
+    blocking: { unblockIfUnderQuota: jest.fn().mockResolvedValue(undefined) },
+    config: { getString: jest.fn().mockResolvedValue(undefined) },
+    deploymentProcessing: createDeploymentProcessingMock({ storageConcurrency }),
+    logs: {
+      getLogger: jest.fn().mockReturnValue({ debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() })
+    },
+    metrics: { increment: jest.fn() },
+    nameOwnership: {
+      findOwners: jest.fn().mockResolvedValue(new Map([['world.dcl.eth', '0xowner']]))
+    },
+    snsClient: { publishMessage: jest.fn() },
+    storage: { storeStream: storageStoreStream },
+    worldsManager: { deployScene: worldsDeployScene }
+  } as unknown as EntityDeployerComponents
+  return { components, worldsDeployScene }
+}
 
 describe('entity deployer', () => {
   describe('when a deployment contains more missing files than the storage concurrency limit', () => {
-    let activeContentUploads: number
-    let maximumActiveContentUploads: number
-    let contentHashes: string[]
-    let storageStoreStream: jest.Mock
-    let worldsDeployScene: jest.Mock
-    let entity: Entity
-    let files: Map<string, DeploymentFile>
     let configuredConcurrency: number
-    let contentHashSet: Set<string>
+    let contentHashes: string[]
     let contentUploadCalls: number
-    let deployer: IEntityDeployer
-    let components: Pick<
-      AppComponents,
-      'blocking' | 'config' | 'logs' | 'nameOwnership' | 'metrics' | 'storage' | 'snsClient' | 'worldsManager'
-    >
+    let maximumActiveContentUploads: number
+    let worldsDeployScene: jest.Mock
 
     beforeEach(async () => {
-      activeContentUploads = 0
-      maximumActiveContentUploads = 0
+      let activeContentUploads = 0
       configuredConcurrency = 3
       contentHashes = Array.from({ length: DEFAULT_STORAGE_UPLOAD_CONCURRENCY + 2 }, (_, index) => `hash-${index}`)
-      contentHashSet = new Set(contentHashes)
-      storageStoreStream = jest.fn(async (hash: string) => {
+      const contentHashSet = new Set(contentHashes)
+      maximumActiveContentUploads = 0
+      const storageStoreStream = jest.fn(async (hash: string) => {
         if (contentHashSet.has(hash)) {
           activeContentUploads++
           maximumActiveContentUploads = Math.max(maximumActiveContentUploads, activeContentUploads)
@@ -35,50 +88,11 @@ describe('entity deployer', () => {
           activeContentUploads--
         }
       })
-      worldsDeployScene = jest.fn().mockResolvedValue(undefined)
-      entity = {
-        id: 'entity-id',
-        type: EntityType.SCENE,
-        pointers: ['0,0'],
-        timestamp: Date.now(),
-        content: [
-          ...contentHashes.map((hash, index) => ({ hash, file: `file-${index}` })),
-          { hash: contentHashes[0], file: 'duplicate-reference' }
-        ],
-        metadata: { worldConfiguration: { name: 'world.dcl.eth' }, scene: { parcels: ['0,0'] } }
-      } as Entity
-      files = new Map(
-        contentHashes.map((hash) => [
-          hash,
-          {
-            size: 1,
-            getStream: () => Readable.from('x'),
-            getHash: async () => hash,
-            asBuffer: async () => Buffer.from('x')
-          }
-        ])
-      )
-      components = {
-        blocking: { unblockIfUnderQuota: jest.fn().mockResolvedValue(undefined) },
-        config: {
-          getNumber: jest.fn().mockResolvedValue(configuredConcurrency),
-          getString: jest.fn().mockResolvedValue(undefined)
-        },
-        logs: {
-          getLogger: jest.fn().mockReturnValue({ debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() })
-        },
-        metrics: { increment: jest.fn() },
-        nameOwnership: {
-          findOwners: jest.fn().mockResolvedValue(new Map([['world.dcl.eth', '0xowner']]))
-        },
-        snsClient: { publishMessage: jest.fn() },
-        storage: { storeStream: storageStoreStream },
-        worldsManager: { deployScene: worldsDeployScene }
-      } as unknown as Pick<
-        AppComponents,
-        'blocking' | 'config' | 'logs' | 'nameOwnership' | 'metrics' | 'storage' | 'snsClient' | 'worldsManager'
-      >
-      deployer = createEntityDeployer(components)
+      const setup = createComponents(storageStoreStream, configuredConcurrency)
+      worldsDeployScene = setup.worldsDeployScene
+      const entity = createScene(contentHashes, true)
+      const files = new Map(contentHashes.map((hash) => [hash, createDeploymentFile(hash)]))
+      const deployer = createEntityDeployer(setup.components)
 
       await deployer.deployEntity(
         'https://worlds.example',
@@ -113,22 +127,13 @@ describe('entity deployer', () => {
     let caughtError: unknown
     let completedUploads: string[]
     let startedUploads: string[]
-    let storageStoreStream: jest.Mock
     let worldsDeployScene: jest.Mock
-    let entity: Entity
-    let files: Map<string, DeploymentFile>
-    let contentHashes: string[]
-    let deployer: IEntityDeployer
-    let components: Pick<
-      AppComponents,
-      'blocking' | 'config' | 'logs' | 'nameOwnership' | 'metrics' | 'storage' | 'snsClient' | 'worldsManager'
-    >
 
     beforeEach(async () => {
       completedUploads = []
       startedUploads = []
-      contentHashes = ['hash-0', 'hash-1', 'hash-2']
-      storageStoreStream = jest.fn(async (hash: string) => {
+      const contentHashes = ['hash-0', 'hash-1', 'hash-2']
+      const storageStoreStream = jest.fn(async (hash: string) => {
         startedUploads.push(hash)
         if (hash === 'hash-0') {
           await new Promise<void>((resolve) => setImmediate(resolve))
@@ -137,39 +142,11 @@ describe('entity deployer', () => {
         await new Promise<void>((resolve) => setTimeout(resolve, 5))
         completedUploads.push(hash)
       })
-      worldsDeployScene = jest.fn().mockResolvedValue(undefined)
-      entity = {
-        id: 'entity-id',
-        type: EntityType.SCENE,
-        pointers: ['0,0'],
-        timestamp: Date.now(),
-        content: contentHashes.map((hash) => ({ hash, file: hash })),
-        metadata: { worldConfiguration: { name: 'world.dcl.eth' }, scene: { parcels: ['0,0'] } }
-      } as Entity
-      files = new Map(
-        contentHashes.map((hash) => [
-          hash,
-          {
-            size: 1,
-            getStream: () => Readable.from('x'),
-            getHash: async () => hash,
-            asBuffer: async () => Buffer.from('x')
-          }
-        ])
-      )
-      components = {
-        blocking: { unblockIfUnderQuota: jest.fn().mockResolvedValue(undefined) },
-        config: { getNumber: jest.fn().mockResolvedValue(2) },
-        logs: {
-          getLogger: jest.fn().mockReturnValue({ debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() })
-        },
-        metrics: { increment: jest.fn() },
-        nameOwnership: { findOwners: jest.fn() },
-        snsClient: { publishMessage: jest.fn() },
-        storage: { storeStream: storageStoreStream },
-        worldsManager: { deployScene: worldsDeployScene }
-      } as unknown as typeof components
-      deployer = createEntityDeployer(components)
+      const setup = createComponents(storageStoreStream, 2)
+      worldsDeployScene = setup.worldsDeployScene
+      const entity = createScene(contentHashes)
+      const files = new Map(contentHashes.map((hash) => [hash, createDeploymentFile(hash)]))
+      const deployer = createEntityDeployer(setup.components)
 
       caughtError = await deployer
         .deployEntity(
@@ -213,58 +190,13 @@ describe('entity deployer', () => {
       const contentHashes = new Set([storedHash, missingHash])
       storedFileGetStream = jest.fn(() => Readable.from('stored'))
       const storageStoreStream = jest.fn().mockResolvedValue(undefined)
-      const entity = {
-        id: 'entity-id',
-        type: EntityType.SCENE,
-        pointers: ['0,0'],
-        timestamp: Date.now(),
-        content: [
-          { hash: storedHash, file: 'stored' },
-          { hash: missingHash, file: 'missing' }
-        ],
-        metadata: { worldConfiguration: { name: 'world.dcl.eth' }, scene: { parcels: ['0,0'] } }
-      } as Entity
+      const setup = createComponents(storageStoreStream, 2)
+      const entity = createScene([storedHash, missingHash])
       const files = new Map<string, DeploymentFile>([
-        [
-          storedHash,
-          {
-            size: 1,
-            getStream: storedFileGetStream,
-            getHash: async () => storedHash,
-            asBuffer: async () => Buffer.from('stored')
-          }
-        ],
-        [
-          missingHash,
-          {
-            size: 1,
-            getStream: () => Readable.from('missing'),
-            getHash: async () => missingHash,
-            asBuffer: async () => Buffer.from('missing')
-          }
-        ]
+        [storedHash, createDeploymentFile(storedHash, storedFileGetStream)],
+        [missingHash, createDeploymentFile(missingHash, () => Readable.from('missing'))]
       ])
-      const components = {
-        blocking: { unblockIfUnderQuota: jest.fn().mockResolvedValue(undefined) },
-        config: {
-          getNumber: jest.fn().mockResolvedValue(2),
-          getString: jest.fn().mockResolvedValue(undefined)
-        },
-        logs: {
-          getLogger: jest.fn().mockReturnValue({ debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() })
-        },
-        metrics: { increment: jest.fn() },
-        nameOwnership: {
-          findOwners: jest.fn().mockResolvedValue(new Map([['world.dcl.eth', '0xowner']]))
-        },
-        snsClient: { publishMessage: jest.fn() },
-        storage: { storeStream: storageStoreStream },
-        worldsManager: { deployScene: jest.fn().mockResolvedValue(undefined) }
-      } as unknown as Pick<
-        AppComponents,
-        'blocking' | 'config' | 'logs' | 'nameOwnership' | 'metrics' | 'storage' | 'snsClient' | 'worldsManager'
-      >
-      const deployer = createEntityDeployer(components)
+      const deployer = createEntityDeployer(setup.components)
 
       await deployer.deployEntity(
         'https://worlds.example',
@@ -291,6 +223,69 @@ describe('entity deployer', () => {
       expect({ storedFileReads: storedFileGetStream.mock.calls.length, uploadedContentHashes }).toEqual({
         storedFileReads: 0,
         uploadedContentHashes: ['missing-hash']
+      })
+    })
+  })
+
+  describe('when the request is aborted during content storage', () => {
+    let caughtError: unknown
+    let signals: Array<AbortSignal | undefined>
+    let startedUploads: string[]
+
+    beforeEach(async () => {
+      const controller = new AbortController()
+      const contentHashes = ['hash-0', 'hash-1', 'hash-2']
+      signals = []
+      startedUploads = []
+      const storageStoreStream = jest.fn(async (hash: string) => {
+        startedUploads.push(hash)
+        if (hash === 'hash-0') {
+          await new Promise<void>((resolve) => setImmediate(resolve))
+          controller.abort(new Error('client disconnected'))
+        } else {
+          await new Promise<void>((resolve) => setTimeout(resolve, 5))
+        }
+      })
+      const setup = createComponents(storageStoreStream, 2)
+      const entity = createScene(contentHashes)
+      const files = new Map(
+        contentHashes.map((hash) => [
+          hash,
+          createDeploymentFile(hash, (signal) => {
+            signals.push(signal)
+            return Readable.from('x')
+          })
+        ])
+      )
+      const deployer: IEntityDeployer = createEntityDeployer(setup.components)
+
+      caughtError = await deployer
+        .deployEntity(
+          'https://worlds.example',
+          entity,
+          new Map(contentHashes.map((hash) => [hash, false])),
+          files,
+          JSON.stringify(entity),
+          [],
+          3,
+          controller.signal
+        )
+        .catch((error) => error)
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should pass cancellation to active streams and leave queued uploads unstarted', () => {
+      expect({
+        error: caughtError instanceof Error ? caughtError.message : caughtError,
+        signals,
+        startedUploads
+      }).toEqual({
+        error: 'client disconnected',
+        signals: [expect.any(AbortSignal), expect.any(AbortSignal)],
+        startedUploads: ['hash-0', 'hash-1']
       })
     })
   })

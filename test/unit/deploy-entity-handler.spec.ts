@@ -9,6 +9,10 @@ import {
   MAX_ENTITY_FILE_SIZE_IN_BYTES
 } from '../../src/controllers/handlers/deploy-entity-handler'
 import { InvalidRequestError } from '@dcl/http-commons'
+import { createDeploymentProcessingMock } from '../mocks/deployment-processing-mock'
+import { DeploymentProcessingTimeoutError } from '../../src/logic/deployment-processing'
+import { hashV1 } from '@dcl/hashing'
+import { DeploymentToValidate } from '../../src/types'
 
 type DeployContext = Parameters<typeof deployEntity>[0]
 
@@ -58,6 +62,9 @@ describe('deployEntity', () => {
    */
   function createContext(id: string, files: Record<string, ReturnType<typeof makeFile>>): DeployContext {
     return {
+      components: {
+        deploymentProcessing: createDeploymentProcessingMock()
+      },
       formData: {
         fields: {
           entityId: makeField(id),
@@ -66,7 +73,9 @@ describe('deployEntity', () => {
           'authChain[0][type]': makeField('SIGNER')
         },
         files
-      }
+      },
+      request: { signal: new AbortController().signal },
+      url: new URL('https://request.example/entities')
     } as unknown as DeployContext
   }
 
@@ -125,6 +134,8 @@ describe('deployEntity', () => {
     let availability: Array<[string, boolean]>
     let contentFileInfos: Array<[string, FileInfo | undefined]>
     let deploymentSize: number
+    let entityHash: string
+    let expectedEntityHash: string
     let fileInfo: jest.Mock
     let metadataRequests: string[]
     let responseStatus: number
@@ -143,21 +154,27 @@ describe('deployEntity', () => {
         ],
         metadata: { worldConfiguration: { name: 'world.dcl.eth' }, scene: { parcels: ['0,0'] } }
       }
-      const entityFile = makeFile(Buffer.from(JSON.stringify(entity)))
+      const entityBuffer = Buffer.from(JSON.stringify(entity))
+      const entityFile = makeFile(entityBuffer)
       const uploadedFile = makeFile(Buffer.from('12345'))
       fileInfo = jest.fn(async (hash: string) =>
         hash === storedHash ? { contentSize: 7, encoding: null, size: 7 } : undefined
       )
-      const validateBeforeStorage = jest.fn().mockResolvedValue({ errors: [], ok: () => true })
+      expectedEntityHash = await hashV1(entityBuffer)
+      const validateBeforeStorage = jest.fn(async (deployment: DeploymentToValidate) => {
+        rmSync(entityFile.filepath)
+        entityHash = await deployment.files.get(entityId).getHash()
+        return { errors: [], ok: () => true }
+      })
       const validateAfterStorage = jest.fn().mockResolvedValue({ errors: [], ok: () => true })
       const entityDeployerDeploy = jest.fn().mockResolvedValue({ message: 'deployed' })
       const context = {
         ...createContext(entityId, { [entityId]: entityFile, [uploadedHash]: uploadedFile }),
         components: {
           config: {
-            getNumber: jest.fn().mockResolvedValue(2),
             getString: jest.fn().mockResolvedValue('https://configured.example')
           },
+          deploymentProcessing: createDeploymentProcessingMock({ fileInfoConcurrency: 2 }),
           entityDeployer: { deployEntity: entityDeployerDeploy },
           storage: { fileInfo },
           validator: { validateAfterStorage, validateBeforeStorage }
@@ -180,7 +197,14 @@ describe('deployEntity', () => {
     })
 
     it('should reuse one metadata snapshot for validation and deployment size', () => {
-      expect({ availability, contentFileInfos, deploymentSize, metadataRequests, responseStatus }).toEqual({
+      expect({
+        availability,
+        contentFileInfos,
+        deploymentSize,
+        entityHash,
+        metadataRequests,
+        responseStatus
+      }).toEqual({
         availability: [
           ['uploaded-hash', false],
           ['stored-hash', true]
@@ -190,8 +214,45 @@ describe('deployEntity', () => {
           ['stored-hash', { contentSize: 7, encoding: null, size: 7 }]
         ],
         deploymentSize: 12,
+        entityHash: expectedEntityHash,
         metadataRequests: ['uploaded-hash', 'stored-hash'],
         responseStatus: 200
+      })
+    })
+  })
+
+  describe('when deployment processing has exceeded its deadline', () => {
+    let response: Awaited<ReturnType<typeof deployEntity>>
+
+    beforeEach(async () => {
+      const entity = {
+        type: 'scene',
+        pointers: ['0,0'],
+        timestamp: Date.now(),
+        content: [],
+        metadata: { worldConfiguration: { name: 'world.dcl.eth' }, scene: { parcels: ['0,0'] } }
+      }
+      const controller = new AbortController()
+      controller.abort(new DeploymentProcessingTimeoutError(10))
+      const context = createContext(entityId, { [entityId]: makeFile(Buffer.from(JSON.stringify(entity))) })
+      context.components.deploymentProcessing = createDeploymentProcessingMock({
+        createAbortContext: jest.fn(() => ({ signal: controller.signal, dispose: jest.fn() }))
+      })
+
+      response = await deployEntity(context)
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should return a request-timeout response', () => {
+      expect(response).toEqual({
+        status: 408,
+        body: {
+          error: 'Request Timeout',
+          message: 'Deployment processing exceeded the 10ms deadline.'
+        }
       })
     })
   })

@@ -4,6 +4,7 @@ import * as fsPromises from 'fs/promises'
 import { tmpdir } from 'os'
 import { dirname, join } from 'path'
 import { Readable, Writable } from 'stream'
+import { once } from 'events'
 import FormData from 'form-data'
 import { hashV1 } from '@dcl/hashing'
 import {
@@ -1637,6 +1638,41 @@ describe('toDeploymentFile', () => {
 
     it('should calculate the CID from the memoized buffer without reopening the file', () => {
       expect(actualHash).toBe(expectedHash)
+    })
+  })
+
+  describe('when an active deployment file stream is aborted', () => {
+    let streamError: unknown
+    let tempDirectory: string
+
+    beforeEach(async () => {
+      const content = Buffer.alloc(1024, 1)
+      tempDirectory = await fsPromises.mkdtemp(join(tmpdir(), 'deployment-file-test-'))
+      const filepath = join(tempDirectory, 'content.bin')
+      await fsPromises.writeFile(filepath, content)
+      const deploymentFile = toDeploymentFile({
+        encoding: '7bit',
+        fieldname: 'file',
+        filename: 'content.bin',
+        filepath,
+        mimeType: 'application/octet-stream',
+        size: content.length
+      })
+      const controller = new AbortController()
+      const stream = deploymentFile.getStream(controller.signal)
+      const errorEvent = once(stream, 'error')
+
+      controller.abort(new Error('client disconnected'))
+      streamError = (await errorEvent)[0]
+    })
+
+    afterEach(async () => {
+      await fsPromises.rm(tempDirectory, { force: true, recursive: true })
+      jest.resetAllMocks()
+    })
+
+    it('should destroy the stream with the request abort reason', () => {
+      expect(streamError).toEqual(new Error('client disconnected'))
     })
   })
 })

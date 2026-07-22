@@ -20,6 +20,7 @@ import { createWorldsManagerMockComponent } from '../../mocks/worlds-manager-moc
 import { createCoordinatesComponent } from '../../../src/logic/coordinates'
 import { createMockedPermissionsComponent } from '../../mocks/permissions-component-mock'
 import { IPermissionsComponent } from '../../../src/logic/permissions'
+import { createDeploymentProcessingMock } from '../../mocks/deployment-processing-mock'
 
 describe('validator', function () {
   let config: IConfigComponent
@@ -49,6 +50,7 @@ describe('validator', function () {
     components = {
       config,
       coordinates,
+      deploymentProcessing: createDeploymentProcessingMock(),
       storage,
       limitsManager,
       nameDenyListChecker,
