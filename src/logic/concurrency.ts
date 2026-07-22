@@ -35,7 +35,12 @@ export async function raceWithSignal<T>(operation: Promise<T>, signal?: AbortSig
   if (!signal) {
     return operation
   }
-  signal.throwIfAborted()
+  if (signal.aborted) {
+    // The caller only receives the cancellation, so the already-started operation must still be
+    // observed here or its late rejection would become an unhandled rejection.
+    void operation.catch(() => undefined)
+    throw signal.reason ?? new Error('Operation was aborted.')
+  }
 
   return new Promise<T>((resolve, reject) => {
     const abort = (): void => {

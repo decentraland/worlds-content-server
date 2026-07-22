@@ -268,6 +268,72 @@ describe('concurrency helpers', () => {
     })
   })
 
+  describe('when a raced operation starts under an already-aborted signal and fails later', () => {
+    let caughtError: unknown
+    let onUnhandledRejection: (reason: unknown) => void
+    let unhandledRejections: unknown[]
+
+    beforeEach(async () => {
+      unhandledRejections = []
+      onUnhandledRejection = (reason: unknown) => unhandledRejections.push(reason)
+      process.on('unhandledRejection', onUnhandledRejection)
+      const controller = new AbortController()
+      controller.abort(new Error('aborted before racing'))
+      let rejectOperation: (reason: Error) => void = () => undefined
+      const operation = new Promise<never>((_resolve, reject) => (rejectOperation = reject))
+
+      caughtError = await raceWithSignal(operation, controller.signal).catch((error) => error)
+      rejectOperation(new Error('late failure'))
+      // Unhandled rejections are detected once the microtask queue drains after the rejection.
+      await new Promise<void>((resolve) => setImmediate(resolve))
+      await new Promise<void>((resolve) => setImmediate(resolve))
+    })
+
+    afterEach(() => {
+      process.off('unhandledRejection', onUnhandledRejection)
+      jest.resetAllMocks()
+    })
+
+    it('should reject with the abort reason while keeping the operation observed', () => {
+      expect({ caughtError, unhandledRejections }).toEqual({
+        caughtError: new Error('aborted before racing'),
+        unhandledRejections: []
+      })
+    })
+  })
+
+  describe('when a signal is aborted with a null reason', () => {
+    let midFlightError: unknown
+    let preAbortedError: unknown
+
+    beforeEach(async () => {
+      // abort() and abort(undefined) natively substitute a DOMException reason, so null is the
+      // only nullish reason a signal can carry. The helper deliberately normalizes it to a real
+      // Error on both abort paths instead of throwing null like native throwIfAborted() would.
+      const preAborted = new AbortController()
+      preAborted.abort(null)
+      preAbortedError = await raceWithSignal(new Promise<never>(() => undefined), preAborted.signal).catch(
+        (error) => error
+      )
+
+      const midFlight = new AbortController()
+      const racing = raceWithSignal(new Promise<never>(() => undefined), midFlight.signal)
+      midFlight.abort(null)
+      midFlightError = await racing.catch((error) => error)
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should normalize the nullish reason to the fallback error on both abort paths', () => {
+      expect({ midFlightError, preAbortedError }).toEqual({
+        midFlightError: new Error('Operation was aborted.'),
+        preAbortedError: new Error('Operation was aborted.')
+      })
+    })
+  })
+
   describe('when concurrent work starts with an already-aborted signal', () => {
     let caughtError: unknown
     let mapper: jest.Mock
