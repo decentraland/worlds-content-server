@@ -6,7 +6,7 @@ import {
 } from '@dcl/http-server'
 import { createLogComponent } from '@well-known-components/logger'
 import { createFetchComponent } from './adapters/fetch'
-import { createMetricsComponent } from '@well-known-components/metrics'
+import { createMetricsComponent } from '@dcl/metrics'
 import { createSubgraphComponent } from '@dcl/thegraph-component'
 import { AppComponents, GlobalContext, ICommsAdapter, INameDenyListChecker, IWorldNamePermissionChecker } from './types'
 import { metricDeclarations } from './metrics'
@@ -33,6 +33,8 @@ import { createNameOwnership } from './adapters/name-ownership'
 import { createEthereumProvider } from './adapters/rpc-provider'
 import { createNameChecker } from './adapters/dcl-name-checker'
 import { createWalletStatsComponent } from './adapters/wallet-stats'
+import { createWhitelistComponent } from './adapters/whitelist'
+import { createBlockingComponent } from './adapters/blocking'
 import { createUpdateOwnerJob } from './adapters/update-owner-job'
 import { createSnsComponent } from '@dcl/sns-component'
 import { createAwsConfig } from './adapters/aws-config'
@@ -65,6 +67,7 @@ import { createRateLimiterComponent } from './logic/rate-limiter'
 import { createDenyListComponent } from './logic/denylist'
 import { createBansComponent } from './adapters/bans-adapter'
 import { createEvictionJob } from './adapters/eviction-job'
+import { createDeploymentProcessingComponent } from './logic/deployment-processing'
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
@@ -92,6 +95,7 @@ export async function initComponents(): Promise<AppComponents> {
   const fetch = await createFetchComponent()
   const metrics = await createMetricsComponent(metricDeclarations, { config })
   await instrumentHttpServerWithPromClientRegistry({ metrics, server, config, registry: metrics.registry! })
+  const deploymentProcessing = await createDeploymentProcessingComponent({ config, logs, metrics })
 
   const nats = await createNatsComponent({ config, logs })
 
@@ -156,12 +160,15 @@ export async function initComponents(): Promise<AppComponents> {
 
   const walletStats = await createWalletStatsComponent({ config, database, fetch, logs, worldsManager })
 
+  const whitelist = await createWhitelistComponent({ config, fetch, logs })
+
+  const blocking = await createBlockingComponent({ config, database, logs, snsClient, walletStats, whitelist })
+
   const limitsManager = await createLimitsManagerComponent({
     config,
-    fetch,
-    logs,
     nameOwnership,
     walletStats,
+    whitelist,
     worldsManager
   })
   const worldsIndexer = await createWorldsIndexerComponent({ worldsManager })
@@ -200,7 +207,9 @@ export async function initComponents(): Promise<AppComponents> {
   })
 
   const entityDeployer = createEntityDeployer({
+    blocking,
     config,
+    deploymentProcessing,
     logs,
     nameOwnership,
     metrics,
@@ -211,6 +220,7 @@ export async function initComponents(): Promise<AppComponents> {
   const validator = createValidator({
     config,
     coordinates,
+    deploymentProcessing,
     nameDenyListChecker,
     namePermissionChecker,
     limitsManager,
@@ -238,13 +248,10 @@ export async function initComponents(): Promise<AppComponents> {
   const notificationService = await createNotificationsClientComponent({ config, fetch, logs })
 
   const updateOwnerJob = await createUpdateOwnerJob({
-    config,
+    blocking,
     database,
-    fetch,
     logs,
-    nameOwnership,
-    snsClient,
-    walletStats
+    nameOwnership
   })
 
   const settings = await createSettingsComponent({
@@ -258,7 +265,7 @@ export async function initComponents(): Promise<AppComponents> {
   })
   const schemaValidator = createSchemaValidatorComponent()
 
-  const worlds = createWorldsComponent({ worldsManager, snsClient })
+  const worlds = createWorldsComponent({ blocking, snsClient, worldsManager })
 
   const evictionJob = await createEvictionJob({ config, logs, worlds, pendingScenesManager })
 
@@ -301,6 +308,7 @@ export async function initComponents(): Promise<AppComponents> {
     config,
     coordinates,
     database,
+    deploymentProcessing,
     denyList,
     entityDeployer,
     ethereumProvider,
@@ -312,6 +320,7 @@ export async function initComponents(): Promise<AppComponents> {
     marketplaceSubGraph,
     metrics,
     migrationExecutor,
+    blocking,
     nameDenyListChecker,
     nameOwnership,
     namePermissionChecker,
@@ -338,6 +347,7 @@ export async function initComponents(): Promise<AppComponents> {
     updateOwnerJob,
     validator,
     walletStats,
+    whitelist,
     bans,
     worlds,
     worldsIndexer,

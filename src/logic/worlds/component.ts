@@ -1,6 +1,18 @@
 import { Events, WorldScenesUndeploymentEvent, WorldUndeploymentEvent } from '@dcl/schemas'
-import { AppComponents, TWO_DAYS_IN_MS, WorldManifest } from '../../types'
+import { AppComponents, TWO_DAYS_IN_MS, WorldManifest, WorldScene } from '../../types'
 import { IWorldsComponent } from './types'
+
+/**
+ * The scene's DECLARED base parcel (metadata.scene.base) — the value both the Places service
+ * (place base_position) and the comms-gatekeeper scene-ban lookup key scene identity on. Falls back
+ * to parcels[0] only when the stored entity lacks a valid (non-empty string) base. Using parcels[0]
+ * directly is wrong when the base isn't the first parcel in the array: it points at a different
+ * scene identity, so places/ban lookups keyed on the base would miss.
+ */
+function declaredBaseParcel(scene: WorldScene): string {
+  const base = scene.entity.metadata?.scene?.base
+  return typeof base === 'string' && base.length > 0 ? base : scene.parcels[0]
+}
 
 /**
  * Creates the Worlds component
@@ -10,14 +22,15 @@ import { IWorldsComponent } from './types'
  * 2. Validates blocked status and grace period
  * 3. Composes world manifest from parcels and settings
  * 4. Handles world and scene undeployment with event publishing
+ * 5. Rechecks the owner's blocked status after freeing space
  *
- * @param components Required components: worldsManager, snsClient
+ * @param components Required components: blocking, snsClient, worldsManager
  * @returns IWorldsComponent implementation
  */
 export const createWorldsComponent = (
-  components: Pick<AppComponents, 'worldsManager' | 'snsClient'>
+  components: Pick<AppComponents, 'blocking' | 'snsClient' | 'worldsManager'>
 ): IWorldsComponent => {
-  const { worldsManager, snsClient } = components
+  const { blocking, snsClient, worldsManager } = components
 
   /**
    * Checks if a world is blocked and beyond the grace period
@@ -77,7 +90,7 @@ export const createWorldsComponent = (
    */
   async function getWorldSceneBaseParcel(worldName: string, sceneId: string): Promise<string | undefined> {
     const { scenes } = await worldsManager.getWorldScenes({ worldName, entityId: sceneId }, { limit: 1 })
-    return scenes.length > 0 ? scenes[0].parcels[0] : undefined
+    return scenes.length > 0 ? declaredBaseParcel(scenes[0]) : undefined
   }
 
   /**
@@ -115,11 +128,44 @@ export const createWorldsComponent = (
   }
 
   /**
+   * Captures the world owner before an undeployment, but only when that owner is currently
+   * blocked — so callers can cheaply skip the (expensive) quota recheck for the common case
+   * of an owner that was never blocked. Must be called before the scenes are removed, since
+   * the world record is needed to resolve the owner.
+   *
+   * @param worldName - The name of the world about to be undeployed
+   * @returns The owner address when it is currently blocked, undefined otherwise
+   */
+  async function getBlockedOwner(worldName: string): Promise<string | undefined> {
+    const { records } = await worldsManager.getRawWorldRecords({ worldName })
+    const record = records[0]
+    if (!record || !record.owner || !record.blocked_since) {
+      return undefined
+    }
+    return record.owner
+  }
+
+  /**
+   * Rechecks a (previously blocked) owner's quota after space was freed, unblocking them when
+   * they are back under quota. Best-effort: unblockIfUnderQuota logs and swallows its own
+   * errors, so a failed recheck never affects the undeployment that triggered it.
+   *
+   * @param blockedOwner - The owner returned by getBlockedOwner, or undefined to skip
+   */
+  async function recheckBlockedOwner(blockedOwner: string | undefined): Promise<void> {
+    if (blockedOwner) {
+      await blocking.unblockIfUnderQuota(blockedOwner)
+    }
+  }
+
+  /**
    * Undeploys an entire world by removing all its scenes and publishing a WorldUndeploymentEvent
    *
    * @param worldName - The name of the world to undeploy
    */
   async function undeployWorld(worldName: string): Promise<void> {
+    const blockedOwner = await getBlockedOwner(worldName)
+
     await worldsManager.undeployWorld(worldName)
 
     const event: WorldUndeploymentEvent = {
@@ -133,6 +179,8 @@ export const createWorldsComponent = (
     }
 
     await snsClient.publishMessages([event])
+
+    await recheckBlockedOwner(blockedOwner)
   }
 
   /**
@@ -147,6 +195,7 @@ export const createWorldsComponent = (
   async function undeployWorldScenes(worldName: string, parcels: string[]): Promise<void> {
     // Query affected scenes before deletion to get entity IDs and base parcels
     const { scenes } = await worldsManager.getWorldScenes({ worldName, coordinates: parcels })
+    const blockedOwner = await getBlockedOwner(worldName)
 
     await worldsManager.undeployScene(worldName, parcels)
 
@@ -160,13 +209,18 @@ export const createWorldsComponent = (
           worldName,
           scenes: scenes.map((scene) => ({
             entityId: scene.entityId,
-            baseParcel: scene.parcels[0]
+            // Emit the scene's DECLARED base parcel (see declaredBaseParcel) — the value Places keys
+            // its place records on — not parcels[0]; otherwise the undeployment would fail to disable
+            // the place for scenes whose base isn't the first parcel.
+            baseParcel: declaredBaseParcel(scene)
           }))
         }
       }
 
       await snsClient.publishMessages([event])
     }
+
+    await recheckBlockedOwner(blockedOwner)
   }
 
   async function getWorldSceneBaseParcelIncludingUndeployed(
@@ -177,7 +231,7 @@ export const createWorldsComponent = (
       { worldName, entityId: sceneId, includeUndeployed: true },
       { limit: 1 }
     )
-    return scenes.length > 0 ? scenes[0].parcels[0] : undefined
+    return scenes.length > 0 ? declaredBaseParcel(scenes[0]) : undefined
   }
 
   async function evictUndeployedWorlds(olderThanMs: number): Promise<number> {

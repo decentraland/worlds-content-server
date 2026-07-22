@@ -377,6 +377,26 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '408':
+          description: Multipart upload or post-body deployment processing timed out
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '499':
+          description: >-
+            Client closed the request before deployment processing completed. The response is
+            typically unobservable by the disconnected client but is visible to proxies and tests.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Multipart upload capacity is temporarily exhausted or temporary storage is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /entities/{world_name}:
     delete:
@@ -1098,6 +1118,18 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
           description: Forbidden - user does not own the world name
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '408':
+          description: Multipart upload timed out
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Multipart upload capacity is temporarily exhausted or temporary storage is unavailable
           content:
             application/json:
               schema:

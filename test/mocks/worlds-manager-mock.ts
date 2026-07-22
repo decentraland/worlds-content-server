@@ -13,7 +13,8 @@ import {
   OrderDirection,
   UpdateWorldSettingsResult,
   AccessModificationResult,
-  SceneDeploymentStatus
+  SceneDeploymentStatus,
+  SceneDeploymentData
 } from '../../src/types'
 import { bufferToStream, streamToBuffer } from '@dcl/catalyst-storage'
 import { Entity, EthAddress } from '@dcl/schemas'
@@ -117,17 +118,22 @@ export async function createWorldsManagerMockComponent({
     )
   }
 
-  async function deployScene(worldName: string, scene: Entity, owner: EthAddress): Promise<void> {
+  async function deployScene(
+    worldName: string,
+    scene: Entity,
+    owner: EthAddress,
+    deployment?: SceneDeploymentData
+  ): Promise<void> {
     const parcels: string[] = scene.metadata?.scene?.parcels || []
     const existingMetadata = await getMetadataForWorld(worldName)
     const newScene: WorldScene = {
       worldName: worldName.toLowerCase(),
       entityId: scene.id,
-      deployer: owner,
-      deploymentAuthChain: [],
+      deployer: (deployment?.authChain[0]?.payload ?? owner).toLowerCase(),
+      deploymentAuthChain: deployment?.authChain ?? [],
       entity: scene,
       parcels,
-      size: 0n,
+      size: BigInt(deployment?.size ?? 0),
       status: SceneDeploymentStatus.Deployed,
       createdAt: new Date(),
       updatedAt: new Date()

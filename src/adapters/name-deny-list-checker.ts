@@ -24,7 +24,9 @@ export async function createNameDenyListChecker(
           const response = await components.fetch.fetch(`${url}/banned-names`, { method: 'POST' })
           const list = (await response.json())['data']
           logger.debug(`Fetched list: ${list}`)
-          return list
+          // Guard against a malformed payload (missing/non-array data or null/non-string entries),
+          // otherwise a null entry crashes consumers that call .toLowerCase()/.replace() on it.
+          return Array.isArray(list) ? list.filter((name): name is string => typeof name === 'string') : []
         } catch (error) {
           logger.warn(`Failed to fetch name deny list from ${url}/banned-names: ${error}`)
           return []

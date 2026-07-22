@@ -1,44 +1,36 @@
 import { createLimitsManagerComponent } from '../../src/adapters/limits-manager'
 import { createConfigComponent } from '@well-known-components/env-config-provider'
-import { createLogComponent } from '@well-known-components/logger'
 import { createMockedNameOwnership } from '../mocks/name-ownership-mock'
 import { createMockWalletStatsComponent } from '../mocks/wallet-stats-mock'
+import { createMockWhitelistComponent } from '../mocks/whitelist-mock'
 import { createMockedWorldsManager } from '../mocks/worlds-manager-mock'
 import { EthAddress } from '@dcl/schemas'
 import { ILimitsManager, INameOwnership, IWalletStats, IWorldsManager, MB_BigInt, WalletStats } from '../../src/types'
-import { IConfigComponent, ILoggerComponent } from '@well-known-components/interfaces'
-import { IFetchComponent } from '@dcl/core-commons'
+import { IWhitelistComponent } from '../../src/adapters/whitelist'
+import { IConfigComponent } from '@well-known-components/interfaces'
 
 describe('limits manager', function () {
-  let logs: ILoggerComponent
   let config: IConfigComponent
-  let fetch: IFetchComponent
   let nameOwnership: jest.Mocked<INameOwnership>
   let walletStats: IWalletStats
+  let whitelist: IWhitelistComponent
   let worldsManager: jest.Mocked<IWorldsManager>
   let limitsManager: ILimitsManager
 
   beforeEach(async () => {
-    logs = await createLogComponent({})
     config = createConfigComponent({
       MAX_PARCELS: '4',
       MAX_SIZE: '200',
       ENS_MAX_SIZE: '36',
-      ALLOW_SDK6: 'false',
-      WHITELIST_URL: 'http://localhost/whitelist.json'
+      ALLOW_SDK6: 'false'
     })
-    fetch = {
-      fetch: async (_url: Request): Promise<Response> =>
-        new Response(
-          JSON.stringify({
-            'purchased.dcl.eth': {
-              max_parcels: 44,
-              max_size_in_mb: 160,
-              allow_sdk6: true
-            }
-          })
-        )
-    }
+    whitelist = createMockWhitelistComponent({
+      'purchased.dcl.eth': {
+        max_parcels: 44,
+        max_size_in_mb: 160,
+        allow_sdk6: true
+      }
+    })
     nameOwnership = createMockedNameOwnership()
     nameOwnership.findOwners.mockImplementation(async (worldNames: string[]) => {
       const owners = new Map([['whatever.dcl.eth', '0x123']])
@@ -63,10 +55,9 @@ describe('limits manager', function () {
     worldsManager = createMockedWorldsManager()
     limitsManager = await createLimitsManagerComponent({
       config,
-      fetch,
-      logs,
       nameOwnership,
       walletStats,
+      whitelist,
       worldsManager
     })
   })
@@ -95,6 +86,26 @@ describe('limits manager', function () {
     expect(await limitsManager.getAllowSdk6For('whatever.dcl.eth')).toBeFalsy()
     expect(await limitsManager.getMaxAllowedSizeInBytesFor('whatever.dcl.eth')).toBe(200n * MB_BigInt)
     expect(await limitsManager.getMaxAllowedParcelsFor('whatever.dcl.eth')).toBe(4)
+  })
+
+  describe('when the whitelist source is unavailable', () => {
+    beforeEach(async () => {
+      const failingWhitelist: IWhitelistComponent = {
+        get: jest.fn().mockRejectedValue(new Error('whitelist down'))
+      }
+      limitsManager = await createLimitsManagerComponent({
+        config,
+        nameOwnership,
+        walletStats,
+        whitelist: failingWhitelist,
+        worldsManager
+      })
+    })
+
+    it('should fall back to the hard limits instead of failing', async () => {
+      expect(await limitsManager.getMaxAllowedParcelsFor('purchased.dcl.eth')).toBe(4)
+      expect(await limitsManager.getAllowSdk6For('purchased.dcl.eth')).toBe(false)
+    })
   })
 
   describe('when computing the size limit for a deployment targeting specific parcels', () => {

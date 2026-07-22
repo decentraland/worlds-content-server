@@ -18,7 +18,7 @@ import { IFetchComponent } from '@dcl/core-commons'
 import { createValidator } from '../src/logic/validations'
 import { createPendingScenesManager } from '../src/adapters/pending-scenes-manager'
 import { createPartialDeploymentsComponent } from '../src/logic/partial-deployments'
-import { createTestMetricsComponent } from '@well-known-components/metrics'
+import { createTestMetricsComponent } from '@dcl/metrics'
 import { metricDeclarations } from '../src/metrics'
 import { createEntityDeployer } from '../src/adapters/entity-deployer'
 import { createMockNameDenyListChecker } from './mocks/name-deny-list-checker-mock'
@@ -49,6 +49,9 @@ import { createRedisMock } from './mocks/redis-mock'
 import { createRateLimiterComponent } from '../src/logic/rate-limiter'
 import { createMockDenyList } from './mocks/denylist-mock'
 import { createMockBans } from './mocks/bans-mock'
+import { createMockWalletStatsComponent } from './mocks/wallet-stats-mock'
+import { createMockBlockingComponent } from './mocks/blocking-mock'
+import { createMockWhitelistComponent } from './mocks/whitelist-mock'
 
 /**
  * The npm `form-data` package (used by dcl-catalyst-client to build deploy bodies) exposes its
@@ -190,8 +193,16 @@ async function initComponents(): Promise<TestComponents> {
     snsClient
   })
 
+  const walletStats = createMockWalletStatsComponent()
+
+  const whitelist = createMockWhitelistComponent()
+
+  const blocking = createMockBlockingComponent()
+
   const entityDeployer = createEntityDeployer({
+    blocking,
     config,
+    deploymentProcessing: components.deploymentProcessing,
     logs,
     nameOwnership,
     metrics,
@@ -203,6 +214,7 @@ async function initComponents(): Promise<TestComponents> {
   const validator = createValidator({
     config,
     coordinates,
+    deploymentProcessing: components.deploymentProcessing,
     limitsManager,
     nameDenyListChecker,
     namePermissionChecker,
@@ -241,7 +253,7 @@ async function initComponents(): Promise<TestComponents> {
     worldsManager
   })
 
-  const worlds = createWorldsComponent({ worldsManager, snsClient })
+  const worlds = createWorldsComponent({ blocking, worldsManager, snsClient })
 
   const evictionJob = { start: jest.fn(), stop: jest.fn() }
 
@@ -267,10 +279,12 @@ async function initComponents(): Promise<TestComponents> {
     ...components,
     access,
     bans,
+    blocking,
     comms,
     config,
     commsAdapter,
     coordinates,
+    deploymentProcessing: components.deploymentProcessing,
     denyList,
     entityDeployer,
     evictionJob,
@@ -298,6 +312,8 @@ async function initComponents(): Promise<TestComponents> {
     storage,
     updateOwnerJob,
     validator,
+    walletStats,
+    whitelist,
     worldCreator,
     worlds,
     worldsIndexer,

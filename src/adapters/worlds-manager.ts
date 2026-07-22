@@ -25,14 +25,16 @@ import {
   GetRawWorldRecordsResult,
   GetOccupiedParcelsOptions,
   GetOccupiedParcelsResult,
-  SceneDeploymentStatus
+  SceneDeploymentStatus,
+  SceneDeploymentData
 } from '../types'
 import { streamToBuffer } from '@dcl/catalyst-storage'
 import { Entity, EthAddress } from '@dcl/schemas'
 import { InvalidRequestError } from '@dcl/http-commons'
-import SQL from 'sql-template-strings'
+import SQL, { type SQLStatement } from 'sql-template-strings'
 import { buildWorldRuntimeMetadata, shouldShowInPlaces } from '../logic/world-runtime-metadata-utils'
 import { AccessSetting, defaultAccess } from '../logic/access'
+import { raceWithSignal } from '../logic/concurrency'
 
 type BoundingRow = { min_x: number; max_x: number; min_y: number; max_y: number }
 
@@ -49,6 +51,96 @@ export async function createWorldsManagerComponent({
 >): Promise<IWorldsManager> {
   const logger = logs.getLogger('worlds-manager')
   const { extractSpawnCoordinates, parseCoordinate, isCoordinateWithinRectangle, getRectangleCenter } = coordinates
+
+  // The query closure returns the result so in-transaction reads (the advisory lock and the newer-scene
+  // ordering check) can run on the same connection as the writes — on the signal path that is a dedicated
+  // pool connection, and `database.query` would use a different one, silently running them outside the tx.
+  type DeploymentQueryResult = { rows: any[]; rowCount: number | null }
+  type DeploymentTransactionQuery = (statement: SQLStatement) => Promise<DeploymentQueryResult>
+  type DeploymentTransactionClient = {
+    query(statement: string | SQLStatement): Promise<DeploymentQueryResult>
+    release(error?: Error): void
+  }
+
+  /**
+   * Runs deployment persistence on a dedicated connection which is destroyed on cancellation.
+   * Closing the connection makes PostgreSQL roll back active transaction work. Cancellation is
+   * disabled immediately before COMMIT, which is the deployment's explicit success boundary.
+   */
+  async function withDeploymentTransaction(
+    signal: AbortSignal | undefined,
+    operation: (query: DeploymentTransactionQuery) => Promise<void>
+  ): Promise<void> {
+    if (!signal) {
+      await database.withAsyncContextTransaction(() => operation((statement) => database.query(statement)))
+      return
+    }
+
+    signal.throwIfAborted()
+    const acquireClient = database.getPool().connect() as Promise<DeploymentTransactionClient>
+    let client: Awaited<typeof acquireClient>
+    try {
+      client = await raceWithSignal(acquireClient, signal)
+    } catch (error) {
+      // If cancellation wins while the pool is saturated, release the eventual acquisition instead
+      // of leaking a checked-out connection after this request has already returned.
+      void acquireClient.then(
+        (acquiredClient) => acquiredClient.release(),
+        () => undefined
+      )
+      throw error
+    }
+
+    let released = false
+    let commitStarted = false
+    const abort = (): void => {
+      if (!released && !commitStarted) {
+        released = true
+        const reason = signal.reason instanceof Error ? signal.reason : new Error('Deployment persistence aborted.')
+        client.release(reason)
+      }
+    }
+    signal.addEventListener('abort', abort, { once: true })
+
+    try {
+      signal.throwIfAborted()
+      await client.query('BEGIN')
+      const query: DeploymentTransactionQuery = async (statement) => {
+        signal.throwIfAborted()
+        const result = await client.query(statement)
+        signal.throwIfAborted()
+        return result
+      }
+      await operation(query)
+      signal.throwIfAborted()
+
+      // Once COMMIT begins, cancellation can no longer reliably distinguish a committed transaction
+      // from a rolled-back one. Treat this point as success and let post-commit work be best-effort.
+      commitStarted = true
+      signal.removeEventListener('abort', abort)
+      await client.query('COMMIT')
+    } catch (error) {
+      if (!released) {
+        try {
+          await client.query('ROLLBACK')
+        } catch (rollbackError) {
+          logger.error('Error rolling back cancelled deployment transaction', {
+            error: rollbackError instanceof Error ? rollbackError.message : String(rollbackError)
+          })
+        }
+      }
+      if (signal.aborted && !commitStarted) {
+        throw signal.reason ?? error
+      }
+      throw error
+    } finally {
+      signal.removeEventListener('abort', abort)
+      if (!released) {
+        released = true
+        client.release()
+      }
+    }
+  }
 
   /**
    * Gets a paginated list of raw world records with optional filtering
@@ -183,9 +275,10 @@ export async function createWorldsManagerComponent({
     worldNameLower: string,
     sceneId: string,
     sceneTimestamp: number,
-    parcels: string[]
+    parcels: string[],
+    exec: (statement: SQLStatement) => Promise<{ rowCount: number | null }> = (statement) => database.query(statement)
   ): Promise<boolean> {
-    const result = await database.query(SQL`
+    const result = await exec(SQL`
       SELECT 1 FROM world_scenes
       WHERE world_name = ${worldNameLower}
         AND status = 'DEPLOYED'
@@ -197,7 +290,7 @@ export async function createWorldsManagerComponent({
               OR ((entity->>'timestamp')::numeric = ${sceneTimestamp} AND entity_id > ${sceneId}) )
       LIMIT 1
     `)
-    return result.rowCount > 0
+    return (result.rowCount ?? 0) > 0
   }
 
   // Non-authoritative fast-fail for the deploy path: lets a caller reject a stale deploy BEFORE storing
@@ -221,15 +314,25 @@ export async function createWorldsManagerComponent({
    * 4. Removes any existing scenes that overlap with the new scene's parcels
    * 5. Inserts the new scene into the world_scenes table
    *
-   * The transaction ensures atomicity - if any step fails, all changes are rolled back.
+   * The transaction ensures atomicity - if any step fails, all changes are rolled back. When a
+   * signal is provided, cancellation destroys the dedicated PostgreSQL connection and rolls the
+   * transaction back until COMMIT begins. Starting COMMIT is the deployment's success boundary:
+   * the deadline-based statement timeout is armed for every business statement and cleared right
+   * before COMMIT, so PostgreSQL cannot cancel the commit itself after the boundary is crossed.
    *
    * @param worldName - The name of the world to deploy the scene to
    * @param scene - The scene entity containing metadata, content, and parcel information
    * @param owner - The Ethereum address of the world owner
+   * @param deployment - Prevalidated deployment data, deadline, and optional cancellation signal
    * @throws {Error} If the deployment auth chain cannot be retrieved or parsed
    * @throws {Error} If any database operation fails (triggers rollback)
    */
-  async function deployScene(worldName: string, scene: Entity, owner: EthAddress): Promise<void> {
+  async function deployScene(
+    worldName: string,
+    scene: Entity,
+    owner: EthAddress,
+    deployment?: SceneDeploymentData
+  ): Promise<void> {
     // Canonicalize so the stored parcels, the overlap-based replacement here, the undeploy
     // authorization, and the size credit-back all compare parcels by value (e.g. "00,00" ==
     // "0,0"). Otherwise a non-canonical scene.parcels could dodge replacement / over-credit.
@@ -238,14 +341,19 @@ export async function createWorldsManagerComponent({
       throw new Error(`Attempt to deploy scene ${scene.id} to world ${worldName} with no parcels.`)
     }
 
-    const content = await storage.retrieve(`${scene.id}.auth`)
-    const deploymentAuthChainString = content ? (await streamToBuffer(await content.asStream())).toString() : '{}'
-    const deploymentAuthChain = JSON.parse(deploymentAuthChainString)
+    const content = deployment ? undefined : await storage.retrieve(`${scene.id}.auth`)
+    const deploymentAuthChainString = deployment
+      ? JSON.stringify(deployment.authChain)
+      : content
+        ? (await streamToBuffer(await content.asStream())).toString()
+        : '{}'
+    const deploymentAuthChain = deployment?.authChain ?? JSON.parse(deploymentAuthChainString)
 
     const deployer = deploymentAuthChain[0].payload.toLowerCase()
 
-    const fileInfos = await storage.fileInfoMultiple(scene.content?.map((c) => c.hash) || [])
-    const size = scene.content?.reduce((acc, c) => acc + (fileInfos.get(c.hash)?.size || 0), 0) || 0
+    const fileInfos = deployment ? undefined : await storage.fileInfoMultiple(scene.content?.map((c) => c.hash) || [])
+    const size =
+      deployment?.size ?? scene.content?.reduce((acc, c) => acc + (fileInfos?.get(c.hash)?.size || 0), 0) ?? 0
 
     const spawnCoordinates = extractSpawnCoordinates(scene)
 
@@ -264,31 +372,41 @@ export async function createWorldsManagerComponent({
     const thumbnailContent = navmapThumbnail ? scene.content?.find((c) => c.file === navmapThumbnail) : null
     const thumbnailHash = thumbnailContent?.hash || null
 
-    await database.withAsyncContextTransaction(async () => {
+    await withDeploymentTransaction(deployment?.signal, async (query) => {
       // Serialize concurrent deploys to the same world so the "reject if a newer scene already holds
       // these parcels" check below is atomic with the soft-delete + insert. Both the vanilla and the
       // partial-finalize paths reach deployScene, so this is the single place deployment ordering is
       // enforced for world scenes — without the lock, a newer deploy could commit between another
-      // deploy's check and its write, and the older one would silently undeploy it.
-      await database.query(
+      // deploy's check and its write, and the older one would silently undeploy it. It runs through the
+      // query closure so, on the signal path, the lock is held by the same dedicated connection that
+      // performs the writes (database.query would run on a different connection and defeat the lock).
+      await query(
         SQL`SELECT pg_advisory_xact_lock(hashtextextended(${'world_scene_deploy:' + worldName.toLowerCase()}, 0))`
       )
 
       // Reject if a strictly-newer scene (Decentraland ordering: greater entity.timestamp, tie broken
       // by greater entity id) already occupies any of these parcels. This makes an older deploy — most
       // importantly a stale partial finalize — unable to overwrite a newer one, atomically under the
-      // lock above rather than via a racy pre-write check in the caller. The query runs in this
-      // transaction (ambient context), so it observes the state the lock protects.
-      if (await newerDeployedSceneExists(worldName.toLowerCase(), scene.id, scene.timestamp, parcels)) {
+      // lock above rather than via a racy pre-write check in the caller. The check runs through the same
+      // query closure, so it observes the state the lock protects.
+      if (await newerDeployedSceneExists(worldName.toLowerCase(), scene.id, scene.timestamp, parcels, query)) {
         throw new InvalidRequestError(
           `Deployment failed: a newer scene is already deployed on one or more of these parcels.`
         )
       }
 
+      // Bound the remaining statements by the processing deadline (a transaction-local statement_timeout),
+      // cleared right before COMMIT further down. The advisory-lock wait above is instead bounded by the
+      // cancellation signal — a disconnect or the deadline destroys the connection and releases the wait.
+      if (deployment?.deadlineAt !== undefined) {
+        const remainingMs = Math.max(1, deployment.deadlineAt - Date.now())
+        await query(SQL`SELECT set_config('statement_timeout', ${remainingMs.toString()}, true)`)
+      }
+
       // Ensure world record exists, update if it does
       // On first deployment (INSERT), set settings from scene metadata
       // On subsequent deployments (UPDATE), preserve existing settings
-      await database.query(SQL`
+      await query(SQL`
         INSERT INTO worlds (
           name, owner, access, spawn_coordinates, 
           title, description, content_rating, skybox_time, categories,
@@ -323,7 +441,7 @@ export async function createWorldsManagerComponent({
       // finalize relies on): without the exclusion this UPDATE would flip the winner's fresh row to
       // UNDEPLOYED, the DELETE below would remove it, and a second finalize would deploy again —
       // double-publishing the SNS event and double-counting the deployment.
-      await database.query(SQL`
+      await query(SQL`
         UPDATE world_scenes SET status = 'UNDEPLOYED', updated_at = NOW()
         WHERE world_name = ${worldName.toLowerCase()}
         AND parcels && ${parcels}::text[]
@@ -335,7 +453,7 @@ export async function createWorldsManagerComponent({
       // (world_name, entity_id) primary key and would make the insert below fail forever for a
       // redeploy. Remove it. A DEPLOYED self-row is deliberately left alone (the soft-delete above
       // excludes it) so a concurrent finalize of the same entity still hits the unique violation.
-      await database.query(SQL`
+      await query(SQL`
         DELETE FROM world_scenes
         WHERE world_name = ${worldName.toLowerCase()}
         AND entity_id = ${scene.id}
@@ -343,7 +461,7 @@ export async function createWorldsManagerComponent({
       `)
 
       // Insert new scene
-      await database.query(SQL`
+      await query(SQL`
         INSERT INTO world_scenes (
           world_name, entity_id, deployer, deployment_auth_chain,
           entity, parcels, size, status, created_at, updated_at
@@ -362,7 +480,14 @@ export async function createWorldsManagerComponent({
       `)
 
       // Update denormalized scene stats
-      await recalculateWorldSceneStats(worldName.toLowerCase())
+      await query(buildRecalculateWorldSceneStatsQuery(worldName.toLowerCase()))
+
+      if (deployment?.deadlineAt !== undefined) {
+        // COMMIT is the deployment's success boundary: clear the transaction-local deadline so
+        // PostgreSQL cannot cancel the COMMIT itself and report a possibly-committed deployment
+        // as a pre-commit failure. Request cancellation still applies until COMMIT begins.
+        await query(SQL`SELECT set_config('statement_timeout', ${'0'}, true)`)
+      }
     })
   }
 
@@ -856,8 +981,8 @@ export async function createWorldsManagerComponent({
    * @param worldName - The name of the world
    * @returns The bounding rectangle, or undefined if no parcels exist
    */
-  async function recalculateWorldSceneStats(worldName: string): Promise<void> {
-    await database.query(SQL`
+  function buildRecalculateWorldSceneStatsQuery(worldName: string): SQLStatement {
+    return SQL`
       WITH stats AS (
         SELECT
           MAX(ws.created_at) as last_deployed_at,
@@ -880,7 +1005,11 @@ export async function createWorldsManagerComponent({
         updated_at = NOW()
       FROM stats
       WHERE worlds.name = ${worldName}
-    `)
+    `
+  }
+
+  async function recalculateWorldSceneStats(worldName: string): Promise<void> {
+    await database.query(buildRecalculateWorldSceneStatsQuery(worldName))
   }
 
   async function getWorldBoundingRectangle(worldName: string): Promise<WorldBoundingRectangle | undefined> {

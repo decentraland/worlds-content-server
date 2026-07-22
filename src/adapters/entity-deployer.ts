@@ -3,16 +3,45 @@ import { AuthLink, Entity, EntityType, Events, WorldDeploymentEvent } from '@dcl
 import { bufferToStream } from '@dcl/catalyst-storage/dist/content-item'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { InvalidRequestError } from '@dcl/http-commons'
+import { mapWithConcurrency, raceWithSignal } from '../logic/concurrency'
 
-type PostDeploymentHook = (baseUrl: string, entity: Entity, authChain: AuthLink[]) => Promise<DeploymentResult>
+type PostDeploymentHook = (
+  baseUrl: string,
+  entity: Entity,
+  authChain: AuthLink[],
+  deploymentSize: number,
+  signal?: AbortSignal,
+  deadlineAt?: number
+) => Promise<DeploymentResult>
 
+/** Maximum number of independent content-addressed objects uploaded concurrently. */
+export { DEFAULT_STORAGE_UPLOAD_CONCURRENCY } from '../logic/deployment-processing'
+
+/**
+ * Creates the deployment component that uploads content and commits validated scenes.
+ *
+ * Content objects are stored through a continuous bounded worker pool before the entity and auth-chain objects.
+ * The already-calculated deployment size and auth chain are forwarded to the worlds manager so it
+ * does not need to retrieve the same storage metadata again.
+ *
+ * @param components Storage, world persistence, ownership, notification, logging, and metric dependencies.
+ * @returns Entity deployment component.
+ */
 export function createEntityDeployer(
   components: Pick<
     AppComponents,
-    'config' | 'logs' | 'nameOwnership' | 'metrics' | 'storage' | 'snsClient' | 'worldsManager'
+    | 'blocking'
+    | 'config'
+    | 'deploymentProcessing'
+    | 'logs'
+    | 'nameOwnership'
+    | 'metrics'
+    | 'storage'
+    | 'snsClient'
+    | 'worldsManager'
   >
 ): IEntityDeployer {
-  const { logs, storage, worldsManager } = components
+  const { deploymentProcessing, logs, storage, worldsManager } = components
   const logger = logs.getLogger('entity-deployer')
 
   async function deployEntity(
@@ -21,7 +50,10 @@ export function createEntityDeployer(
     allContentHashesInStorage: Map<string, boolean>,
     files: Map<string, DeploymentFile>,
     entityJson: string,
-    authChain: AuthLink[]
+    authChain: AuthLink[],
+    deploymentSize: number,
+    signal?: AbortSignal,
+    deadlineAt?: number
   ): Promise<DeploymentResult> {
     // Fast-fail BEFORE writing anything to storage if a newer scene already holds these parcels. This is
     // non-authoritative (deployScene re-checks atomically under a lock), but it keeps a rejected older
@@ -35,45 +67,80 @@ export function createEntityDeployer(
       }
     }
 
-    // store all files
-    const content = entity.content || []
-    logger.info(`Storing ${content.length} files`, { entityId: entity.id })
-    for (const file of content) {
-      if (!allContentHashesInStorage.get(file.hash)) {
-        const filename = content.find(($) => $.hash === file.hash)
-        logger.info(`Storing file`, { cid: file.hash, filename: filename?.file || 'unknown' })
-        await storage.storeStream(file.hash, files.get(file.hash)!.getStream())
-        allContentHashesInStorage.set(file.hash, true)
-      }
-    }
+    const contentByHash = new Map((entity.content || []).map((file) => [file.hash, file]))
+    const filesToStore = Array.from(contentByHash).filter(([hash]) => !allContentHashesInStorage.get(hash))
+    logger.info(`Storing ${filesToStore.length} files`, { entityId: entity.id })
 
-    logger.info(`Storing entity`, { cid: entity.id })
-    await Promise.all([
-      storage.storeStream(entity.id, bufferToStream(stringToUtf8Bytes(entityJson))),
-      storage.storeStream(entity.id + '.auth', bufferToStream(stringToUtf8Bytes(JSON.stringify(authChain))))
-    ])
+    await deploymentProcessing.trackStage('storage', filesToStore.length + 2, async () => {
+      await mapWithConcurrency(
+        filesToStore,
+        deploymentProcessing.storageConcurrency,
+        async ([hash]) => {
+          await deploymentProcessing.trackWorker('storage', () =>
+            storage.storeStream(hash, files.get(hash)!.getStream(signal))
+          )
+          allContentHashesInStorage.set(hash, true)
+        },
+        { signal }
+      )
 
-    return await postDeployment(baseUrl, entity, authChain)
+      signal?.throwIfAborted()
+      logger.info(`Storing entity`, { cid: entity.id })
+      await mapWithConcurrency(
+        [
+          [entity.id, entityJson],
+          [entity.id + '.auth', JSON.stringify(authChain)]
+        ] as const,
+        2,
+        ([id, content]) =>
+          deploymentProcessing.trackWorker('storage', () =>
+            storage.storeStream(id, bufferToStream(stringToUtf8Bytes(content)))
+          ),
+        { signal, waitForActiveOnAbort: false }
+      )
+    })
+
+    signal?.throwIfAborted()
+    return await deploymentProcessing.trackStage('persistence', 1, () =>
+      postDeployment(baseUrl, entity, authChain, deploymentSize, signal, deadlineAt)
+    )
   }
 
   const postDeploymentHooks: Partial<Record<EntityType, PostDeploymentHook>> = {
     [EntityType.SCENE]: postSceneDeployment
   }
 
-  async function postDeployment(baseUrl: string, entity: Entity, authChain: AuthLink[]): Promise<DeploymentResult> {
+  async function postDeployment(
+    baseUrl: string,
+    entity: Entity,
+    authChain: AuthLink[],
+    deploymentSize: number,
+    signal?: AbortSignal,
+    deadlineAt?: number
+  ): Promise<DeploymentResult> {
     const hookForType = postDeploymentHooks[entity.type] || noPostDeploymentHook
-    return hookForType(baseUrl, entity, authChain)
+    return hookForType(baseUrl, entity, authChain, deploymentSize, signal, deadlineAt)
   }
 
   async function noPostDeploymentHook(
     _baseUrl: string,
     _entity: Entity,
-    _authChain: AuthLink[]
+    _authChain: AuthLink[],
+    _deploymentSize: number,
+    _signal?: AbortSignal,
+    _deadlineAt?: number
   ): Promise<DeploymentResult> {
     return { message: 'No post deployment hook for this entity type' }
   }
 
-  async function postSceneDeployment(baseUrl: string, entity: Entity, authChain: AuthLink[]) {
+  async function postSceneDeployment(
+    baseUrl: string,
+    entity: Entity,
+    authChain: AuthLink[],
+    deploymentSize: number,
+    signal?: AbortSignal,
+    deadlineAt?: number
+  ) {
     const { config, metrics, snsClient } = components
 
     // determine the name to use for deploying the world
@@ -81,7 +148,7 @@ export function createEntityDeployer(
     const parcels = entity.metadata?.scene?.parcels || []
     logger.debug(`Deployment for scene "${entity.id}" under world name "${worldName}" at parcels ${parcels.join(', ')}`)
 
-    const owner = (await components.nameOwnership.findOwners([worldName])).get(worldName)
+    const owner = (await raceWithSignal(components.nameOwnership.findOwners([worldName]), signal)).get(worldName)
 
     if (!owner) {
       throw new Error(
@@ -89,35 +156,68 @@ export function createEntityDeployer(
       )
     }
 
-    await worldsManager.deployScene(worldName, entity, owner)
+    signal?.throwIfAborted()
+    await worldsManager.deployScene(worldName, entity, owner, {
+      authChain,
+      size: deploymentSize,
+      ...(deadlineAt === undefined ? {} : { deadlineAt }),
+      ...(signal === undefined ? {} : { signal })
+    })
 
     const kind = worldName.endsWith('dcl.eth') ? 'dcl-name' : 'ens-name'
     metrics.increment('world_deployments_counter', { kind })
 
-    // send deployment notification over sns
-    const snsArn = await config.getString('AWS_SNS_ARN')
-    if (snsArn) {
-      const deploymentToSqs: WorldDeploymentEvent = {
-        entity: {
-          entityId: entity.id,
-          authChain
-        },
-        contentServerUrls: [baseUrl],
-        type: Events.Type.WORLD,
-        subType: Events.SubType.Worlds.DEPLOYMENT,
-        key: entity.id,
-        timestamp: Date.now()
+    // Persistence is the deployment's success boundary. These hooks are best-effort: wait for them
+    // during a healthy request, but never turn a committed deployment into a timeout or 500. The
+    // promise remains observed if cancellation lets the response finish first.
+    const publishDeployment = async (): Promise<void> => {
+      const snsArn = await config.getString('AWS_SNS_ARN')
+      if (snsArn) {
+        const deploymentToSqs: WorldDeploymentEvent = {
+          entity: {
+            entityId: entity.id,
+            authChain
+          },
+          contentServerUrls: [baseUrl],
+          type: Events.Type.WORLD,
+          subType: Events.SubType.Worlds.DEPLOYMENT,
+          key: entity.id,
+          timestamp: Date.now()
+        }
+        const isMultiplayer = !!entity.metadata?.multiplayerId
+        const receipt = await snsClient.publishMessage(deploymentToSqs, {
+          isMultiplayer: { DataType: 'String', StringValue: isMultiplayer ? 'true' : 'false' },
+          priority: { DataType: 'String', StringValue: '1' }
+        })
+        logger.info('notification sent', {
+          MessageId: `${receipt.MessageId}`,
+          SequenceNumber: `${receipt.SequenceNumber}`,
+          isMultiplayer: isMultiplayer ? 'true' : 'false'
+        })
       }
-      const isMultiplayer = !!entity.metadata?.multiplayerId
-      const receipt = await snsClient.publishMessage(deploymentToSqs, {
-        isMultiplayer: { DataType: 'String', StringValue: isMultiplayer ? 'true' : 'false' },
-        priority: { DataType: 'String', StringValue: '1' }
-      })
-      logger.info('notification sent', {
-        MessageId: `${receipt.MessageId}`,
-        SequenceNumber: `${receipt.SequenceNumber}`,
-        isMultiplayer: isMultiplayer ? 'true' : 'false'
-      })
+    }
+    // Run independent hooks concurrently so a slow quota service cannot delay notification delivery.
+    const postCommitTasks = Promise.allSettled([
+      components.blocking.unblockIfUnderQuota(owner),
+      publishDeployment()
+    ]).then((results) => {
+      for (const result of results) {
+        if (result.status === 'rejected') {
+          logger.error('Post-deployment work failed after the scene was committed', {
+            error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+            entityId: entity.id,
+            worldName
+          })
+        }
+      }
+    })
+
+    try {
+      await raceWithSignal(postCommitTasks, signal)
+    } catch (error) {
+      if (!signal?.aborted) {
+        throw error
+      }
     }
 
     const worldUrl = `${baseUrl}/world/${worldName}`

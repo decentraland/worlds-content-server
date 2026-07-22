@@ -194,7 +194,19 @@ export async function createPartialDeploymentsComponent(
         return { complete: false, missing: nowMissing }
       }
 
-      const result = await entityDeployer.deployEntity(baseUrl, entity, stillPresent, files, entityRaw, authChain)
+      // Reuse the cumulative size computed for the budget check above as the deployment size: main's
+      // entity-deployer now takes it as an explicit argument instead of re-deriving file sizes from
+      // storage. The partial path has no request signal/deadline, so those optional args are omitted and
+      // deployScene runs on the ambient (non-cancellable) transaction.
+      const result = await entityDeployer.deployEntity(
+        baseUrl,
+        entity,
+        stillPresent,
+        files,
+        entityRaw,
+        authChain,
+        totalSize
+      )
       // The deploy has committed: from here on the response must be success. A failed pending-row delete
       // only leaves a row the eviction job will expire, so it must not surface as an error.
       await deletePendingRowBestEffort(entity.id, worldName)

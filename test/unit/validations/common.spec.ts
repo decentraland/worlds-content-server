@@ -1,5 +1,5 @@
 import { createConfigComponent } from '@well-known-components/env-config-provider'
-import { ValidatorComponents } from '../../../src/types'
+import { DeploymentFile, DeploymentToValidate, ValidatorComponents } from '../../../src/types'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { EntityType } from '@dcl/schemas'
 import { getIdentity, Identity } from '../../utils'
@@ -8,9 +8,11 @@ import { IConfigComponent } from '@well-known-components/interfaces'
 import { hashV0, hashV1 } from '@dcl/hashing'
 import {
   createValidateDeploymentTtl,
+  DEFAULT_FILE_HASH_CONCURRENCY,
   validateAuthChain,
   validateBaseEntity,
   validateEntityId,
+  validateFiles,
   validateUploadedFiles,
   validateNoMissingFiles,
   validateSignature,
@@ -244,6 +246,122 @@ describe('common validations', function () {
       expect(result.errors).toContain(
         'The file bafkreie3yaomoex7orli7fumfwgk5abgels5o5fiauxfijzlzoiymqppdi (def.txt) is neither present in the storage or in the provided entity'
       )
+    })
+
+    describe('when the deployment contains more files than the hashing concurrency limit', () => {
+      let deployment: DeploymentToValidate
+      let activeHashes: number
+      let maximumActiveHashes: number
+      let hashCalls: number
+      let configuredConcurrency: number
+      let hashes: string[]
+      let files: Map<string, DeploymentFile>
+      let receivedSignals: Array<AbortSignal | undefined>
+
+      beforeEach(async () => {
+        deployment = await createSceneDeployment(identity.authChain)
+        activeHashes = 0
+        maximumActiveHashes = 0
+        hashCalls = 0
+        configuredConcurrency = 2
+        hashes = Array.from({ length: DEFAULT_FILE_HASH_CONCURRENCY * 2 + 1 }, (_, index) => `hash-${index}`)
+        files = new Map<string, DeploymentFile>()
+        receivedSignals = []
+        const controller = new AbortController()
+        for (const hash of hashes) {
+          files.set(hash, {
+            size: 1,
+            getStream: () => {
+              throw new Error('validation should use the memoized hash accessor')
+            },
+            getHash: async (signal) => {
+              receivedSignals.push(signal)
+              hashCalls++
+              activeHashes++
+              maximumActiveHashes = Math.max(maximumActiveHashes, activeHashes)
+              await new Promise<void>((resolve) => setImmediate(resolve))
+              activeHashes--
+              return hash
+            },
+            asBuffer: async () => Buffer.from('x')
+          })
+        }
+        deployment.files = files
+        deployment.signal = controller.signal
+        deployment.entity.content = hashes.map((hash) => ({ hash, file: hash }))
+        deployment.contentHashesInStorage = new Map(hashes.map((hash) => [hash, false]))
+
+        await validateFiles(deployment, configuredConcurrency)
+      })
+
+      afterEach(() => {
+        jest.resetAllMocks()
+      })
+
+      it('should hash every file with bounded concurrency', () => {
+        expect({
+          hashCalls,
+          maximumActiveHashes,
+          receivedSignalCount: receivedSignals.filter((signal) => signal === deployment.signal).length
+        }).toEqual({
+          hashCalls: DEFAULT_FILE_HASH_CONCURRENCY * 2 + 1,
+          maximumActiveHashes: configuredConcurrency,
+          receivedSignalCount: hashes.length
+        })
+      })
+    })
+
+    describe('when a hash calculation fails while another hash is still running', () => {
+      let deployment: DeploymentToValidate
+      let startedHashes: string[]
+      let completedHashes: string[]
+      let caughtError: unknown
+      let hashes: string[]
+      let files: Map<string, DeploymentFile>
+
+      beforeEach(async () => {
+        deployment = await createSceneDeployment(identity.authChain)
+        startedHashes = []
+        completedHashes = []
+        hashes = ['hash-0', 'hash-1', 'hash-2']
+        files = new Map<string, DeploymentFile>()
+        for (const hash of hashes) {
+          files.set(hash, {
+            size: 1,
+            getStream: () => {
+              throw new Error('validation should use the hash accessor')
+            },
+            getHash: async () => {
+              startedHashes.push(hash)
+              if (hash === 'hash-0') {
+                await new Promise<void>((resolve) => setImmediate(resolve))
+                throw new Error('hash failed')
+              }
+              await new Promise<void>((resolve) => setTimeout(resolve, 5))
+              completedHashes.push(hash)
+              return hash
+            },
+            asBuffer: async () => Buffer.from('x')
+          })
+        }
+        deployment.files = files
+        deployment.entity.content = hashes.map((hash) => ({ hash, file: hash }))
+        deployment.contentHashesInStorage = new Map(hashes.map((hash) => [hash, false]))
+
+        caughtError = await validateFiles(deployment, 2).catch((error) => error)
+      })
+
+      afterEach(() => {
+        jest.resetAllMocks()
+      })
+
+      it('should await the active hash and leave queued hashes unstarted before rethrowing', () => {
+        expect({
+          completedHashes,
+          error: caughtError instanceof Error ? caughtError.message : caughtError,
+          startedHashes
+        }).toEqual({ completedHashes: ['hash-1'], error: 'hash failed', startedHashes: ['hash-0', 'hash-1'] })
+      })
     })
   })
 

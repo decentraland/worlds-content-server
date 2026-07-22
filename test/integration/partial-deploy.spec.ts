@@ -727,5 +727,4 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
       expect(await countPending()).toBe(3)
     })
   })
-
 })

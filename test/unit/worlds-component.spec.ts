@@ -1,17 +1,52 @@
 import { createWorldsComponent } from '../../src/logic/worlds/component'
 import { IWorldsComponent } from '../../src/logic/worlds/types'
-import { IWorldsManager, TWO_DAYS_IN_MS, SceneDeploymentStatus } from '../../src/types'
-import { EntityType, Events } from '@dcl/schemas'
+import { IWorldsManager, TWO_DAYS_IN_MS, SceneDeploymentStatus, WorldScene } from '../../src/types'
+import { IBlockingComponent } from '../../src/adapters/blocking'
+import { Entity, EntityType, Events, SceneParcels } from '@dcl/schemas'
 import { IPublisherComponent } from '@dcl/sns-component'
+import { createMockBlockingComponent } from '../mocks/blocking-mock'
+
+/**
+ * Builds a deployed WorldScene fixture with a scene metadata whose `base` and `parcels`
+ * are type-checked against SceneParcels — the exact shape the base-parcel derivation reads.
+ * Pass `base` to exercise the case where the declared base differs from parcels[0]; omit it
+ * to default the base to parcels[0].
+ */
+function createWorldScene(overrides: { entityId: string; parcels: string[]; base?: string }): WorldScene {
+  const { entityId, parcels } = overrides
+  const scene: SceneParcels = { base: overrides.base ?? parcels[0], parcels }
+  const entity: Entity = {
+    id: entityId,
+    version: 'v3',
+    type: EntityType.SCENE,
+    pointers: parcels,
+    timestamp: Date.now(),
+    content: [],
+    metadata: { scene }
+  }
+  return {
+    worldName: 'test-world',
+    entityId,
+    deployer: '0x1234',
+    deploymentAuthChain: [],
+    entity,
+    parcels,
+    size: BigInt(1000),
+    status: SceneDeploymentStatus.Deployed,
+    createdAt: new Date(),
+    updatedAt: new Date()
+  }
+}
 
 describe('WorldsComponent', () => {
   let worldsComponent: IWorldsComponent
   let worldsManager: jest.Mocked<IWorldsManager>
   let snsClient: jest.Mocked<IPublisherComponent>
+  let blocking: jest.Mocked<IBlockingComponent>
 
   beforeEach(() => {
     worldsManager = {
-      getRawWorldRecords: jest.fn(),
+      getRawWorldRecords: jest.fn().mockResolvedValue({ records: [], total: 0 }),
       getWorldScenes: jest.fn(),
       undeployWorld: jest.fn(),
       undeployScene: jest.fn(),
@@ -23,7 +58,9 @@ describe('WorldsComponent', () => {
       publishMessages: jest.fn()
     } as jest.Mocked<IPublisherComponent>
 
-    worldsComponent = createWorldsComponent({ worldsManager, snsClient })
+    blocking = createMockBlockingComponent()
+
+    worldsComponent = createWorldsComponent({ blocking, worldsManager, snsClient })
   })
 
   afterEach(() => {
@@ -323,6 +360,36 @@ describe('WorldsComponent', () => {
         })
       ])
     })
+
+    describe('and the world owner is currently blocked', () => {
+      beforeEach(() => {
+        worldsManager.getRawWorldRecords.mockResolvedValue({
+          records: [{ owner: '0xowner00000000000000000000000000000000001', blocked_since: new Date() }] as any,
+          total: 1
+        })
+      })
+
+      it('should recheck the owner quota after freeing space', async () => {
+        await worldsComponent.undeployWorld('my-world')
+
+        expect(blocking.unblockIfUnderQuota).toHaveBeenCalledWith('0xowner00000000000000000000000000000000001')
+      })
+    })
+
+    describe('and the world owner is not blocked', () => {
+      beforeEach(() => {
+        worldsManager.getRawWorldRecords.mockResolvedValue({
+          records: [{ owner: '0xowner00000000000000000000000000000000001', blocked_since: null }] as any,
+          total: 1
+        })
+      })
+
+      it('should not recheck the owner quota', async () => {
+        await worldsComponent.undeployWorld('my-world')
+
+        expect(blocking.unblockIfUnderQuota).not.toHaveBeenCalled()
+      })
+    })
   })
 
   describe('when undeploying specific scenes from a world', () => {
@@ -413,6 +480,27 @@ describe('WorldsComponent', () => {
           })
         ])
       })
+
+      it('should not recheck the owner quota when the owner is not blocked', async () => {
+        await worldsComponent.undeployWorldScenes('test-world', ['0,0', '5,5'])
+
+        expect(blocking.unblockIfUnderQuota).not.toHaveBeenCalled()
+      })
+
+      describe('and the world owner is currently blocked', () => {
+        beforeEach(() => {
+          worldsManager.getRawWorldRecords.mockResolvedValue({
+            records: [{ owner: '0xowner00000000000000000000000000000000001', blocked_since: new Date() }] as any,
+            total: 1
+          })
+        })
+
+        it('should recheck the owner quota after freeing space', async () => {
+          await worldsComponent.undeployWorldScenes('test-world', ['0,0', '5,5'])
+
+          expect(blocking.unblockIfUnderQuota).toHaveBeenCalledWith('0xowner00000000000000000000000000000000001')
+        })
+      })
     })
 
     describe('and there are no matching scenes', () => {
@@ -435,6 +523,78 @@ describe('WorldsComponent', () => {
 
         expect(snsClient.publishMessages).not.toHaveBeenCalled()
       })
+    })
+  })
+
+  describe('when undeploying a scene whose declared base is not the first parcel', () => {
+    beforeEach(() => {
+      // Declared base ('1,1') is NOT the first parcel ('2,2') — like a world whose parcels
+      // array doesn't start at its base. Places keys base_position on metadata.scene.base.
+      worldsManager.getWorldScenes.mockResolvedValueOnce({
+        scenes: [createWorldScene({ entityId: 'entity-x', base: '1,1', parcels: ['2,2', '1,1'] })],
+        total: 1
+      })
+      worldsManager.undeployScene.mockResolvedValue(undefined)
+      snsClient.publishMessages.mockResolvedValue({
+        Successful: [{ Id: 'id', MessageId: 'msg-id', SequenceNumber: '1' }],
+        Failed: [],
+        $metadata: {}
+      } as any)
+    })
+
+    it('should publish the declared scene.base as baseParcel, not parcels[0]', async () => {
+      await worldsComponent.undeployWorldScenes('test-world', ['2,2'])
+
+      expect(snsClient.publishMessages).toHaveBeenCalledWith([
+        expect.objectContaining({
+          subType: Events.SubType.Worlds.WORLD_SCENES_UNDEPLOYMENT,
+          metadata: expect.objectContaining({
+            scenes: [{ entityId: 'entity-x', baseParcel: '1,1' }]
+          })
+        })
+      ])
+    })
+  })
+
+  describe('when undeploying a scene whose stored base is missing or malformed', () => {
+    beforeEach(() => {
+      // Empty/invalid declared base — the derivation must fall back to parcels[0].
+      worldsManager.getWorldScenes.mockResolvedValueOnce({
+        scenes: [createWorldScene({ entityId: 'entity-y', base: '', parcels: ['2,2', '1,1'] })],
+        total: 1
+      })
+      worldsManager.undeployScene.mockResolvedValue(undefined)
+      snsClient.publishMessages.mockResolvedValue({
+        Successful: [{ Id: 'id', MessageId: 'msg-id', SequenceNumber: '1' }],
+        Failed: [],
+        $metadata: {}
+      } as any)
+    })
+
+    it('should fall back to parcels[0] as baseParcel', async () => {
+      await worldsComponent.undeployWorldScenes('test-world', ['2,2'])
+
+      expect(snsClient.publishMessages).toHaveBeenCalledWith([
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            scenes: [{ entityId: 'entity-y', baseParcel: '2,2' }]
+          })
+        })
+      ])
+    })
+  })
+
+  describe('when getting the base parcel of a scene whose declared base is not the first parcel', () => {
+    beforeEach(() => {
+      worldsManager.getWorldScenes.mockResolvedValueOnce({
+        scenes: [createWorldScene({ entityId: 'scene-123', base: '1,1', parcels: ['2,2', '1,1'] })],
+        total: 1
+      })
+    })
+
+    it('should return the declared scene.base, not parcels[0]', async () => {
+      const result = await worldsComponent.getWorldSceneBaseParcelIncludingUndeployed('test-world', 'scene-123')
+      expect(result).toBe('1,1')
     })
   })
 

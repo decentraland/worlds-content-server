@@ -70,6 +70,42 @@ describe('name deny list checker', function () {
     await expect(nameDenyListChecker.checkNameDenyList('good-name.eth')).resolves.toBeTruthy()
   })
 
+  it('when the fetched list contains null or non-string entries, it ignores them instead of crashing', async () => {
+    const fetch = await createFetchComponent()
+    fetch.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          data: ['banned-name', null, undefined, 42, 'another-banned']
+        })
+    })
+    const nameDenyListChecker = await createNameDenyListChecker({
+      config,
+      logs,
+      fetch
+    })
+
+    await expect(nameDenyListChecker.checkNameDenyList('good-name.dcl.eth')).resolves.toBeTruthy()
+    await expect(nameDenyListChecker.checkNameDenyList('banned-name.dcl.eth')).resolves.toBeFalsy()
+    await expect(nameDenyListChecker.getBannedNames()).resolves.toEqual(['banned-name', 'another-banned'])
+  })
+
+  it('when the fetched payload has no array data, it degrades to an empty list', async () => {
+    const fetch = await createFetchComponent()
+    fetch.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ data: null })
+    })
+    const nameDenyListChecker = await createNameDenyListChecker({
+      config,
+      logs,
+      fetch
+    })
+
+    await expect(nameDenyListChecker.checkNameDenyList('any-name.dcl.eth')).resolves.toBeTruthy()
+    await expect(nameDenyListChecker.getBannedNames()).resolves.toEqual([])
+  })
+
   it('when fetch fails, it gracefully degrades and allows all names', async () => {
     const fetch = await createFetchComponent()
     fetch.fetch = jest.fn().mockRejectedValue(new Error('Premature close'))

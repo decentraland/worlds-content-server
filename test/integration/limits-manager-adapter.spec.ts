@@ -3,11 +3,11 @@ import { createLimitsManagerComponent } from '../../src/adapters/limits-manager'
 import { createConfigComponent } from '@well-known-components/env-config-provider'
 import { createMockedNameOwnership } from '../mocks/name-ownership-mock'
 import { createMockWalletStatsComponent } from '../mocks/wallet-stats-mock'
+import { createMockWhitelistComponent } from '../mocks/whitelist-mock'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { makeid } from '../utils'
 import { EthAddress } from '@dcl/schemas'
 import { ILimitsManager, MB_BigInt, WalletStats } from '../../src/types'
-import { IFetchComponent } from '@dcl/core-commons'
 
 test('LimitsManagerAdapter', function ({ components }) {
   afterEach(() => {
@@ -23,7 +23,7 @@ test('LimitsManagerAdapter', function ({ components }) {
     let secondSceneSize: bigint
 
     beforeEach(async () => {
-      const { worldCreator, worldsManager, logs } = components
+      const { worldCreator, worldsManager } = components
 
       worldName = worldCreator.randomWorldName()
 
@@ -56,18 +56,14 @@ test('LimitsManagerAdapter', function ({ components }) {
       firstSceneSize = scenes.find((scene) => scene.parcels.includes('0,0'))!.size
       secondSceneSize = scenes.find((scene) => scene.parcels.includes('1,1'))!.size
 
-      // Only the external pieces (account holdings and name ownership) are mocked; the real
-      // limits-manager runs against the real worldsManager and DB.
+      // Only the external pieces (account holdings, name ownership and whitelist) are mocked;
+      // the real limits-manager runs against the real worldsManager and DB.
       const config = createConfigComponent({
         MAX_PARCELS: '4',
         MAX_SIZE: '100',
         ENS_MAX_SIZE: '36',
-        ALLOW_SDK6: 'false',
-        WHITELIST_URL: 'http://localhost/whitelist.json'
+        ALLOW_SDK6: 'false'
       })
-      const fetch: IFetchComponent = {
-        fetch: async (_url: Request): Promise<Response> => new Response(JSON.stringify({}))
-      }
       const nameOwnership = createMockedNameOwnership()
       nameOwnership.findOwners.mockResolvedValue(new Map([[worldName, owner]]))
       const walletStats = createMockWalletStatsComponent(
@@ -87,10 +83,9 @@ test('LimitsManagerAdapter', function ({ components }) {
 
       limitsManager = await createLimitsManagerComponent({
         config,
-        fetch,
-        logs,
         nameOwnership,
         walletStats,
+        whitelist: createMockWhitelistComponent(),
         worldsManager
       })
     })

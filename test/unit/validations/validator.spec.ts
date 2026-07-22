@@ -20,6 +20,7 @@ import { createWorldsManagerMockComponent } from '../../mocks/worlds-manager-moc
 import { createCoordinatesComponent } from '../../../src/logic/coordinates'
 import { createMockedPermissionsComponent } from '../../mocks/permissions-component-mock'
 import { IPermissionsComponent } from '../../../src/logic/permissions'
+import { createDeploymentProcessingMock } from '../../mocks/deployment-processing-mock'
 
 describe('validator', function () {
   let config: IConfigComponent
@@ -49,6 +50,7 @@ describe('validator', function () {
     components = {
       config,
       coordinates,
+      deploymentProcessing: createDeploymentProcessingMock(),
       storage,
       limitsManager,
       nameDenyListChecker,
@@ -94,5 +96,122 @@ describe('validator', function () {
     expect(result.errors).toContain(
       'The deployment has too many files. The maximum allowed is 1 but the deployment has 2.'
     )
+  })
+
+  describe('when malformed entity content is validated before storage access', () => {
+    let result: Awaited<ReturnType<ReturnType<typeof createValidator>['validateBeforeStorage']>>
+
+    beforeEach(async () => {
+      const validator = createValidator(components)
+      const deployment = await createSceneDeployment(identity.authChain)
+      deployment.entity.content = {} as any
+
+      result = await validator.validateBeforeStorage(deployment)
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should reject the malformed content as a validation error', () => {
+      expect(result.ok()).toBe(false)
+    })
+  })
+
+  describe('when the pre-storage file-count limit is exceeded', () => {
+    let result: Awaited<ReturnType<ReturnType<typeof createValidator>['validateBeforeStorage']>>
+
+    beforeEach(async () => {
+      const validator = createValidator({
+        ...components,
+        config: createConfigComponent({ DEPLOYMENT_TTL: '10000', MAX_FILE_COUNT: '1' })
+      })
+      const deployment = await createSceneDeployment(identity.authChain)
+      deployment.entity.content!.push({ ...deployment.entity.content![0], file: 'second.txt' })
+
+      result = await validator.validateBeforeStorage(deployment)
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should reject the entity before storage-dependent validation', () => {
+      expect(result.errors).toContain(
+        'The deployment has too many files. The maximum allowed is 1 but the deployment has 2.'
+      )
+    })
+  })
+
+  describe('when a signed deployment requires delegated authorization', () => {
+    let contentHashCalls: number
+    let permissionChecks: jest.Mock
+    let result: Awaited<ReturnType<ReturnType<typeof createValidator>['validateBeforeStorage']>>
+
+    beforeEach(async () => {
+      contentHashCalls = 0
+      permissionChecks = jest.fn().mockResolvedValue(false)
+      const deployment = await createSceneDeployment(identity.authChain)
+      for (const [hash, file] of deployment.files) {
+        if (hash !== deployment.entity.id) {
+          file.getHash = async () => {
+            contentHashCalls++
+            return hash
+          }
+        }
+      }
+      const validator = createValidator({
+        ...components,
+        namePermissionChecker: { checkPermission: permissionChecks } as IWorldNamePermissionChecker,
+        permissions: {
+          ...permissions,
+          hasPermissionForParcels: jest.fn().mockResolvedValue(true)
+        }
+      })
+
+      result = await validator.validateBeforeStorage(deployment)
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should authorize the signer before hashing content files', () => {
+      expect({
+        contentHashCalls,
+        permissionChecks: permissionChecks.mock.calls.length,
+        valid: result.ok()
+      }).toEqual({ contentHashCalls: 0, permissionChecks: 1, valid: true })
+    })
+  })
+
+  describe('when the request is aborted while a slow authorization check is running', () => {
+    let abortReason: Error
+    let caughtError: unknown
+
+    beforeEach(async () => {
+      abortReason = new Error('client disconnected')
+      const controller = new AbortController()
+      const hangingPermissionCheck = jest.fn(() => {
+        queueMicrotask(() => controller.abort(abortReason))
+        return new Promise<boolean>(() => undefined)
+      })
+      const deployment = await createSceneDeployment(identity.authChain)
+      deployment.signal = controller.signal
+      const validator = createValidator({
+        ...components,
+        namePermissionChecker: { checkPermission: hangingPermissionCheck } as IWorldNamePermissionChecker
+      })
+
+      caughtError = await validator.validateBeforeStorage(deployment).catch((error) => error)
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should reject with the cancellation reason without waiting for the hung validation', () => {
+      expect(caughtError).toBe(abortReason)
+    })
   })
 })

@@ -32,6 +32,10 @@ export async function createFetchComponent(): Promise<IFetchComponent> {
         return response
       }
 
+      // Drain the unread body before throwing so undici can release the
+      // connection back to its pool. Callers only read `error.message`
+      // (status/statusText/url), never the body, so cancelling here is safe.
+      await response.body?.cancel().catch(() => undefined)
       throw new HTTPResponseError(response)
     }
   }

@@ -3,6 +3,7 @@ import { Entity, Scene } from '@dcl/schemas'
 import { createValidationResult, OK } from './utils'
 import { ICoordinatesComponent } from '../coordinates'
 import { ContentMapping } from '@dcl/schemas/dist/misc/content-mapping'
+import { FileInfo } from '@dcl/catalyst-storage'
 
 /** Default cap on content files per deployment, used when MAX_FILE_COUNT is unset. */
 export const DEFAULT_MAX_FILE_COUNT = 10000
@@ -194,6 +195,10 @@ export function createValidateSize(components: Pick<ValidatorComponents, 'coordi
     }
 
     const calculateDeploymentSize = async (entity: Entity, files: Map<string, DeploymentFile>): Promise<number> => {
+      if (deployment.contentFileInfos) {
+        return calculateDeploymentSizeFromFileInfos(entity, files, deployment.contentFileInfos)
+      }
+
       let totalSize = 0
       for (const hash of new Set(entity.content?.map((item) => item.hash) ?? [])) {
         const uploadedFile = files.get(hash)
@@ -229,6 +234,37 @@ export function createValidateSize(components: Pick<ValidatorComponents, 'coordi
 
     return createValidationResult(errors)
   }
+}
+
+/**
+ * Calculates unique deployment content size from request files and a shared storage metadata snapshot.
+ *
+ * @param entity Entity whose unique content hashes are counted.
+ * @param files Files included in the current request.
+ * @param contentFileInfos Storage metadata fetched before validation.
+ * @returns Total deployment size in bytes.
+ * @throws When referenced content is neither uploaded nor present in the metadata snapshot.
+ */
+export function calculateDeploymentSizeFromFileInfos(
+  entity: Entity,
+  files: Map<string, DeploymentFile>,
+  contentFileInfos: Map<string, FileInfo | undefined>
+): number {
+  let totalSize = 0
+  for (const hash of new Set(entity.content?.map((item) => item.hash) ?? [])) {
+    const uploadedFile = files.get(hash)
+    if (uploadedFile) {
+      totalSize += uploadedFile.size
+      continue
+    }
+
+    const fileInfo = contentFileInfos.get(hash)
+    if (!fileInfo) {
+      throw new Error(`Couldn't fetch content file with hash ${hash}`)
+    }
+    totalSize += fileInfo.size || 0
+  }
+  return totalSize
 }
 
 export function createValidateSdkVersion(components: Pick<ValidatorComponents, 'limitsManager' | 'storage'>) {
@@ -268,9 +304,41 @@ export const validateMiniMapImages: Validation = async (
   return createValidationResult(errors)
 }
 
+/**
+ * A scene `navmapThumbnail` must be a relative path to a file embedded in the deployment.
+ * Reject values that are not a plain relative path:
+ * - carry a URI scheme (`https:`, `data:`, `javascript:`, …)
+ * - are protocol-relative (`//host/…`) or root-absolute (`/x`)
+ * - have leading/trailing whitespace or contain any control character
+ * - contain the HTML-breakout characters `<`, `>` or `"`
+ *
+ * Beyond being unresolvable, a non-relative thumbnail is a stored-XSS vector: downstream
+ * consumers such as the Places social/OpenGraph endpoint keep a `https://`-prefixed value
+ * verbatim and interpolate it into HTML, so a filename like
+ * `https://x"><script>…</script><meta name="y` becomes live markup. Constraining the field
+ * to a relative path at the deployment gate stops the payload from ever being accepted.
+ */
+function isRelativeThumbnailPath(path: string): boolean {
+  // A URI scheme, protocol-relative (`//…`) or root-absolute (`/…`) path is not relative.
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(path) || path.startsWith('/')) {
+    return false
+  }
+  // Reject leading/trailing whitespace and any control character.
+  if (path !== path.trim() || /\p{Cc}/u.test(path)) {
+    return false
+  }
+  // Reject HTML-breakout characters so the value can never inject markup downstream.
+  return !/[<>"]/.test(path)
+}
+
 export const validateThumbnail: Validation = async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
   const sceneThumbnail = deployment.entity.metadata?.display?.navmapThumbnail
   if (sceneThumbnail) {
+    if (!isRelativeThumbnailPath(sceneThumbnail)) {
+      return createValidationResult([
+        `Scene thumbnail '${sceneThumbnail}' must be a relative path to a file included in the deployment.`
+      ])
+    }
     const content = deployment.entity.content || []
     const isFilePresent = content.some((content: ContentMapping) => content.file === sceneThumbnail)
     if (!isFilePresent) {
