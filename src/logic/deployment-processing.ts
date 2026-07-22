@@ -10,6 +10,8 @@ export const DEFAULT_STORAGE_UPLOAD_CONCURRENCY = 10
 export const DEFAULT_FILE_HASH_CONCURRENCY = 4
 export const DEFAULT_CONTENT_FILE_INFO_CONCURRENCY = 64
 export const DEFAULT_DEPLOYMENT_PROCESSING_TIMEOUT_MS = 300_000
+/** Largest delay supported without overflow by Node timers and PostgreSQL statement_timeout. */
+export const MAX_DEPLOYMENT_PROCESSING_TIMEOUT_MS = 2_147_483_647
 
 export class DeploymentProcessingTimeoutError extends Error {
   constructor(timeoutMs: number) {
@@ -23,7 +25,11 @@ export class DeploymentProcessingAbortedError extends Error {
   readonly reason: unknown
 
   constructor(reason?: unknown) {
-    super(reason instanceof Error ? reason.message : 'Deployment processing was aborted.')
+    super(
+      typeof reason === 'object' && reason !== null && 'message' in reason && typeof reason.message === 'string'
+        ? reason.message
+        : 'Deployment processing was aborted.'
+    )
     this.name = 'DeploymentProcessingAbortedError'
     this.reason = reason
   }
@@ -68,6 +74,11 @@ export async function createDeploymentProcessingComponent(
     getConcurrency(config, 'DEPLOYMENT_FILE_INFO_CONCURRENCY', DEFAULT_CONTENT_FILE_INFO_CONCURRENCY),
     getConcurrency(config, 'DEPLOYMENT_PROCESSING_TIMEOUT_MS', DEFAULT_DEPLOYMENT_PROCESSING_TIMEOUT_MS)
   ])
+  if (timeoutMs > MAX_DEPLOYMENT_PROCESSING_TIMEOUT_MS) {
+    throw new Error(
+      `DEPLOYMENT_PROCESSING_TIMEOUT_MS must be at most ${MAX_DEPLOYMENT_PROCESSING_TIMEOUT_MS}, got ${timeoutMs}`
+    )
+  }
   const logger = logs.getLogger('deployment-processing')
   const activeStages = new Map<DeploymentProcessingStage, number>()
   const activeWorkers = new Map<DeploymentProcessingStage, number>()

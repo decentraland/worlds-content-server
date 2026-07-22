@@ -147,41 +147,64 @@ export function createEntityDeployer(
     await worldsManager.deployScene(worldName, entity, owner, {
       authChain,
       size: deploymentSize,
-      ...(deadlineAt === undefined ? {} : { deadlineAt })
+      ...(deadlineAt === undefined ? {} : { deadlineAt }),
+      ...(signal === undefined ? {} : { signal })
     })
-
-    // A deployment that replaces a larger scene can free enough space to bring a
-    // previously-blocked owner back under quota. The check short-circuits cheaply when the
-    // owner is not blocked and never throws, so a failed recheck cannot fail the deployment.
-    await components.blocking.unblockIfUnderQuota(owner)
 
     const kind = worldName.endsWith('dcl.eth') ? 'dcl-name' : 'ens-name'
     metrics.increment('world_deployments_counter', { kind })
 
-    // send deployment notification over sns
-    const snsArn = await config.getString('AWS_SNS_ARN')
-    if (snsArn) {
-      const deploymentToSqs: WorldDeploymentEvent = {
-        entity: {
-          entityId: entity.id,
-          authChain
-        },
-        contentServerUrls: [baseUrl],
-        type: Events.Type.WORLD,
-        subType: Events.SubType.Worlds.DEPLOYMENT,
-        key: entity.id,
-        timestamp: Date.now()
+    // Persistence is the deployment's success boundary. These hooks are best-effort: wait for them
+    // during a healthy request, but never turn a committed deployment into a timeout or 500. The
+    // promise remains observed if cancellation lets the response finish first.
+    const publishDeployment = async (): Promise<void> => {
+      const snsArn = await config.getString('AWS_SNS_ARN')
+      if (snsArn) {
+        const deploymentToSqs: WorldDeploymentEvent = {
+          entity: {
+            entityId: entity.id,
+            authChain
+          },
+          contentServerUrls: [baseUrl],
+          type: Events.Type.WORLD,
+          subType: Events.SubType.Worlds.DEPLOYMENT,
+          key: entity.id,
+          timestamp: Date.now()
+        }
+        const isMultiplayer = !!entity.metadata?.multiplayerId
+        const receipt = await snsClient.publishMessage(deploymentToSqs, {
+          isMultiplayer: { DataType: 'String', StringValue: isMultiplayer ? 'true' : 'false' },
+          priority: { DataType: 'String', StringValue: '1' }
+        })
+        logger.info('notification sent', {
+          MessageId: `${receipt.MessageId}`,
+          SequenceNumber: `${receipt.SequenceNumber}`,
+          isMultiplayer: isMultiplayer ? 'true' : 'false'
+        })
       }
-      const isMultiplayer = !!entity.metadata?.multiplayerId
-      const receipt = await snsClient.publishMessage(deploymentToSqs, {
-        isMultiplayer: { DataType: 'String', StringValue: isMultiplayer ? 'true' : 'false' },
-        priority: { DataType: 'String', StringValue: '1' }
-      })
-      logger.info('notification sent', {
-        MessageId: `${receipt.MessageId}`,
-        SequenceNumber: `${receipt.SequenceNumber}`,
-        isMultiplayer: isMultiplayer ? 'true' : 'false'
-      })
+    }
+    // Run independent hooks concurrently so a slow quota service cannot delay notification delivery.
+    const postCommitTasks = Promise.allSettled([
+      components.blocking.unblockIfUnderQuota(owner),
+      publishDeployment()
+    ]).then((results) => {
+      for (const result of results) {
+        if (result.status === 'rejected') {
+          logger.error('Post-deployment work failed after the scene was committed', {
+            error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+            entityId: entity.id,
+            worldName
+          })
+        }
+      }
+    })
+
+    try {
+      await raceWithSignal(postCommitTasks, signal)
+    } catch (error) {
+      if (!signal?.aborted) {
+        throw error
+      }
     }
 
     const worldUrl = `${baseUrl}/world/${worldName}`

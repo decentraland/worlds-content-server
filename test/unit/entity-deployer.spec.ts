@@ -46,14 +46,15 @@ function createDeploymentFile(
 function createComponents(
   storageStoreStream: jest.Mock,
   storageConcurrency: number
-): { components: EntityDeployerComponents; worldsDeployScene: jest.Mock } {
+): { components: EntityDeployerComponents; loggerError: jest.Mock; worldsDeployScene: jest.Mock } {
   const worldsDeployScene = jest.fn().mockResolvedValue(undefined)
+  const loggerError = jest.fn()
   const components = {
     blocking: { unblockIfUnderQuota: jest.fn().mockResolvedValue(undefined) },
     config: { getString: jest.fn().mockResolvedValue(undefined) },
     deploymentProcessing: createDeploymentProcessingMock({ storageConcurrency }),
     logs: {
-      getLogger: jest.fn().mockReturnValue({ debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() })
+      getLogger: jest.fn().mockReturnValue({ debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: loggerError })
     },
     metrics: { increment: jest.fn() },
     nameOwnership: {
@@ -63,7 +64,7 @@ function createComponents(
     storage: { storeStream: storageStoreStream },
     worldsManager: { deployScene: worldsDeployScene }
   } as unknown as EntityDeployerComponents
-  return { components, worldsDeployScene }
+  return { components, loggerError, worldsDeployScene }
 }
 
 describe('entity deployer', () => {
@@ -286,6 +287,93 @@ describe('entity deployer', () => {
         error: 'client disconnected',
         signals: [expect.any(AbortSignal), expect.any(AbortSignal)],
         startedUploads: ['hash-0', 'hash-1']
+      })
+    })
+  })
+
+  describe('when the processing deadline expires after persistence commits', () => {
+    let deploymentResult: Awaited<ReturnType<IEntityDeployer['deployEntity']>>
+    let releasePostCommitWork: () => void
+    let signalPassedToPersistence: AbortSignal | undefined
+
+    beforeEach(async () => {
+      const controller = new AbortController()
+      const contentHashes: string[] = []
+      const storageStoreStream = jest.fn().mockResolvedValue(undefined)
+      const setup = createComponents(storageStoreStream, 2)
+      const postCommitWork = new Promise<void>((resolve) => {
+        releasePostCommitWork = resolve
+      })
+      setup.components.blocking.unblockIfUnderQuota = jest.fn(async () => postCommitWork) as jest.Mock
+      setup.worldsDeployScene.mockImplementation(async (_worldName, _entity, _owner, deployment) => {
+        signalPassedToPersistence = deployment.signal
+        controller.abort(new Error('deadline exceeded after commit'))
+      })
+      const entity = createScene(contentHashes)
+      const deployer = createEntityDeployer(setup.components)
+
+      deploymentResult = await deployer.deployEntity(
+        'https://worlds.example',
+        entity,
+        new Map(),
+        new Map(),
+        JSON.stringify(entity),
+        [],
+        0,
+        controller.signal,
+        Date.now() + 10
+      )
+    })
+
+    afterEach(async () => {
+      releasePostCommitWork()
+      await new Promise<void>((resolve) => setImmediate(resolve))
+      jest.resetAllMocks()
+    })
+
+    it('should preserve the committed success while passing cancellation into persistence', () => {
+      expect({ deploymentResult, signalPassedToPersistence }).toEqual({
+        deploymentResult: expect.objectContaining({ message: expect.stringContaining('was deployed') }),
+        signalPassedToPersistence: expect.any(AbortSignal)
+      })
+    })
+  })
+
+  describe('when post-commit notification delivery fails', () => {
+    let deploymentResult: Awaited<ReturnType<IEntityDeployer['deployEntity']>>
+    let loggerError: jest.Mock
+
+    beforeEach(async () => {
+      const storageStoreStream = jest.fn().mockResolvedValue(undefined)
+      const setup = createComponents(storageStoreStream, 2)
+      loggerError = setup.loggerError
+      setup.components.config.getString = jest.fn().mockResolvedValue('arn:test') as jest.Mock
+      setup.components.snsClient.publishMessage = jest.fn().mockRejectedValue(new Error('SNS unavailable')) as jest.Mock
+      const entity = createScene([])
+      const deployer = createEntityDeployer(setup.components)
+
+      deploymentResult = await deployer.deployEntity(
+        'https://worlds.example',
+        entity,
+        new Map(),
+        new Map(),
+        JSON.stringify(entity),
+        [],
+        0
+      )
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should keep the committed deployment successful and log the best-effort failure', () => {
+      expect({ deploymentResult, loggedFailure: loggerError.mock.calls[0] }).toEqual({
+        deploymentResult: expect.objectContaining({ message: expect.stringContaining('was deployed') }),
+        loggedFailure: [
+          'Post-deployment work failed after the scene was committed',
+          expect.objectContaining({ error: 'SNS unavailable', entityId: 'entity-id', worldName: 'world.dcl.eth' })
+        ]
       })
     })
   })

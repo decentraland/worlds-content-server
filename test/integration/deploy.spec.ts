@@ -7,6 +7,11 @@ import { hashV1 } from '@dcl/hashing'
 import { getIdentity, Identity, makeid, cleanup } from '../utils'
 import { defaultAccess } from '../../src/logic/access'
 
+type LockClient = {
+  query(statement: string): Promise<{ rowCount: number | null }>
+  release(): void
+}
+
 test('DeployEntity POST /entities', function ({ components, stubComponents }) {
   afterEach(async () => {
     jest.resetAllMocks()
@@ -44,6 +49,92 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
         MessageId: 'mocked-message-id',
         SequenceNumber: 'mocked-sequence-number',
         $metadata: {}
+      })
+    })
+
+    describe('and the client disconnects while persistence is blocked', () => {
+      let caughtError: unknown
+      let entityId: string
+      let errorHandlerWarnings: number
+      let lockClient: LockClient | undefined
+      let persistedEntityIds: string[]
+
+      beforeEach(async () => {
+        const { database, logs, storage, worldsManager } = components
+        const entityFiles = new Map<string, Uint8Array>()
+        entityFiles.set('abc.txt', stringToUtf8Bytes(makeid(100)))
+        const result = await DeploymentBuilder.buildEntity({
+          type: EntityType.SCENE as any,
+          pointers: ['20,24'],
+          files: entityFiles,
+          metadata: {
+            main: 'abc.txt',
+            scene: { base: '20,24', parcels: ['20,24'] },
+            worldConfiguration: { name: worldName }
+          }
+        })
+        entityId = result.entityId
+        const authChain = Authenticator.signPayload(identity.authChain, entityId)
+        const controller = new AbortController()
+        const errorHandlerWarn = jest.spyOn(logs.getLogger('error-handler'), 'warn')
+        lockClient = (await database.getPool().connect()) as unknown as LockClient
+        await lockClient.query('BEGIN')
+        await lockClient.query('LOCK TABLE worlds IN ACCESS EXCLUSIVE MODE')
+
+        const deployment = contentClient.deploy(
+          { files: result.files, entityId, authChain },
+          { signal: controller.signal }
+        )
+        for (let attempt = 0; attempt < 200 && !(await storage.exist(`${entityId}.auth`)); attempt++) {
+          await new Promise<void>((resolve) => setTimeout(resolve, 10))
+        }
+        if (!(await storage.exist(`${entityId}.auth`))) {
+          throw new Error('Deployment did not reach persistence before the test deadline.')
+        }
+        let persistenceBlocked = false
+        for (let attempt = 0; attempt < 200 && !persistenceBlocked; attempt++) {
+          const waitingLocks = await lockClient.query(
+            `SELECT 1 FROM pg_locks WHERE relation = 'worlds'::regclass AND NOT granted`
+          )
+          persistenceBlocked = (waitingLocks.rowCount ?? 0) > 0
+          if (!persistenceBlocked) {
+            await new Promise<void>((resolve) => setTimeout(resolve, 10))
+          }
+        }
+        if (!persistenceBlocked) {
+          throw new Error('Deployment transaction did not block before the test deadline.')
+        }
+
+        controller.abort()
+        caughtError = await Promise.race([
+          deployment.catch((error) => error),
+          new Promise<Error>((resolve) =>
+            setTimeout(() => resolve(new Error('disconnected deployment did not settle')), 2_000)
+          )
+        ])
+        errorHandlerWarnings = errorHandlerWarn.mock.calls.length
+
+        await lockClient.query('ROLLBACK')
+        lockClient.release()
+        lockClient = undefined
+        const persisted = await worldsManager.getWorldScenes({ worldName })
+        persistedEntityIds = persisted.scenes.map((scene) => scene.entityId)
+      })
+
+      afterEach(async () => {
+        if (lockClient) {
+          await lockClient.query('ROLLBACK').catch(() => undefined)
+          lockClient.release()
+        }
+        jest.restoreAllMocks()
+      })
+
+      it('should cancel and roll back persistence without logging an application warning', () => {
+        expect({ caughtError, errorHandlerWarnings, persistedEntityIds }).toEqual({
+          caughtError: expect.objectContaining({ name: 'AbortError' }),
+          errorHandlerWarnings: 0,
+          persistedEntityIds: []
+        })
       })
     })
 

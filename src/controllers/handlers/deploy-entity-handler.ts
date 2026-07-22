@@ -9,6 +9,7 @@ import { calculateDeploymentSizeFromFileInfos } from '../../logic/validations/sc
 import { mapWithConcurrency } from '../../logic/concurrency'
 import {
   DEFAULT_CONTENT_FILE_INFO_CONCURRENCY,
+  DeploymentProcessingAbortedError,
   DeploymentProcessingTimeoutError
 } from '../../logic/deployment-processing'
 
@@ -156,6 +157,23 @@ export async function deployEntity(ctx: DeployEntityContext): Promise<IHttpServe
       deployEntityWithSignal(ctx, abortContext.signal, abortContext.deadlineAt)
     )
   } catch (error) {
+    const abortedError =
+      error instanceof DeploymentProcessingAbortedError
+        ? error
+        : abortContext.signal.reason instanceof DeploymentProcessingAbortedError
+          ? abortContext.signal.reason
+          : undefined
+    if (abortedError) {
+      // The transport is already gone in production. Returning a typed response keeps the expected
+      // cancellation out of the global error handler's warning/500 path in direct or mocked callers.
+      return {
+        status: 499,
+        body: {
+          error: 'Client Closed Request',
+          message: abortedError.message
+        }
+      }
+    }
     const timeoutError =
       error instanceof DeploymentProcessingTimeoutError
         ? error

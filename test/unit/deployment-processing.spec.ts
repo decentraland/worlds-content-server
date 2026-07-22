@@ -2,7 +2,8 @@ import { IConfigComponent, ILoggerComponent, IMetricsComponent } from '@well-kno
 import {
   createDeploymentProcessingComponent,
   DeploymentProcessingAbortedError,
-  DeploymentProcessingTimeoutError
+  DeploymentProcessingTimeoutError,
+  MAX_DEPLOYMENT_PROCESSING_TIMEOUT_MS
 } from '../../src/logic/deployment-processing'
 import { metricDeclarations } from '../../src/metrics'
 import { IDeploymentProcessingComponent } from '../../src/types'
@@ -77,6 +78,33 @@ describe('deployment processing component', () => {
 
     it('should fail component initialization before requests are accepted', () => {
       expect(caughtError).toEqual(new Error('DEPLOYMENT_STORAGE_CONCURRENCY must be a positive safe integer, got 0'))
+    })
+  })
+
+  describe('when the processing timeout exceeds the supported timer range', () => {
+    let caughtError: unknown
+
+    beforeEach(async () => {
+      const getNumber = jest.fn(async (key: string) =>
+        key === 'DEPLOYMENT_PROCESSING_TIMEOUT_MS' ? MAX_DEPLOYMENT_PROCESSING_TIMEOUT_MS + 1 : undefined
+      )
+      caughtError = await createDeploymentProcessingComponent({
+        config: { getNumber } as unknown as IConfigComponent,
+        logs: { getLogger: jest.fn() } as unknown as ILoggerComponent,
+        metrics: {} as IMetricsComponent<keyof typeof metricDeclarations>
+      }).catch((error) => error)
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should fail initialization instead of creating an overflowing Node timer', () => {
+      expect(caughtError).toEqual(
+        new Error(
+          `DEPLOYMENT_PROCESSING_TIMEOUT_MS must be at most ${MAX_DEPLOYMENT_PROCESSING_TIMEOUT_MS}, got ${MAX_DEPLOYMENT_PROCESSING_TIMEOUT_MS + 1}`
+        )
+      )
     })
   })
 

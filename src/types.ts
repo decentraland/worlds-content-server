@@ -119,6 +119,8 @@ export type SceneDeploymentData = {
   size: number
   /** Absolute processing deadline used to bound the persistence transaction. */
   deadlineAt?: number
+  /** Cancels persistence until the transaction reaches its commit boundary. */
+  signal?: AbortSignal
 }
 
 export type WorldRuntimeMetadata = {

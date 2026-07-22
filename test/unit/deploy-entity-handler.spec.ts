@@ -10,7 +10,10 @@ import {
 } from '../../src/controllers/handlers/deploy-entity-handler'
 import { InvalidRequestError } from '@dcl/http-commons'
 import { createDeploymentProcessingMock } from '../mocks/deployment-processing-mock'
-import { DeploymentProcessingTimeoutError } from '../../src/logic/deployment-processing'
+import {
+  DeploymentProcessingAbortedError,
+  DeploymentProcessingTimeoutError
+} from '../../src/logic/deployment-processing'
 import { hashV1 } from '@dcl/hashing'
 import { DeploymentToValidate } from '../../src/types'
 
@@ -252,6 +255,42 @@ describe('deployEntity', () => {
         body: {
           error: 'Request Timeout',
           message: 'Deployment processing exceeded the 10ms deadline.'
+        }
+      })
+    })
+  })
+
+  describe('when the HTTP client disconnects during deployment processing', () => {
+    let response: Awaited<ReturnType<typeof deployEntity>>
+
+    beforeEach(async () => {
+      const entity = {
+        type: 'scene',
+        pointers: ['0,0'],
+        timestamp: Date.now(),
+        content: [],
+        metadata: { worldConfiguration: { name: 'world.dcl.eth' }, scene: { parcels: ['0,0'] } }
+      }
+      const controller = new AbortController()
+      controller.abort(new DeploymentProcessingAbortedError(new DOMException('Client disconnected.', 'AbortError')))
+      const context = createContext(entityId, { [entityId]: makeFile(Buffer.from(JSON.stringify(entity))) })
+      context.components.deploymentProcessing = createDeploymentProcessingMock({
+        createAbortContext: jest.fn(() => ({ signal: controller.signal, deadlineAt: Date.now(), dispose: jest.fn() }))
+      })
+
+      response = await deployEntity(context)
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should return a client-closed response without reaching the global error handler', () => {
+      expect(response).toEqual({
+        status: 499,
+        body: {
+          error: 'Client Closed Request',
+          message: 'Client disconnected.'
         }
       })
     })

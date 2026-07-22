@@ -4,6 +4,11 @@ import { makeid } from '../utils'
 import { defaultAccess } from '../../src/logic/access'
 import SQL from 'sql-template-strings'
 
+type LockClient = {
+  query(statement: string): Promise<unknown>
+  release(): void
+}
+
 test('WorldManagerAdapter', function ({ components }) {
   afterEach(() => {
     jest.resetAllMocks()
@@ -50,6 +55,64 @@ test('WorldManagerAdapter', function ({ components }) {
         metadataReads: 0,
         authReads: 0,
         size: BigInt(123)
+      })
+    })
+  })
+
+  describe('when the request is aborted while scene persistence is waiting on PostgreSQL', () => {
+    let caughtError: unknown
+    let lockClient: LockClient | undefined
+    let persistedEntityIds: string[]
+
+    beforeEach(async () => {
+      const { database, worldCreator, worldsManager } = components
+      const created = await worldCreator.createWorldWithScene()
+      const redeployedEntity = { ...created.entity, id: `${created.entity.id}-cancelled` }
+      const controller = new AbortController()
+      const abortReason = new Error('client disconnected during persistence')
+      lockClient = (await database.getPool().connect()) as unknown as LockClient
+      await lockClient.query('BEGIN')
+      await lockClient.query('LOCK TABLE worlds IN ACCESS EXCLUSIVE MODE')
+
+      const deployment = worldsManager.deployScene(
+        created.worldName,
+        redeployedEntity,
+        created.owner.authChain[0].payload,
+        {
+          authChain: created.owner.authChain,
+          size: 123,
+          deadlineAt: Date.now() + 30_000,
+          signal: controller.signal
+        }
+      )
+      await new Promise<void>((resolve) => setTimeout(resolve, 25))
+      controller.abort(abortReason)
+      caughtError = await Promise.race([
+        deployment.catch((error) => error),
+        new Promise<Error>((resolve) =>
+          setTimeout(() => resolve(new Error('cancelled persistence did not settle')), 2_000)
+        )
+      ])
+
+      await lockClient.query('ROLLBACK')
+      lockClient.release()
+      lockClient = undefined
+      const result = await worldsManager.getWorldScenes({ worldName: created.worldName })
+      persistedEntityIds = result.scenes.map((scene) => scene.entityId)
+    })
+
+    afterEach(async () => {
+      if (lockClient) {
+        await lockClient.query('ROLLBACK').catch(() => undefined)
+        lockClient.release()
+      }
+      jest.resetAllMocks()
+    })
+
+    it('should reject with the cancellation reason and roll back the replacement scene', () => {
+      expect({ caughtError, persistedEntityIds }).toEqual({
+        caughtError: new Error('client disconnected during persistence'),
+        persistedEntityIds: [expect.not.stringContaining('-cancelled')]
       })
     })
   })
