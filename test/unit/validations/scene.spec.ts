@@ -868,6 +868,46 @@ describe('scene validations', function () {
       })
     })
 
+    describe('and the thumbnail is a non-relative value that is also declared as a content file', () => {
+      const rejectedThumbnails = [
+        { description: 'a protocol-relative url', value: '//evil.example/x.png' },
+        { description: 'a data uri', value: 'data:text/html,<b>x</b>' },
+        { description: 'a javascript uri', value: 'javascript:alert(1)' },
+        { description: 'a mixed-case http scheme', value: 'HtTpS://evil.example/x.png' },
+        { description: 'a relative path containing HTML-breakout characters', value: 'thumb".png' }
+      ]
+
+      rejectedThumbnails.forEach(({ description, value }) => {
+        describe(`and it is ${description}`, () => {
+          let result: ValidationResult
+
+          beforeEach(async () => {
+            const files = new Map<string, Uint8Array>()
+            files.set(value, Buffer.from(stringToUtf8Bytes('img')))
+            deployment = await createSceneDeployment(identity.authChain, {
+              type: EntityType.SCENE,
+              pointers: ['0,0'],
+              timestamp: Date.now(),
+              metadata: {
+                display: {
+                  navmapThumbnail: value
+                }
+              },
+              files
+            })
+            result = await validateThumbnail(deployment)
+          })
+
+          it('should reject the deployment with the relative-path error', () => {
+            expect(result.ok()).toBeFalsy()
+            expect(result.errors).toContain(
+              `Scene thumbnail '${value}' must be a relative path to a file included in the deployment, not an absolute URL.`
+            )
+          })
+        })
+      })
+    })
+
     describe('and the thumbnail file is missing from the deployment', () => {
       beforeEach(async () => {
         deployment = await createSceneDeployment(identity.authChain, {
