@@ -1,11 +1,11 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'fs'
 import os from 'os'
 import path from 'path'
-import { IContentStorageComponent } from '@dcl/catalyst-storage'
+import { FileInfo, IContentStorageComponent } from '@dcl/catalyst-storage'
 import {
-  DEFAULT_CONTENT_AVAILABILITY_BATCH_SIZE,
+  DEFAULT_CONTENT_FILE_INFO_CONCURRENCY,
   deployEntity,
-  getContentAvailability,
+  getContentFileInfos,
   MAX_ENTITY_FILE_SIZE_IN_BYTES
 } from '../../src/controllers/handlers/deploy-entity-handler'
 import { InvalidRequestError } from '@dcl/http-commons'
@@ -122,60 +122,55 @@ describe('deployEntity', () => {
   })
 })
 
-describe('getContentAvailability', () => {
-  describe('when the deployment references more hashes than one storage batch', () => {
-    let storage: Pick<IContentStorageComponent, 'existMultiple'>
-    let existMultiple: jest.Mock
+describe('getContentFileInfos', () => {
+  describe('when the deployment references more hashes than the metadata concurrency limit', () => {
+    let storage: Pick<IContentStorageComponent, 'fileInfo'>
+    let fileInfo: jest.Mock
     let hashes: string[]
-    let availability: Map<string, boolean>
-    let observedBatches: string[][]
-    let activeBatches: number
-    let maximumActiveBatches: number
+    let fileInfos: Map<string, FileInfo | undefined>
+    let activeChecks: number
+    let maximumActiveChecks: number
 
     beforeEach(async () => {
-      hashes = Array.from({ length: DEFAULT_CONTENT_AVAILABILITY_BATCH_SIZE * 2 + 2 }, (_, index) => `hash-${index}`)
-      observedBatches = []
-      activeBatches = 0
-      maximumActiveBatches = 0
-      existMultiple = jest.fn(async (batch: string[]) => {
-        observedBatches.push(batch)
-        activeBatches++
-        maximumActiveBatches = Math.max(maximumActiveBatches, activeBatches)
+      hashes = Array.from({ length: DEFAULT_CONTENT_FILE_INFO_CONCURRENCY * 2 + 2 }, (_, index) => `hash-${index}`)
+      activeChecks = 0
+      maximumActiveChecks = 0
+      fileInfo = jest.fn(async () => {
+        activeChecks++
+        maximumActiveChecks = Math.max(maximumActiveChecks, activeChecks)
         await new Promise<void>((resolve) => setImmediate(resolve))
-        activeBatches--
-        return new Map(batch.map((hash) => [hash, true]))
+        activeChecks--
+        return { encoding: null, size: 1, contentSize: 1 }
       })
-      storage = { existMultiple }
+      storage = { fileInfo }
 
-      availability = await getContentAvailability(storage, hashes)
+      fileInfos = await getContentFileInfos(storage, hashes)
     })
 
     afterEach(() => {
       jest.resetAllMocks()
     })
 
-    it('should query storage in bounded sequential batches and combine every result', () => {
+    it('should query every hash with bounded concurrency and combine every result', () => {
       expect({
-        batchSizes: observedBatches.map((batch) => batch.length),
-        calls: existMultiple.mock.calls.length,
-        maximumActiveBatches,
-        results: availability.size
+        calls: fileInfo.mock.calls.length,
+        maximumActiveChecks,
+        results: fileInfos.size
       }).toEqual({
-        batchSizes: [DEFAULT_CONTENT_AVAILABILITY_BATCH_SIZE, DEFAULT_CONTENT_AVAILABILITY_BATCH_SIZE, 2],
-        calls: 3,
-        maximumActiveBatches: 1,
+        calls: hashes.length,
+        maximumActiveChecks: DEFAULT_CONTENT_FILE_INFO_CONCURRENCY,
         results: hashes.length
       })
     })
   })
 
   describe('when duplicate hashes are provided', () => {
-    let existMultiple: jest.Mock
-    let availability: Map<string, boolean>
+    let fileInfo: jest.Mock
+    let fileInfos: Map<string, FileInfo | undefined>
 
     beforeEach(async () => {
-      existMultiple = jest.fn(async (batch: string[]) => new Map(batch.map((hash) => [hash, false])))
-      availability = await getContentAvailability({ existMultiple }, ['a', 'a', 'b'])
+      fileInfo = jest.fn().mockResolvedValue(undefined)
+      fileInfos = await getContentFileInfos({ fileInfo }, ['a', 'a', 'b'])
     })
 
     afterEach(() => {
@@ -183,7 +178,7 @@ describe('getContentAvailability', () => {
     })
 
     it('should query each content hash only once', () => {
-      expect({ requested: existMultiple.mock.calls[0][0], results: Array.from(availability.keys()) }).toEqual({
+      expect({ requested: fileInfo.mock.calls.map(([hash]) => hash), results: Array.from(fileInfos.keys()) }).toEqual({
         requested: ['a', 'b'],
         results: ['a', 'b']
       })

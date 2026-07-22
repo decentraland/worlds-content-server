@@ -7,7 +7,7 @@ import type {
 import type { IHttpServerComponent } from '@dcl/core-commons'
 import { PaginatedParameters } from '@dcl/schemas'
 import { metricDeclarations } from './metrics'
-import { IContentStorageComponent } from '@dcl/catalyst-storage'
+import { FileInfo, IContentStorageComponent } from '@dcl/catalyst-storage'
 import { HTTPProvider } from 'eth-connect'
 import { ISubgraphComponent } from '@dcl/thegraph-component'
 import { IStatusComponent } from './adapters/status'
@@ -69,6 +69,8 @@ export type DeploymentFile = {
   size: number
   /** Opens a fresh read stream over the file's bytes (for hashing and storing). */
   getStream(): Readable
+  /** Calculates and memoizes the file's CIDv1. */
+  getHash(): Promise<string>
   /** Reads the full file into a Buffer. Intended for small files such as the entity JSON. */
   asBuffer(): Promise<Buffer>
 }
@@ -78,6 +80,15 @@ export type DeploymentToValidate = {
   files: Map<string, DeploymentFile>
   authChain: AuthChain
   contentHashesInStorage: Map<string, boolean>
+  /** Storage metadata fetched once before validation, keyed by unique content hash. */
+  contentFileInfos?: Map<string, FileInfo | undefined>
+}
+
+export type SceneDeploymentData = {
+  /** Auth chain already validated for this deployment. */
+  authChain: AuthChain
+  /** Total unique content size already calculated during validation. */
+  size: number
 }
 
 export type WorldRuntimeMetadata = {
@@ -399,7 +410,8 @@ export type IWorldsManager = {
   getDeployedWorldCount(): Promise<{ ens: number; dcl: number }>
   getMetadataForWorld(worldName: string): Promise<WorldMetadata | undefined>
   getEntityForWorlds(worldNames: string[]): Promise<Entity[]>
-  deployScene(worldName: string, scene: Entity, owner: EthAddress): Promise<void>
+  /** Persists a scene and its already-calculated deployment metadata. */
+  deployScene(worldName: string, scene: Entity, owner: EthAddress, deployment?: SceneDeploymentData): Promise<void>
   undeployScene(worldName: string, parcels: string[]): Promise<void>
   storeAccess(worldName: string, access: AccessSetting): Promise<void>
   modifyAccessAtomically(
@@ -492,7 +504,8 @@ export type IEntityDeployer = {
     allContentHashesInStorage: Map<string, boolean>,
     files: Map<string, DeploymentFile>,
     entityJson: string,
-    authChain: AuthLink[]
+    authChain: AuthLink[],
+    deploymentSize: number
   ): Promise<DeploymentResult>
 }
 

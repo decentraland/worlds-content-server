@@ -13,6 +13,7 @@ export function bufferToDeploymentFile(content: Uint8Array): DeploymentFile {
   return {
     size: buffer.byteLength,
     getStream: () => Readable.from(buffer),
+    getHash: () => hashV1(buffer),
     asBuffer: async () => buffer
   }
 }

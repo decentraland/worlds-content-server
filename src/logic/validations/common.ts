@@ -1,8 +1,8 @@
 import { DeploymentToValidate, Validation, ValidationResult, ValidatorComponents } from '../../types'
-import { hashV1 } from '@dcl/hashing'
 import { createValidationResult, OK } from './utils'
 import { AuthChain, Entity, EntityType, EthAddress, IPFSv2 } from '@dcl/schemas'
 import { Authenticator } from '@dcl/crypto'
+import { mapWithConcurrency } from '../concurrency'
 
 export const validateEntityId: Validation = async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
   const entityFile = deployment.files.get(deployment.entity.id)
@@ -10,13 +10,16 @@ export const validateEntityId: Validation = async (deployment: DeploymentToValid
     return createValidationResult(['Entity not found in files.'])
   }
 
-  const actualHash = await hashV1(entityFile.getStream())
+  const actualHash = await entityFile.getHash()
   return createValidationResult(
     actualHash !== deployment.entity.id
       ? [`Invalid entity hash: expected ${actualHash} but got ${deployment.entity.id}`]
       : []
   )
 }
+
+/** Maximum number of temp-backed files hashed concurrently during deployment validation. */
+export const DEFAULT_FILE_HASH_CONCURRENCY = 4
 
 export const validateBaseEntity: Validation = async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
   if (!Entity.validate(deployment.entity)) {
@@ -62,21 +65,29 @@ export const validateSignature: Validation = async (deployment: DeploymentToVali
   return createValidationResult(result.message ? [result.message] : [])
 }
 
-export const validateFiles: Validation = async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
+export const validateFiles = async (
+  deployment: DeploymentToValidate,
+  concurrency: number = DEFAULT_FILE_HASH_CONCURRENCY
+): Promise<ValidationResult> => {
   const errors: string[] = []
+  const contentHashes = new Set(deployment.entity.content!.map(($) => $.hash))
+  const uploadedFiles = Array.from(deployment.files)
+
+  const actualHashes = await mapWithConcurrency(uploadedFiles, concurrency, ([, file]) => file.getHash())
 
   // validate all files are part of the entity
-  for (const [hash] of deployment.files) {
+  for (let index = 0; index < uploadedFiles.length; index++) {
+    const [hash] = uploadedFiles[index]
+    const actualHash = actualHashes[index]
     // detect extra file
-    if (!deployment.entity.content!.some(($) => $.hash === hash) && hash !== deployment.entity.id) {
+    if (!contentHashes.has(hash) && hash !== deployment.entity.id) {
       errors.push(`Extra file detected ${hash}`)
     }
     // only new hashes
     if (!IPFSv2.validate(hash)) {
       errors.push(`Only CIDv1 are allowed for content files: ${hash}`)
     }
-    // hash the file (streamed from disk so large files aren't loaded into memory)
-    if ((await hashV1(deployment.files.get(hash)!.getStream())) !== hash) {
+    if (actualHash !== hash) {
       errors.push(`The hashed file doesn't match the provided content: ${hash}`)
     }
   }

@@ -1,6 +1,7 @@
 import { DeploymentToValidate, Validation, ValidationResult, Validator, ValidatorComponents } from '../../types'
 import {
   createValidateDeploymentTtl,
+  DEFAULT_FILE_HASH_CONCURRENCY,
   validateAuthChain,
   validateBaseEntity,
   validateEntityId,
@@ -25,6 +26,7 @@ import {
 } from './scene'
 import { OK, validateAll, validateIfTypeMatches } from './utils'
 import { EntityType } from '@dcl/schemas'
+import { getConcurrency } from '../concurrency'
 
 export function createBeforeStorageValidateFns(components: ValidatorComponents): Validation[] {
   return [
@@ -39,9 +41,13 @@ export function createBeforeStorageValidateFns(components: ValidatorComponents):
   ]
 }
 
-export function createAfterStorageValidateFns(components: ValidatorComponents): Validation[] {
+export function createAfterStorageValidateFns(
+  components: ValidatorComponents,
+  getHashConcurrency: () => Promise<number> = () =>
+    getConcurrency(components.config, 'DEPLOYMENT_HASH_CONCURRENCY', DEFAULT_FILE_HASH_CONCURRENCY)
+): Validation[] {
   return [
-    validateFiles,
+    async (deployment) => validateFiles(deployment, await getHashConcurrency()),
     validateIfTypeMatches(
       EntityType.SCENE,
       validateAll([
@@ -82,7 +88,11 @@ async function runValidations(validations: Validation[], deployment: DeploymentT
  */
 export const createValidator = (components: ValidatorComponents): Validator => {
   const beforeStorageValidations = createBeforeStorageValidateFns(components)
-  const afterStorageValidations = createAfterStorageValidateFns(components)
+  let hashConcurrency: Promise<number> | undefined
+  const afterStorageValidations = createAfterStorageValidateFns(components, () => {
+    hashConcurrency ??= getConcurrency(components.config, 'DEPLOYMENT_HASH_CONCURRENCY', DEFAULT_FILE_HASH_CONCURRENCY)
+    return hashConcurrency
+  })
 
   return {
     async validateBeforeStorage(deployment: DeploymentToValidate): Promise<ValidationResult> {

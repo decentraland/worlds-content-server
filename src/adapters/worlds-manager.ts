@@ -25,7 +25,8 @@ import {
   GetRawWorldRecordsResult,
   GetOccupiedParcelsOptions,
   GetOccupiedParcelsResult,
-  SceneDeploymentStatus
+  SceneDeploymentStatus,
+  SceneDeploymentData
 } from '../types'
 import { streamToBuffer } from '@dcl/catalyst-storage'
 import { Entity, EthAddress } from '@dcl/schemas'
@@ -192,7 +193,12 @@ export async function createWorldsManagerComponent({
    * @throws {Error} If the deployment auth chain cannot be retrieved or parsed
    * @throws {Error} If any database operation fails (triggers rollback)
    */
-  async function deployScene(worldName: string, scene: Entity, owner: EthAddress): Promise<void> {
+  async function deployScene(
+    worldName: string,
+    scene: Entity,
+    owner: EthAddress,
+    deployment?: SceneDeploymentData
+  ): Promise<void> {
     // Canonicalize so the stored parcels, the overlap-based replacement here, the undeploy
     // authorization, and the size credit-back all compare parcels by value (e.g. "00,00" ==
     // "0,0"). Otherwise a non-canonical scene.parcels could dodge replacement / over-credit.
@@ -201,14 +207,19 @@ export async function createWorldsManagerComponent({
       throw new Error(`Attempt to deploy scene ${scene.id} to world ${worldName} with no parcels.`)
     }
 
-    const content = await storage.retrieve(`${scene.id}.auth`)
-    const deploymentAuthChainString = content ? (await streamToBuffer(await content.asStream())).toString() : '{}'
-    const deploymentAuthChain = JSON.parse(deploymentAuthChainString)
+    const content = deployment ? undefined : await storage.retrieve(`${scene.id}.auth`)
+    const deploymentAuthChainString = deployment
+      ? JSON.stringify(deployment.authChain)
+      : content
+        ? (await streamToBuffer(await content.asStream())).toString()
+        : '{}'
+    const deploymentAuthChain = deployment?.authChain ?? JSON.parse(deploymentAuthChainString)
 
     const deployer = deploymentAuthChain[0].payload.toLowerCase()
 
-    const fileInfos = await storage.fileInfoMultiple(scene.content?.map((c) => c.hash) || [])
-    const size = scene.content?.reduce((acc, c) => acc + (fileInfos.get(c.hash)?.size || 0), 0) || 0
+    const fileInfos = deployment ? undefined : await storage.fileInfoMultiple(scene.content?.map((c) => c.hash) || [])
+    const size =
+      deployment?.size ?? scene.content?.reduce((acc, c) => acc + (fileInfos?.get(c.hash)?.size || 0), 0) ?? 0
 
     const spawnCoordinates = extractSpawnCoordinates(scene)
 

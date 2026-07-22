@@ -594,6 +594,33 @@ describe('scene validations', function () {
       })
     })
 
+    describe('and stored content metadata was already fetched by the handler', () => {
+      let resultOk: boolean
+      let retrieveSpy: jest.SpyInstance
+
+      beforeEach(async () => {
+        deployment = await createSceneDeployment(identity.authChain)
+        const storedHash = deployment.entity.content[0].hash
+        deployment.files.delete(storedHash)
+        deployment.contentHashesInStorage.set(storedHash, true)
+        deployment.contentFileInfos = new Map([[storedHash, { encoding: null, size: 3, contentSize: 3 }]])
+        retrieveSpy = jest.spyOn(storage, 'retrieve')
+
+        resultOk = (await validateSize(deployment)).ok()
+      })
+
+      afterEach(() => {
+        jest.restoreAllMocks()
+      })
+
+      it('should calculate the size without retrieving the content again', () => {
+        expect({ resultOk, storageRetrievals: retrieveSpy.mock.calls.length }).toEqual({
+          resultOk: true,
+          storageRetrievals: 0
+        })
+      })
+    })
+
     describe('and the deployment exceeds the size limit', () => {
       beforeEach(async () => {
         const fileContent = Buffer.from(

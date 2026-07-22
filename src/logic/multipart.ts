@@ -10,6 +10,7 @@ import { join } from 'path'
 import { Readable, Transform } from 'stream'
 import { pipeline } from 'stream/promises'
 import { DeploymentFile } from '../types'
+import { hashV1 } from '@dcl/hashing'
 
 /**
  * An uploaded file. The bytes are streamed to a temp file on disk rather than buffered in memory,
@@ -46,9 +47,12 @@ export function readUploadedFile(file: UploadedFile): Promise<Buffer> {
 /** Wraps an uploaded file as a {@link DeploymentFile}, memoizing the full-buffer read. */
 export function toDeploymentFile(file: UploadedFile): DeploymentFile {
   let buffered: Promise<Buffer> | undefined
+  let hash: Promise<string> | undefined
   return {
     size: file.size,
     getStream: () => createReadStream(file.filepath),
+    getHash: () =>
+      (hash ??= buffered ? buffered.then((content) => hashV1(content)) : hashV1(createReadStream(file.filepath))),
     asBuffer: () => (buffered ??= readFile(file.filepath))
   }
 }

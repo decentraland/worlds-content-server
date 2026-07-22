@@ -2,9 +2,28 @@ import { AppComponents, DeploymentFile, DeploymentResult, IEntityDeployer } from
 import { AuthLink, Entity, EntityType, Events, WorldDeploymentEvent } from '@dcl/schemas'
 import { bufferToStream } from '@dcl/catalyst-storage/dist/content-item'
 import { stringToUtf8Bytes } from 'eth-connect'
+import { getConcurrency, mapWithConcurrency } from '../logic/concurrency'
 
-type PostDeploymentHook = (baseUrl: string, entity: Entity, authChain: AuthLink[]) => Promise<DeploymentResult>
+type PostDeploymentHook = (
+  baseUrl: string,
+  entity: Entity,
+  authChain: AuthLink[],
+  deploymentSize: number
+) => Promise<DeploymentResult>
 
+/** Maximum number of independent content-addressed objects uploaded concurrently. */
+export const DEFAULT_STORAGE_UPLOAD_CONCURRENCY = 10
+
+/**
+ * Creates the deployment component that uploads content and commits validated scenes.
+ *
+ * Content objects are stored in bounded-parallel batches before the entity and auth-chain objects.
+ * The already-calculated deployment size and auth chain are forwarded to the worlds manager so it
+ * does not need to retrieve the same storage metadata again.
+ *
+ * @param components Storage, world persistence, ownership, notification, logging, and metric dependencies.
+ * @returns Entity deployment component.
+ */
 export function createEntityDeployer(
   components: Pick<
     AppComponents,
@@ -13,6 +32,7 @@ export function createEntityDeployer(
 ): IEntityDeployer {
   const { logs, storage, worldsManager } = components
   const logger = logs.getLogger('entity-deployer')
+  let storageConcurrency: Promise<number> | undefined
 
   async function deployEntity(
     baseUrl: string,
@@ -20,19 +40,22 @@ export function createEntityDeployer(
     allContentHashesInStorage: Map<string, boolean>,
     files: Map<string, DeploymentFile>,
     entityJson: string,
-    authChain: AuthLink[]
+    authChain: AuthLink[],
+    deploymentSize: number
   ): Promise<DeploymentResult> {
-    // store all files
-    const content = entity.content || []
-    logger.info(`Storing ${content.length} files`, { entityId: entity.id })
-    for (const file of content) {
-      if (!allContentHashesInStorage.get(file.hash)) {
-        const filename = content.find(($) => $.hash === file.hash)
-        logger.info(`Storing file`, { cid: file.hash, filename: filename?.file || 'unknown' })
-        await storage.storeStream(file.hash, files.get(file.hash)!.getStream())
-        allContentHashesInStorage.set(file.hash, true)
-      }
-    }
+    storageConcurrency ??= getConcurrency(
+      components.config,
+      'DEPLOYMENT_STORAGE_CONCURRENCY',
+      DEFAULT_STORAGE_UPLOAD_CONCURRENCY
+    )
+    const contentByHash = new Map((entity.content || []).map((file) => [file.hash, file]))
+    const filesToStore = Array.from(contentByHash).filter(([hash]) => !allContentHashesInStorage.get(hash))
+    logger.info(`Storing ${filesToStore.length} files`, { entityId: entity.id })
+
+    await mapWithConcurrency(filesToStore, await storageConcurrency, async ([hash]) => {
+      await storage.storeStream(hash, files.get(hash)!.getStream())
+      allContentHashesInStorage.set(hash, true)
+    })
 
     logger.info(`Storing entity`, { cid: entity.id })
     await Promise.all([
@@ -40,27 +63,33 @@ export function createEntityDeployer(
       storage.storeStream(entity.id + '.auth', bufferToStream(stringToUtf8Bytes(JSON.stringify(authChain))))
     ])
 
-    return await postDeployment(baseUrl, entity, authChain)
+    return await postDeployment(baseUrl, entity, authChain, deploymentSize)
   }
 
   const postDeploymentHooks: Partial<Record<EntityType, PostDeploymentHook>> = {
     [EntityType.SCENE]: postSceneDeployment
   }
 
-  async function postDeployment(baseUrl: string, entity: Entity, authChain: AuthLink[]): Promise<DeploymentResult> {
+  async function postDeployment(
+    baseUrl: string,
+    entity: Entity,
+    authChain: AuthLink[],
+    deploymentSize: number
+  ): Promise<DeploymentResult> {
     const hookForType = postDeploymentHooks[entity.type] || noPostDeploymentHook
-    return hookForType(baseUrl, entity, authChain)
+    return hookForType(baseUrl, entity, authChain, deploymentSize)
   }
 
   async function noPostDeploymentHook(
     _baseUrl: string,
     _entity: Entity,
-    _authChain: AuthLink[]
+    _authChain: AuthLink[],
+    _deploymentSize: number
   ): Promise<DeploymentResult> {
     return { message: 'No post deployment hook for this entity type' }
   }
 
-  async function postSceneDeployment(baseUrl: string, entity: Entity, authChain: AuthLink[]) {
+  async function postSceneDeployment(baseUrl: string, entity: Entity, authChain: AuthLink[], deploymentSize: number) {
     const { config, metrics, snsClient } = components
 
     // determine the name to use for deploying the world
@@ -76,7 +105,7 @@ export function createEntityDeployer(
       )
     }
 
-    await worldsManager.deployScene(worldName, entity, owner)
+    await worldsManager.deployScene(worldName, entity, owner, { authChain, size: deploymentSize })
 
     // A deployment that replaces a larger scene can free enough space to bring a
     // previously-blocked owner back under quota. The check short-circuits cheaply when the

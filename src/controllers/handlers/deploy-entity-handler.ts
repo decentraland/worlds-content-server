@@ -4,9 +4,11 @@ import { FormDataContext, readUploadedFile, toDeploymentFile } from '../../logic
 import { DeploymentFile, HandlerContextWithPath } from '../../types'
 import { extractAuthChain } from '../../logic/extract-auth-chain'
 import { InvalidRequestError } from '@dcl/http-commons'
-import { IContentStorageComponent } from '@dcl/catalyst-storage'
+import { FileInfo, IContentStorageComponent } from '@dcl/catalyst-storage'
+import { calculateDeploymentSizeFromFileInfos } from '../../logic/validations/scene'
+import { getConcurrency, mapWithConcurrency } from '../../logic/concurrency'
 
-export const DEFAULT_CONTENT_AVAILABILITY_BATCH_SIZE = 64
+export const DEFAULT_CONTENT_FILE_INFO_CONCURRENCY = 64
 export const MAX_ENTITY_FILE_SIZE_IN_BYTES = 5 * 1024 * 1024
 
 export function requireString(val: string | null | undefined): string {
@@ -23,33 +25,21 @@ function parseEntityJson(raw: string) {
 }
 
 /**
- * Checks content availability in bounded sequential batches. The underlying storage component
- * performs each call with `Promise.all`, so bounding each batch prevents a large valid deployment
- * from opening thousands of simultaneous storage requests.
+ * Fetches content metadata through a continuous bounded worker pool.
  *
- * @param storage Content storage used for existence checks.
+ * @param storage Content storage used for metadata checks.
  * @param hashes Content hashes referenced by the deployment.
- * @param batchSize Maximum number of concurrent checks delegated to storage.
- * @returns Availability for every unique content hash.
+ * @param concurrency Maximum number of concurrent checks delegated to storage.
+ * @returns Storage metadata for every unique content hash.
  */
-export async function getContentAvailability(
-  storage: Pick<IContentStorageComponent, 'existMultiple'>,
+export async function getContentFileInfos(
+  storage: Pick<IContentStorageComponent, 'fileInfo'>,
   hashes: string[],
-  batchSize: number = DEFAULT_CONTENT_AVAILABILITY_BATCH_SIZE
-): Promise<Map<string, boolean>> {
-  if (!Number.isSafeInteger(batchSize) || batchSize <= 0) {
-    throw new Error(`Content availability batch size must be a positive safe integer, got ${batchSize}`)
-  }
-
+  concurrency: number = DEFAULT_CONTENT_FILE_INFO_CONCURRENCY
+): Promise<Map<string, FileInfo | undefined>> {
   const uniqueHashes = Array.from(new Set(hashes))
-  const availability = new Map<string, boolean>()
-  for (let offset = 0; offset < uniqueHashes.length; offset += batchSize) {
-    const batchAvailability = await storage.existMultiple(uniqueHashes.slice(offset, offset + batchSize))
-    for (const [hash, exists] of batchAvailability) {
-      availability.set(hash, exists)
-    }
-  }
-  return availability
+  const fileInfos = await mapWithConcurrency(uniqueHashes, concurrency, (hash) => storage.fileInfo(hash))
+  return new Map(uniqueHashes.map((hash, index) => [hash, fileInfos[index]]))
 }
 
 export async function deployEntity(
@@ -83,7 +73,8 @@ export async function deployEntity(
     entity,
     files: uploadedFiles,
     authChain,
-    contentHashesInStorage: new Map<string, boolean>()
+    contentHashesInStorage: new Map<string, boolean>(),
+    contentFileInfos: new Map<string, FileInfo | undefined>()
   }
 
   const preStorageValidationResult = await ctx.components.validator.validateBeforeStorage(deployment)
@@ -91,14 +82,22 @@ export async function deployEntity(
     throw new InvalidRequestError(`Deployment failed: ${preStorageValidationResult.errors.join(', ')}`)
   }
 
-  const contentHashesInStorage = await getContentAvailability(
-    ctx.components.storage,
-    entity.content!.map(($) => $.hash)
+  const fileInfoConcurrency = await getConcurrency(
+    ctx.components.config,
+    'DEPLOYMENT_FILE_INFO_CONCURRENCY',
+    DEFAULT_CONTENT_FILE_INFO_CONCURRENCY
   )
+  const contentFileInfos = await getContentFileInfos(
+    ctx.components.storage,
+    entity.content!.map(($) => $.hash),
+    fileInfoConcurrency
+  )
+  const contentHashesInStorage = new Map(Array.from(contentFileInfos, ([hash, info]) => [hash, info !== undefined]))
 
   const validationResult = await ctx.components.validator.validateAfterStorage({
     ...deployment,
-    contentHashesInStorage
+    contentHashesInStorage,
+    contentFileInfos
   })
 
   if (!validationResult.ok()) {
@@ -107,13 +106,15 @@ export async function deployEntity(
 
   // Store the entity
   const baseUrl = (await ctx.components.config.getString('HTTP_BASE_URL')) || `https://${ctx.url.host}`
+  const deploymentSize = calculateDeploymentSizeFromFileInfos(entity, uploadedFiles, contentFileInfos)
   const message = await ctx.components.entityDeployer.deployEntity(
     baseUrl,
     entity,
     contentHashesInStorage,
     uploadedFiles,
     entityRaw,
-    authChain
+    authChain,
+    deploymentSize
   )
 
   return {
