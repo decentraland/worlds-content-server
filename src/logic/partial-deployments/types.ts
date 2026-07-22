@@ -10,6 +10,14 @@ export type StageDeploymentInput = {
   entityRaw: string
   authChain: AuthChain
   files: Map<string, DeploymentFile>
+  /**
+   * Request-scoped cancellation (client disconnect or the deployment-processing deadline). Bounds this
+   * staging request's validation, hashing, file storing, and — when it finalizes — the deploy itself.
+   * The pending row survives cancellation, so the client simply resumes.
+   */
+  signal?: AbortSignal
+  /** Absolute processing deadline forwarded to the deploy transaction when this request finalizes. */
+  deadlineAt?: number
 }
 
 export type StageDeploymentResult = {

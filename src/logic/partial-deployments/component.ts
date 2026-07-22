@@ -1,5 +1,6 @@
 import { InvalidRequestError } from '@dcl/http-commons'
 import { AppComponents, DeploymentFile } from '../../types'
+import { calculateDeploymentSizeFromFileInfos } from '../validations/scene'
 import { IPartialDeploymentsComponent, StageDeploymentInput, StageDeploymentResult } from './types'
 
 // How many content files to store to storage at once. They are independent content-addressed objects,
@@ -56,23 +57,25 @@ export async function createPartialDeploymentsComponent(
     }
   }
 
-  async function storeFiles(files: Map<string, DeploymentFile>): Promise<void> {
+  async function storeFiles(files: Map<string, DeploymentFile>, signal?: AbortSignal): Promise<void> {
     // Store every file the client sent this batch, in bounded-parallel batches. We do NOT skip files a
     // pre-request snapshot said were already stored: that snapshot predates the pending row (and its GC
     // protection), so a file present then could be swept before we store, and skipping it would discard
     // bytes uploaded in this very batch. Storage is content-addressed (re-store is an idempotent no-op)
     // and the client already omits files reported by /available-content, so this rarely re-sends
-    // present content anyway.
+    // present content anyway. A cancellation stops between batches (and tears the in-flight streams);
+    // partially-stored content is harmless — the pending row protects it and a resume re-sends the rest.
     const toStore = Array.from(files)
     for (let i = 0; i < toStore.length; i += STORE_CONCURRENCY) {
+      signal?.throwIfAborted()
       await Promise.all(
-        toStore.slice(i, i + STORE_CONCURRENCY).map(([hash, file]) => storage.storeStream(hash, file.getStream()))
+        toStore.slice(i, i + STORE_CONCURRENCY).map(([hash, file]) => storage.storeStream(hash, file.getStream(signal)))
       )
     }
   }
 
   async function stage(input: StageDeploymentInput): Promise<StageDeploymentResult> {
-    const { baseUrl, entity, entityRaw, authChain, files } = input
+    const { baseUrl, entity, entityRaw, authChain, files, signal, deadlineAt } = input
     const contentHashes = Array.from(new Set((entity.content ?? []).map((c) => c.hash)))
 
     // These two lookups are independent (the pending row vs. the content metadata), so run them
@@ -100,7 +103,8 @@ export async function createPartialDeploymentsComponent(
         files,
         authChain,
         contentHashesInStorage,
-        pendingCreatedAt: pending?.createdAt
+        pendingCreatedAt: pending?.createdAt,
+        signal
       },
       { skipPermissionCheck: isResumeBySameDeployer }
     )
@@ -148,16 +152,21 @@ export async function createPartialDeploymentsComponent(
     )
 
     // Store this batch's files (content-addressed, so concurrent identical writes are idempotent).
-    await storeFiles(files)
+    await storeFiles(files, signal)
 
     // Completeness must be a fresh read, not derived from the start-of-request snapshot: a concurrent
     // partial request for the same entity may have stored the remaining files while this one ran, and
-    // whichever request observes the full set is the one that finalizes.
-    const present = await storage.existMultiple(contentHashes)
-    const missing = contentHashes.filter((hash) => !present.get(hash))
+    // whichever request observes the full set is the one that finalizes. Fetched as metadata (not bare
+    // existence) because, on the finalize path, these fresh sizes feed the full validation's size check
+    // and the size persisted with the scene — the start-of-request `storedInfo` snapshot must NOT be
+    // used for that: files stored by sibling requests after it was taken would count as 0 and skew
+    // quota accounting.
+    const presentInfos = await storage.fileInfoMultiple(contentHashes)
+    const missing = contentHashes.filter((hash) => presentInfos.get(hash) === undefined)
     if (missing.length > 0) {
       return { complete: false, missing }
     }
+    const present = new Map(contentHashes.map((hash) => [hash, true]))
 
     // Everything is present — run the full validation + deploy in this same request. Concurrent
     // completing requests (the client's parallel worker pool, retries) may race here; the world_scenes
@@ -165,13 +174,19 @@ export async function createPartialDeploymentsComponent(
     // in the catch below. The duplicated validation in that rare race is accepted — a coordination
     // mechanism to avoid it costs more in failure modes than the validation it saves.
     try {
-      // Run the full validation before deploying, in this same request.
+      // Run the full validation before deploying, in this same request. `contentFileInfos` hands the
+      // size check the fresh metadata fetched above: without it the check would fall back to one
+      // sequential storage read per non-batch file, and a file reclaimed by GC mid-validation would
+      // surface as a terminal 400 instead of the retriable incomplete the re-check below produces.
+      signal?.throwIfAborted()
       const fullValidation = await validator.validate({
         entity,
         files,
         authChain,
         contentHashesInStorage: present,
-        pendingCreatedAt: pendingRow.createdAt
+        contentFileInfos: presentInfos,
+        pendingCreatedAt: pendingRow.createdAt,
+        signal
       })
       if (!fullValidation.ok()) {
         throw new InvalidRequestError(`Deployment failed: ${fullValidation.errors.join(', ')}`)
@@ -194,10 +209,12 @@ export async function createPartialDeploymentsComponent(
         return { complete: false, missing: nowMissing }
       }
 
-      // Reuse the cumulative size computed for the budget check above as the deployment size: main's
-      // entity-deployer now takes it as an explicit argument instead of re-deriving file sizes from
-      // storage. The partial path has no request signal/deadline, so those optional args are omitted and
-      // deployScene runs on the ambient (non-cancellable) transaction.
+      // Persist the size computed from the fresh completeness metadata, NOT the request-local budget
+      // estimate (`totalSize`): its start-of-request snapshot misses files stored by sibling requests
+      // in the meantime, which would be counted as 0 and undercount world_scenes.size (skewing wallet
+      // quota accounting). Sizes are immutable per content hash, so the completeness-time metadata is
+      // exact. Cancellation stops applying once the deploy transaction reaches its commit boundary.
+      const deploymentSize = calculateDeploymentSizeFromFileInfos(entity, files, presentInfos)
       const result = await entityDeployer.deployEntity(
         baseUrl,
         entity,
@@ -205,7 +222,9 @@ export async function createPartialDeploymentsComponent(
         files,
         entityRaw,
         authChain,
-        totalSize
+        deploymentSize,
+        signal,
+        deadlineAt
       )
       // The deploy has committed: from here on the response must be success. A failed pending-row delete
       // only leaves a row the eviction job will expire, so it must not surface as an error.

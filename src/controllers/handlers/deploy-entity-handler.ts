@@ -180,12 +180,17 @@ async function deployEntityWithSignal(
 
   if (isPartial) {
     const baseUrl = (await ctx.components.config.getString('HTTP_BASE_URL')) || `https://${ctx.url.host}`
+    // The abort context bounds each staging request like a vanilla deploy: a disconnect or the
+    // processing deadline cancels validation/hashing/storing (the pending row survives, so the client
+    // resumes), and bounds the deploy transaction when this request finalizes.
     const result = await ctx.components.partialDeployments.stage({
       baseUrl,
       entity,
       entityRaw,
       authChain,
-      files: uploadedFiles
+      files: uploadedFiles,
+      signal,
+      deadlineAt
     })
     if (result.complete) {
       return {
