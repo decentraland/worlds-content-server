@@ -258,6 +258,11 @@ export type AccessControlList = {
 }
 
 export interface Validator {
+  /** Validates an uploaded deployment without performing external content-storage lookups. */
+  validateBeforeStorage(deployment: DeploymentToValidate): Promise<ValidationResult>
+  /** Runs validations that require content-storage availability information. */
+  validateAfterStorage(deployment: DeploymentToValidate): Promise<ValidationResult>
+  /** Runs the complete validation pipeline. */
   validate(deployment: DeploymentToValidate): Promise<ValidationResult>
 }
 

@@ -26,21 +26,22 @@ import {
 import { OK, validateAll, validateIfTypeMatches } from './utils'
 import { EntityType } from '@dcl/schemas'
 
-export function createValidateFns(components: ValidatorComponents): Validation[] {
+export function createBeforeStorageValidateFns(components: ValidatorComponents): Validation[] {
   return [
-    // Common validations to all entity types
-    validateAll([
-      validateEntityId,
-      validateBaseEntity,
-      validateAuthChain,
-      validateSigner,
-      validateSignature,
-      createValidateDeploymentTtl(components),
-      validateFiles,
-      validateSupportedEntityType
-    ]),
+    validateBaseEntity,
+    validateSupportedEntityType,
+    validateIfTypeMatches(EntityType.SCENE, createValidateFileCount(components)),
+    validateAuthChain,
+    validateSigner,
+    createValidateDeploymentTtl(components),
+    validateEntityId,
+    validateSignature
+  ]
+}
 
-    // Scene entity validations
+export function createAfterStorageValidateFns(components: ValidatorComponents): Validation[] {
+  return [
+    validateFiles,
     validateIfTypeMatches(
       EntityType.SCENE,
       validateAll([
@@ -49,7 +50,6 @@ export function createValidateFns(components: ValidatorComponents): Validation[]
         createValidateParcelCoordinates(components),
         createValidateScenePointers(components),
         createValidateSceneDimensions(components),
-        createValidateFileCount(components),
         validateMiniMapImages,
         validateSkyboxTextures,
         validateThumbnail,
@@ -59,21 +59,45 @@ export function createValidateFns(components: ValidatorComponents): Validation[]
         createValidateDeploymentPermission(components) // Slow
       ])
     )
-
-    // Other entity validations will go here ...
   ]
 }
 
-export const createValidator = (components: ValidatorComponents): Validator => ({
-  async validate(deployment: DeploymentToValidate): Promise<ValidationResult> {
-    const validations = createValidateFns(components)
-    for (const validation of validations) {
-      const result = await validation(deployment)
-      if (!result.ok()) {
-        return result
-      }
+async function runValidations(validations: Validation[], deployment: DeploymentToValidate): Promise<ValidationResult> {
+  for (const validation of validations) {
+    const result = await validation(deployment)
+    if (!result.ok()) {
+      return result
     }
-
-    return OK
   }
-})
+
+  return OK
+}
+
+/**
+ * Creates the deployment validator with an explicit pre-storage phase so untrusted entities are
+ * structurally and cryptographically checked before they can trigger external storage requests.
+ *
+ * @param components Dependencies used by deployment validations.
+ * @returns The complete validator and its pre-/post-storage phases.
+ */
+export const createValidator = (components: ValidatorComponents): Validator => {
+  const beforeStorageValidations = createBeforeStorageValidateFns(components)
+  const afterStorageValidations = createAfterStorageValidateFns(components)
+
+  return {
+    async validateBeforeStorage(deployment: DeploymentToValidate): Promise<ValidationResult> {
+      return runValidations(beforeStorageValidations, deployment)
+    },
+    async validateAfterStorage(deployment: DeploymentToValidate): Promise<ValidationResult> {
+      return runValidations(afterStorageValidations, deployment)
+    },
+    async validate(deployment: DeploymentToValidate): Promise<ValidationResult> {
+      const beforeStorageResult = await runValidations(beforeStorageValidations, deployment)
+      if (!beforeStorageResult.ok()) {
+        return beforeStorageResult
+      }
+
+      return runValidations(afterStorageValidations, deployment)
+    }
+  }
+}
