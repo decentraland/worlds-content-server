@@ -3,6 +3,7 @@ import { Entity, Scene } from '@dcl/schemas'
 import { createValidationResult, OK } from './utils'
 import { ICoordinatesComponent } from '../coordinates'
 import { ContentMapping } from '@dcl/schemas/dist/misc/content-mapping'
+import { FileInfo } from '@dcl/catalyst-storage'
 
 /** Default cap on content files per deployment, used when MAX_FILE_COUNT is unset. */
 export const DEFAULT_MAX_FILE_COUNT = 10000
@@ -194,6 +195,10 @@ export function createValidateSize(components: Pick<ValidatorComponents, 'coordi
     }
 
     const calculateDeploymentSize = async (entity: Entity, files: Map<string, DeploymentFile>): Promise<number> => {
+      if (deployment.contentFileInfos) {
+        return calculateDeploymentSizeFromFileInfos(entity, files, deployment.contentFileInfos)
+      }
+
       let totalSize = 0
       for (const hash of new Set(entity.content?.map((item) => item.hash) ?? [])) {
         const uploadedFile = files.get(hash)
@@ -229,6 +234,37 @@ export function createValidateSize(components: Pick<ValidatorComponents, 'coordi
 
     return createValidationResult(errors)
   }
+}
+
+/**
+ * Calculates unique deployment content size from request files and a shared storage metadata snapshot.
+ *
+ * @param entity Entity whose unique content hashes are counted.
+ * @param files Files included in the current request.
+ * @param contentFileInfos Storage metadata fetched before validation.
+ * @returns Total deployment size in bytes.
+ * @throws When referenced content is neither uploaded nor present in the metadata snapshot.
+ */
+export function calculateDeploymentSizeFromFileInfos(
+  entity: Entity,
+  files: Map<string, DeploymentFile>,
+  contentFileInfos: Map<string, FileInfo | undefined>
+): number {
+  let totalSize = 0
+  for (const hash of new Set(entity.content?.map((item) => item.hash) ?? [])) {
+    const uploadedFile = files.get(hash)
+    if (uploadedFile) {
+      totalSize += uploadedFile.size
+      continue
+    }
+
+    const fileInfo = contentFileInfos.get(hash)
+    if (!fileInfo) {
+      throw new Error(`Couldn't fetch content file with hash ${hash}`)
+    }
+    totalSize += fileInfo.size || 0
+  }
+  return totalSize
 }
 
 export function createValidateSdkVersion(components: Pick<ValidatorComponents, 'limitsManager' | 'storage'>) {

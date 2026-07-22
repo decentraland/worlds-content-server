@@ -1,15 +1,20 @@
 import { createWriteStream as createNodeWriteStream } from 'fs'
 import { access } from 'fs/promises'
 import * as fsPromises from 'fs/promises'
-import { dirname } from 'path'
+import { tmpdir } from 'os'
+import { dirname, join } from 'path'
 import { Readable, Writable } from 'stream'
+import { once } from 'events'
 import FormData from 'form-data'
+import { hashV1 } from '@dcl/hashing'
 import {
   createInFlightUploadBudget,
   InFlightUploadBudget,
   InFlightUploadBudgetSnapshot,
   multipartParserWrapper,
-  readUploadedFile
+  readUploadedFile,
+  toDeploymentFile,
+  UploadedFile
 } from '../../src/logic/multipart'
 
 function createMultipartContext(form: FormData, overrides?: { contentLength?: string }): any {
@@ -1557,6 +1562,117 @@ describe('multipartParserWrapper', function () {
 
       // Only the first (still-pending) upload reached the handler.
       expect(handler).toHaveBeenCalledTimes(1)
+    })
+  })
+})
+
+describe('toDeploymentFile', () => {
+  describe('when the same temp-backed file is hashed repeatedly', () => {
+    let expectedHash: string
+    let hashes: string[]
+    let samePromise: boolean
+    let tempDirectory: string
+
+    beforeEach(async () => {
+      const content = Buffer.from('memoized hash content')
+      tempDirectory = await fsPromises.mkdtemp(join(tmpdir(), 'deployment-file-test-'))
+      const filepath = join(tempDirectory, 'content.bin')
+      await fsPromises.writeFile(filepath, content)
+      const uploadedFile: UploadedFile = {
+        encoding: '7bit',
+        fieldname: 'file',
+        filename: 'content.bin',
+        filepath,
+        mimeType: 'application/octet-stream',
+        size: content.length
+      }
+      const deploymentFile = toDeploymentFile(uploadedFile)
+      const firstHash = deploymentFile.getHash()
+      const secondHash = deploymentFile.getHash()
+
+      samePromise = firstHash === secondHash
+      hashes = await Promise.all([firstHash, secondHash])
+      expectedHash = await hashV1(content)
+    })
+
+    afterEach(async () => {
+      await fsPromises.rm(tempDirectory, { force: true, recursive: true })
+      jest.resetAllMocks()
+    })
+
+    it('should reuse one hash calculation and return the same CID', () => {
+      expect({ hashes, samePromise }).toEqual({ hashes: [expectedHash, expectedHash], samePromise: true })
+    })
+  })
+
+  describe('when the file was buffered before its hash is requested', () => {
+    let actualHash: string
+    let expectedHash: string
+    let tempDirectory: string
+
+    beforeEach(async () => {
+      const content = Buffer.from('buffered hash content')
+      tempDirectory = await fsPromises.mkdtemp(join(tmpdir(), 'deployment-file-test-'))
+      const filepath = join(tempDirectory, 'content.bin')
+      await fsPromises.writeFile(filepath, content)
+      const uploadedFile: UploadedFile = {
+        encoding: '7bit',
+        fieldname: 'file',
+        filename: 'content.bin',
+        filepath,
+        mimeType: 'application/octet-stream',
+        size: content.length
+      }
+      const deploymentFile = toDeploymentFile(uploadedFile)
+
+      await deploymentFile.asBuffer()
+      await fsPromises.rm(filepath)
+      actualHash = await deploymentFile.getHash()
+      expectedHash = await hashV1(content)
+    })
+
+    afterEach(async () => {
+      await fsPromises.rm(tempDirectory, { force: true, recursive: true })
+      jest.resetAllMocks()
+    })
+
+    it('should calculate the CID from the memoized buffer without reopening the file', () => {
+      expect(actualHash).toBe(expectedHash)
+    })
+  })
+
+  describe('when an active deployment file stream is aborted', () => {
+    let streamError: unknown
+    let tempDirectory: string
+
+    beforeEach(async () => {
+      const content = Buffer.alloc(1024, 1)
+      tempDirectory = await fsPromises.mkdtemp(join(tmpdir(), 'deployment-file-test-'))
+      const filepath = join(tempDirectory, 'content.bin')
+      await fsPromises.writeFile(filepath, content)
+      const deploymentFile = toDeploymentFile({
+        encoding: '7bit',
+        fieldname: 'file',
+        filename: 'content.bin',
+        filepath,
+        mimeType: 'application/octet-stream',
+        size: content.length
+      })
+      const controller = new AbortController()
+      const stream = deploymentFile.getStream(controller.signal)
+      const errorEvent = once(stream, 'error')
+
+      controller.abort(new Error('client disconnected'))
+      streamError = (await errorEvent)[0]
+    })
+
+    afterEach(async () => {
+      await fsPromises.rm(tempDirectory, { force: true, recursive: true })
+      jest.resetAllMocks()
+    })
+
+    it('should destroy the stream with the request abort reason', () => {
+      expect(streamError).toEqual(new Error('client disconnected'))
     })
   })
 })

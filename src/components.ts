@@ -65,6 +65,7 @@ import { createRateLimiterComponent } from './logic/rate-limiter'
 import { createDenyListComponent } from './logic/denylist'
 import { createBansComponent } from './adapters/bans-adapter'
 import { createEvictionJob } from './adapters/eviction-job'
+import { createDeploymentProcessingComponent } from './logic/deployment-processing'
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
@@ -92,6 +93,7 @@ export async function initComponents(): Promise<AppComponents> {
   const fetch = await createFetchComponent()
   const metrics = await createMetricsComponent(metricDeclarations, { config })
   await instrumentHttpServerWithPromClientRegistry({ metrics, server, config, registry: metrics.registry! })
+  const deploymentProcessing = await createDeploymentProcessingComponent({ config, logs, metrics })
 
   const nats = await createNatsComponent({ config, logs })
 
@@ -205,6 +207,7 @@ export async function initComponents(): Promise<AppComponents> {
   const entityDeployer = createEntityDeployer({
     blocking,
     config,
+    deploymentProcessing,
     logs,
     nameOwnership,
     metrics,
@@ -215,6 +218,7 @@ export async function initComponents(): Promise<AppComponents> {
   const validator = createValidator({
     config,
     coordinates,
+    deploymentProcessing,
     nameDenyListChecker,
     namePermissionChecker,
     limitsManager,
@@ -288,6 +292,7 @@ export async function initComponents(): Promise<AppComponents> {
     config,
     coordinates,
     database,
+    deploymentProcessing,
     denyList,
     entityDeployer,
     ethereumProvider,

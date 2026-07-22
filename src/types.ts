@@ -7,7 +7,7 @@ import type {
 import type { IHttpServerComponent } from '@dcl/core-commons'
 import { PaginatedParameters } from '@dcl/schemas'
 import { metricDeclarations } from './metrics'
-import { IContentStorageComponent } from '@dcl/catalyst-storage'
+import { FileInfo, IContentStorageComponent } from '@dcl/catalyst-storage'
 import { HTTPProvider } from 'eth-connect'
 import { ISubgraphComponent } from '@dcl/thegraph-component'
 import { IStatusComponent } from './adapters/status'
@@ -68,9 +68,11 @@ export type DeploymentFile = {
   /** Size in bytes of the uploaded file. */
   size: number
   /** Opens a fresh read stream over the file's bytes (for hashing and storing). */
-  getStream(): Readable
+  getStream(signal?: AbortSignal): Readable
+  /** Calculates and memoizes the file's CIDv1. */
+  getHash(signal?: AbortSignal): Promise<string>
   /** Reads the full file into a Buffer. Intended for small files such as the entity JSON. */
-  asBuffer(): Promise<Buffer>
+  asBuffer(signal?: AbortSignal): Promise<Buffer>
 }
 
 export type DeploymentToValidate = {
@@ -78,6 +80,47 @@ export type DeploymentToValidate = {
   files: Map<string, DeploymentFile>
   authChain: AuthChain
   contentHashesInStorage: Map<string, boolean>
+  /** Storage metadata fetched once before validation, keyed by unique content hash. */
+  contentFileInfos?: Map<string, FileInfo | undefined>
+  /** Cancels request-scoped processing after disconnect or the configured processing deadline. */
+  signal?: AbortSignal
+}
+
+export type DeploymentProcessingStage = 'total' | 'authorization' | 'metadata' | 'hash' | 'storage' | 'persistence'
+
+export type DeploymentAbortContext = {
+  signal: AbortSignal
+  /** Absolute wall-clock deadline for bounding the persistence transaction. */
+  deadlineAt: number
+  dispose(): void
+}
+
+export interface IDeploymentProcessingComponent extends IBaseComponent {
+  /** Maximum number of content files uploaded concurrently by one deployment. */
+  readonly storageConcurrency: number
+  /** Maximum number of deployment files hashed concurrently by one deployment. */
+  readonly hashConcurrency: number
+  /** Maximum number of storage metadata lookups run concurrently by one deployment. */
+  readonly fileInfoConcurrency: number
+  /** Maximum time spent processing a deployment after its multipart body has been parsed. */
+  readonly timeoutMs: number
+  /** Combines an optional request signal with the configured processing deadline. */
+  createAbortContext(parentSignal?: AbortSignal): DeploymentAbortContext
+  /** Records the duration, item count, outcome, and active count for a processing stage. */
+  trackStage<T>(stage: DeploymentProcessingStage, items: number, operation: () => Promise<T>): Promise<T>
+  /** Records the number of workers currently active in a bounded processing stage. */
+  trackWorker<T>(stage: DeploymentProcessingStage, operation: () => Promise<T>): Promise<T>
+}
+
+export type SceneDeploymentData = {
+  /** Auth chain already validated for this deployment. */
+  authChain: AuthChain
+  /** Total unique content size already calculated during validation. */
+  size: number
+  /** Absolute processing deadline used to bound the persistence transaction. */
+  deadlineAt?: number
+  /** Cancels persistence until the transaction reaches its commit boundary. */
+  signal?: AbortSignal
 }
 
 export type WorldRuntimeMetadata = {
@@ -275,6 +318,7 @@ export type ValidatorComponents = Pick<
   AppComponents,
   | 'config'
   | 'coordinates'
+  | 'deploymentProcessing'
   | 'limitsManager'
   | 'nameDenyListChecker'
   | 'namePermissionChecker'
@@ -399,7 +443,8 @@ export type IWorldsManager = {
   getDeployedWorldCount(): Promise<{ ens: number; dcl: number }>
   getMetadataForWorld(worldName: string): Promise<WorldMetadata | undefined>
   getEntityForWorlds(worldNames: string[]): Promise<Entity[]>
-  deployScene(worldName: string, scene: Entity, owner: EthAddress): Promise<void>
+  /** Persists a scene and its already-calculated deployment metadata. */
+  deployScene(worldName: string, scene: Entity, owner: EthAddress, deployment?: SceneDeploymentData): Promise<void>
   undeployScene(worldName: string, parcels: string[]): Promise<void>
   storeAccess(worldName: string, access: AccessSetting): Promise<void>
   modifyAccessAtomically(
@@ -492,7 +537,10 @@ export type IEntityDeployer = {
     allContentHashesInStorage: Map<string, boolean>,
     files: Map<string, DeploymentFile>,
     entityJson: string,
-    authChain: AuthLink[]
+    authChain: AuthLink[],
+    deploymentSize: number,
+    signal?: AbortSignal,
+    deadlineAt?: number
   ): Promise<DeploymentResult>
 }
 
@@ -546,6 +594,7 @@ export type BaseComponents = {
   config: IConfigComponent
   coordinates: ICoordinatesComponent
   database: IPgComponent
+  deploymentProcessing: IDeploymentProcessingComponent
   entityDeployer: IEntityDeployer
   ethereumProvider: HTTPProvider
   evictionJob: IJobComponent

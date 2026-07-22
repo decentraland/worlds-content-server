@@ -10,6 +10,7 @@ import { join } from 'path'
 import { Readable, Transform } from 'stream'
 import { pipeline } from 'stream/promises'
 import { DeploymentFile } from '../types'
+import { hashV1 } from '@dcl/hashing'
 
 /**
  * An uploaded file. The bytes are streamed to a temp file on disk rather than buffered in memory,
@@ -43,13 +44,39 @@ export function readUploadedFile(file: UploadedFile): Promise<Buffer> {
   return readFile(file.filepath)
 }
 
-/** Wraps an uploaded file as a {@link DeploymentFile}, memoizing the full-buffer read. */
+function createDeploymentFileStream(filepath: string, signal?: AbortSignal): Readable {
+  if (signal?.aborted) {
+    throw signal.reason ?? new Error('Deployment file read was aborted.')
+  }
+  const stream = createReadStream(filepath)
+  if (signal) {
+    const abort = (): void => {
+      stream.destroy(signal.reason ?? new Error('Deployment file read was aborted.'))
+    }
+    signal.addEventListener('abort', abort, { once: true })
+    stream.once('close', () => signal.removeEventListener('abort', abort))
+  }
+  return stream
+}
+
+/**
+ * Wraps an uploaded file as a {@link DeploymentFile}, memoizing the full-buffer read and the hash.
+ *
+ * Memoization assumes every call shares the single request-scoped signal: the first caller's
+ * signal is baked into the memoized promise, and an aborted first read stays rejected for later
+ * callers. Both are correct while the file never outlives its request.
+ */
 export function toDeploymentFile(file: UploadedFile): DeploymentFile {
   let buffered: Promise<Buffer> | undefined
+  let hash: Promise<string> | undefined
   return {
     size: file.size,
-    getStream: () => createReadStream(file.filepath),
-    asBuffer: () => (buffered ??= readFile(file.filepath))
+    getStream: (signal) => createDeploymentFileStream(file.filepath, signal),
+    getHash: (signal) =>
+      (hash ??= buffered
+        ? buffered.then((content) => hashV1(content))
+        : hashV1(createDeploymentFileStream(file.filepath, signal))),
+    asBuffer: (signal) => (buffered ??= readFile(file.filepath, signal ? { signal } : undefined))
   }
 }
 

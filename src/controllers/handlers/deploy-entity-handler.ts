@@ -1,13 +1,27 @@
 import { Entity } from '@dcl/schemas'
 import { IHttpServerComponent } from '@dcl/core-commons'
-import { FormDataContext, readUploadedFile, toDeploymentFile } from '../../logic/multipart'
+import { FormDataContext, toDeploymentFile } from '../../logic/multipart'
 import { DeploymentFile, HandlerContextWithPath } from '../../types'
 import { extractAuthChain } from '../../logic/extract-auth-chain'
 import { InvalidRequestError } from '@dcl/http-commons'
-import { IContentStorageComponent } from '@dcl/catalyst-storage'
+import { FileInfo, IContentStorageComponent } from '@dcl/catalyst-storage'
+import { calculateDeploymentSizeFromFileInfos } from '../../logic/validations/scene'
+import { mapWithConcurrency } from '../../logic/concurrency'
+import {
+  DEFAULT_CONTENT_FILE_INFO_CONCURRENCY,
+  DeploymentProcessingAbortedError,
+  DeploymentProcessingTimeoutError,
+  isProcessingCancellationError
+} from '../../logic/deployment-processing'
 
-export const DEFAULT_CONTENT_AVAILABILITY_BATCH_SIZE = 64
+export { DEFAULT_CONTENT_FILE_INFO_CONCURRENCY } from '../../logic/deployment-processing'
 export const MAX_ENTITY_FILE_SIZE_IN_BYTES = 5 * 1024 * 1024
+
+type DeployEntityContext = FormDataContext &
+  HandlerContextWithPath<
+    'config' | 'deploymentProcessing' | 'entityDeployer' | 'logs' | 'storage' | 'validator',
+    '/entities'
+  >
 
 export function requireString(val: string | null | undefined): string {
   if (typeof val !== 'string') throw new InvalidRequestError('A string was expected')
@@ -23,38 +37,39 @@ function parseEntityJson(raw: string) {
 }
 
 /**
- * Checks content availability in bounded sequential batches. The underlying storage component
- * performs each call with `Promise.all`, so bounding each batch prevents a large valid deployment
- * from opening thousands of simultaneous storage requests.
+ * Fetches content metadata through a continuous bounded worker pool.
  *
- * @param storage Content storage used for existence checks.
+ * @param storage Content storage used for metadata checks.
  * @param hashes Content hashes referenced by the deployment.
- * @param batchSize Maximum number of concurrent checks delegated to storage.
- * @returns Availability for every unique content hash.
+ * @param concurrency Maximum number of concurrent checks delegated to storage.
+ * @param signal Optional deadline or request-disconnect signal.
+ * @param trackWorker Optional worker telemetry wrapper.
+ * @returns Storage metadata for every unique content hash.
+ * @throws The cancellation reason without waiting for active metadata calls, which own no request files.
  */
-export async function getContentAvailability(
-  storage: Pick<IContentStorageComponent, 'existMultiple'>,
+export async function getContentFileInfos(
+  storage: Pick<IContentStorageComponent, 'fileInfo'>,
   hashes: string[],
-  batchSize: number = DEFAULT_CONTENT_AVAILABILITY_BATCH_SIZE
-): Promise<Map<string, boolean>> {
-  if (!Number.isSafeInteger(batchSize) || batchSize <= 0) {
-    throw new Error(`Content availability batch size must be a positive safe integer, got ${batchSize}`)
-  }
-
+  concurrency: number = DEFAULT_CONTENT_FILE_INFO_CONCURRENCY,
+  signal?: AbortSignal,
+  trackWorker?: (operation: () => Promise<FileInfo | undefined>) => Promise<FileInfo | undefined>
+): Promise<Map<string, FileInfo | undefined>> {
   const uniqueHashes = Array.from(new Set(hashes))
-  const availability = new Map<string, boolean>()
-  for (let offset = 0; offset < uniqueHashes.length; offset += batchSize) {
-    const batchAvailability = await storage.existMultiple(uniqueHashes.slice(offset, offset + batchSize))
-    for (const [hash, exists] of batchAvailability) {
-      availability.set(hash, exists)
-    }
-  }
-  return availability
+  const fileInfos = await mapWithConcurrency(
+    uniqueHashes,
+    concurrency,
+    (hash) => (trackWorker ? trackWorker(() => storage.fileInfo(hash)) : storage.fileInfo(hash)),
+    { signal, waitForActiveOnAbort: false }
+  )
+  return new Map(uniqueHashes.map((hash, index) => [hash, fileInfos[index]]))
 }
 
-export async function deployEntity(
-  ctx: FormDataContext & HandlerContextWithPath<'config' | 'entityDeployer' | 'storage' | 'validator', '/entities'>
+async function deployEntityWithSignal(
+  ctx: DeployEntityContext,
+  signal: AbortSignal,
+  deadlineAt: number
 ): Promise<IHttpServerComponent.IResponse> {
+  const { deploymentProcessing } = ctx.components
   const entityId = requireString(ctx.formData.fields.entityId?.value[0])
   const authChain = extractAuthChain(ctx)
 
@@ -68,22 +83,22 @@ export async function deployEntity(
     )
   }
 
-  // The entity JSON is small, so it is safe to read fully into memory.
-  const entityRaw = (await readUploadedFile(entityFile)).toString()
-  const entityMetadataJson = parseEntityJson(entityRaw)
-
-  const entity: Entity = { ...entityMetadataJson, id: entityId }
-
   const uploadedFiles: Map<string, DeploymentFile> = new Map()
   for (const filesKey in ctx.formData.files) {
     uploadedFiles.set(filesKey, toDeploymentFile(ctx.formData.files[filesKey]))
   }
 
+  // The entity JSON is small, so it is safe to buffer. Its hash reuses this same read.
+  const entityRaw = (await uploadedFiles.get(entityId)!.asBuffer(signal)).toString()
+  const entityMetadataJson = parseEntityJson(entityRaw)
+  const entity: Entity = { ...entityMetadataJson, id: entityId }
+
   const deployment = {
     entity,
     files: uploadedFiles,
     authChain,
-    contentHashesInStorage: new Map<string, boolean>()
+    contentHashesInStorage: new Map<string, boolean>(),
+    signal
   }
 
   const preStorageValidationResult = await ctx.components.validator.validateBeforeStorage(deployment)
@@ -91,14 +106,23 @@ export async function deployEntity(
     throw new InvalidRequestError(`Deployment failed: ${preStorageValidationResult.errors.join(', ')}`)
   }
 
-  const contentHashesInStorage = await getContentAvailability(
-    ctx.components.storage,
-    entity.content!.map(($) => $.hash)
+  signal.throwIfAborted()
+  const contentHashes = entity.content!.map(($) => $.hash)
+  const contentFileInfos = await deploymentProcessing.trackStage('metadata', new Set(contentHashes).size, () =>
+    getContentFileInfos(
+      ctx.components.storage,
+      contentHashes,
+      deploymentProcessing.fileInfoConcurrency,
+      signal,
+      (operation) => deploymentProcessing.trackWorker('metadata', operation)
+    )
   )
+  const contentHashesInStorage = new Map(Array.from(contentFileInfos, ([hash, info]) => [hash, info !== undefined]))
 
   const validationResult = await ctx.components.validator.validateAfterStorage({
     ...deployment,
-    contentHashesInStorage
+    contentHashesInStorage,
+    contentFileInfos
   })
 
   if (!validationResult.ok()) {
@@ -107,13 +131,18 @@ export async function deployEntity(
 
   // Store the entity
   const baseUrl = (await ctx.components.config.getString('HTTP_BASE_URL')) || `https://${ctx.url.host}`
+  const deploymentSize = calculateDeploymentSizeFromFileInfos(entity, uploadedFiles, contentFileInfos)
+  signal.throwIfAborted()
   const message = await ctx.components.entityDeployer.deployEntity(
     baseUrl,
     entity,
     contentHashesInStorage,
     uploadedFiles,
     entityRaw,
-    authChain
+    authChain,
+    deploymentSize,
+    signal,
+    deadlineAt
   )
 
   return {
@@ -122,5 +151,58 @@ export async function deployEntity(
       creationTimestamp: Date.now(),
       ...message
     }
+  }
+}
+
+export async function deployEntity(ctx: DeployEntityContext): Promise<IHttpServerComponent.IResponse> {
+  const abortContext = ctx.components.deploymentProcessing.createAbortContext(ctx.request?.signal)
+  try {
+    return await ctx.components.deploymentProcessing.trackStage('total', Object.keys(ctx.formData.files).length, () =>
+      deployEntityWithSignal(ctx, abortContext.signal, abortContext.deadlineAt)
+    )
+  } catch (error) {
+    const abortedError =
+      error instanceof DeploymentProcessingAbortedError
+        ? error
+        : abortContext.signal.reason instanceof DeploymentProcessingAbortedError
+          ? abortContext.signal.reason
+          : undefined
+    // A genuine failure can race with a disconnect or the deadline; the cancellation response
+    // below would otherwise be the only trace of it, since the global error handler never runs.
+    if (abortContext.signal.aborted && !isProcessingCancellationError(error)) {
+      ctx.components.logs.getLogger('deploy-entity-handler').error('Deployment failed while cancelled', {
+        entityId: ctx.formData.fields.entityId?.value[0] ?? 'unknown',
+        error: error instanceof Error ? error.message : String(error)
+      })
+    }
+    if (abortedError) {
+      // The transport is already gone in production. Returning a typed response keeps the expected
+      // cancellation out of the global error handler's warning/500 path in direct or mocked callers.
+      return {
+        status: 499,
+        body: {
+          error: 'Client Closed Request',
+          message: abortedError.message
+        }
+      }
+    }
+    const timeoutError =
+      error instanceof DeploymentProcessingTimeoutError
+        ? error
+        : abortContext.signal.reason instanceof DeploymentProcessingTimeoutError
+          ? abortContext.signal.reason
+          : undefined
+    if (timeoutError) {
+      return {
+        status: 408,
+        body: {
+          error: 'Request Timeout',
+          message: timeoutError.message
+        }
+      }
+    }
+    throw error
+  } finally {
+    abortContext.dispose()
   }
 }

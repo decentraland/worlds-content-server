@@ -25,13 +25,15 @@ import {
   GetRawWorldRecordsResult,
   GetOccupiedParcelsOptions,
   GetOccupiedParcelsResult,
-  SceneDeploymentStatus
+  SceneDeploymentStatus,
+  SceneDeploymentData
 } from '../types'
 import { streamToBuffer } from '@dcl/catalyst-storage'
 import { Entity, EthAddress } from '@dcl/schemas'
-import SQL from 'sql-template-strings'
+import SQL, { type SQLStatement } from 'sql-template-strings'
 import { buildWorldRuntimeMetadata, shouldShowInPlaces } from '../logic/world-runtime-metadata-utils'
 import { AccessSetting, defaultAccess } from '../logic/access'
+import { raceWithSignal } from '../logic/concurrency'
 
 type BoundingRow = { min_x: number; max_x: number; min_y: number; max_y: number }
 
@@ -48,6 +50,95 @@ export async function createWorldsManagerComponent({
 >): Promise<IWorldsManager> {
   const logger = logs.getLogger('worlds-manager')
   const { extractSpawnCoordinates, parseCoordinate, isCoordinateWithinRectangle, getRectangleCenter } = coordinates
+
+  type DeploymentTransactionQuery = (statement: SQLStatement) => Promise<void>
+  type DeploymentTransactionClient = {
+    query(statement: string | SQLStatement): Promise<unknown>
+    release(error?: Error): void
+  }
+
+  /**
+   * Runs deployment persistence on a dedicated connection which is destroyed on cancellation.
+   * Closing the connection makes PostgreSQL roll back active transaction work. Cancellation is
+   * disabled immediately before COMMIT, which is the deployment's explicit success boundary.
+   */
+  async function withDeploymentTransaction(
+    signal: AbortSignal | undefined,
+    operation: (query: DeploymentTransactionQuery) => Promise<void>
+  ): Promise<void> {
+    if (!signal) {
+      await database.withAsyncContextTransaction(() =>
+        operation(async (statement) => {
+          await database.query(statement)
+        })
+      )
+      return
+    }
+
+    signal.throwIfAborted()
+    const acquireClient = database.getPool().connect() as Promise<DeploymentTransactionClient>
+    let client: Awaited<typeof acquireClient>
+    try {
+      client = await raceWithSignal(acquireClient, signal)
+    } catch (error) {
+      // If cancellation wins while the pool is saturated, release the eventual acquisition instead
+      // of leaking a checked-out connection after this request has already returned.
+      void acquireClient.then(
+        (acquiredClient) => acquiredClient.release(),
+        () => undefined
+      )
+      throw error
+    }
+
+    let released = false
+    let commitStarted = false
+    const abort = (): void => {
+      if (!released && !commitStarted) {
+        released = true
+        const reason = signal.reason instanceof Error ? signal.reason : new Error('Deployment persistence aborted.')
+        client.release(reason)
+      }
+    }
+    signal.addEventListener('abort', abort, { once: true })
+
+    try {
+      signal.throwIfAborted()
+      await client.query('BEGIN')
+      const query: DeploymentTransactionQuery = async (statement) => {
+        signal.throwIfAborted()
+        await client.query(statement)
+        signal.throwIfAborted()
+      }
+      await operation(query)
+      signal.throwIfAborted()
+
+      // Once COMMIT begins, cancellation can no longer reliably distinguish a committed transaction
+      // from a rolled-back one. Treat this point as success and let post-commit work be best-effort.
+      commitStarted = true
+      signal.removeEventListener('abort', abort)
+      await client.query('COMMIT')
+    } catch (error) {
+      if (!released) {
+        try {
+          await client.query('ROLLBACK')
+        } catch (rollbackError) {
+          logger.error('Error rolling back cancelled deployment transaction', {
+            error: rollbackError instanceof Error ? rollbackError.message : String(rollbackError)
+          })
+        }
+      }
+      if (signal.aborted && !commitStarted) {
+        throw signal.reason ?? error
+      }
+      throw error
+    } finally {
+      signal.removeEventListener('abort', abort)
+      if (!released) {
+        released = true
+        client.release()
+      }
+    }
+  }
 
   /**
    * Gets a paginated list of raw world records with optional filtering
@@ -184,15 +275,25 @@ export async function createWorldsManagerComponent({
    * 4. Removes any existing scenes that overlap with the new scene's parcels
    * 5. Inserts the new scene into the world_scenes table
    *
-   * The transaction ensures atomicity - if any step fails, all changes are rolled back.
+   * The transaction ensures atomicity - if any step fails, all changes are rolled back. When a
+   * signal is provided, cancellation destroys the dedicated PostgreSQL connection and rolls the
+   * transaction back until COMMIT begins. Starting COMMIT is the deployment's success boundary:
+   * the deadline-based statement timeout is armed for every business statement and cleared right
+   * before COMMIT, so PostgreSQL cannot cancel the commit itself after the boundary is crossed.
    *
    * @param worldName - The name of the world to deploy the scene to
    * @param scene - The scene entity containing metadata, content, and parcel information
    * @param owner - The Ethereum address of the world owner
+   * @param deployment - Prevalidated deployment data, deadline, and optional cancellation signal
    * @throws {Error} If the deployment auth chain cannot be retrieved or parsed
    * @throws {Error} If any database operation fails (triggers rollback)
    */
-  async function deployScene(worldName: string, scene: Entity, owner: EthAddress): Promise<void> {
+  async function deployScene(
+    worldName: string,
+    scene: Entity,
+    owner: EthAddress,
+    deployment?: SceneDeploymentData
+  ): Promise<void> {
     // Canonicalize so the stored parcels, the overlap-based replacement here, the undeploy
     // authorization, and the size credit-back all compare parcels by value (e.g. "00,00" ==
     // "0,0"). Otherwise a non-canonical scene.parcels could dodge replacement / over-credit.
@@ -201,14 +302,19 @@ export async function createWorldsManagerComponent({
       throw new Error(`Attempt to deploy scene ${scene.id} to world ${worldName} with no parcels.`)
     }
 
-    const content = await storage.retrieve(`${scene.id}.auth`)
-    const deploymentAuthChainString = content ? (await streamToBuffer(await content.asStream())).toString() : '{}'
-    const deploymentAuthChain = JSON.parse(deploymentAuthChainString)
+    const content = deployment ? undefined : await storage.retrieve(`${scene.id}.auth`)
+    const deploymentAuthChainString = deployment
+      ? JSON.stringify(deployment.authChain)
+      : content
+        ? (await streamToBuffer(await content.asStream())).toString()
+        : '{}'
+    const deploymentAuthChain = deployment?.authChain ?? JSON.parse(deploymentAuthChainString)
 
     const deployer = deploymentAuthChain[0].payload.toLowerCase()
 
-    const fileInfos = await storage.fileInfoMultiple(scene.content?.map((c) => c.hash) || [])
-    const size = scene.content?.reduce((acc, c) => acc + (fileInfos.get(c.hash)?.size || 0), 0) || 0
+    const fileInfos = deployment ? undefined : await storage.fileInfoMultiple(scene.content?.map((c) => c.hash) || [])
+    const size =
+      deployment?.size ?? scene.content?.reduce((acc, c) => acc + (fileInfos?.get(c.hash)?.size || 0), 0) ?? 0
 
     const spawnCoordinates = extractSpawnCoordinates(scene)
 
@@ -227,11 +333,16 @@ export async function createWorldsManagerComponent({
     const thumbnailContent = navmapThumbnail ? scene.content?.find((c) => c.file === navmapThumbnail) : null
     const thumbnailHash = thumbnailContent?.hash || null
 
-    await database.withAsyncContextTransaction(async () => {
+    await withDeploymentTransaction(deployment?.signal, async (query) => {
+      if (deployment?.deadlineAt !== undefined) {
+        const remainingMs = Math.max(1, deployment.deadlineAt - Date.now())
+        await query(SQL`SELECT set_config('statement_timeout', ${remainingMs.toString()}, true)`)
+      }
+
       // Ensure world record exists, update if it does
       // On first deployment (INSERT), set settings from scene metadata
       // On subsequent deployments (UPDATE), preserve existing settings
-      await database.query(SQL`
+      await query(SQL`
         INSERT INTO worlds (
           name, owner, access, spawn_coordinates, 
           title, description, content_rating, skybox_time, categories,
@@ -261,7 +372,7 @@ export async function createWorldsManagerComponent({
       `)
 
       // Soft-delete any existing deployed scenes on these parcels
-      await database.query(SQL`
+      await query(SQL`
         UPDATE world_scenes SET status = 'UNDEPLOYED', updated_at = NOW()
         WHERE world_name = ${worldName.toLowerCase()}
         AND parcels && ${parcels}::text[]
@@ -269,7 +380,7 @@ export async function createWorldsManagerComponent({
       `)
 
       // Insert new scene
-      await database.query(SQL`
+      await query(SQL`
         INSERT INTO world_scenes (
           world_name, entity_id, deployer, deployment_auth_chain,
           entity, parcels, size, status, created_at, updated_at
@@ -288,7 +399,14 @@ export async function createWorldsManagerComponent({
       `)
 
       // Update denormalized scene stats
-      await recalculateWorldSceneStats(worldName.toLowerCase())
+      await query(buildRecalculateWorldSceneStatsQuery(worldName.toLowerCase()))
+
+      if (deployment?.deadlineAt !== undefined) {
+        // COMMIT is the deployment's success boundary: clear the transaction-local deadline so
+        // PostgreSQL cannot cancel the COMMIT itself and report a possibly-committed deployment
+        // as a pre-commit failure. Request cancellation still applies until COMMIT begins.
+        await query(SQL`SELECT set_config('statement_timeout', ${'0'}, true)`)
+      }
     })
   }
 
@@ -782,8 +900,8 @@ export async function createWorldsManagerComponent({
    * @param worldName - The name of the world
    * @returns The bounding rectangle, or undefined if no parcels exist
    */
-  async function recalculateWorldSceneStats(worldName: string): Promise<void> {
-    await database.query(SQL`
+  function buildRecalculateWorldSceneStatsQuery(worldName: string): SQLStatement {
+    return SQL`
       WITH stats AS (
         SELECT
           MAX(ws.created_at) as last_deployed_at,
@@ -806,7 +924,11 @@ export async function createWorldsManagerComponent({
         updated_at = NOW()
       FROM stats
       WHERE worlds.name = ${worldName}
-    `)
+    `
+  }
+
+  async function recalculateWorldSceneStats(worldName: string): Promise<void> {
+    await database.query(buildRecalculateWorldSceneStatsQuery(worldName))
   }
 
   async function getWorldBoundingRectangle(worldName: string): Promise<WorldBoundingRectangle | undefined> {

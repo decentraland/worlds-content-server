@@ -1,6 +1,7 @@
 import { createConfigComponent } from '@well-known-components/env-config-provider'
 import { bufferToStream, createInMemoryStorage, IContentStorageComponent } from '@dcl/catalyst-storage'
 import {
+  DeploymentFile,
   DeploymentToValidate,
   ILimitsManager,
   INameDenyListChecker,
@@ -10,7 +11,8 @@ import {
   ValidatorComponents
 } from '../../../src/types'
 import { stringToUtf8Bytes } from 'eth-connect'
-import { EntityType } from '@dcl/schemas'
+import { Entity, EntityType } from '@dcl/schemas'
+import { Readable } from 'stream'
 import { createMockLimitsManagerComponent } from '../../mocks/limits-manager-mock'
 import { createMockNamePermissionChecker } from '../../mocks/dcl-name-checker-mock'
 import { getIdentity, Identity } from '../../utils'
@@ -27,6 +29,7 @@ import {
   createValidateScenePointers,
   createValidateSdkVersion,
   createValidateSize,
+  calculateDeploymentSizeFromFileInfos,
   validateDeprecatedConfig,
   validateMiniMapImages,
   validateSceneEntity,
@@ -37,6 +40,7 @@ import { createSceneDeployment } from './shared'
 import { createMockNameDenyListChecker } from '../../mocks/name-deny-list-checker-mock'
 import { createMockedPermissionsComponent } from '../../mocks/permissions-component-mock'
 import { IPermissionsComponent } from '../../../src/logic/permissions'
+import { createDeploymentProcessingMock } from '../../mocks/deployment-processing-mock'
 
 describe('scene validations', function () {
   let config: IConfigComponent
@@ -65,6 +69,7 @@ describe('scene validations', function () {
     components = {
       config,
       coordinates,
+      deploymentProcessing: createDeploymentProcessingMock(),
       storage,
       limitsManager,
       nameDenyListChecker,
@@ -594,6 +599,33 @@ describe('scene validations', function () {
       })
     })
 
+    describe('and stored content metadata was already fetched by the handler', () => {
+      let resultOk: boolean
+      let retrieveSpy: jest.SpyInstance
+
+      beforeEach(async () => {
+        deployment = await createSceneDeployment(identity.authChain)
+        const storedHash = deployment.entity.content[0].hash
+        deployment.files.delete(storedHash)
+        deployment.contentHashesInStorage.set(storedHash, true)
+        deployment.contentFileInfos = new Map([[storedHash, { encoding: null, size: 3, contentSize: 3 }]])
+        retrieveSpy = jest.spyOn(storage, 'retrieve')
+
+        resultOk = (await validateSize(deployment)).ok()
+      })
+
+      afterEach(() => {
+        jest.restoreAllMocks()
+      })
+
+      it('should calculate the size without retrieving the content again', () => {
+        expect({ resultOk, storageRetrievals: retrieveSpy.mock.calls.length }).toEqual({
+          resultOk: true,
+          storageRetrievals: 0
+        })
+      })
+    })
+
     describe('and the deployment exceeds the size limit', () => {
       beforeEach(async () => {
         const fileContent = Buffer.from(
@@ -856,6 +888,69 @@ describe('scene validations', function () {
         expect(result.ok()).toBeFalsy()
         expect(result.errors).toContain('The texture file xyz.png is not present in the entity.')
       })
+    })
+  })
+})
+
+describe('calculateDeploymentSizeFromFileInfos', () => {
+  describe('when content mixes uploaded and stored files with duplicate references', () => {
+    let deploymentSize: number
+
+    beforeEach(() => {
+      const uploadedHash = 'uploaded-hash'
+      const storedHash = 'stored-hash'
+      const entity = {
+        content: [
+          { file: 'uploaded.bin', hash: uploadedHash },
+          { file: 'uploaded-copy.bin', hash: uploadedHash },
+          { file: 'stored.bin', hash: storedHash },
+          { file: 'stored-copy.bin', hash: storedHash }
+        ]
+      } as Entity
+      const uploadedFile: DeploymentFile = {
+        asBuffer: async () => Buffer.from('12345'),
+        getHash: async () => uploadedHash,
+        getStream: () => Readable.from('12345'),
+        size: 5
+      }
+
+      deploymentSize = calculateDeploymentSizeFromFileInfos(
+        entity,
+        new Map([[uploadedHash, uploadedFile]]),
+        new Map([
+          [uploadedHash, undefined],
+          [storedHash, { contentSize: 7, encoding: null, size: 7 }]
+        ])
+      )
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should count each unique hash exactly once using its available size source', () => {
+      expect(deploymentSize).toBe(12)
+    })
+  })
+
+  describe('when referenced content is neither uploaded nor present in the metadata snapshot', () => {
+    let caughtError: unknown
+
+    beforeEach(() => {
+      const entity = { content: [{ file: 'missing.bin', hash: 'missing-hash' }] } as Entity
+      try {
+        calculateDeploymentSizeFromFileInfos(entity, new Map(), new Map([['missing-hash', undefined]]))
+      } catch (error) {
+        caughtError = error
+      }
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should reject the incomplete metadata snapshot', () => {
+      expect(caughtError).toEqual(new Error("Couldn't fetch content file with hash missing-hash"))
     })
   })
 })
