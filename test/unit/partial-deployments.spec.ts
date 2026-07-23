@@ -1,6 +1,7 @@
 import { AuthChain, AuthLinkType, Entity, EntityType } from '@dcl/schemas'
 import { createPartialDeploymentsComponent } from '../../src/logic/partial-deployments'
 import { createCoordinatesComponent } from '../../src/logic/coordinates'
+import { DeploymentProcessingAbortedError } from '../../src/logic/deployment-processing'
 import { DeploymentFile } from '../../src/types'
 import { PendingScene } from '../../src/adapters/pending-scenes-manager'
 
@@ -18,6 +19,7 @@ describe('partial deployments component', () => {
   let fileInfoMultiple: jest.Mock
   let existMultiple: jest.Mock
   let storeStream: jest.Mock
+  let upsert: jest.Mock
   let validateStaging: jest.Mock
   let validate: jest.Mock
   let deployEntity: jest.Mock
@@ -79,6 +81,7 @@ describe('partial deployments component', () => {
       ])
     )
     storeStream = jest.fn().mockResolvedValue(undefined)
+    upsert = jest.fn().mockResolvedValue(pendingRow)
     validateStaging = jest.fn().mockResolvedValue({ ok: () => true, errors: [] })
     validate = jest.fn().mockResolvedValue({ ok: () => true, errors: [] })
     deployEntity = jest.fn().mockResolvedValue({ message: 'deployed' })
@@ -93,7 +96,7 @@ describe('partial deployments component', () => {
       },
       pendingScenesManager: {
         getByEntityId: jest.fn().mockResolvedValue(undefined),
-        upsert: jest.fn().mockResolvedValue(pendingRow),
+        upsert,
         deleteByEntityId: jest.fn().mockResolvedValue(undefined)
       },
       storage: { fileInfoMultiple, existMultiple, storeStream },
@@ -168,11 +171,13 @@ describe('partial deployments component', () => {
   })
 
   describe('when the staging request arrives with an already-aborted signal', () => {
-    let abortReason: Error
+    let abortReason: DeploymentProcessingAbortedError
     let caughtError: unknown
 
     beforeEach(async () => {
-      abortReason = new Error('Client disconnected.')
+      // The typed reason the deployment-processing abort context installs in production, so the
+      // rethrown error is the one the handler classifies as a 499.
+      abortReason = new DeploymentProcessingAbortedError(new DOMException('Client disconnected.', 'AbortError'))
       const controller = new AbortController()
       controller.abort(abortReason)
       const partialDeployments = await createPartialDeploymentsComponent(components)
@@ -188,12 +193,13 @@ describe('partial deployments component', () => {
         .catch((error) => error)
     })
 
-    it('should reject with the abort reason without storing files or deploying', () => {
+    it('should reject with the abort reason without writing any state', () => {
       expect({
         caughtError,
+        pendingUpserts: upsert.mock.calls.length,
         stores: storeStream.mock.calls.length,
         deployments: deployEntity.mock.calls.length
-      }).toEqual({ caughtError: abortReason, stores: 0, deployments: 0 })
+      }).toEqual({ caughtError: abortReason, pendingUpserts: 0, stores: 0, deployments: 0 })
     })
   })
 })

@@ -1,5 +1,6 @@
 import { InvalidRequestError } from '@dcl/http-commons'
 import { AppComponents, DeploymentFile } from '../../types'
+import { mapWithConcurrency } from '../concurrency'
 import { calculateDeploymentSizeFromFileInfos } from '../validations/scene'
 import { IPartialDeploymentsComponent, StageDeploymentInput, StageDeploymentResult } from './types'
 
@@ -58,24 +59,29 @@ export async function createPartialDeploymentsComponent(
   }
 
   async function storeFiles(files: Map<string, DeploymentFile>, signal?: AbortSignal): Promise<void> {
-    // Store every file the client sent this batch, in bounded-parallel batches. We do NOT skip files a
+    // Store every file the client sent this batch through a bounded worker pool. We do NOT skip files a
     // pre-request snapshot said were already stored: that snapshot predates the pending row (and its GC
     // protection), so a file present then could be swept before we store, and skipping it would discard
     // bytes uploaded in this very batch. Storage is content-addressed (re-store is an idempotent no-op)
     // and the client already omits files reported by /available-content, so this rarely re-sends
-    // present content anyway. A cancellation stops between batches (and tears the in-flight streams);
-    // partially-stored content is harmless — the pending row protects it and a resume re-sends the rest.
-    const toStore = Array.from(files)
-    for (let i = 0; i < toStore.length; i += STORE_CONCURRENCY) {
-      signal?.throwIfAborted()
-      await Promise.all(
-        toStore.slice(i, i + STORE_CONCURRENCY).map(([hash, file]) => storage.storeStream(hash, file.getStream(signal)))
-      )
-    }
+    // present content anyway. mapWithConcurrency (not a bare Promise.all) so a store failure or a
+    // cancellation lets already-started uploads settle before the error is rethrown — the streams read
+    // request-scoped temp files that the multipart wrapper removes as soon as the request unwinds.
+    // Partially-stored content is harmless: the pending row protects it and a resume re-sends the rest.
+    await mapWithConcurrency(
+      Array.from(files),
+      STORE_CONCURRENCY,
+      ([hash, file]) => storage.storeStream(hash, file.getStream(signal)),
+      { signal }
+    )
   }
 
   async function stage(input: StageDeploymentInput): Promise<StageDeploymentResult> {
     const { baseUrl, entity, entityRaw, authChain, files, signal, deadlineAt } = input
+    // Short-circuit an already-cancelled request before any I/O. Later stages re-check (staging
+    // validation, storeFiles, before the finalize validation), but the guarantee that a cancelled
+    // request writes no state should not rest on the validator honoring the signal.
+    signal?.throwIfAborted()
     const contentHashes = Array.from(new Set((entity.content ?? []).map((c) => c.hash)))
 
     // These two lookups are independent (the pending row vs. the content metadata), so run them
@@ -161,7 +167,22 @@ export async function createPartialDeploymentsComponent(
     // and the size persisted with the scene — the start-of-request `storedInfo` snapshot must NOT be
     // used for that: files stored by sibling requests after it was taken would count as 0 and skew
     // quota accounting.
-    const presentInfos = await storage.fileInfoMultiple(contentHashes)
+    let presentInfos: Awaited<ReturnType<typeof storage.fileInfoMultiple>>
+    try {
+      presentInfos = await storage.fileInfoMultiple(contentHashes)
+    } catch (error: any) {
+      // Folder-based storage's fileInfo has an exist->stat window that rejects (ENOENT) when a file is
+      // reclaimed mid-check — the very GC race this gate exists to absorb (S3's fileInfo returns
+      // undefined instead). Degrade to the error-hardened existence probe and report the upload as
+      // still incomplete: the pending row survives and the client resumes.
+      logger.warn('Completeness metadata read failed; reporting the upload as incomplete', {
+        entityId: entity.id,
+        worldName,
+        error: error?.message ?? `${error}`
+      })
+      const stillThere = await storage.existMultiple(contentHashes)
+      return { complete: false, missing: contentHashes.filter((hash) => !stillThere.get(hash)) }
+    }
     const missing = contentHashes.filter((hash) => presentInfos.get(hash) === undefined)
     if (missing.length > 0) {
       return { complete: false, missing }
