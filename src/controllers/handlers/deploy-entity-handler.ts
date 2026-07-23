@@ -6,6 +6,7 @@ import { hashV1 } from '@dcl/hashing'
 import { FormDataContext, toDeploymentFile } from '../../logic/multipart'
 import { DeploymentFile, HandlerContextWithPath } from '../../types'
 import { extractAuthChain } from '../../logic/extract-auth-chain'
+import { buildSceneDeploymentMessage } from '../../logic/utils'
 import { InvalidRequestError } from '@dcl/http-commons'
 import { FileInfo, IContentStorageComponent } from '@dcl/catalyst-storage'
 import { calculateDeploymentSizeFromFileInfos } from '../../logic/validations/scene'
@@ -289,14 +290,24 @@ async function deployEntityWithSignal(
     if (!isUniqueViolation(error) || !worldName) {
       throw error
     }
-    const existing = await ctx.components.worldsManager.getWorldScenes({ worldName, entityId }, { limit: 1 })
+    // The verification is best-effort: if it fails, propagate the ORIGINAL collision (its diagnostic
+    // value beats the verification hiccup's) rather than masking it.
+    const existing = await ctx.components.worldsManager
+      .getWorldScenes({ worldName, entityId }, { limit: 1 })
+      .catch(() => ({ scenes: [], total: 0 }))
     if (existing.scenes.length === 0) {
       throw error
     }
     ctx.components.logs
       .getLogger('deploy-entity')
       .info('Deployment finalized concurrently; returning idempotent success', { entityId, worldName })
-    message = { message: `Your scene was deployed to World "${worldName}".` }
+    message = {
+      message: buildSceneDeploymentMessage(
+        baseUrl,
+        entity.metadata?.worldConfiguration?.name ?? worldName,
+        entity.metadata?.scene?.parcels || []
+      )
+    }
   }
 
   // If this entity had a pending (partial) upload, it is now fully deployed via the vanilla path, so

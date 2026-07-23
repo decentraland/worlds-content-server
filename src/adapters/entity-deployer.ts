@@ -4,6 +4,7 @@ import { bufferToStream } from '@dcl/catalyst-storage/dist/content-item'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { InvalidRequestError } from '@dcl/http-commons'
 import { mapWithConcurrency, raceWithSignal } from '../logic/concurrency'
+import { buildSceneDeploymentMessage } from '../logic/utils'
 
 type PostDeploymentHook = (
   baseUrl: string,
@@ -220,14 +221,8 @@ export function createEntityDeployer(
       }
     }
 
-    const worldUrl = `${baseUrl}/world/${worldName}`
-    // Use the first parcel as the position
-    const position = parcels[0].split(',')
     return {
-      message: [
-        `Your scene was deployed to World "${worldName}" at parcels: ${parcels.join(', ')}!`,
-        `Access world: https://play.decentraland.org/?realm=${encodeURIComponent(worldUrl)}&position=${encodeURIComponent(position.join(','))}`
-      ].join('\n')
+      message: buildSceneDeploymentMessage(baseUrl, worldName, parcels)
     }
   }
 

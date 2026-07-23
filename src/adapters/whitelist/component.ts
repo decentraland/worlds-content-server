@@ -26,7 +26,13 @@ export async function createWhitelistComponent(
     fetchMethod: async () => {
       try {
         const response = await fetch.fetch(whitelistUrl)
-        return (await response.json()) as unknown as Whitelist
+        const raw = (await response.json()) as Record<string, Whitelist[string]>
+        // World names are compared lowercased everywhere (worlds.name, limits, quota checks), so
+        // normalize the whitelist keys the same way — a mixed-case key in the source file would
+        // otherwise silently drop that world's paid limits and quota exemption.
+        return Object.fromEntries(
+          Object.entries(raw ?? {}).map(([name, entry]) => [name.toLowerCase(), entry])
+        ) as Whitelist
       } catch (error) {
         logger.warn(`Error fetching the whitelist: ${errorMessage(error)}.`)
         throw error

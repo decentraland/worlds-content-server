@@ -323,6 +323,21 @@ function sendBatch(provider: HTTPProvider, batch: RPCSendableMessage[]) {
         return
       }
 
+      // JSON-RPC batch responses MAY arrive in any order; align them with the request order by id so
+      // callers can index-match results to their inputs (misordering would silently attribute owners
+      // to the wrong names). Only applied when every request id is answered — a provider that omits
+      // ids (out of spec) keeps the positional order it returned.
+      if (Array.isArray(result)) {
+        const responsesById = new Map(
+          result.filter((entry: any) => entry && entry.id !== undefined).map((entry: any) => [entry.id, entry])
+        )
+        const aligned = (payload as any[]).map((request: any) => responsesById.get(request.id))
+        if (aligned.every((entry) => entry !== undefined)) {
+          resolve(aligned)
+          return
+        }
+      }
+
       resolve(result)
     })
   })

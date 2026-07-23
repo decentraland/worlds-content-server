@@ -313,12 +313,16 @@ paths:
 
         **Partial (multi-request) deployments.** For scenes too large for one request, send `partial`
         set to `"true"` and split the content files across several requests. The first partial request
-        must include the entity metadata file; later requests may omit it (it is read back from
-        storage). Each request stores the files it carries; the scene only goes live once every
-        referenced file is present. A request that still leaves files missing returns `202` with the
-        list of outstanding hashes; the request that completes the set runs full validation, deploys,
-        and returns `200`. At most one in-flight partial deployment is kept per set of parcels (a newer
-        one replaces it), and staged content expires if the upload is not completed in time.
+        must include the entity metadata file. Later requests may omit it (it is read back from
+        storage) only while a still-live pending upload for this entity exists AND the request is
+        signed by the same address that started it; otherwise — including a resume after the pending
+        upload expired, or a request signed by a different authorized deployer — the entity file must
+        be re-sent (a request omitting it is rejected with `400`). Each request stores the files it
+        carries; the scene only goes live once every referenced file is present. A request that still
+        leaves files missing returns `202` with the list of outstanding hashes; the request that
+        completes the set runs full validation, deploys, and returns `200`. At most one in-flight
+        partial deployment is kept per set of parcels (a newer one replaces it), and staged content
+        expires if the upload is not completed in time.
       operationId: worldsContentServer_deployEntity
       requestBody:
         required: true
@@ -360,7 +364,8 @@ paths:
         '202':
           description: >
             Partial deployment accepted but not yet complete: some referenced content files are still
-            missing. Send them in further requests to complete the deployment.
+            missing. Send them in further requests to complete the deployment. Only a `200` means the
+            scene is live — clients must never treat a `202` as completion.
           content:
             application/json:
               schema:
@@ -393,6 +398,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '503':
           description: Multipart upload capacity is temporarily exhausted or temporary storage is unavailable
+          headers:
+            Retry-After:
+              description: Seconds after which the client should retry the upload
+              schema:
+                type: integer
+                example: 5
           content:
             application/json:
               schema:
@@ -465,27 +476,48 @@ paths:
       tags:
         - Content Server
       summary: /available-content
-      description: Retrieve list of available content hashes
+      description: Check which of the given content hashes are present in storage
       operationId: worldsContentServer_getAvailableContent
+      parameters:
+        - name: cid
+          in: query
+          required: true
+          description: Content hash to check. Repeat the parameter for multiple hashes (max 500).
+          schema:
+            type: array
+            items:
+              type: string
+          explode: true
       responses:
         '200':
-          description: Available content retrieved successfully
+          description: Availability of every requested content hash
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  cid:
-                    type: array
-                    items:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    cid:
                       type: string
+                    available:
+                      type: boolean
+        '400':
+          description: Missing cid parameter, more than 500 cids, or an invalid CID format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /ipfs/{hashId}:
     get:
       tags:
         - Content Server
       summary: /ipfs/{hashId}
-      description: Retrieve a content file by its IPFS hash
+      description: >-
+        Retrieve a content file by its IPFS hash. The Content-Type is detected from the file's magic
+        bytes (e.g. image/png, video/mp4), defaulting to application/octet-stream when unrecognized
+        or compressed. Supports HTTP range requests.
       operationId: worldsContentServer_getContentFileIpfs
       parameters:
         - name: hashId
@@ -495,16 +527,35 @@ paths:
           schema:
             type: string
             example: bafkreiabi74jam7uh5gmm6x4hox664j53bmt7dy4alrltkhyj3ozcxs2iu
+        - name: Range
+          in: header
+          required: false
+          description: Byte range to retrieve (e.g. `bytes=0-1023`)
+          schema:
+            type: string
       responses:
         '200':
-          description: Content file retrieved successfully
+          description: >-
+            Content file retrieved successfully. Includes ETag, Accept-Ranges, and immutable
+            Cache-Control headers; Content-Type reflects the detected MIME type.
           content:
             application/octet-stream:
               schema:
                 type: string
                 format: binary
+        '206':
+          description: Partial content for a satisfiable Range request, with a Content-Range header
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: Malformed content hash
         '404':
           description: Content not found
+        '416':
+          description: Range not satisfiable (Content-Range reports the full size)
     head:
       tags:
         - Content Server
@@ -520,7 +571,9 @@ paths:
             type: string
       responses:
         '200':
-          description: Content exists
+          description: Content exists (same headers as the GET, no body)
+        '400':
+          description: Malformed content hash
         '404':
           description: Content not found
 
@@ -529,7 +582,10 @@ paths:
       tags:
         - Content Server
       summary: /contents/{hashId}
-      description: Retrieve a content file by its hash
+      description: >-
+        Retrieve a content file by its hash. The Content-Type is detected from the file's magic
+        bytes (e.g. image/png, video/mp4), defaulting to application/octet-stream when unrecognized
+        or compressed. Supports HTTP range requests.
       operationId: worldsContentServer_getContentFile
       parameters:
         - name: hashId
@@ -539,16 +595,35 @@ paths:
           schema:
             type: string
             example: bafkreiabi74jam7uh5gmm6x4hox664j53bmt7dy4alrltkhyj3ozcxs2iu
+        - name: Range
+          in: header
+          required: false
+          description: Byte range to retrieve (e.g. `bytes=0-1023`)
+          schema:
+            type: string
       responses:
         '200':
-          description: Content file retrieved successfully
+          description: >-
+            Content file retrieved successfully. Includes ETag, Accept-Ranges, and immutable
+            Cache-Control headers; Content-Type reflects the detected MIME type.
           content:
             application/octet-stream:
               schema:
                 type: string
                 format: binary
+        '206':
+          description: Partial content for a satisfiable Range request, with a Content-Range header
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: Malformed content hash
         '404':
           description: Content not found
+        '416':
+          description: Range not satisfiable (Content-Range reports the full size)
     head:
       tags:
         - Content Server
@@ -564,7 +639,9 @@ paths:
             type: string
       responses:
         '200':
-          description: Content exists
+          description: Content exists (same headers as the GET, no body)
+        '400':
+          description: Malformed content hash
         '404':
           description: Content not found
 
@@ -1130,6 +1207,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '503':
           description: Multipart upload capacity is temporarily exhausted or temporary storage is unavailable
+          headers:
+            Retry-After:
+              description: Seconds after which the client should retry the upload
+              schema:
+                type: integer
+                example: 5
           content:
             application/json:
               schema:

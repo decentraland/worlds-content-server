@@ -1,6 +1,7 @@
 import { InvalidRequestError } from '@dcl/http-commons'
 import { AppComponents, DeploymentFile } from '../../types'
 import { mapWithConcurrency } from '../concurrency'
+import { buildSceneDeploymentMessage } from '../utils'
 import { calculateDeploymentSizeFromFileInfos } from '../validations/scene'
 import { IPartialDeploymentsComponent, StageDeploymentInput, StageDeploymentResult } from './types'
 
@@ -173,15 +174,16 @@ export async function createPartialDeploymentsComponent(
     } catch (error: any) {
       // Folder-based storage's fileInfo has an exist->stat window that rejects (ENOENT) when a file is
       // reclaimed mid-check — the very GC race this gate exists to absorb (S3's fileInfo returns
-      // undefined instead). Degrade to the error-hardened existence probe and report the upload as
-      // still incomplete: the pending row survives and the client resumes.
-      logger.warn('Completeness metadata read failed; reporting the upload as incomplete', {
+      // undefined instead). One immediate retry resolves that race deterministically: the reclaimed
+      // file now reports undefined and lands in `missing` (a retriable 202). If metadata STILL cannot
+      // be read, it is a real storage failure — let it surface (no progress is possible anyway) rather
+      // than answer with a self-contradictory "incomplete but nothing missing".
+      logger.warn('Completeness metadata read failed; retrying once', {
         entityId: entity.id,
         worldName,
         error: error?.message ?? `${error}`
       })
-      const stillThere = await storage.existMultiple(contentHashes)
-      return { complete: false, missing: contentHashes.filter((hash) => !stillThere.get(hash)) }
+      presentInfos = await storage.fileInfoMultiple(contentHashes)
     }
     const missing = contentHashes.filter((hash) => presentInfos.get(hash) === undefined)
     if (missing.length > 0) {
@@ -255,14 +257,23 @@ export async function createPartialDeploymentsComponent(
       // Concurrent finalize: another completing request won the world_scenes PK insert. The scene is
       // deployed, so treat this request as an idempotent success.
       if (isUniqueViolation(error)) {
-        const existing = await worldsManager.getWorldScenes({ worldName, entityId: entity.id }, { limit: 1 })
+        // Best-effort verification: if it fails, propagate the ORIGINAL collision rather than masking
+        // it with the verification hiccup.
+        const existing = await worldsManager
+          .getWorldScenes({ worldName, entityId: entity.id }, { limit: 1 })
+          .catch(() => ({ scenes: [], total: 0 }))
         if (existing.scenes.length > 0) {
           await deletePendingRowBestEffort(entity.id, worldName)
           logger.info(`Partial deployment finalized concurrently; returning idempotent success`, {
             entityId: entity.id,
             worldName
           })
-          return { complete: true, result: { message: `Your scene was deployed to World "${worldName}".` } }
+          return {
+            complete: true,
+            result: {
+              message: buildSceneDeploymentMessage(baseUrl, entity.metadata.worldConfiguration.name, parcels)
+            }
+          }
         }
       }
       // Finalize failed without deploying: the pending row stays, so a later completing request retries.
