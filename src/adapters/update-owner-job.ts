@@ -95,10 +95,13 @@ export async function createUpdateOwnerJob(
       }
     }
 
-    // Wallets whose quota was not re-evaluated this run must keep their blocking records: both those
-    // whose evaluation threw and those whose worlds' names could not be resolved (they never entered
-    // the owners set above, so without this a silent resolver degradation would mass-unblock them).
-    await blocking.collectStaleBlockingRecords(startDate, new Set([...failedOwners, ...unresolvedOwners]))
+    // Wallets whose quota was not re-evaluated this run must keep their blocking records, else a silent
+    // resolver degradation would mass-unblock them. That means: owners whose evaluation threw, plus
+    // owners of unresolved worlds — but NOT an owner that was still evaluated via some OTHER world it
+    // owns that DID resolve (walletStats already sums all of a wallet's worlds), which is a complete
+    // evaluation and should remain eligible for cleanup.
+    const unevaluatedOwners = new Set([...unresolvedOwners].filter((owner) => !owners.has(owner)))
+    await blocking.collectStaleBlockingRecords(startDate, new Set([...failedOwners, ...unevaluatedOwners]))
   }
 
   async function start(): Promise<void> {

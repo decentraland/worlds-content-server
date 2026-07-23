@@ -59,6 +59,21 @@ export async function createPartialDeploymentsComponent(
     }
   }
 
+  // Reads content metadata, retrying once. Folder-based storage's fileInfo has an exist->stat window
+  // that rejects (ENOENT) when a file is reclaimed mid-check — a benign GC race (S3's fileInfo returns
+  // undefined instead). The retry resolves it deterministically: the reclaimed file now reports
+  // undefined and is simply treated as absent. A second failure is a real storage error and surfaces.
+  async function fileInfoMultipleWithRetry(
+    hashes: string[]
+  ): Promise<Awaited<ReturnType<typeof storage.fileInfoMultiple>>> {
+    try {
+      return await storage.fileInfoMultiple(hashes)
+    } catch (error: any) {
+      logger.warn('Content metadata read failed; retrying once', { error: error?.message ?? `${error}` })
+      return storage.fileInfoMultiple(hashes)
+    }
+  }
+
   async function storeFiles(files: Map<string, DeploymentFile>, signal?: AbortSignal): Promise<void> {
     // Store every file the client sent this batch through a bounded worker pool. We do NOT skip files a
     // pre-request snapshot said were already stored: that snapshot predates the pending row (and its GC
@@ -91,7 +106,7 @@ export async function createPartialDeploymentsComponent(
     // `info.size`.
     const [pending, storedInfo] = await Promise.all([
       pendingScenesManager.getByEntityId(entity.id),
-      storage.fileInfoMultiple(contentHashes)
+      fileInfoMultipleWithRetry(contentHashes)
     ])
     const contentHashesInStorage = new Map(contentHashes.map((hash) => [hash, storedInfo.get(hash) !== undefined]))
 
@@ -168,23 +183,10 @@ export async function createPartialDeploymentsComponent(
     // and the size persisted with the scene — the start-of-request `storedInfo` snapshot must NOT be
     // used for that: files stored by sibling requests after it was taken would count as 0 and skew
     // quota accounting.
-    let presentInfos: Awaited<ReturnType<typeof storage.fileInfoMultiple>>
-    try {
-      presentInfos = await storage.fileInfoMultiple(contentHashes)
-    } catch (error: any) {
-      // Folder-based storage's fileInfo has an exist->stat window that rejects (ENOENT) when a file is
-      // reclaimed mid-check — the very GC race this gate exists to absorb (S3's fileInfo returns
-      // undefined instead). One immediate retry resolves that race deterministically: the reclaimed
-      // file now reports undefined and lands in `missing` (a retriable 202). If metadata STILL cannot
-      // be read, it is a real storage failure — let it surface (no progress is possible anyway) rather
-      // than answer with a self-contradictory "incomplete but nothing missing".
-      logger.warn('Completeness metadata read failed; retrying once', {
-        entityId: entity.id,
-        worldName,
-        error: error?.message ?? `${error}`
-      })
-      presentInfos = await storage.fileInfoMultiple(contentHashes)
-    }
+    // A reclaimed file surfaces here as undefined and lands in `missing` (a retriable 202); a real
+    // storage failure surfaces after the one retry rather than as a self-contradictory "incomplete but
+    // nothing missing".
+    const presentInfos = await fileInfoMultipleWithRetry(contentHashes)
     const missing = contentHashes.filter((hash) => presentInfos.get(hash) === undefined)
     if (missing.length > 0) {
       return { complete: false, missing }
@@ -271,7 +273,13 @@ export async function createPartialDeploymentsComponent(
           return {
             complete: true,
             result: {
-              message: buildSceneDeploymentMessage(baseUrl, entity.metadata.worldConfiguration.name, parcels)
+              // Match the normal deploy message exactly (same world name and scene parcels), so a
+              // client that lands here on a race gets identical preview info.
+              message: buildSceneDeploymentMessage(
+                baseUrl,
+                entity.metadata.worldConfiguration.name,
+                entity.metadata?.scene?.parcels || []
+              )
             }
           }
         }
