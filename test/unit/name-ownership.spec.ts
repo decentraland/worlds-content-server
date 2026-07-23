@@ -1,6 +1,7 @@
 import { createConfigComponent } from '@well-known-components/env-config-provider'
 import { createLogComponent } from '@well-known-components/logger'
 import { IConfigComponent, ILoggerComponent } from '@well-known-components/interfaces'
+import { Callback, HTTPProvider, RPCMessage } from 'eth-connect'
 import { createHttpProviderMock } from '../mocks/http-provider-mock'
 import { createMockNameSubGraph } from '../mocks/name-subgraph-mock'
 import {
@@ -293,6 +294,50 @@ describe('Name Ownership', () => {
       })
       const map = await nameOwnership.findOwners(['my-super-name.dcl.eth'])
       expect(map.get('my-super-name.dcl.eth')).toBe('0x5de9e77627c79ff6ec787295e4191aeeeea4acab')
+    })
+
+    it('aligns batch responses to the requested names by id even when the provider reorders them', async () => {
+      const names = ['first.dcl.eth', 'second.dcl.eth', 'third.dcl.eth']
+      // The RPC result is a 32-byte word; the decoded owner is its last 20 bytes (the address).
+      const resultWordFor = (index: number) => `0x000000000000000000000000${(index + 1).toString().padStart(40, '0')}`
+      const ownerAddressFor = (index: number) => `0x${(index + 1).toString().padStart(40, '0')}`
+
+      // A provider that echoes each request's real id (assigned by eth-connect's messageId counter, so
+      // NOT 1..N) but returns the responses in REVERSED wire order. Without id-alignment the results
+      // would be attributed to the wrong names; with it, each name gets its own request's result.
+      const reorderingProvider: HTTPProvider = {
+        host: '',
+        options: {},
+        debug: false,
+        send: () => {},
+        sendAsync: async (payload: RPCMessage | RPCMessage[], callback: Callback): Promise<void> => {
+          const requests = payload as unknown as { id: number }[]
+          const responses = requests.map((request, index) => ({
+            jsonrpc: '2.0',
+            id: request.id,
+            result: resultWordFor(index)
+          }))
+          callback(null, [...responses].reverse() as any)
+        }
+      }
+
+      const nameOwnership = await createOnChainDclNameOwnership({
+        config,
+        logs,
+        ethereumProvider: reorderingProvider
+      })
+
+      const map = await nameOwnership.findOwners(names)
+
+      expect({
+        first: map.get('first.dcl.eth'),
+        second: map.get('second.dcl.eth'),
+        third: map.get('third.dcl.eth')
+      }).toEqual({
+        first: ownerAddressFor(0),
+        second: ownerAddressFor(1),
+        third: ownerAddressFor(2)
+      })
     })
 
     it('splits large batches into smaller chunks to avoid RPC provider limits', async () => {

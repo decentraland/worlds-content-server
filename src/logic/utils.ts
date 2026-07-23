@@ -7,6 +7,22 @@ export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+/**
+ * The user-facing success message for a scene deployment: the parcels covered plus the play URL.
+ * Shared by the normal deploy path and both idempotent duplicate-deploy responses (vanilla retry and
+ * concurrent partial finalize) so a retried deploy gets the same full message — the CLI surfaces it
+ * as the preview instructions.
+ */
+export function buildSceneDeploymentMessage(baseUrl: string, worldName: string, parcels: string[]): string {
+  const worldUrl = `${baseUrl}/world/${worldName}`
+  // Use the first parcel as the position
+  const position = (parcels[0] ?? '0,0').split(',')
+  return [
+    `Your scene was deployed to World "${worldName}" at parcels: ${parcels.join(', ')}!`,
+    `Access world: https://play.decentraland.org/?realm=${encodeURIComponent(worldUrl)}&position=${encodeURIComponent(position.join(','))}`
+  ].join('\n')
+}
+
 export function deepEqual(a: any, b: any) {
   if (typeof a === 'object' && a !== null && typeof b === 'object' && b !== null) {
     const count = [0, 0]

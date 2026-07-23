@@ -30,11 +30,13 @@ export async function createLimitsManagerComponent({
   return {
     async getAllowSdk6For(worldName: string): Promise<boolean> {
       const currentWhitelist = await resolveWhitelist()
-      return currentWhitelist[worldName]?.allow_sdk6 || hardAllowSdk6
+      // World names arrive with arbitrary casing (entity.metadata.worldConfiguration.name); the
+      // whitelist is keyed lowercased, so the lookup key must be too.
+      return currentWhitelist[worldName.toLowerCase()]?.allow_sdk6 || hardAllowSdk6
     },
     async getMaxAllowedParcelsFor(worldName: string): Promise<number> {
       const currentWhitelist = await resolveWhitelist()
-      return currentWhitelist[worldName]?.max_parcels || hardMaxParcels
+      return currentWhitelist[worldName.toLowerCase()]?.max_parcels || hardMaxParcels
     },
     async getMaxAllowedSizeInBytesFor(worldName: string, parcels?: string[]): Promise<bigint> {
       if (worldName.endsWith('.eth') && !worldName.endsWith('.dcl.eth')) {
@@ -42,8 +44,9 @@ export async function createLimitsManagerComponent({
       }
 
       const currentWhitelist = await resolveWhitelist()
-      if (currentWhitelist[worldName]) {
-        return BigInt(currentWhitelist[worldName]!.max_size_in_mb || hardMaxSize) * MB_BigInt
+      const whitelistEntry = currentWhitelist[worldName.toLowerCase()]
+      if (whitelistEntry) {
+        return BigInt(whitelistEntry.max_size_in_mb || hardMaxSize) * MB_BigInt
       }
 
       const owners = await nameOwnership.findOwners([worldName])

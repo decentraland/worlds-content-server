@@ -2,7 +2,9 @@ import { AppComponents, DeploymentFile, DeploymentResult, IEntityDeployer } from
 import { AuthLink, Entity, EntityType, Events, WorldDeploymentEvent } from '@dcl/schemas'
 import { bufferToStream } from '@dcl/catalyst-storage/dist/content-item'
 import { stringToUtf8Bytes } from 'eth-connect'
+import { InvalidRequestError } from '@dcl/http-commons'
 import { mapWithConcurrency, raceWithSignal } from '../logic/concurrency'
+import { buildSceneDeploymentMessage } from '../logic/utils'
 
 type PostDeploymentHook = (
   baseUrl: string,
@@ -54,6 +56,18 @@ export function createEntityDeployer(
     signal?: AbortSignal,
     deadlineAt?: number
   ): Promise<DeploymentResult> {
+    // Fast-fail BEFORE writing anything to storage if a newer scene already holds these parcels. This is
+    // non-authoritative (deployScene re-checks atomically under a lock), but it keeps a rejected older
+    // deploy from leaving its content/entity/auth objects orphaned in storage until the next GC. Only
+    // scenes carry a world name; other entity types skip it.
+    if (entity.metadata?.worldConfiguration?.name) {
+      if (await worldsManager.hasNewerDeployedScene(entity.metadata.worldConfiguration.name, entity)) {
+        throw new InvalidRequestError(
+          `Deployment failed: a newer scene is already deployed on one or more of these parcels.`
+        )
+      }
+    }
+
     const contentByHash = new Map((entity.content || []).map((file) => [file.hash, file]))
     const filesToStore = Array.from(contentByHash).filter(([hash]) => !allContentHashesInStorage.get(hash))
     logger.info(`Storing ${filesToStore.length} files`, { entityId: entity.id })
@@ -207,14 +221,8 @@ export function createEntityDeployer(
       }
     }
 
-    const worldUrl = `${baseUrl}/world/${worldName}`
-    // Use the first parcel as the position
-    const position = parcels[0].split(',')
     return {
-      message: [
-        `Your scene was deployed to World "${worldName}" at parcels: ${parcels.join(', ')}!`,
-        `Access world: https://play.decentraland.org/?realm=${encodeURIComponent(worldUrl)}&position=${encodeURIComponent(position.join(','))}`
-      ].join('\n')
+      message: buildSceneDeploymentMessage(baseUrl, worldName, parcels)
     }
   }
 

@@ -62,7 +62,7 @@ function createComponents(
     },
     snsClient: { publishMessage: jest.fn() },
     storage: { storeStream: storageStoreStream },
-    worldsManager: { deployScene: worldsDeployScene }
+    worldsManager: { deployScene: worldsDeployScene, hasNewerDeployedScene: jest.fn().mockResolvedValue(false) }
   } as unknown as EntityDeployerComponents
   return { components, loggerError, worldsDeployScene }
 }

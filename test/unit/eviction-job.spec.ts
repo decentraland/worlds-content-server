@@ -2,6 +2,7 @@ import { createEvictionJob } from '../../src/adapters/eviction-job'
 import { createMockWorlds } from '../mocks/worlds-mock'
 import { createMockedConfig } from '../mocks/config-mock'
 import { IWorldsComponent } from '../../src/logic/worlds/types'
+import { IPendingScenesManager } from '../../src/adapters/pending-scenes-manager/types'
 import { IConfigComponent, ILoggerComponent } from '@well-known-components/interfaces'
 import { createJobComponent } from '@dcl/job-component'
 
@@ -17,10 +18,18 @@ const mockCreateJobComponent = createJobComponent as jest.Mock
 describe('EvictionJob', () => {
   let worlds: jest.Mocked<IWorldsComponent>
   let logs: ILoggerComponent
+  let pendingScenesManager: jest.Mocked<IPendingScenesManager>
 
   beforeEach(() => {
     worlds = createMockWorlds()
     worlds.evictUndeployedWorlds.mockResolvedValue(0)
+    pendingScenesManager = {
+      getByEntityId: jest.fn(),
+      upsert: jest.fn(),
+      deleteByEntityId: jest.fn(),
+      deleteExpired: jest.fn().mockResolvedValue(0),
+      getActivePendingKeys: jest.fn().mockResolvedValue(new Set())
+    }
     logs = {
       getLogger: () => ({
         log: jest.fn(),
@@ -43,7 +52,7 @@ describe('EvictionJob', () => {
 
     beforeEach(async () => {
       config = createMockedConfig({ getNumber: jest.fn().mockResolvedValue(3600000) })
-      await createEvictionJob({ config, logs, worlds })
+      await createEvictionJob({ config, logs, worlds, pendingScenesManager })
       jobCallback = mockCreateJobComponent.mock.calls[0][1]
     })
 
@@ -60,6 +69,10 @@ describe('EvictionJob', () => {
       it('should call evictUndeployedWorlds with the configured TTL', () => {
         expect(worlds.evictUndeployedWorlds).toHaveBeenCalledWith(3600000)
       })
+
+      it('should delete expired pending scenes', () => {
+        expect(pendingScenesManager.deleteExpired).toHaveBeenCalledTimes(1)
+      })
     })
   })
 
@@ -69,7 +82,7 @@ describe('EvictionJob', () => {
 
     beforeEach(async () => {
       config = createMockedConfig({ getNumber: jest.fn().mockResolvedValue(undefined) })
-      await createEvictionJob({ config, logs, worlds })
+      await createEvictionJob({ config, logs, worlds, pendingScenesManager })
       jobCallback = mockCreateJobComponent.mock.calls[0][1]
     })
 

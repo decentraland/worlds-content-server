@@ -30,6 +30,7 @@ import {
 } from '../types'
 import { streamToBuffer } from '@dcl/catalyst-storage'
 import { Entity, EthAddress } from '@dcl/schemas'
+import { InvalidRequestError } from '@dcl/http-commons'
 import SQL, { type SQLStatement } from 'sql-template-strings'
 import { buildWorldRuntimeMetadata, shouldShowInPlaces } from '../logic/world-runtime-metadata-utils'
 import { AccessSetting, defaultAccess } from '../logic/access'
@@ -51,9 +52,13 @@ export async function createWorldsManagerComponent({
   const logger = logs.getLogger('worlds-manager')
   const { extractSpawnCoordinates, parseCoordinate, isCoordinateWithinRectangle, getRectangleCenter } = coordinates
 
-  type DeploymentTransactionQuery = (statement: SQLStatement) => Promise<void>
+  // The query closure returns the result so in-transaction reads (the advisory lock and the newer-scene
+  // ordering check) can run on the same connection as the writes — on the signal path that is a dedicated
+  // pool connection, and `database.query` would use a different one, silently running them outside the tx.
+  type DeploymentQueryResult = { rows: any[]; rowCount: number | null }
+  type DeploymentTransactionQuery = (statement: SQLStatement) => Promise<DeploymentQueryResult>
   type DeploymentTransactionClient = {
-    query(statement: string | SQLStatement): Promise<unknown>
+    query(statement: string | SQLStatement): Promise<DeploymentQueryResult>
     release(error?: Error): void
   }
 
@@ -67,11 +72,7 @@ export async function createWorldsManagerComponent({
     operation: (query: DeploymentTransactionQuery) => Promise<void>
   ): Promise<void> {
     if (!signal) {
-      await database.withAsyncContextTransaction(() =>
-        operation(async (statement) => {
-          await database.query(statement)
-        })
-      )
+      await database.withAsyncContextTransaction(() => operation((statement) => database.query(statement)))
       return
     }
 
@@ -106,8 +107,9 @@ export async function createWorldsManagerComponent({
       await client.query('BEGIN')
       const query: DeploymentTransactionQuery = async (statement) => {
         signal.throwIfAborted()
-        await client.query(statement)
+        const result = await client.query(statement)
         signal.throwIfAborted()
+        return result
       }
       await operation(query)
       signal.throwIfAborted()
@@ -265,6 +267,43 @@ export async function createWorldsManagerComponent({
     return metadata
   }
 
+  // Whether a strictly-newer DEPLOYED scene (Decentraland ordering: greater entity.timestamp, tie broken
+  // by greater entity id) already occupies any of the given parcels. Shared by deployScene's atomic
+  // in-transaction guard and the public hasNewerDeployedScene fast-fail. Runs in the ambient transaction
+  // when called from within one. Parcels are expected already canonicalized.
+  async function newerDeployedSceneExists(
+    worldNameLower: string,
+    sceneId: string,
+    sceneTimestamp: number,
+    parcels: string[],
+    exec: (statement: SQLStatement) => Promise<{ rowCount: number | null }> = (statement) => database.query(statement)
+  ): Promise<boolean> {
+    const result = await exec(SQL`
+      SELECT 1 FROM world_scenes
+      WHERE world_name = ${worldNameLower}
+        AND status = 'DEPLOYED'
+        AND parcels && ${parcels}::text[]
+        AND entity_id != ${sceneId}
+        -- ::numeric, not ::bigint: the schema allows a fractional entity.timestamp, and a bigint cast
+        -- would make this query (and with it every overlapping deploy) error on such a stored entity.
+        AND ( (entity->>'timestamp')::numeric > ${sceneTimestamp}
+              OR ((entity->>'timestamp')::numeric = ${sceneTimestamp} AND entity_id > ${sceneId}) )
+      LIMIT 1
+    `)
+    return (result.rowCount ?? 0) > 0
+  }
+
+  // Non-authoritative fast-fail for the deploy path: lets a caller reject a stale deploy BEFORE storing
+  // its content, so a rejected older deploy doesn't leave orphaned objects in storage until GC. The
+  // authoritative, race-free check is inside deployScene (under the per-world lock).
+  async function hasNewerDeployedScene(worldName: string, scene: Entity): Promise<boolean> {
+    const parcels = coordinates.canonicalizeParcels(scene.metadata?.scene?.parcels || [])
+    if (!parcels.length) {
+      return false
+    }
+    return newerDeployedSceneExists(worldName.toLowerCase(), scene.id, scene.timestamp, parcels)
+  }
+
   /**
    * Deploys a scene to a world
    *
@@ -334,6 +373,31 @@ export async function createWorldsManagerComponent({
     const thumbnailHash = thumbnailContent?.hash || null
 
     await withDeploymentTransaction(deployment?.signal, async (query) => {
+      // Serialize concurrent deploys to the same world so the "reject if a newer scene already holds
+      // these parcels" check below is atomic with the soft-delete + insert. Both the vanilla and the
+      // partial-finalize paths reach deployScene, so this is the single place deployment ordering is
+      // enforced for world scenes — without the lock, a newer deploy could commit between another
+      // deploy's check and its write, and the older one would silently undeploy it. It runs through the
+      // query closure so, on the signal path, the lock is held by the same dedicated connection that
+      // performs the writes (database.query would run on a different connection and defeat the lock).
+      await query(
+        SQL`SELECT pg_advisory_xact_lock(hashtextextended(${'world_scene_deploy:' + worldName.toLowerCase()}, 0))`
+      )
+
+      // Reject if a strictly-newer scene (Decentraland ordering: greater entity.timestamp, tie broken
+      // by greater entity id) already occupies any of these parcels. This makes an older deploy — most
+      // importantly a stale partial finalize — unable to overwrite a newer one, atomically under the
+      // lock above rather than via a racy pre-write check in the caller. The check runs through the same
+      // query closure, so it observes the state the lock protects.
+      if (await newerDeployedSceneExists(worldName.toLowerCase(), scene.id, scene.timestamp, parcels, query)) {
+        throw new InvalidRequestError(
+          `Deployment failed: a newer scene is already deployed on one or more of these parcels.`
+        )
+      }
+
+      // Bound the remaining statements by the processing deadline (a transaction-local statement_timeout),
+      // cleared right before COMMIT further down. The advisory-lock wait above is instead bounded by the
+      // cancellation signal — a disconnect or the deadline destroys the connection and releases the wait.
       if (deployment?.deadlineAt !== undefined) {
         const remainingMs = Math.max(1, deployment.deadlineAt - Date.now())
         await query(SQL`SELECT set_config('statement_timeout', ${remainingMs.toString()}, true)`)
@@ -371,12 +435,29 @@ export async function createWorldsManagerComponent({
           updated_at = ${new Date()}
       `)
 
-      // Soft-delete any existing deployed scenes on these parcels
+      // Soft-delete any existing deployed scenes on these parcels — but NOT this entity's own row.
+      // Excluding the self-row is what makes a concurrent re-deploy of an already-DEPLOYED entity
+      // collide on the (world_name, entity_id) primary key below (the idempotency signal the partial
+      // finalize relies on): without the exclusion this UPDATE would flip the winner's fresh row to
+      // UNDEPLOYED, the DELETE below would remove it, and a second finalize would deploy again —
+      // double-publishing the SNS event and double-counting the deployment.
       await query(SQL`
         UPDATE world_scenes SET status = 'UNDEPLOYED', updated_at = NOW()
         WHERE world_name = ${worldName.toLowerCase()}
         AND parcels && ${parcels}::text[]
         AND status = 'DEPLOYED'
+        AND entity_id != ${scene.id}
+      `)
+
+      // A previous undeploy of this same entity soft-deletes its row, which still owns the
+      // (world_name, entity_id) primary key and would make the insert below fail forever for a
+      // redeploy. Remove it. A DEPLOYED self-row is deliberately left alone (the soft-delete above
+      // excludes it) so a concurrent finalize of the same entity still hits the unique violation.
+      await query(SQL`
+        DELETE FROM world_scenes
+        WHERE world_name = ${worldName.toLowerCase()}
+        AND entity_id = ${scene.id}
+        AND status = 'UNDEPLOYED'
       `)
 
       // Insert new scene
@@ -1252,6 +1333,7 @@ export async function createWorldsManagerComponent({
     getDeployedWorldCount,
     getMetadataForWorld,
     getEntityForWorlds,
+    hasNewerDeployedScene,
     deployScene,
     undeployScene,
     storeAccess,
