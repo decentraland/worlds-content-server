@@ -17,20 +17,23 @@ export type IBansComponent = {
   isUserBannedFromScene: (address: string, worldName: string, sceneBaseParcel: string) => Promise<boolean>
 
   /**
-   * Checks if the given address is platform-banned by querying
+   * Checks if the given connection is platform-banned by querying
    * the comms-gatekeeper service.
    *
    * @param address - The wallet address to check.
-   * @returns True if the user is platform-banned, false otherwise.
+   * @param deviceId - Device fingerprint reported by the client, when present. An active ban
+   * recorded against this device rejects the connection even under a different wallet.
+   * @returns True if the connection is platform-banned, false otherwise.
    */
-  isPlayerBanned: (address: string) => Promise<boolean>
+  isPlayerBanned: (address: string, deviceId?: string) => Promise<boolean>
 }
 
 /**
  * Creates the Bans adapter.
  *
  * Calls the comms-gatekeeper's GET /worlds/:worldName/parcels/:sceneBaseParcel/users/:address/ban-status
- * endpoint to determine if a user is banned from a specific scene in a world.
+ * endpoint to determine if a user is banned from a specific scene in a world, and its
+ * GET /users/:address/ban-status endpoint to determine if a connection is platform-banned.
  * Authenticates using a bearer token. Fails open (returns false) on any error
  * to avoid blocking world connections when the comms-gatekeeper is unavailable.
  *
@@ -87,12 +90,19 @@ export async function createBansComponent(
     }
   }
 
-  async function isPlayerBanned(address: string): Promise<boolean> {
-    const url = `${commsGatekeeperUrl}/users/${address.toLowerCase()}/bans`
+  async function isPlayerBanned(address: string, deviceId?: string): Promise<boolean> {
+    // Device-aware endpoint: matches an active ban on the address OR the recorded device id.
+    // The public /users/:address/bans matches on address only, so it would let a banned
+    // device reconnect under a different wallet.
+    const url = new URL(`${commsGatekeeperUrl}/users/${encodeURIComponent(address.toLowerCase())}/ban-status`)
+    if (deviceId) {
+      url.searchParams.set('deviceId', deviceId)
+    }
+
     try {
-      const body = await withRetry<{ data: { isBanned: boolean } }>(
+      const body = await withRetry<{ isBanned: boolean }>(
         async () => {
-          const response = await fetch.fetch(url, {
+          const response = await fetch.fetch(url.toString(), {
             method: 'GET',
             headers: {
               Authorization: `Bearer ${authToken}`
@@ -103,12 +113,12 @@ export async function createBansComponent(
             throw new Error(`Unexpected response from comms-gatekeeper platform ban check: ${response.status}`)
           }
 
-          return (await response.json()) as { data: { isBanned: boolean } }
+          return (await response.json()) as { isBanned: boolean }
         },
         { logger, maxRetries: 3 }
       )
 
-      return body.data.isBanned === true
+      return body.isBanned === true
     } catch (error) {
       logger.warn('Error checking player ban status, allowing user through', {
         error: error instanceof Error ? error.message : String(error),

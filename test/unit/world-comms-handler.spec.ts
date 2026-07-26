@@ -16,6 +16,7 @@ import { IRateLimiterComponent } from '../../src/logic/rate-limiter'
 
 type CommsMetadata = {
   secret?: string
+  deviceIdentifier?: string
 }
 
 type HandlerContext = HandlerContextWithPath<
@@ -112,6 +113,37 @@ describe('worldCommsHandler', () => {
         await worldCommsHandler(context)
 
         expect(comms.getWorldRoomConnectionString).toHaveBeenCalledWith(identity, worldName, { secret: 'my-secret' })
+      })
+    })
+
+    describe('and the request includes a device identifier', () => {
+      let connectionString: string
+      let deviceIdentifier: string
+
+      beforeEach(() => {
+        connectionString = 'livekit:wss://host?access_token=abc123'
+        deviceIdentifier = 'a-device-fingerprint'
+
+        context = {
+          components: { access, comms, rateLimiter },
+          params: { worldName },
+          request: { headers: new Map() },
+          verification: {
+            auth: identity,
+            authMetadata: { deviceIdentifier }
+          }
+        } as unknown as HandlerContext
+
+        comms.getWorldRoomConnectionString.mockResolvedValueOnce(connectionString)
+      })
+
+      it('should pass the device id in the connection options', async () => {
+        await worldCommsHandler(context)
+
+        expect(comms.getWorldRoomConnectionString).toHaveBeenCalledWith(identity, worldName, {
+          secret: undefined,
+          deviceId: deviceIdentifier
+        })
       })
     })
 
@@ -298,6 +330,37 @@ describe('worldCommsHandler', () => {
 
         expect(comms.getWorldSceneRoomConnectionString).toHaveBeenCalledWith(identity, worldName, sceneId, {
           secret: 'my-secret'
+        })
+      })
+    })
+
+    describe('and the request includes a device identifier', () => {
+      let connectionString: string
+      let deviceIdentifier: string
+
+      beforeEach(() => {
+        connectionString = 'livekit:wss://host?access_token=abc123'
+        deviceIdentifier = 'a-device-fingerprint'
+
+        context = {
+          components: { access, comms, rateLimiter },
+          params: { worldName, sceneId },
+          request: { headers: new Map() },
+          verification: {
+            auth: identity,
+            authMetadata: { deviceIdentifier }
+          }
+        } as unknown as HandlerContext
+
+        comms.getWorldSceneRoomConnectionString.mockResolvedValueOnce(connectionString)
+      })
+
+      it('should pass the device id in the connection options', async () => {
+        await worldCommsHandler(context)
+
+        expect(comms.getWorldSceneRoomConnectionString).toHaveBeenCalledWith(identity, worldName, sceneId, {
+          secret: undefined,
+          deviceId: deviceIdentifier
         })
       })
     })

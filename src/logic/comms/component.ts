@@ -10,7 +10,7 @@ import {
   UserPlatformBannedError
 } from './errors'
 import { DEFAULT_MAX_USERS_PER_WORLD } from './constants'
-import { ICommsComponent } from './types'
+import { ConnectionOptions, ICommsComponent } from './types'
 
 export const createCommsComponent = async (
   components: Pick<
@@ -21,8 +21,8 @@ export const createCommsComponent = async (
   const { namePermissionChecker, access, worlds, commsAdapter, config, denyList, bans } = components
   const maxUsersPerWorld = (await config.getNumber('MAX_USERS_PER_WORLD')) ?? DEFAULT_MAX_USERS_PER_WORLD
 
-  async function assertUserNotPlatformBanned(userAddress: EthAddress): Promise<void> {
-    const isBanned = await bans.isPlayerBanned(userAddress)
+  async function assertUserNotPlatformBanned(userAddress: EthAddress, deviceId?: string): Promise<void> {
+    const isBanned = await bans.isPlayerBanned(userAddress, deviceId)
     if (isBanned) {
       throw new UserPlatformBannedError()
     }
@@ -69,11 +69,11 @@ export const createCommsComponent = async (
     userAddress: EthAddress,
     worldName: string,
     sceneId: string,
-    accessOptions?: { secret?: string }
+    connectionOptions?: ConnectionOptions
   ): Promise<string> {
-    await assertUserNotPlatformBanned(userAddress)
+    await assertUserNotPlatformBanned(userAddress, connectionOptions?.deviceId)
     await assertUserNotDenylisted(userAddress)
-    await assertWorldAccess(userAddress, worldName, accessOptions)
+    await assertWorldAccess(userAddress, worldName, connectionOptions)
 
     const sceneBaseParcel = await worlds.getWorldSceneBaseParcelIncludingUndeployed(worldName, sceneId)
     if (!sceneBaseParcel) {
@@ -93,11 +93,11 @@ export const createCommsComponent = async (
   async function getWorldRoomConnectionString(
     userAddress: EthAddress,
     worldName: string,
-    accessOptions?: { secret?: string }
+    connectionOptions?: ConnectionOptions
   ): Promise<string> {
-    await assertUserNotPlatformBanned(userAddress)
+    await assertUserNotPlatformBanned(userAddress, connectionOptions?.deviceId)
     await assertUserNotDenylisted(userAddress)
-    await assertWorldAccess(userAddress, worldName, accessOptions)
+    await assertWorldAccess(userAddress, worldName, connectionOptions)
 
     const participantCount = await commsAdapter.getWorldRoomParticipantCount(worldName)
     if (participantCount >= maxUsersPerWorld) {

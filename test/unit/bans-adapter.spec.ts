@@ -33,12 +33,13 @@ describe('BansComponent', () => {
 
   describe('when checking if a user is platform-banned', () => {
     const address = '0x1234567890abcdef'
+    const deviceId = 'a-device-fingerprint'
 
     describe('and the user is banned', () => {
       beforeEach(() => {
         fetch.fetch.mockResolvedValue({
           ok: true,
-          json: jest.fn().mockResolvedValue({ data: { isBanned: true } })
+          json: jest.fn().mockResolvedValue({ isBanned: true })
         } as unknown as Response)
       })
 
@@ -46,13 +47,98 @@ describe('BansComponent', () => {
         const result = await bans.isPlayerBanned(address)
         expect(result).toBe(true)
       })
+
+      it('should query the device-aware ban-status endpoint with the bearer token', async () => {
+        await bans.isPlayerBanned(address)
+        expect(fetch.fetch).toHaveBeenCalledWith(
+          `${commsGatekeeperUrl}/users/${encodeURIComponent(address)}/ban-status`,
+          {
+            method: 'GET',
+            headers: {
+              Authorization: `Bearer ${authToken}`
+            }
+          }
+        )
+      })
+    })
+
+    describe('and a device id is provided', () => {
+      beforeEach(() => {
+        fetch.fetch.mockResolvedValue({
+          ok: true,
+          json: jest.fn().mockResolvedValue({ isBanned: true })
+        } as unknown as Response)
+      })
+
+      it('should pass the device id as a query parameter', async () => {
+        await bans.isPlayerBanned(address, deviceId)
+        expect(fetch.fetch).toHaveBeenCalledWith(
+          `${commsGatekeeperUrl}/users/${encodeURIComponent(address)}/ban-status?deviceId=${encodeURIComponent(deviceId)}`,
+          expect.anything()
+        )
+      })
+
+      it('should return true when the comms-gatekeeper matches the device', async () => {
+        expect(await bans.isPlayerBanned(address, deviceId)).toBe(true)
+      })
+    })
+
+    describe('and the device id contains query-delimiter characters', () => {
+      beforeEach(() => {
+        fetch.fetch.mockResolvedValue({
+          ok: true,
+          json: jest.fn().mockResolvedValue({ isBanned: false })
+        } as unknown as Response)
+      })
+
+      it('should encode it so it cannot inject extra query parameters', async () => {
+        await bans.isPlayerBanned(address, 'a&b=c d')
+        expect(fetch.fetch).toHaveBeenCalledWith(
+          `${commsGatekeeperUrl}/users/${encodeURIComponent(address)}/ban-status?deviceId=a%26b%3Dc+d`,
+          expect.anything()
+        )
+      })
+    })
+
+    describe('and the device id is an empty string', () => {
+      beforeEach(() => {
+        fetch.fetch.mockResolvedValue({
+          ok: true,
+          json: jest.fn().mockResolvedValue({ isBanned: false })
+        } as unknown as Response)
+      })
+
+      it('should omit the query parameter entirely', async () => {
+        await bans.isPlayerBanned(address, '')
+        expect(fetch.fetch).toHaveBeenCalledWith(
+          `${commsGatekeeperUrl}/users/${encodeURIComponent(address)}/ban-status`,
+          expect.anything()
+        )
+      })
+    })
+
+    describe('and the address is mixed case', () => {
+      beforeEach(() => {
+        fetch.fetch.mockResolvedValue({
+          ok: true,
+          json: jest.fn().mockResolvedValue({ isBanned: false })
+        } as unknown as Response)
+      })
+
+      it('should lowercase the address in the request path', async () => {
+        await bans.isPlayerBanned('0xABCDEF1234567890')
+        expect(fetch.fetch).toHaveBeenCalledWith(
+          `${commsGatekeeperUrl}/users/0xabcdef1234567890/ban-status`,
+          expect.anything()
+        )
+      })
     })
 
     describe('and the user is not banned', () => {
       beforeEach(() => {
         fetch.fetch.mockResolvedValue({
           ok: true,
-          json: jest.fn().mockResolvedValue({ data: { isBanned: false } })
+          json: jest.fn().mockResolvedValue({ isBanned: false })
         } as unknown as Response)
       })
 
@@ -105,7 +191,7 @@ describe('BansComponent', () => {
       beforeEach(() => {
         fetch.fetch.mockRejectedValueOnce(new Error('socket hang up')).mockResolvedValueOnce({
           ok: true,
-          json: jest.fn().mockResolvedValue({ data: { isBanned: true } })
+          json: jest.fn().mockResolvedValue({ isBanned: true })
         } as unknown as Response)
       })
 
