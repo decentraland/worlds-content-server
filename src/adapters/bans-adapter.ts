@@ -1,3 +1,4 @@
+import { ILoggerComponent } from '@well-known-components/interfaces'
 import { AppComponents } from '../types'
 import { withRetry } from '../logic/utils'
 
@@ -14,6 +15,40 @@ const DEVICE_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/
 
 function toHeaderSafeDeviceId(deviceId?: string): string | undefined {
   return deviceId && DEVICE_ID_PATTERN.test(deviceId) ? deviceId : undefined
+}
+
+/**
+ * A 4xx from the comms-gatekeeper is a permanent contract or auth failure — a wrong bearer
+ * token, a route that does not exist yet. Retrying only multiplies load on every connection and
+ * buries the cause under transient-looking retry warnings.
+ */
+class PermanentGatekeeperError extends Error {}
+
+const isRetryable = (error: unknown): boolean => !(error instanceof PermanentGatekeeperError)
+
+function assertOkResponse(response: { ok: boolean; status: number }, operation: string): void {
+  if (response.ok) {
+    return
+  }
+
+  const message = `Unexpected response from comms-gatekeeper ${operation}: ${response.status}`
+  throw response.status >= 400 && response.status < 500 ? new PermanentGatekeeperError(message) : new Error(message)
+}
+
+/** Permanent failures are operator-actionable; transient ones are noise until they persist. */
+function logGatekeeperFailure(
+  logger: ILoggerComponent.ILogger,
+  error: unknown,
+  message: string,
+  context: Record<string, string>
+): void {
+  const details = { ...context, error: error instanceof Error ? error.message : String(error) }
+
+  if (error instanceof PermanentGatekeeperError) {
+    logger.error(`${message} (permanent, not retried)`, details)
+  } else {
+    logger.warn(message, details)
+  }
 }
 
 /**
@@ -92,8 +127,8 @@ export async function createBansComponent(
   async function isUserBannedFromScene(address: string, worldName: string, sceneBaseParcel: string): Promise<boolean> {
     const url = `${commsGatekeeperUrl}/worlds/${encodeURIComponent(worldName)}/parcels/${encodeURIComponent(sceneBaseParcel)}/users/${encodeURIComponent(address)}/ban-status`
     try {
-      // Retry transient failures (5xx, dropped/reset connections from undici's keep-alive pool):
-      // a non-2xx response is thrown so withRetry re-attempts it, then we fail open on exhaustion.
+      // Retry transient failures (5xx, dropped/reset connections from undici's keep-alive pool),
+      // then fail open on exhaustion. 4xx is permanent and gives up immediately.
       const body = await withRetry<{ isBanned: boolean }>(
         async () => {
           const response = await fetch.fetch(url, {
@@ -103,20 +138,20 @@ export async function createBansComponent(
             }
           })
 
-          if (!response.ok) {
-            throw new Error(`Unexpected response from comms-gatekeeper ban check: ${response.status}`)
-          }
+          assertOkResponse(response, 'scene ban check')
 
           return (await response.json()) as { isBanned: boolean }
         },
-        { logger, maxRetries: 3 }
+        { logger, maxRetries: 3, shouldRetry: isRetryable }
       )
 
       return body.isBanned
     } catch (error) {
-      logger.warn(
-        `Error checking ban status for ${address} in scene ${sceneBaseParcel} of world ${worldName}: ${error}`
-      )
+      logGatekeeperFailure(logger, error, 'Error checking scene ban status, allowing user through', {
+        address,
+        worldName,
+        sceneBaseParcel
+      })
       return false
     }
   }
@@ -150,21 +185,16 @@ export async function createBansComponent(
             }
           })
 
-          if (!response.ok) {
-            throw new Error(`Unexpected response from comms-gatekeeper platform ban check: ${response.status}`)
-          }
+          assertOkResponse(response, 'platform ban check')
 
           return (await response.json()) as { isBanned: boolean }
         },
-        { logger, maxRetries: 3 }
+        { logger, maxRetries: 3, shouldRetry: isRetryable }
       )
 
       return body.isBanned === true
     } catch (error) {
-      logger.warn('Error checking player ban status, allowing user through', {
-        error: error instanceof Error ? error.message : String(error),
-        address
-      })
+      logGatekeeperFailure(logger, error, 'Error checking player ban status, allowing user through', { address })
       return false
     }
   }
@@ -197,19 +227,14 @@ export async function createBansComponent(
             body: JSON.stringify({ deviceId, ipAddress: connection.ipAddress })
           })
 
-          if (!response.ok) {
-            throw new Error(`Unexpected response from comms-gatekeeper connection recording: ${response.status}`)
-          }
+          assertOkResponse(response, 'connection recording')
         },
-        { logger, maxRetries: 2 }
+        { logger, maxRetries: 2, shouldRetry: isRetryable }
       )
     } catch (error) {
       // Swallowed on purpose: recording is telemetry for future bans, never a gate on this
       // connection. A gatekeeper outage must not stop a legitimate player entering a world.
-      logger.warn('Error recording player connection info', {
-        error: error instanceof Error ? error.message : String(error),
-        address
-      })
+      logGatekeeperFailure(logger, error, 'Error recording player connection info', { address })
     }
   }
 

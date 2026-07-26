@@ -248,6 +248,53 @@ describe('BansComponent', () => {
         const result = await bans.isPlayerBanned(address)
         expect(result).toBe(false)
       })
+
+      it('should retry it as a transient failure', async () => {
+        await bans.isPlayerBanned(address)
+        expect(fetch.fetch).toHaveBeenCalledTimes(3)
+      })
+    })
+
+    describe('and the comms-gatekeeper rejects the request as unauthorized', () => {
+      beforeEach(() => {
+        fetch.fetch.mockResolvedValue({
+          ok: false,
+          status: 401,
+          json: jest.fn()
+        } as unknown as Response)
+      })
+
+      it('should return false (fail open)', async () => {
+        expect(await bans.isPlayerBanned(address)).toBe(false)
+      })
+
+      it('should not retry a permanent failure', async () => {
+        await bans.isPlayerBanned(address)
+        expect(fetch.fetch).toHaveBeenCalledTimes(1)
+      })
+
+      it('should log it as an error rather than a transient warning', async () => {
+        await bans.isPlayerBanned(address)
+        expect(logger.error).toHaveBeenCalledWith(
+          expect.stringContaining('permanent'),
+          expect.objectContaining({ address })
+        )
+      })
+    })
+
+    describe('and the comms-gatekeeper does not know the route yet', () => {
+      beforeEach(() => {
+        fetch.fetch.mockResolvedValue({
+          ok: false,
+          status: 404,
+          json: jest.fn()
+        } as unknown as Response)
+      })
+
+      it('should give up immediately instead of retrying every connection', async () => {
+        await bans.isPlayerBanned(address)
+        expect(fetch.fetch).toHaveBeenCalledTimes(1)
+      })
     })
 
     describe('and the fetch throws an error', () => {
