@@ -509,12 +509,27 @@ describe('CommsComponent', () => {
     describe('and only the device is banned, not the wallet', () => {
       beforeEach(() => {
         bans.isPlayerBanned.mockImplementation(async (_address: string, device?: string) => device === deviceId)
+        worlds.getWorldSceneBaseParcelIncludingUndeployed.mockResolvedValue('0,0')
       })
 
-      it('should throw UserPlatformBannedError', async () => {
+      it('should throw UserPlatformBannedError from the world room', async () => {
         await expect(
           commsComponent.getWorldRoomConnectionString(userAddress, worldName, connectionOptions)
         ).rejects.toThrow(UserPlatformBannedError)
+      })
+
+      it('should throw UserPlatformBannedError from the scene room', async () => {
+        await expect(
+          commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, sceneId, connectionOptions)
+        ).rejects.toThrow(UserPlatformBannedError)
+      })
+
+      it('should not mint a scene room connection string', async () => {
+        await commsComponent
+          .getWorldSceneRoomConnectionString(userAddress, worldName, sceneId, connectionOptions)
+          .catch(() => undefined)
+
+        expect(commsAdapter.getSceneRoomConnectionString).not.toHaveBeenCalled()
       })
     })
   })

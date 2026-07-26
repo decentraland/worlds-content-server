@@ -115,6 +115,14 @@ export async function createBansComponent(
     // INFO, which would persist this stable cross-wallet machine identifier on every connection.
     const safeDeviceId = toHeaderSafeDeviceId(deviceId)
 
+    // Dropping the device id downgrades this to an address-only check, so say so. The client's
+    // fingerprint format is explicitly versioned for rotation; if it ever stops matching, the
+    // ban silently weakens and this warning is the only signal. The value itself is never
+    // logged — keeping it out of logs is the reason it travels in a header.
+    if (deviceId && !safeDeviceId) {
+      logger.warn('Ignoring malformed device id, checking the ban by address only', { address })
+    }
+
     try {
       const body = await withRetry<{ isBanned: boolean }>(
         async () => {

@@ -1,5 +1,6 @@
 import { createBansComponent, IBansComponent } from '../../src/adapters/bans-adapter'
 import { IFetchComponent } from '@dcl/core-commons'
+import { ILoggerComponent } from '@well-known-components/interfaces'
 import { createMockedConfig } from '../mocks/config-mock'
 import { createMockFetch } from '../mocks/fetch-mock'
 import { createMockLogs } from '../mocks/logs-mock'
@@ -10,9 +11,13 @@ describe('BansComponent', () => {
 
   let bans: IBansComponent
   let fetch: jest.Mocked<IFetchComponent>
+  let logs: jest.Mocked<ILoggerComponent>
+  let logger: jest.Mocked<ILoggerComponent.ILogger>
 
   beforeEach(async () => {
     fetch = createMockFetch()
+    logs = createMockLogs()
+    logger = logs.getLogger('bans') as jest.Mocked<ILoggerComponent.ILogger>
 
     bans = await createBansComponent({
       config: createMockedConfig({
@@ -23,7 +28,7 @@ describe('BansComponent', () => {
         })
       }),
       fetch,
-      logs: createMockLogs()
+      logs
     })
   })
 
@@ -110,6 +115,32 @@ describe('BansComponent', () => {
             Authorization: `Bearer ${authToken}`
           }
         })
+      })
+
+      it('should warn that the check was downgraded to address-only', async () => {
+        await bans.isPlayerBanned(address, 'abc\r\nX-Injected: 1')
+        expect(logger.warn).toHaveBeenCalledWith('Ignoring malformed device id, checking the ban by address only', {
+          address
+        })
+      })
+
+      it('should keep the rejected device id out of the logs', async () => {
+        await bans.isPlayerBanned(address, 'abc\r\nX-Injected: 1')
+        expect(JSON.stringify(logger.warn.mock.calls)).not.toContain('X-Injected')
+      })
+    })
+
+    describe('and the device id is well formed', () => {
+      beforeEach(() => {
+        fetch.fetch.mockResolvedValue({
+          ok: true,
+          json: jest.fn().mockResolvedValue({ isBanned: false })
+        } as unknown as Response)
+      })
+
+      it('should not warn about a downgraded check', async () => {
+        await bans.isPlayerBanned(address, deviceId)
+        expect(logger.warn).not.toHaveBeenCalled()
       })
     })
 
