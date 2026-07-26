@@ -70,12 +70,23 @@ describe('BansComponent', () => {
         } as unknown as Response)
       })
 
-      it('should pass the device id as a query parameter', async () => {
+      it('should send the device id in the X-Device-Id header', async () => {
         await bans.isPlayerBanned(address, deviceId)
         expect(fetch.fetch).toHaveBeenCalledWith(
-          `${commsGatekeeperUrl}/users/${encodeURIComponent(address)}/ban-status?deviceId=${encodeURIComponent(deviceId)}`,
-          expect.anything()
+          `${commsGatekeeperUrl}/users/${encodeURIComponent(address)}/ban-status`,
+          {
+            method: 'GET',
+            headers: {
+              Authorization: `Bearer ${authToken}`,
+              'X-Device-Id': deviceId
+            }
+          }
         )
+      })
+
+      it('should keep the device id out of the request URL', async () => {
+        await bans.isPlayerBanned(address, deviceId)
+        expect(fetch.fetch.mock.calls[0][0]).not.toContain(deviceId)
       })
 
       it('should return true when the comms-gatekeeper matches the device', async () => {
@@ -83,7 +94,7 @@ describe('BansComponent', () => {
       })
     })
 
-    describe('and the device id contains query-delimiter characters', () => {
+    describe('and the device id contains characters that are invalid in a header', () => {
       beforeEach(() => {
         fetch.fetch.mockResolvedValue({
           ok: true,
@@ -91,12 +102,56 @@ describe('BansComponent', () => {
         } as unknown as Response)
       })
 
-      it('should encode it so it cannot inject extra query parameters', async () => {
-        await bans.isPlayerBanned(address, 'a&b=c d')
-        expect(fetch.fetch).toHaveBeenCalledWith(
-          `${commsGatekeeperUrl}/users/${encodeURIComponent(address)}/ban-status?deviceId=a%26b%3Dc+d`,
-          expect.anything()
-        )
+      it('should omit the header rather than forward an injectable value', async () => {
+        await bans.isPlayerBanned(address, 'abc\r\nX-Injected: 1')
+        expect(fetch.fetch).toHaveBeenCalledWith(expect.any(String), {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${authToken}`
+          }
+        })
+      })
+    })
+
+    describe('and the device id exceeds the supported length', () => {
+      beforeEach(() => {
+        fetch.fetch.mockResolvedValue({
+          ok: true,
+          json: jest.fn().mockResolvedValue({ isBanned: false })
+        } as unknown as Response)
+      })
+
+      it('should omit the header rather than forward an unbounded value', async () => {
+        await bans.isPlayerBanned(address, 'a'.repeat(129))
+        expect(fetch.fetch).toHaveBeenCalledWith(expect.any(String), {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${authToken}`
+          }
+        })
+      })
+    })
+
+    describe('and the device id is a plain SHA-256 hex digest', () => {
+      let fingerprint: string
+
+      beforeEach(() => {
+        fingerprint = 'a'.repeat(64)
+        fetch.fetch.mockResolvedValue({
+          ok: true,
+          json: jest.fn().mockResolvedValue({ isBanned: true })
+        } as unknown as Response)
+      })
+
+      it('should forward it unchanged', async () => {
+        await bans.isPlayerBanned(address, fingerprint)
+        expect(fetch.fetch).toHaveBeenCalledWith(expect.any(String), {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+            'X-Device-Id': fingerprint
+          }
+        })
       })
     })
 
@@ -108,12 +163,14 @@ describe('BansComponent', () => {
         } as unknown as Response)
       })
 
-      it('should omit the query parameter entirely', async () => {
+      it('should omit the header entirely', async () => {
         await bans.isPlayerBanned(address, '')
-        expect(fetch.fetch).toHaveBeenCalledWith(
-          `${commsGatekeeperUrl}/users/${encodeURIComponent(address)}/ban-status`,
-          expect.anything()
-        )
+        expect(fetch.fetch).toHaveBeenCalledWith(expect.any(String), {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${authToken}`
+          }
+        })
       })
     })
 

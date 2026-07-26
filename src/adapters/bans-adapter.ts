@@ -1,6 +1,21 @@
 import { AppComponents } from '../types'
 import { withRetry } from '../logic/utils'
 
+/** Header the comms-gatekeeper reads the connecting client's device fingerprint from. */
+const DEVICE_ID_HEADER = 'X-Device-Id'
+
+/**
+ * The device id originates in client-controlled signed-fetch metadata, so it may be arbitrary.
+ * Forward it only when it is an opaque, bounded token — the real fingerprint is a SHA-256 hex
+ * digest. Anything else is treated as absent, which is exactly how a client that reports no
+ * device is handled, and keeps unusable values out of the outbound header.
+ */
+const DEVICE_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/
+
+function toHeaderSafeDeviceId(deviceId?: string): string | undefined {
+  return deviceId && DEVICE_ID_PATTERN.test(deviceId) ? deviceId : undefined
+}
+
 /**
  * Component interface for checking if a user is banned from a world scene.
  */
@@ -94,18 +109,20 @@ export async function createBansComponent(
     // Device-aware endpoint: matches an active ban on the address OR the recorded device id.
     // The public /users/:address/bans matches on address only, so it would let a banned
     // device reconnect under a different wallet.
-    const url = new URL(`${commsGatekeeperUrl}/users/${encodeURIComponent(address.toLowerCase())}/ban-status`)
-    if (deviceId) {
-      url.searchParams.set('deviceId', deviceId)
-    }
+    const url = `${commsGatekeeperUrl}/users/${encodeURIComponent(address.toLowerCase())}/ban-status`
+
+    // Header, not a query parameter: the gatekeeper's request logger writes the query string at
+    // INFO, which would persist this stable cross-wallet machine identifier on every connection.
+    const safeDeviceId = toHeaderSafeDeviceId(deviceId)
 
     try {
       const body = await withRetry<{ isBanned: boolean }>(
         async () => {
-          const response = await fetch.fetch(url.toString(), {
+          const response = await fetch.fetch(url, {
             method: 'GET',
             headers: {
-              Authorization: `Bearer ${authToken}`
+              Authorization: `Bearer ${authToken}`,
+              ...(safeDeviceId ? { [DEVICE_ID_HEADER]: safeDeviceId } : {})
             }
           })
 
