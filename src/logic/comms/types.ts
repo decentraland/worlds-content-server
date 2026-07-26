@@ -5,11 +5,12 @@ export type AccessOptions = {
 }
 
 /**
- * Request-derived context for a comms token request: the world access secret plus the device
- * fingerprint the client reported in its signed-fetch metadata.
+ * Request-derived context for a comms token request: the world access secret, the device
+ * fingerprint the client reported in its signed-fetch metadata, and the client IP.
  */
 export type ConnectionOptions = AccessOptions & {
   deviceId?: string
+  ipAddress?: string
 }
 
 export type ICommsComponent = {

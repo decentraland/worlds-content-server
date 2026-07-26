@@ -531,6 +531,67 @@ describe('CommsComponent', () => {
 
         expect(commsAdapter.getSceneRoomConnectionString).not.toHaveBeenCalled()
       })
+
+      it('should still record the connection of the rejected player', async () => {
+        await commsComponent
+          .getWorldRoomConnectionString(userAddress, worldName, connectionOptions)
+          .catch(() => undefined)
+
+        expect(bans.recordPlayerConnection).toHaveBeenCalledWith(userAddress, {
+          deviceId,
+          ipAddress: undefined
+        })
+      })
+    })
+  })
+
+  describe('when the connection reports a device id and an IP', () => {
+    const userAddress = '0x1234'
+    const worldName = 'test-world'
+    const sceneId = 'scene-123'
+    const deviceId = 'a-device-fingerprint'
+    const ipAddress = '203.0.113.10'
+
+    let connectionOptions: { deviceId: string; ipAddress: string }
+
+    beforeEach(() => {
+      connectionOptions = { deviceId, ipAddress }
+      worlds.isWorldValid.mockResolvedValue(true)
+      namePermissionChecker.checkPermission.mockResolvedValue(true)
+      access.checkAccess.mockResolvedValue(true)
+      worlds.getWorldSceneBaseParcelIncludingUndeployed.mockResolvedValue('0,0')
+    })
+
+    describe('and getting the world room connection string', () => {
+      it('should record the connection with both values', async () => {
+        await commsComponent.getWorldRoomConnectionString(userAddress, worldName, connectionOptions)
+
+        expect(bans.recordPlayerConnection).toHaveBeenCalledWith(userAddress, { deviceId, ipAddress })
+      })
+    })
+
+    describe('and getting the scene room connection string', () => {
+      it('should record the connection with both values', async () => {
+        await commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, sceneId, connectionOptions)
+
+        expect(bans.recordPlayerConnection).toHaveBeenCalledWith(userAddress, { deviceId, ipAddress })
+      })
+    })
+
+    describe('and recording the connection throws unexpectedly', () => {
+      const connectionString = 'livekit:wss://host?access_token=abc123'
+
+      beforeEach(() => {
+        bans.recordPlayerConnection.mockRejectedValueOnce(new Error('gatekeeper down'))
+        commsAdapter.getWorldRoomParticipantCount.mockResolvedValueOnce(0)
+        commsAdapter.getWorldRoomConnectionString.mockResolvedValueOnce(connectionString)
+      })
+
+      it('should still let a legitimate player in', async () => {
+        await expect(
+          commsComponent.getWorldRoomConnectionString(userAddress, worldName, connectionOptions)
+        ).resolves.toBe(connectionString)
+      })
     })
   })
 

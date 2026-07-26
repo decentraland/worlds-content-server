@@ -41,6 +41,22 @@ export type IBansComponent = {
    * @returns True if the connection is platform-banned, false otherwise.
    */
   isPlayerBanned: (address: string, deviceId?: string) => Promise<boolean>
+
+  /**
+   * Reports the connecting player's device and IP to the comms-gatekeeper, which keeps the
+   * latest connection info per address and snapshots the device id when a ban is issued.
+   *
+   * This lives alongside the ban checks because the recorded device exists solely to feed them:
+   * the comms-gatekeeper records it inline on its own token paths, and world tokens are issued
+   * here without passing through those, so a player who only ever connects to multi-scene worlds
+   * would otherwise be banned with no device captured.
+   *
+   * Best-effort — never throws, so it cannot block token issuance.
+   *
+   * @param address - The wallet address of the connecting player.
+   * @param connection - Device fingerprint and client IP, when known.
+   */
+  recordPlayerConnection: (address: string, connection: { deviceId?: string; ipAddress?: string }) => Promise<void>
 }
 
 /**
@@ -153,8 +169,53 @@ export async function createBansComponent(
     }
   }
 
+  async function recordPlayerConnection(
+    address: string,
+    connection: { deviceId?: string; ipAddress?: string }
+  ): Promise<void> {
+    // Record exactly the device id the ban check would match on. Recording a value the check
+    // would refuse to send produces a stored device that can never be matched later.
+    const deviceId = toHeaderSafeDeviceId(connection.deviceId)
+
+    // Nothing worth reporting: the gatekeeper COALESCEs absent fields, so an empty body would
+    // only cost a round-trip and bump updated_at.
+    if (!deviceId && !connection.ipAddress) {
+      return
+    }
+
+    const url = `${commsGatekeeperUrl}/users/${encodeURIComponent(address.toLowerCase())}/connection-info`
+
+    try {
+      await withRetry(
+        async () => {
+          const response = await fetch.fetch(url, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${authToken}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ deviceId, ipAddress: connection.ipAddress })
+          })
+
+          if (!response.ok) {
+            throw new Error(`Unexpected response from comms-gatekeeper connection recording: ${response.status}`)
+          }
+        },
+        { logger, maxRetries: 2 }
+      )
+    } catch (error) {
+      // Swallowed on purpose: recording is telemetry for future bans, never a gate on this
+      // connection. A gatekeeper outage must not stop a legitimate player entering a world.
+      logger.warn('Error recording player connection info', {
+        error: error instanceof Error ? error.message : String(error),
+        address
+      })
+    }
+  }
+
   return {
     isUserBannedFromScene,
-    isPlayerBanned
+    isPlayerBanned,
+    recordPlayerConnection
   }
 }

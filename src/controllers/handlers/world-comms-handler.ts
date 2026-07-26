@@ -41,7 +41,12 @@ export async function worldCommsHandler(context: HandlerContext): Promise<IHttpS
 
   const { auth: identity, authMetadata } = context.verification!
 
-  const connectionOptions = { secret: authMetadata?.secret, deviceId: authMetadata?.deviceIdentifier }
+  const connectionOptions = {
+    secret: authMetadata?.secret,
+    deviceId: authMetadata?.deviceIdentifier,
+    // Same header the comms-gatekeeper records from, so both services store the same value.
+    ipAddress: context.request.headers.get('cf-connecting-ip') || undefined
+  }
 
   const accessSetting = await access.getAccessForWorld(worldName)
   const isSharedSecret = accessSetting.type === AccessType.SharedSecret

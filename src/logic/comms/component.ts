@@ -21,8 +21,32 @@ export const createCommsComponent = async (
   const { namePermissionChecker, access, worlds, commsAdapter, config, denyList, bans } = components
   const maxUsersPerWorld = (await config.getNumber('MAX_USERS_PER_WORLD')) ?? DEFAULT_MAX_USERS_PER_WORLD
 
-  async function assertUserNotPlatformBanned(userAddress: EthAddress, deviceId?: string): Promise<void> {
-    const isBanned = await bans.isPlayerBanned(userAddress, deviceId)
+  /**
+   * Records the connection and rejects it when the address or its device is platform-banned.
+   *
+   * Both calls depend only on the identity and neither affects the other's outcome — a ban is
+   * matched against previously recorded devices, not the one being reported now — so they run
+   * concurrently and cost one round-trip. Recording is best-effort and never throws, mirroring
+   * how the comms-gatekeeper treats it on its own token paths.
+   */
+  async function assertConnectionAllowed(userAddress: EthAddress, options?: ConnectionOptions): Promise<void> {
+    // Guarded here as well as inside the adapter: Promise.all rejects as a unit, so an
+    // unexpected throw from recording would otherwise turn a bookkeeping failure into a refused
+    // connection for a legitimate player. Awaited inside try/catch rather than chained off the
+    // call so the guard holds even if recording ever returns something that is not a promise.
+    async function recordConnection(): Promise<void> {
+      try {
+        await bans.recordPlayerConnection(userAddress, {
+          deviceId: options?.deviceId,
+          ipAddress: options?.ipAddress
+        })
+      } catch {
+        // Best-effort: the adapter already logs, and this must never gate the connection.
+      }
+    }
+
+    const [, isBanned] = await Promise.all([recordConnection(), bans.isPlayerBanned(userAddress, options?.deviceId)])
+
     if (isBanned) {
       throw new UserPlatformBannedError()
     }
@@ -71,7 +95,7 @@ export const createCommsComponent = async (
     sceneId: string,
     connectionOptions?: ConnectionOptions
   ): Promise<string> {
-    await assertUserNotPlatformBanned(userAddress, connectionOptions?.deviceId)
+    await assertConnectionAllowed(userAddress, connectionOptions)
     await assertUserNotDenylisted(userAddress)
     await assertWorldAccess(userAddress, worldName, connectionOptions)
 
@@ -95,7 +119,7 @@ export const createCommsComponent = async (
     worldName: string,
     connectionOptions?: ConnectionOptions
   ): Promise<string> {
-    await assertUserNotPlatformBanned(userAddress, connectionOptions?.deviceId)
+    await assertConnectionAllowed(userAddress, connectionOptions)
     await assertUserNotDenylisted(userAddress)
     await assertWorldAccess(userAddress, worldName, connectionOptions)
 

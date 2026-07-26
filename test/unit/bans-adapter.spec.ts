@@ -294,6 +294,84 @@ describe('BansComponent', () => {
     })
   })
 
+  describe('when recording a player connection', () => {
+    const address = '0x1234567890abcdef'
+    const deviceId = 'a-device-fingerprint'
+    const ipAddress = '203.0.113.10'
+
+    describe('and both the device id and the IP are known', () => {
+      beforeEach(() => {
+        fetch.fetch.mockResolvedValue({ ok: true } as unknown as Response)
+      })
+
+      it('should post them to the connection-info endpoint with the bearer token', async () => {
+        await bans.recordPlayerConnection(address, { deviceId, ipAddress })
+        expect(fetch.fetch).toHaveBeenCalledWith(
+          `${commsGatekeeperUrl}/users/${encodeURIComponent(address)}/connection-info`,
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${authToken}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ deviceId, ipAddress })
+          }
+        )
+      })
+
+      it('should keep the device id out of the request URL', async () => {
+        await bans.recordPlayerConnection(address, { deviceId, ipAddress })
+        expect(fetch.fetch.mock.calls[0][0]).not.toContain(deviceId)
+      })
+    })
+
+    describe('and the device id would be rejected by the ban check', () => {
+      beforeEach(() => {
+        fetch.fetch.mockResolvedValue({ ok: true } as unknown as Response)
+      })
+
+      it('should record it as absent so it cannot store an unmatchable device', async () => {
+        await bans.recordPlayerConnection(address, { deviceId: 'a'.repeat(129), ipAddress })
+        expect(fetch.fetch).toHaveBeenCalledWith(expect.any(String), {
+          method: 'POST',
+          headers: expect.anything(),
+          body: JSON.stringify({ ipAddress })
+        })
+      })
+    })
+
+    describe('and there is nothing worth reporting', () => {
+      beforeEach(() => {
+        fetch.fetch.mockResolvedValue({ ok: true } as unknown as Response)
+      })
+
+      it('should not call the comms-gatekeeper at all', async () => {
+        await bans.recordPlayerConnection(address, {})
+        expect(fetch.fetch).not.toHaveBeenCalled()
+      })
+    })
+
+    describe('and the comms-gatekeeper returns a non-ok response', () => {
+      beforeEach(() => {
+        fetch.fetch.mockResolvedValue({ ok: false, status: 500 } as unknown as Response)
+      })
+
+      it('should resolve without throwing so it cannot block the connection', async () => {
+        await expect(bans.recordPlayerConnection(address, { deviceId })).resolves.toBeUndefined()
+      })
+    })
+
+    describe('and the fetch throws an error', () => {
+      beforeEach(() => {
+        fetch.fetch.mockRejectedValue(new Error('Network error'))
+      })
+
+      it('should resolve without throwing so it cannot block the connection', async () => {
+        await expect(bans.recordPlayerConnection(address, { deviceId })).resolves.toBeUndefined()
+      })
+    })
+  })
+
   describe('when checking if a user is banned from a scene', () => {
     const address = '0x1234567890abcdef'
     const worldName = 'my-world.eth'
