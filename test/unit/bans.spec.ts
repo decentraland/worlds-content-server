@@ -1,4 +1,4 @@
-import { createBansComponent, IBansComponent } from '../../src/adapters/bans-adapter'
+import { createBansComponent, IBansComponent } from '../../src/adapters/bans'
 import { IFetchComponent } from '@dcl/core-commons'
 import { ILoggerComponent } from '@well-known-components/interfaces'
 import { createMockedConfig } from '../mocks/config-mock'

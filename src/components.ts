@@ -63,7 +63,7 @@ import { Events } from '@dcl/schemas'
 import { createRedisComponent } from '@dcl/redis-component'
 import { createRateLimiterComponent } from './logic/rate-limiter'
 import { createDenyListComponent } from './logic/denylist'
-import { createBansComponent } from './adapters/bans-adapter'
+import { createBansComponent } from './adapters/bans'
 import { createEvictionJob } from './adapters/eviction-job'
 import { createDeploymentProcessingComponent } from './logic/deployment-processing'
 

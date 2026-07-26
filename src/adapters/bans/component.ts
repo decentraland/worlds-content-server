@@ -1,6 +1,8 @@
 import { ILoggerComponent } from '@well-known-components/interfaces'
-import { AppComponents } from '../types'
-import { withRetry } from '../logic/utils'
+import { AppComponents } from '../../types'
+import { withRetry } from '../../logic/utils'
+import { PermanentGatekeeperError } from './errors'
+import { IBansComponent, PlayerConnectionInput } from './types'
 
 /** Header the comms-gatekeeper reads the connecting client's device fingerprint from. */
 const DEVICE_ID_HEADER = 'X-Device-Id'
@@ -16,13 +18,6 @@ const DEVICE_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/
 function toHeaderSafeDeviceId(deviceId?: string): string | undefined {
   return deviceId && DEVICE_ID_PATTERN.test(deviceId) ? deviceId : undefined
 }
-
-/**
- * A 4xx from the comms-gatekeeper is a permanent contract or auth failure — a wrong bearer
- * token, a route that does not exist yet. Retrying only multiplies load on every connection and
- * buries the cause under transient-looking retry warnings.
- */
-class PermanentGatekeeperError extends Error {}
 
 const isRetryable = (error: unknown): boolean => !(error instanceof PermanentGatekeeperError)
 
@@ -52,56 +47,15 @@ function logGatekeeperFailure(
 }
 
 /**
- * Component interface for checking if a user is banned from a world scene.
- */
-export type IBansComponent = {
-  /**
-   * Checks if the given address is banned from a specific scene in a world
-   * by querying the comms-gatekeeper service.
-   *
-   * @param address - The wallet address to check.
-   * @param worldName - The name of the world to check.
-   * @param sceneBaseParcel - The base parcel of the scene to check.
-   * @returns True if the user is banned, false otherwise.
-   */
-  isUserBannedFromScene: (address: string, worldName: string, sceneBaseParcel: string) => Promise<boolean>
-
-  /**
-   * Checks if the given connection is platform-banned by querying
-   * the comms-gatekeeper service.
-   *
-   * @param address - The wallet address to check.
-   * @param deviceId - Device fingerprint reported by the client, when present. An active ban
-   * recorded against this device rejects the connection even under a different wallet.
-   * @returns True if the connection is platform-banned, false otherwise.
-   */
-  isPlayerBanned: (address: string, deviceId?: string) => Promise<boolean>
-
-  /**
-   * Reports the connecting player's device and IP to the comms-gatekeeper, which keeps the
-   * latest connection info per address and snapshots the device id when a ban is issued.
-   *
-   * This lives alongside the ban checks because the recorded device exists solely to feed them:
-   * the comms-gatekeeper records it inline on its own token paths, and world tokens are issued
-   * here without passing through those, so a player who only ever connects to multi-scene worlds
-   * would otherwise be banned with no device captured.
-   *
-   * Best-effort — never throws, so it cannot block token issuance.
-   *
-   * @param address - The wallet address of the connecting player.
-   * @param connection - Device fingerprint and client IP, when known.
-   */
-  recordPlayerConnection: (address: string, connection: { deviceId?: string; ipAddress?: string }) => Promise<void>
-}
-
-/**
  * Creates the Bans adapter.
  *
- * Calls the comms-gatekeeper's GET /worlds/:worldName/parcels/:sceneBaseParcel/users/:address/ban-status
- * endpoint to determine if a user is banned from a specific scene in a world, and its
- * GET /users/:address/ban-status endpoint to determine if a connection is platform-banned.
- * Authenticates using a bearer token. Fails open (returns false) on any error
- * to avoid blocking world connections when the comms-gatekeeper is unavailable.
+ * Client for the comms-gatekeeper's ban surface:
+ *   - `GET /worlds/:worldName/parcels/:sceneBaseParcel/users/:address/ban-status` — scene bans.
+ *   - `GET /users/:address/ban-status` — platform bans, matched on address or device.
+ *   - `POST /users/:address/connection-info` — records the device a later ban will snapshot.
+ *
+ * Authenticates with a bearer token. Every call fails open, so a comms-gatekeeper outage cannot
+ * block world connections; 4xx responses are treated as permanent and are not retried.
  *
  * @param components Required components: config, fetch, logs
  * @returns IBansComponent implementation
@@ -156,6 +110,13 @@ export async function createBansComponent(
     }
   }
 
+  /**
+   * Checks if the given connection is platform-banned, by address or by device id.
+   *
+   * @param address - The wallet address to check.
+   * @param deviceId - Device fingerprint reported by the client, when present.
+   * @returns True if the connection is platform-banned. Returns false on errors (fail open).
+   */
   async function isPlayerBanned(address: string, deviceId?: string): Promise<boolean> {
     // Device-aware endpoint: matches an active ban on the address OR the recorded device id.
     // The public /users/:address/bans matches on address only, so it would let a banned
@@ -199,10 +160,13 @@ export async function createBansComponent(
     }
   }
 
-  async function recordPlayerConnection(
-    address: string,
-    connection: { deviceId?: string; ipAddress?: string }
-  ): Promise<void> {
+  /**
+   * Reports the connecting player's device and IP so a later ban can snapshot the device.
+   *
+   * @param address - The wallet address of the connecting player.
+   * @param connection - Device fingerprint and client IP, when known.
+   */
+  async function recordPlayerConnection(address: string, connection: PlayerConnectionInput): Promise<void> {
     // Record exactly the device id the ban check would match on. Recording a value the check
     // would refuse to send produces a stored device that can never be matched later.
     const deviceId = toHeaderSafeDeviceId(connection.deviceId)

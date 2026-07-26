@@ -1,4 +1,4 @@
-import { IBansComponent } from '../../src/adapters/bans-adapter'
+import { IBansComponent } from '../../src/adapters/bans'
 
 export const createMockBans = (overrides?: Partial<jest.Mocked<IBansComponent>>): jest.Mocked<IBansComponent> => {
   return {
