@@ -548,8 +548,8 @@ export type AwsConfig = {
   region: string
   credentials?: { accessKeyId: string; secretAccessKey: string }
   endpoint?: string
-  forcePathStyle?: boolean // for SDK v3
-  s3ForcePathStyle?: boolean // for SDK v2
+  /** Required for path-style S3-compatible endpoints (LocalStack/MinIO). */
+  forcePathStyle?: boolean
 }
 
 export type CreateConnectionTokenOptions = {

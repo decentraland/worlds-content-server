@@ -36,7 +36,7 @@ import { createBlockingComponent } from './adapters/blocking'
 import { createUpdateOwnerJob } from './adapters/update-owner-job'
 import { createSnsComponent } from '@dcl/sns-component'
 import { createAwsConfig } from './adapters/aws-config'
-import { S3 } from 'aws-sdk'
+import { S3Client } from '@aws-sdk/client-s3'
 import { createNotificationsClientComponent } from './adapters/notifications-service'
 import { createNatsComponent } from '@well-known-components/nats-component'
 import { createSchemaValidatorComponent } from '@dcl/schema-validator-component'
@@ -112,9 +112,20 @@ export async function initComponents(): Promise<AppComponents> {
   const fs = createFsComponent()
 
   const storage = bucket
-    ? await createS3BasedFileSystemContentStorage({ logs }, new S3(awsConfig), {
-        Bucket: bucket
-      })
+    ? await createS3BasedFileSystemContentStorage(
+        { logs },
+        // Explicit socket limits so a wedged S3 connection cannot hold a storage call open
+        // indefinitely: the SDK's Node handler defaults both the connection and request
+        // timeouts to 0 (no limit).
+        new S3Client({
+          ...awsConfig,
+          requestHandler: { connectionTimeout: 10_000, requestTimeout: 120_000 },
+          maxAttempts: 3
+        }),
+        {
+          Bucket: bucket
+        }
+      )
     : await createFolderBasedFileSystemContentStorage({ fs, logs }, storageFolder)
 
   const subGraphUrl = await config.requireString('MARKETPLACE_SUBGRAPH_URL')
