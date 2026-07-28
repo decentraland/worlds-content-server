@@ -13,7 +13,8 @@ import { metricDeclarations } from './metrics'
 import {
   createFolderBasedFileSystemContentStorage,
   createFsComponent,
-  createS3BasedFileSystemContentStorage
+  createS3BasedFileSystemContentStorage,
+  IContentStorageComponent
 } from '@dcl/catalyst-storage'
 import { createStatusComponent } from './adapters/status'
 import { createLimitsManagerComponent } from './adapters/limits-manager'
@@ -111,23 +112,30 @@ export async function initComponents(): Promise<AppComponents> {
   const bucket = await config.getString('BUCKET')
   const fs = createFsComponent()
 
-  const storage = bucket
-    ? await createS3BasedFileSystemContentStorage(
-        { logs },
-        // Explicit socket limits so a wedged S3 connection cannot hold a storage call open
-        // indefinitely: the SDK's Node handler defaults both the connection and request
-        // timeouts to 0 (no limit), and an exceeded requestTimeout only logs a warning
-        // unless throwOnRequestTimeout turns it into an error.
-        new S3Client({
-          ...awsConfig,
-          requestHandler: { connectionTimeout: 10_000, requestTimeout: 120_000, throwOnRequestTimeout: true },
-          maxAttempts: 3
-        }),
-        {
-          Bucket: bucket
-        }
-      )
-    : await createFolderBasedFileSystemContentStorage({ fs, logs }, storageFolder)
+  let storage: IContentStorageComponent
+  if (bucket) {
+    // Explicit socket limits so a wedged S3 connection cannot hold a storage call open
+    // indefinitely: the SDK's Node handler defaults both the connection and request
+    // timeouts to 0 (no limit), and an exceeded requestTimeout only logs a warning
+    // unless throwOnRequestTimeout turns it into an error.
+    const s3Client = new S3Client({
+      ...awsConfig,
+      requestHandler: { connectionTimeout: 10_000, requestTimeout: 120_000, throwOnRequestTimeout: true },
+      maxAttempts: 3
+    })
+    const s3Storage = await createS3BasedFileSystemContentStorage({ logs }, s3Client, { Bucket: bucket })
+    storage = {
+      ...s3Storage,
+      // The injected client is caller-owned: release its socket pool on shutdown, after the
+      // storage component itself has stopped using it.
+      async stop() {
+        await s3Storage.stop?.()
+        s3Client.destroy()
+      }
+    }
+  } else {
+    storage = await createFolderBasedFileSystemContentStorage({ fs, logs }, storageFolder)
+  }
 
   const subGraphUrl = await config.requireString('MARKETPLACE_SUBGRAPH_URL')
   const marketplaceSubGraph = await createSubgraphComponent({ config, logs, metrics, fetch }, subGraphUrl)
