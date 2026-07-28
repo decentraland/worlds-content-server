@@ -1,8 +1,12 @@
 import { Entity } from '@dcl/schemas'
+import { Authenticator } from '@dcl/crypto'
 import { IHttpServerComponent } from '@dcl/core-commons'
+import { bufferToStream } from '@dcl/catalyst-storage'
+import { hashV1 } from '@dcl/hashing'
 import { FormDataContext, toDeploymentFile } from '../../logic/multipart'
 import { DeploymentFile, HandlerContextWithPath } from '../../types'
 import { extractAuthChain } from '../../logic/extract-auth-chain'
+import { buildSceneDeploymentMessage } from '../../logic/utils'
 import { InvalidRequestError } from '@dcl/http-commons'
 import { FileInfo, IContentStorageComponent } from '@dcl/catalyst-storage'
 import { calculateDeploymentSizeFromFileInfos } from '../../logic/validations/scene'
@@ -19,9 +23,31 @@ export const MAX_ENTITY_FILE_SIZE_IN_BYTES = 5 * 1024 * 1024
 
 type DeployEntityContext = FormDataContext &
   HandlerContextWithPath<
-    'config' | 'deploymentProcessing' | 'entityDeployer' | 'logs' | 'storage' | 'validator',
+    | 'config'
+    | 'deploymentProcessing'
+    | 'entityDeployer'
+    | 'logs'
+    | 'partialDeployments'
+    | 'pendingScenesManager'
+    | 'storage'
+    | 'validator'
+    | 'worldsManager',
     '/entities'
   >
+
+// The world_scenes (world_name, entity_id) primary-key violation raised when a concurrent deploy of
+// the SAME entity already committed — deployScene deliberately preserves the DEPLOYED self-row so this
+// collision is the idempotency signal (see worlds-manager.deployScene).
+function isUniqueViolation(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && (error as { code?: string }).code === '23505'
+}
+
+// The entity file is the scene manifest (JSON): pointers, the content-hash list, and metadata — always
+// small, independent of how large the content itself is. Cap it so it can be safely read fully into
+// memory. This is important on a partial-resume request, where the entity is read back from storage and
+// its size is NOT covered by the multipart in-flight-bytes budget (the resume body is tiny), so without
+// a cap many concurrent resumes could each buffer a large stored entity and exhaust memory.
+const MAX_ENTITY_FILE_SIZE_BYTES = 10 * 1024 * 1024 // 10 MB
 
 export function requireString(val: string | null | undefined): string {
   if (typeof val !== 'string') throw new InvalidRequestError('A string was expected')
@@ -34,6 +60,23 @@ function parseEntityJson(raw: string) {
   } catch {
     throw new InvalidRequestError('The entity file is not valid JSON.')
   }
+}
+
+// Buffers a stream but aborts as soon as it exceeds maxBytes. The storage metadata size can be null
+// (unknown), so the size cap must be enforced while reading — buffering first and checking after would
+// hold the whole blob in memory exactly in the case the cap exists for.
+async function streamToBufferCapped(stream: AsyncIterable<Buffer | string>, maxBytes: number): Promise<Buffer> {
+  const chunks: Buffer[] = []
+  let total = 0
+  for await (const chunk of stream) {
+    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+    total += buf.length
+    if (total > maxBytes) {
+      throw new InvalidRequestError(`The stored entity file is too large (over ${maxBytes} bytes).`)
+    }
+    chunks.push(buf)
+  }
+  return Buffer.concat(chunks)
 }
 
 /**
@@ -73,11 +116,65 @@ async function deployEntityWithSignal(
   const entityId = requireString(ctx.formData.fields.entityId?.value[0])
   const authChain = extractAuthChain(ctx)
 
-  const entityFile = ctx.formData.files[entityId]
-  if (!entityFile) {
-    throw new InvalidRequestError(`Entity file "${entityId}" is missing from the request.`)
+  // A `partial=true` field marks a staging request of a multi-request (partial) deployment: content may
+  // be uploaded across several requests and the world only becomes live once all of it is present.
+  const isPartial = ctx.formData.fields.partial?.value[0] === 'true'
+
+  // Resolve the entity file. It must be uploaded on the first request; a later partial (resume) request
+  // may omit it, in which case it is read back from storage where the first request stored it.
+  let entityFile: DeploymentFile | undefined = ctx.formData.files[entityId]
+    ? toDeploymentFile(ctx.formData.files[entityId])
+    : undefined
+  if (!entityFile && isPartial) {
+    // Resume request: read the entity back from storage for an entity id the CLIENT supplied. The resume
+    // body is tiny, so this read is NOT covered by the multipart in-flight-bytes budget — it must be
+    // gated before any storage I/O or an attacker could turn cheap requests into concurrent
+    // MAX_ENTITY_FILE_SIZE_BYTES reads + buffers (memory + egress amplification). Two gates, cheap first:
+    // 1. The local signature check (no provider): the request must be validly signed for this entity id.
+    //    Alone this is NOT sufficient — any keypair can sign any entity id — so also:
+    // 2. A live pending upload for this entity, created by this same signer, must exist. Creating a
+    //    pending row required passing the full staging validation (including the deployment-permission
+    //    check) and rows are capped per deployer, so read-backs are bounded to in-flight uploads by
+    //    their own permission-validated deployer. Any other signer (or an expired upload) must re-send
+    //    the entity file instead, which restarts/joins the upload through the fully-validated path.
+    const signatureResult = await Authenticator.validateSignature(entityId, authChain, null, Date.now())
+    if (!signatureResult.ok) {
+      throw new InvalidRequestError(`Invalid auth chain: ${signatureResult.message}`)
+    }
+    const pendingForResume = await ctx.components.pendingScenesManager.getByEntityId(entityId)
+    if (pendingForResume && pendingForResume.deployer === authChain[0].payload.toLowerCase()) {
+      const stored = await ctx.components.storage.retrieve(entityId)
+      if (stored) {
+        // streamToBufferCapped aborts past the cap while reading, so storage reporting size as null (the
+        // metadata is not trustworthy for enforcement) can't let an oversized blob through.
+        const buf = await streamToBufferCapped(await stored.asStream(), MAX_ENTITY_FILE_SIZE_BYTES)
+        entityFile = {
+          size: buf.length,
+          getStream: () => bufferToStream(buf),
+          getHash: () => hashV1(buf),
+          asBuffer: async () => buf
+        }
+      }
+    }
+    // When either gate fails, entityFile stays unset and the error below tells the client to re-send
+    // the entity file — the correct recovery in every one of those cases.
   }
-  if (entityFile.size > MAX_ENTITY_FILE_SIZE_IN_BYTES) {
+  if (!entityFile) {
+    throw new InvalidRequestError(
+      isPartial
+        ? `The first partial request for an entity must include the entity file "${entityId}".`
+        : `Entity file "${entityId}" is missing from the request.`
+    )
+  }
+  // Cap the manifest size only on the partial path. Its purpose is to bound the storage read-back and
+  // the first partial request's buffered manifest so a multi-request upload can't be wedged (resume caps
+  // the same way); the vanilla single-request path is bounded below by MAX_ENTITY_FILE_SIZE_IN_BYTES.
+  if (isPartial && entityFile.size > MAX_ENTITY_FILE_SIZE_BYTES) {
+    throw new InvalidRequestError(`The entity file "${entityId}" is too large (${entityFile.size} bytes).`)
+  }
+  // The entity file is read fully into memory, so cap it on the vanilla path (the partial path applies
+  // its own, larger cap above).
+  if (!isPartial && entityFile.size > MAX_ENTITY_FILE_SIZE_IN_BYTES) {
     throw new InvalidRequestError(
       `The entity file is too large. The maximum allowed size is ${MAX_ENTITY_FILE_SIZE_IN_BYTES} bytes.`
     )
@@ -87,17 +184,55 @@ async function deployEntityWithSignal(
   for (const filesKey in ctx.formData.files) {
     uploadedFiles.set(filesKey, toDeploymentFile(ctx.formData.files[filesKey]))
   }
+  // Ensure the entity file is in the map even when it came from storage (partial resume request).
+  if (!uploadedFiles.has(entityId)) {
+    uploadedFiles.set(entityId, entityFile)
+  }
 
-  // The entity JSON is small, so it is safe to buffer. Its hash reuses this same read.
+  // The entity JSON is small, so it is safe to buffer. Both the partial and vanilla paths need it, and
+  // the hash reuses this same read. Read from the map entry (not the local `entityFile`) so the buffer is
+  // memoized on the exact object validation later hashes. `id` is spread last so scene metadata cannot
+  // override the id the client authenticated against.
   const entityRaw = (await uploadedFiles.get(entityId)!.asBuffer(signal)).toString()
   const entityMetadataJson = parseEntityJson(entityRaw)
   const entity: Entity = { ...entityMetadataJson, id: entityId }
+
+  if (isPartial) {
+    const baseUrl = (await ctx.components.config.getString('HTTP_BASE_URL')) || `https://${ctx.url.host}`
+    // The abort context bounds each staging request like a vanilla deploy: a disconnect or the
+    // processing deadline cancels validation/hashing/storing (the pending row survives, so the client
+    // resumes), and bounds the deploy transaction when this request finalizes.
+    const result = await ctx.components.partialDeployments.stage({
+      baseUrl,
+      entity,
+      entityRaw,
+      authChain,
+      files: uploadedFiles,
+      signal,
+      deadlineAt
+    })
+    if (result.complete) {
+      return {
+        status: 200,
+        body: {
+          creationTimestamp: Date.now(),
+          ...result.result
+        }
+      }
+    }
+    return { status: 202, body: { missing: result.missing ?? [] } }
+  }
+
+  // Vanilla (single-request) deployment — behaves exactly as before, plus TTL anchoring on and cleanup
+  // of any pending upload that happens to exist for this entity.
+  const pending = await ctx.components.pendingScenesManager.getByEntityId(entityId)
 
   const deployment = {
     entity,
     files: uploadedFiles,
     authChain,
     contentHashesInStorage: new Map<string, boolean>(),
+    pendingCreatedAt: pending?.createdAt,
     signal
   }
 
@@ -129,21 +264,65 @@ async function deployEntityWithSignal(
     throw new InvalidRequestError(`Deployment failed: ${validationResult.errors.join(', ')}`)
   }
 
-  // Store the entity
   const baseUrl = (await ctx.components.config.getString('HTTP_BASE_URL')) || `https://${ctx.url.host}`
   const deploymentSize = calculateDeploymentSizeFromFileInfos(entity, uploadedFiles, contentFileInfos)
   signal.throwIfAborted()
-  const message = await ctx.components.entityDeployer.deployEntity(
-    baseUrl,
-    entity,
-    contentHashesInStorage,
-    uploadedFiles,
-    entityRaw,
-    authChain,
-    deploymentSize,
-    signal,
-    deadlineAt
-  )
+  let message: { message?: string }
+  try {
+    message = await ctx.components.entityDeployer.deployEntity(
+      baseUrl,
+      entity,
+      contentHashesInStorage,
+      uploadedFiles,
+      entityRaw,
+      authChain,
+      deploymentSize,
+      signal,
+      deadlineAt
+    )
+  } catch (error) {
+    // This same entity is already DEPLOYED — a concurrent duplicate (most commonly a client retry of a
+    // deploy whose first attempt committed but whose response was lost, or a race with this entity's
+    // partial finalize) won the world_scenes primary-key insert. The scene is live, so answer with an
+    // idempotent success instead of surfacing the loser's collision as a 5xx. Mirrors the partial
+    // finalize path's handling. Verified against the DB before mapping, so any other 23505 still fails.
+    const worldName: string | undefined = entity.metadata?.worldConfiguration?.name?.toLowerCase()
+    if (!isUniqueViolation(error) || !worldName) {
+      throw error
+    }
+    // The verification is best-effort: if it fails, propagate the ORIGINAL collision (its diagnostic
+    // value beats the verification hiccup's) rather than masking it.
+    const existing = await ctx.components.worldsManager
+      .getWorldScenes({ worldName, entityId }, { limit: 1 })
+      .catch(() => ({ scenes: [], total: 0 }))
+    if (existing.scenes.length === 0) {
+      throw error
+    }
+    ctx.components.logs
+      .getLogger('deploy-entity')
+      .info('Deployment finalized concurrently; returning idempotent success', { entityId, worldName })
+    message = {
+      message: buildSceneDeploymentMessage(
+        baseUrl,
+        entity.metadata?.worldConfiguration?.name ?? worldName,
+        entity.metadata?.scene?.parcels || []
+      )
+    }
+  }
+
+  // The entity is now fully deployed via the vanilla path, so drop any staging row for it. Done
+  // unconditionally (not just when the early `pending` lookup saw one): a concurrent partial request
+  // could have created the row AFTER that snapshot, and it would otherwise linger until
+  // PENDING_DEPLOYMENT_TTL, holding a slot of the deployer's pending cap. `deleteByEntityId` is an
+  // idempotent indexed delete (a no-op in the common no-pending case). Best-effort: the deployment
+  // already committed, so a cleanup failure must not turn a successful deploy into a 5xx.
+  try {
+    await ctx.components.pendingScenesManager.deleteByEntityId(entityId)
+  } catch (error) {
+    ctx.components.logs
+      .getLogger('deploy-entity')
+      .warn(`Failed to delete pending scene after a successful deploy: ${error}`, { entityId })
+  }
 
   return {
     status: 200,

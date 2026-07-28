@@ -44,14 +44,29 @@ export async function createUpdateOwnerJob(
     // Step 1
     // Compare the owners of stored vs retrieved from name ownership
     // Update owners in DB (and in memory)
+    //
+    // Owners the resolver could not answer for (subgraph lag, partial RPC degradation — DCL names
+    // always have an owner on-chain, but the resolver is not always able to report it) are tracked so
+    // their stored wallets are protected from the stale-record collection below: their quota status
+    // was never re-evaluated this run, so their blocking records must survive until a run that can.
+    const unresolvedOwners = new Set<string>()
     for (const worldData of onlyDclNameRecords) {
-      // DCL names never expire, there will always be an owner. It is safe to use ! here.
-      const newOwner = worldWithOwners.get(worldData.name)!
-      if (worldData.owner.toLowerCase() !== newOwner?.toLowerCase()) {
+      const newOwner = worldWithOwners.get(worldData.name)
+      if (!newOwner) {
+        // Never write the resolution gap into the DB: NULLing the owner would orphan the world from
+        // quota accounting (walletStats and the blocked JOIN key on it). Keep the stored owner and
+        // let a later run reconcile.
+        if (worldData.owner) {
+          unresolvedOwners.add(worldData.owner.toLowerCase())
+        }
+        logger.warn(`Owner of ${worldData.name} could not be resolved; keeping stored owner ${worldData.owner}`)
+        continue
+      }
+      if (worldData.owner?.toLowerCase() !== newOwner.toLowerCase()) {
         logger.info(`Updating owner of ${worldData.name} from ${worldData.owner} to ${newOwner}`)
         const sql = SQL`
             UPDATE worlds
-            SET owner = ${newOwner?.toLowerCase()}
+            SET owner = ${newOwner.toLowerCase()}
             WHERE name = ${worldData.name.toLowerCase()}`
         await database.query(sql)
         worldData.owner = newOwner
@@ -80,7 +95,13 @@ export async function createUpdateOwnerJob(
       }
     }
 
-    await blocking.collectStaleBlockingRecords(startDate, failedOwners)
+    // Wallets whose quota was not re-evaluated this run must keep their blocking records, else a silent
+    // resolver degradation would mass-unblock them. That means: owners whose evaluation threw, plus
+    // owners of unresolved worlds — but NOT an owner that was still evaluated via some OTHER world it
+    // owns that DID resolve (walletStats already sums all of a wallet's worlds), which is a complete
+    // evaluation and should remain eligible for cleanup.
+    const unevaluatedOwners = new Set([...unresolvedOwners].filter((owner) => !owners.has(owner)))
+    await blocking.collectStaleBlockingRecords(startDate, new Set([...failedOwners, ...unevaluatedOwners]))
   }
 
   async function start(): Promise<void> {

@@ -78,6 +78,71 @@ describe('UpdateOwnerJob', () => {
     })
   })
 
+  describe('when a world name cannot be resolved to an owner', () => {
+    let querySpy: jest.SpyInstance
+
+    beforeEach(async () => {
+      blocking = createMockBlockingComponent()
+      querySpy = jest.spyOn(database, 'query')
+
+      // bad-world's owner cannot be resolved (subgraph lag / partial RPC degradation) — the resolver
+      // reports undefined without throwing. good-world resolves normally.
+      const nameOwnership = createMockedNameOwnership({
+        findOwners: jest.fn().mockResolvedValue(
+          new Map([
+            ['bad-world.dcl.eth', undefined],
+            ['good-world.dcl.eth', goodOwner]
+          ])
+        )
+      })
+
+      const job = await createUpdateOwnerJob({ blocking, database, logs, nameOwnership })
+      await job.run()
+    })
+
+    afterEach(() => {
+      querySpy.mockRestore()
+    })
+
+    it('should not overwrite the stored owner with the resolution gap', () => {
+      // The only query is the initial enumeration — no UPDATE writing a NULL owner.
+      expect(querySpy.mock.calls.length).toBe(1)
+    })
+
+    it('should protect the unresolved wallet from the stale-record cleanup', () => {
+      const [, keepWallets] = blocking.collectStaleBlockingRecords.mock.calls[0]
+      expect({ protectedBad: keepWallets.has(badOwner), protectedGood: keepWallets.has(goodOwner) }).toEqual({
+        protectedBad: true,
+        protectedGood: false
+      })
+    })
+
+    it('should still evaluate the resolved owner and not the unresolved one', () => {
+      expect(blocking.blockIfOverQuota.mock.calls).toEqual([[goodOwner]])
+    })
+  })
+
+  describe('when no world name can be resolved at all', () => {
+    beforeEach(async () => {
+      blocking = createMockBlockingComponent()
+
+      const nameOwnership = createMockedNameOwnership({
+        findOwners: jest.fn().mockResolvedValue(new Map())
+      })
+
+      const job = await createUpdateOwnerJob({ blocking, database, logs, nameOwnership })
+      await job.run()
+    })
+
+    it('should protect every stored wallet from the stale-record cleanup instead of mass-unblocking', () => {
+      const [, keepWallets] = blocking.collectStaleBlockingRecords.mock.calls[0]
+      expect({ protectedBad: keepWallets.has(badOwner), protectedGood: keepWallets.has(goodOwner) }).toEqual({
+        protectedBad: true,
+        protectedGood: true
+      })
+    })
+  })
+
   describe('when every wallet is evaluated successfully', () => {
     beforeEach(async () => {
       blocking = createMockBlockingComponent()

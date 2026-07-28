@@ -7,7 +7,8 @@ import {
   validateFiles,
   validateSignature,
   validateSigner,
-  validateSupportedEntityType
+  validateSupportedEntityType,
+  validateUploadedFiles
 } from './common'
 import {
   createValidateBannedNames,
@@ -78,6 +79,68 @@ export function createAfterStorageValidateFns(components: ValidatorComponents): 
   ]
 }
 
+// Content-independent validations (structure, crypto, freshness) that don't require any content set to
+// be present. Shared by the staging path so a partial (multi-request) upload is fully checked on every
+// request; the full-deploy path inlines the equivalent list in `createBeforeStorageValidateFns`.
+function commonValidations(components: ValidatorComponents): Validation[] {
+  return [
+    validateEntityId,
+    validateBaseEntity,
+    validateAuthChain,
+    validateSigner,
+    validateSignature,
+    createValidateDeploymentTtl(components)
+  ]
+}
+
+// Scene structural validations that only inspect the entity / its declared content (no stored bytes).
+// Runs in the staging path so #514's relative-path thumbnail check and the other structural checks apply
+// to every partial request, not just at finalize. A fresh array per call so staging can append to it.
+function sceneStructuralValidations(components: ValidatorComponents): Validation[] {
+  return [
+    validateSceneEntity,
+    validateDeprecatedConfig,
+    createValidateParcelCoordinates(components),
+    createValidateScenePointers(components),
+    createValidateSceneDimensions(components),
+    createValidateFileCount(components),
+    validateMiniMapImages,
+    validateSkyboxTextures,
+    validateThumbnail,
+    createValidateBannedNames(components)
+    // validateSdkVersion(components) TODO re-enable (and test) once SDK7 is ready
+  ]
+}
+
+/**
+ * The validations a partial (staging) scene deployment must pass on every request, before all of its
+ * content is necessarily present. Excludes `validateNoMissingFiles` (content completeness) and
+ * `createValidateSize` (needs every file present; the partial-deployments component runs a cumulative
+ * size check instead). Uses `validateUploadedFiles` — the hash/CIDv1 check on the bytes uploaded this
+ * request — rather than the full `validateFiles`.
+ *
+ * `skipPermissionCheck` skips the (slow, external) deployment-permission check. Safe only for a resume
+ * batch that already holds a non-expired pending record: creating that record required passing the
+ * permission check, uploaded bytes are hash-verified against the staged manifest, and finalize re-runs
+ * the full validation (including permission) before anything goes live.
+ */
+export function createStagingValidateFns(
+  components: ValidatorComponents,
+  options?: { skipPermissionCheck?: boolean }
+): Validation[] {
+  const sceneValidations = sceneStructuralValidations(components)
+  // The permission check is the slow, external call of the staging path. Resume batches of an upload
+  // that already holds a pending record skip it (see Validator.validateStaging docs) so each batch of a
+  // multi-request upload doesn't repeat it; the first request and the finalize step always run it.
+  if (!options?.skipPermissionCheck) {
+    sceneValidations.push(createValidateDeploymentPermission(components))
+  }
+  return [
+    validateAll([...commonValidations(components), validateUploadedFiles, validateSupportedEntityType]),
+    validateIfTypeMatches(EntityType.SCENE, validateAll(sceneValidations))
+  ]
+}
+
 async function runValidations(
   validations: Validation[],
   deployment: DeploymentToValidate,
@@ -100,10 +163,11 @@ async function runValidations(
 
 /**
  * Creates the deployment validator with an explicit pre-storage phase so untrusted entities are
- * structurally and cryptographically checked before they can trigger external storage requests.
+ * structurally and cryptographically checked before they can trigger external storage requests, plus a
+ * staging phase for partial (multi-request) uploads.
  *
  * @param components Dependencies used by deployment validations.
- * @returns The complete validator and its pre-/post-storage phases.
+ * @returns The complete validator and its pre-/post-storage and staging phases.
  */
 export const createValidator = (components: ValidatorComponents): Validator => {
   const beforeStorageValidations = createBeforeStorageValidateFns(components)
@@ -128,6 +192,12 @@ export const createValidator = (components: ValidatorComponents): Validator => {
       }
 
       return runAfterStorageValidations(deployment)
+    },
+    async validateStaging(
+      deployment: DeploymentToValidate,
+      options?: { skipPermissionCheck?: boolean }
+    ): Promise<ValidationResult> {
+      return runValidations(createStagingValidateFns(components, options), deployment)
     }
   }
 }
