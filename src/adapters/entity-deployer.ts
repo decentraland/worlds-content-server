@@ -1,6 +1,6 @@
 import { AppComponents, DeploymentFile, DeploymentResult, IEntityDeployer } from '../types'
 import { AuthLink, Entity, EntityType, Events, WorldDeploymentEvent } from '@dcl/schemas'
-import { bufferToStream } from '@dcl/catalyst-storage/dist/content-item'
+import { bufferToStream } from '@dcl/catalyst-storage'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { mapWithConcurrency, raceWithSignal } from '../logic/concurrency'
 
@@ -64,11 +64,16 @@ export function createEntityDeployer(
         deploymentProcessing.storageConcurrency,
         async ([hash]) => {
           await deploymentProcessing.trackWorker('storage', () =>
-            storage.storeStream(hash, files.get(hash)!.getStream(signal))
+            storage.storeStream(hash, files.get(hash)!.getStream(signal), signal)
           )
           allContentHashesInStorage.set(hash, true)
         },
-        { signal }
+        // On abort every active upload is cancelled through the same signal and every source
+        // stream is destroyed by its own listener, so waiting for them adds no file safety. Not
+        // waiting keeps the request (and its stage gauges and upload lease) from being tied to a
+        // transport that ignores cancellation; such stragglers stay observed inside
+        // mapWithConcurrency.
+        { signal, waitForActiveOnAbort: false }
       )
 
       signal?.throwIfAborted()
@@ -81,7 +86,7 @@ export function createEntityDeployer(
         2,
         ([id, content]) =>
           deploymentProcessing.trackWorker('storage', () =>
-            storage.storeStream(id, bufferToStream(stringToUtf8Bytes(content)))
+            storage.storeStream(id, bufferToStream(stringToUtf8Bytes(content)), signal)
           ),
         { signal, waitForActiveOnAbort: false }
       )

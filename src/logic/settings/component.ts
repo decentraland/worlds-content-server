@@ -9,7 +9,7 @@ import {
 } from '../../types'
 import { UnauthorizedError, ValidationError, WorldNotFoundError } from './errors'
 import { ISettingsComponent } from './types'
-import { bufferToStream } from '@dcl/catalyst-storage/dist/content-item'
+import { bufferToStream } from '@dcl/catalyst-storage'
 import { Coordinate } from '../coordinates'
 
 export async function createSettingsComponent(

@@ -234,13 +234,14 @@ describe('entity deployer', () => {
     let caughtError: unknown
     let signals: Array<AbortSignal | undefined>
     let startedUploads: string[]
+    let storageStoreStream: jest.Mock
 
     beforeEach(async () => {
       const controller = new AbortController()
       const contentHashes = ['hash-0', 'hash-1', 'hash-2']
       signals = []
       startedUploads = []
-      const storageStoreStream = jest.fn(async (hash: string) => {
+      storageStoreStream = jest.fn(async (hash: string) => {
         startedUploads.push(hash)
         if (hash === 'hash-0') {
           await new Promise<void>((resolve) => setImmediate(resolve))
@@ -280,15 +281,63 @@ describe('entity deployer', () => {
       jest.resetAllMocks()
     })
 
-    it('should pass cancellation to active streams and leave queued uploads unstarted', () => {
+    it('should pass cancellation to active streams and uploads and leave queued uploads unstarted', () => {
       expect({
         error: caughtError instanceof Error ? caughtError.message : caughtError,
         signals,
-        startedUploads
+        startedUploads,
+        uploadSignals: storageStoreStream.mock.calls.map((call) => call[2])
       }).toEqual({
         error: 'client disconnected',
         signals: [expect.any(AbortSignal), expect.any(AbortSignal)],
-        startedUploads: ['hash-0', 'hash-1']
+        startedUploads: ['hash-0', 'hash-1'],
+        uploadSignals: [expect.any(AbortSignal), expect.any(AbortSignal)]
+      })
+    })
+  })
+
+  describe('when the request is aborted while a content upload never settles', () => {
+    let caughtError: unknown
+    let worldsDeployScene: jest.Mock
+
+    beforeEach(async () => {
+      const controller = new AbortController()
+      const contentHashes = ['hash-0', 'hash-1']
+      const storageStoreStream = jest.fn((hash: string) =>
+        hash === 'hash-0' ? new Promise<void>(() => undefined) : Promise.resolve()
+      )
+      const setup = createComponents(storageStoreStream, 2)
+      worldsDeployScene = setup.worldsDeployScene
+      const entity = createScene(contentHashes)
+      const files = new Map(contentHashes.map((hash) => [hash, createDeploymentFile(hash)]))
+      const deployer: IEntityDeployer = createEntityDeployer(setup.components)
+
+      const deployment = deployer.deployEntity(
+        'https://worlds.example',
+        entity,
+        new Map(contentHashes.map((hash) => [hash, false])),
+        files,
+        JSON.stringify(entity),
+        [],
+        2,
+        controller.signal
+      )
+      await new Promise<void>((resolve) => setImmediate(resolve))
+      controller.abort(new Error('deadline exceeded'))
+      caughtError = await deployment.catch((error) => error)
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should reject with the abort reason instead of waiting for the wedged upload', () => {
+      expect({
+        error: caughtError instanceof Error ? caughtError.message : caughtError,
+        worldDeployments: worldsDeployScene.mock.calls.length
+      }).toEqual({
+        error: 'deadline exceeded',
+        worldDeployments: 0
       })
     })
   })
