@@ -116,10 +116,11 @@ export async function initComponents(): Promise<AppComponents> {
         { logs },
         // Explicit socket limits so a wedged S3 connection cannot hold a storage call open
         // indefinitely: the SDK's Node handler defaults both the connection and request
-        // timeouts to 0 (no limit).
+        // timeouts to 0 (no limit), and an exceeded requestTimeout only logs a warning
+        // unless throwOnRequestTimeout turns it into an error.
         new S3Client({
           ...awsConfig,
-          requestHandler: { connectionTimeout: 10_000, requestTimeout: 120_000 },
+          requestHandler: { connectionTimeout: 10_000, requestTimeout: 120_000, throwOnRequestTimeout: true },
           maxAttempts: 3
         }),
         {
