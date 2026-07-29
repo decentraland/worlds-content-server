@@ -1474,4 +1474,185 @@ test('WorldManagerAdapter', function ({ components }) {
       })
     })
   })
+
+  describe('when updating world scene metadata on deployment', function () {
+    type WorldMetadataRow = {
+      title: string | null
+      description: string | null
+      content_rating: string | null
+      thumbnail_hash: string | null
+      categories: string[] | null
+      single_player: boolean | null
+      show_in_places: boolean | null
+      skybox_time: number | null
+    }
+
+    async function getWorldMetadata(worldName: string): Promise<WorldMetadataRow> {
+      const { database } = components
+      const result = await database.query<WorldMetadataRow>(
+        SQL`SELECT title, description, content_rating, thumbnail_hash, categories, single_player, show_in_places, skybox_time
+            FROM worlds WHERE name = ${worldName.toLowerCase()}`
+      )
+      return result.rows[0]
+    }
+
+    function sceneMetadata(worldName: string, parcels: string[], title: string) {
+      return {
+        main: 'abc.txt',
+        display: { title, navmapThumbnail: 'thumbnail.png' },
+        scene: { base: parcels[0], parcels },
+        worldConfiguration: { name: worldName }
+      }
+    }
+
+    describe('when deploying the first scene to a world', function () {
+      let worldName: string
+
+      beforeEach(async () => {
+        const { worldCreator } = components
+        worldName = worldCreator.randomWorldName()
+        const files = new Map<string, Uint8Array>()
+        files.set('abc.txt', stringToUtf8Bytes(makeid(10)))
+        files.set('thumbnail.png', stringToUtf8Bytes(makeid(10)))
+
+        await worldCreator.createWorldWithScene({
+          worldName,
+          metadata: sceneMetadata(worldName, ['0,0'], 'Initial Title'),
+          files
+        })
+      })
+
+      it('should write the scene metadata to the world record', async () => {
+        const metadata = await getWorldMetadata(worldName)
+        expect(metadata.title).toBe('Initial Title')
+      })
+    })
+
+    describe('when redeploying a scene that overlaps the only existing deployed scene', function () {
+      let worldName: string
+
+      beforeEach(async () => {
+        const { worldCreator } = components
+        worldName = worldCreator.randomWorldName()
+        const files = new Map<string, Uint8Array>()
+        files.set('abc.txt', stringToUtf8Bytes(makeid(10)))
+        files.set('thumbnail.png', stringToUtf8Bytes(makeid(10)))
+
+        await worldCreator.createWorldWithScene({
+          worldName,
+          metadata: sceneMetadata(worldName, ['0,0'], 'Old Title'),
+          files
+        })
+
+        await worldCreator.createWorldWithScene({
+          worldName,
+          metadata: sceneMetadata(worldName, ['0,0'], 'Updated Title'),
+          files
+        })
+      })
+
+      it('should update the scene metadata because the old scene was replaced', async () => {
+        const metadata = await getWorldMetadata(worldName)
+        expect(metadata.title).toBe('Updated Title')
+      })
+    })
+
+    describe('when adding a new non-overlapping scene to a multi-scene world', function () {
+      let worldName: string
+
+      beforeEach(async () => {
+        const { worldCreator } = components
+        worldName = worldCreator.randomWorldName()
+        const files = new Map<string, Uint8Array>()
+        files.set('abc.txt', stringToUtf8Bytes(makeid(10)))
+        files.set('thumbnail.png', stringToUtf8Bytes(makeid(10)))
+
+        await worldCreator.createWorldWithScene({
+          worldName,
+          metadata: sceneMetadata(worldName, ['0,0'], 'First Scene Title'),
+          files
+        })
+
+        // Second scene — different parcels, no overlap
+        await worldCreator.createWorldWithScene({
+          worldName,
+          metadata: sceneMetadata(worldName, ['5,5'], 'Second Scene Title'),
+          files
+        })
+      })
+
+      it('should preserve the existing world metadata since no scene was replaced', async () => {
+        const metadata = await getWorldMetadata(worldName)
+        expect(metadata.title).toBe('First Scene Title')
+      })
+    })
+
+    describe('when deploying to a world that previously had all scenes undeployed', function () {
+      let worldName: string
+
+      beforeEach(async () => {
+        const { worldCreator, worldsManager } = components
+        worldName = worldCreator.randomWorldName()
+        const files = new Map<string, Uint8Array>()
+        files.set('abc.txt', stringToUtf8Bytes(makeid(10)))
+        files.set('thumbnail.png', stringToUtf8Bytes(makeid(10)))
+
+        await worldCreator.createWorldWithScene({
+          worldName,
+          metadata: sceneMetadata(worldName, ['0,0'], 'Original Title'),
+          files
+        })
+
+        await worldsManager.undeployWorld(worldName)
+
+        // Re-deploy with different metadata — world exists but has 0 deployed scenes
+        await worldCreator.createWorldWithScene({
+          worldName,
+          metadata: sceneMetadata(worldName, ['1,1'], 'Re-deployed Title'),
+          files
+        })
+      })
+
+      it('should update the scene metadata because there were no deployed scenes', async () => {
+        const metadata = await getWorldMetadata(worldName)
+        expect(metadata.title).toBe('Re-deployed Title')
+      })
+    })
+
+    describe('when replacing one of multiple deployed scenes', function () {
+      let worldName: string
+
+      beforeEach(async () => {
+        const { worldCreator } = components
+        worldName = worldCreator.randomWorldName()
+        const files = new Map<string, Uint8Array>()
+        files.set('abc.txt', stringToUtf8Bytes(makeid(10)))
+        files.set('thumbnail.png', stringToUtf8Bytes(makeid(10)))
+
+        await worldCreator.createWorldWithScene({
+          worldName,
+          metadata: sceneMetadata(worldName, ['0,0'], 'Scene A Title'),
+          files
+        })
+
+        await worldCreator.createWorldWithScene({
+          worldName,
+          metadata: sceneMetadata(worldName, ['5,5'], 'Scene B Title'),
+          files
+        })
+
+        // Replace scene A (overlap at 0,0) — world already has two deployed scenes
+        await worldCreator.createWorldWithScene({
+          worldName,
+          metadata: sceneMetadata(worldName, ['0,0'], 'Scene A Replaced Title'),
+          files
+        })
+      })
+
+      it('should update the scene metadata because the overlapping scene was replaced', async () => {
+        const metadata = await getWorldMetadata(worldName)
+        expect(metadata.title).toBe('Scene A Replaced Title')
+      })
+    })
+  })
 })
