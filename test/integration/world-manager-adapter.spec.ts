@@ -1496,12 +1496,23 @@ test('WorldManagerAdapter', function ({ components }) {
       return result.rows[0]
     }
 
-    function sceneMetadata(worldName: string, parcels: string[], title: string) {
+    function sceneMetadata(
+      worldName: string,
+      parcels: string[],
+      title: string,
+      opts?: { description?: string; tags?: string[]; rating?: string; skyboxTime?: number; offline?: boolean }
+    ) {
       return {
         main: 'abc.txt',
-        display: { title, navmapThumbnail: 'thumbnail.png' },
+        display: { title, description: opts?.description, navmapThumbnail: 'thumbnail.png' },
+        tags: opts?.tags,
+        rating: opts?.rating,
         scene: { base: parcels[0], parcels },
-        worldConfiguration: { name: worldName }
+        worldConfiguration: {
+          name: worldName,
+          ...(opts?.skyboxTime !== undefined && { skyboxConfig: { fixedTime: opts.skyboxTime } }),
+          ...(opts?.offline && { fixedAdapter: 'offline:offline' })
+        }
       }
     }
 
@@ -1540,20 +1551,38 @@ test('WorldManagerAdapter', function ({ components }) {
 
         await worldCreator.createWorldWithScene({
           worldName,
-          metadata: sceneMetadata(worldName, ['0,0'], 'Old Title'),
+          metadata: sceneMetadata(worldName, ['0,0'], 'Old Title', {
+            description: 'Old description',
+            tags: ['old'],
+            rating: 'T',
+            skyboxTime: 1000
+          }),
           files
         })
 
         await worldCreator.createWorldWithScene({
           worldName,
-          metadata: sceneMetadata(worldName, ['0,0'], 'Updated Title'),
+          metadata: sceneMetadata(worldName, ['0,0'], 'Updated Title', {
+            description: 'Updated description',
+            tags: ['updated'],
+            rating: 'A',
+            skyboxTime: 2000,
+            offline: true
+          }),
           files
         })
       })
 
-      it('should update the scene metadata because the old scene was replaced', async () => {
+      it('should update all scene metadata columns because the old scene was replaced', async () => {
         const metadata = await getWorldMetadata(worldName)
-        expect(metadata.title).toBe('Updated Title')
+        expect(metadata).toMatchObject({
+          title: 'Updated Title',
+          description: 'Updated description',
+          categories: ['updated'],
+          content_rating: 'A',
+          skybox_time: 2000,
+          single_player: true
+        })
       })
     })
 
@@ -1569,21 +1598,39 @@ test('WorldManagerAdapter', function ({ components }) {
 
         await worldCreator.createWorldWithScene({
           worldName,
-          metadata: sceneMetadata(worldName, ['0,0'], 'First Scene Title'),
+          metadata: sceneMetadata(worldName, ['0,0'], 'First Scene Title', {
+            description: 'First description',
+            tags: ['first'],
+            rating: 'T',
+            skyboxTime: 1000
+          }),
           files
         })
 
         // Second scene — different parcels, no overlap
         await worldCreator.createWorldWithScene({
           worldName,
-          metadata: sceneMetadata(worldName, ['5,5'], 'Second Scene Title'),
+          metadata: sceneMetadata(worldName, ['5,5'], 'Second Scene Title', {
+            description: 'Second description',
+            tags: ['second'],
+            rating: 'A',
+            skyboxTime: 9999,
+            offline: true
+          }),
           files
         })
       })
 
       it('should preserve the existing world metadata since no scene was replaced', async () => {
         const metadata = await getWorldMetadata(worldName)
-        expect(metadata.title).toBe('First Scene Title')
+        expect(metadata).toMatchObject({
+          title: 'First Scene Title',
+          description: 'First description',
+          categories: ['first'],
+          content_rating: 'T',
+          skybox_time: 1000,
+          single_player: false
+        })
       })
     })
 
