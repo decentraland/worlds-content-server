@@ -333,36 +333,22 @@ export async function createWorldsManagerComponent({
     const thumbnailContent = navmapThumbnail ? scene.content?.find((c) => c.file === navmapThumbnail) : null
     const thumbnailHash = thumbnailContent?.hash || null
 
-    // Determine whether to update world metadata on this deployment.
-    // Update when: no deployed scenes exist (first effective scene) OR the incoming scene
-    // overlaps at least one deployed scene (it is replacing it). When a scene is added to a
-    // multi-scene world without replacing any existing scene, the world-level metadata is left
-    // unchanged so other scenes' contributions are preserved.
-    const preDeployCheck = await database.query<{ deployed_scene_count: number; has_overlap: boolean }>(
-      SQL`
-        SELECT
-          COUNT(DISTINCT ws.entity_id)::int AS deployed_scene_count,
-          COALESCE(BOOL_OR(ws.parcels && ${parcels}::text[]), FALSE) AS has_overlap
-        FROM world_scenes ws
-        WHERE ws.world_name = ${worldName.toLowerCase()} AND ws.status = 'DEPLOYED'
-      `
-    )
-    const { deployed_scene_count: deployedSceneCount, has_overlap: hasOverlap } = preDeployCheck.rows[0] ?? {
-      deployed_scene_count: 0,
-      has_overlap: false
-    }
-    const shouldUpdateMetadata = deployedSceneCount === 0 || hasOverlap
-
     await withDeploymentTransaction(deployment?.signal, async (query) => {
       if (deployment?.deadlineAt !== undefined) {
         const remainingMs = Math.max(1, deployment.deadlineAt - Date.now())
         await query(SQL`SELECT set_config('statement_timeout', ${remainingMs.toString()}, true)`)
       }
 
-      // Ensure world record exists. On first deployment (INSERT) all scene metadata is written.
-      // On subsequent deployments (ON CONFLICT DO UPDATE) scene metadata is only refreshed when
-      // the incoming scene replaces an existing one (overlap) or the world has no deployed scenes.
       await query(SQL`
+        WITH metadata_check AS (
+          SELECT (
+            (SELECT COUNT(*) FROM world_scenes WHERE world_name = ${worldName.toLowerCase()} AND status = 'DEPLOYED') = 0
+            OR EXISTS (
+              SELECT 1 FROM world_scenes
+              WHERE world_name = ${worldName.toLowerCase()} AND status = 'DEPLOYED' AND parcels && ${parcels}::text[]
+            )
+          ) AS should_update
+        )
         INSERT INTO worlds (
           name, owner, access, spawn_coordinates,
           title, description, content_rating, skybox_time, categories,
@@ -388,14 +374,14 @@ export async function createWorldsManagerComponent({
         ON CONFLICT (name) DO UPDATE SET
           owner = ${owner.toLowerCase()},
           spawn_coordinates = COALESCE(worlds.spawn_coordinates, EXCLUDED.spawn_coordinates),
-          title = CASE WHEN ${shouldUpdateMetadata}::boolean THEN EXCLUDED.title ELSE worlds.title END,
-          description = CASE WHEN ${shouldUpdateMetadata}::boolean THEN EXCLUDED.description ELSE worlds.description END,
-          content_rating = CASE WHEN ${shouldUpdateMetadata}::boolean THEN EXCLUDED.content_rating ELSE worlds.content_rating END,
-          skybox_time = CASE WHEN ${shouldUpdateMetadata}::boolean THEN EXCLUDED.skybox_time ELSE worlds.skybox_time END,
-          categories = CASE WHEN ${shouldUpdateMetadata}::boolean THEN EXCLUDED.categories ELSE worlds.categories END,
-          single_player = CASE WHEN ${shouldUpdateMetadata}::boolean THEN EXCLUDED.single_player ELSE worlds.single_player END,
-          show_in_places = CASE WHEN ${shouldUpdateMetadata}::boolean THEN EXCLUDED.show_in_places ELSE worlds.show_in_places END,
-          thumbnail_hash = CASE WHEN ${shouldUpdateMetadata}::boolean THEN EXCLUDED.thumbnail_hash ELSE worlds.thumbnail_hash END,
+          title = CASE WHEN (SELECT should_update FROM metadata_check) THEN EXCLUDED.title ELSE worlds.title END,
+          description = CASE WHEN (SELECT should_update FROM metadata_check) THEN EXCLUDED.description ELSE worlds.description END,
+          content_rating = CASE WHEN (SELECT should_update FROM metadata_check) THEN EXCLUDED.content_rating ELSE worlds.content_rating END,
+          skybox_time = CASE WHEN (SELECT should_update FROM metadata_check) THEN EXCLUDED.skybox_time ELSE worlds.skybox_time END,
+          categories = CASE WHEN (SELECT should_update FROM metadata_check) THEN EXCLUDED.categories ELSE worlds.categories END,
+          single_player = CASE WHEN (SELECT should_update FROM metadata_check) THEN EXCLUDED.single_player ELSE worlds.single_player END,
+          show_in_places = CASE WHEN (SELECT should_update FROM metadata_check) THEN EXCLUDED.show_in_places ELSE worlds.show_in_places END,
+          thumbnail_hash = CASE WHEN (SELECT should_update FROM metadata_check) THEN EXCLUDED.thumbnail_hash ELSE worlds.thumbnail_hash END,
           updated_at = ${new Date()}
       `)
 
