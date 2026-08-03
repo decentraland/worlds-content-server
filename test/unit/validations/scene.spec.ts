@@ -187,6 +187,28 @@ describe('scene validations', function () {
       })
     })
 
+    describe('and more than one thousand unique canonical parcels match the pointers', () => {
+      beforeEach(async () => {
+        const parcels = Array.from({ length: 1001 }, (_, index) => `${index},0`)
+        deployment = await createSceneDeployment(identity.authChain, {
+          type: EntityType.SCENE,
+          pointers: parcels,
+          timestamp: Date.now(),
+          metadata: {
+            main: 'abc.txt',
+            scene: { base: '0,0', parcels },
+            worldConfiguration: { name: 'whatever.dcl.eth' }
+          },
+          files: []
+        })
+      })
+
+      it('should leave parcel count enforcement to the limits manager validation', async () => {
+        const result = await createValidateScenePointers(components)(deployment)
+        expect(result.ok()).toBeTruthy()
+      })
+    })
+
     describe('and the pointers and scene parcels are equivalent but not in canonical form', () => {
       beforeEach(async () => {
         deployment = await createSceneDeployment(identity.authChain, {

@@ -52,9 +52,7 @@ export function createValidateScenePointers(components: Pick<ValidatorComponents
       canonicalSceneParcels.some((parcel, index) => parcel !== declaredSceneParcels[index]) ||
       baseParcel !== declaredBase ||
       new Set(canonicalPointers).size !== canonicalPointers.length ||
-      new Set(canonicalSceneParcels).size !== canonicalSceneParcels.length ||
-      declaredPointers.length > 1000 ||
-      declaredSceneParcels.length > 1000
+      new Set(canonicalSceneParcels).size !== canonicalSceneParcels.length
 
     if (hasAliasesOrDuplicates) {
       return createValidationResult(['Scene pointers and parcels must be unique canonical parcel coordinates.'])
