@@ -202,9 +202,30 @@ describe('scene validations', function () {
         })
       })
 
-      it('should return a successful result', async () => {
+      it('should reject the non-canonical coordinate alias', async () => {
         const result = await createValidateScenePointers(components)(deployment)
-        expect(result.ok()).toBeTruthy()
+        expect(result.ok()).toBeFalsy()
+      })
+    })
+
+    describe('and only the scene base uses a non-canonical coordinate alias', () => {
+      beforeEach(async () => {
+        deployment = await createSceneDeployment(identity.authChain, {
+          type: EntityType.SCENE,
+          pointers: ['0,0'],
+          timestamp: Date.now(),
+          metadata: {
+            main: 'abc.txt',
+            scene: { base: '00,00', parcels: ['0,0'] },
+            worldConfiguration: { name: 'whatever.dcl.eth' }
+          },
+          files: []
+        })
+      })
+
+      it('should reject the non-canonical base', async () => {
+        const result = await createValidateScenePointers(components)(deployment)
+        expect(result.ok()).toBeFalsy()
       })
     })
 
@@ -227,6 +248,32 @@ describe('scene validations', function () {
         const result = await createValidateScenePointers(components)(deployment)
         expect(result.ok()).toBeFalsy()
         expect(result.errors).toContain('The scene pointers [0,0] must match the scene parcels [100,100].')
+      })
+    })
+
+    describe('and the base is not included in the matching pointers and scene parcels', () => {
+      beforeEach(async () => {
+        deployment = await createSceneDeployment(identity.authChain, {
+          type: EntityType.SCENE,
+          pointers: ['0,0'],
+          timestamp: Date.now(),
+          metadata: {
+            main: 'abc.txt',
+            scene: { base: '100,100', parcels: ['0,0'] },
+            worldConfiguration: { name: 'whatever.dcl.eth' }
+          },
+          files: []
+        })
+      })
+
+      it('should reject the deployment because the base is outside the scene parcels', async () => {
+        const result = await createValidateScenePointers(components)(deployment)
+        expect(result.ok()).toBeFalsy()
+      })
+
+      it('should return an error requiring the base to belong to the scene parcels', async () => {
+        const result = await createValidateScenePointers(components)(deployment)
+        expect(result.errors).toContain('The scene base parcel [100,100] must be included in the scene parcels [0,0].')
       })
     })
   })

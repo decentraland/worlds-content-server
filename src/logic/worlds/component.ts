@@ -11,7 +11,7 @@ import { IWorldsComponent } from './types'
  */
 function declaredBaseParcel(scene: WorldScene): string {
   const base = scene.entity.metadata?.scene?.base
-  return typeof base === 'string' && base.length > 0 ? base : scene.parcels[0]
+  return typeof base === 'string' && base.length > 0 && scene.parcels.includes(base) ? base : scene.parcels[0]
 }
 
 /**

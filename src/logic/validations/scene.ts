@@ -40,15 +40,40 @@ export const validateSceneEntity: Validation = async (deployment: DeploymentToVa
  */
 export function createValidateScenePointers(components: Pick<ValidatorComponents, 'coordinates'>) {
   return async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
-    const pointers = new Set(components.coordinates.canonicalizeParcels(deployment.entity.pointers))
-    const sceneParcels = new Set(
-      components.coordinates.canonicalizeParcels(deployment.entity.metadata?.scene?.parcels || [])
-    )
+    const declaredPointers = deployment.entity.pointers
+    const declaredSceneParcels = deployment.entity.metadata?.scene?.parcels || []
+    const canonicalPointers = components.coordinates.canonicalizeParcels(declaredPointers)
+    const canonicalSceneParcels = components.coordinates.canonicalizeParcels(declaredSceneParcels)
+    const declaredBase = deployment.entity.metadata?.scene?.base
+    const baseParcel =
+      typeof declaredBase === 'string' ? components.coordinates.canonicalizeParcels([declaredBase])[0] : undefined
+    const hasAliasesOrDuplicates =
+      canonicalPointers.some((pointer, index) => pointer !== declaredPointers[index]) ||
+      canonicalSceneParcels.some((parcel, index) => parcel !== declaredSceneParcels[index]) ||
+      baseParcel !== declaredBase ||
+      new Set(canonicalPointers).size !== canonicalPointers.length ||
+      new Set(canonicalSceneParcels).size !== canonicalSceneParcels.length ||
+      declaredPointers.length > 1000 ||
+      declaredSceneParcels.length > 1000
 
+    if (hasAliasesOrDuplicates) {
+      return createValidationResult(['Scene pointers and parcels must be unique canonical parcel coordinates.'])
+    }
+
+    const pointers = new Set(canonicalPointers)
+    const sceneParcels = new Set(canonicalSceneParcels)
     const sameParcels = pointers.size === sceneParcels.size && [...pointers].every((parcel) => sceneParcels.has(parcel))
     if (!sameParcels) {
       return createValidationResult([
         `The scene pointers [${[...pointers].join(', ')}] must match the scene parcels [${[...sceneParcels].join(
+          ', '
+        )}].`
+      ])
+    }
+
+    if (!baseParcel || !sceneParcels.has(baseParcel)) {
+      return createValidationResult([
+        `The scene base parcel [${declaredBase ?? ''}] must be included in the scene parcels [${[...sceneParcels].join(
           ', '
         )}].`
       ])

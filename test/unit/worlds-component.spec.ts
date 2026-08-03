@@ -556,6 +556,33 @@ describe('WorldsComponent', () => {
     })
   })
 
+  describe('when undeploying a scene whose declared base is outside its parcels', () => {
+    beforeEach(() => {
+      worldsManager.getWorldScenes.mockResolvedValueOnce({
+        scenes: [createWorldScene({ entityId: 'entity-x', base: '9,9', parcels: ['2,2'] })],
+        total: 1
+      })
+      worldsManager.undeployScene.mockResolvedValue(undefined)
+      snsClient.publishMessages.mockResolvedValue({
+        Successful: [{ Id: 'id', MessageId: 'msg-id', SequenceNumber: '1' }],
+        Failed: [],
+        $metadata: {}
+      } as any)
+    })
+
+    it('should publish the stored parcel instead of the untrusted declared base', async () => {
+      await worldsComponent.undeployWorldScenes('test-world', ['2,2'])
+
+      expect(snsClient.publishMessages).toHaveBeenCalledWith([
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            scenes: [{ entityId: 'entity-x', baseParcel: '2,2' }]
+          })
+        })
+      ])
+    })
+  })
+
   describe('when undeploying a scene whose stored base is missing or malformed', () => {
     beforeEach(() => {
       // Empty/invalid declared base — the derivation must fall back to parcels[0].
