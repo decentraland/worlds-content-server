@@ -8,7 +8,7 @@ import { createMockBlockingComponent } from '../mocks/blocking-mock'
 
 /**
  * Builds a deployed WorldScene fixture with a scene metadata whose `base` and `parcels`
- * are type-checked against SceneParcels — the exact shape the base-parcel derivation reads.
+ * are shaped as SceneParcels — the exact structure the base-parcel derivation reads.
  * Pass `base` to exercise the case where the declared base differs from parcels[0]; omit it
  * to default the base to parcels[0].
  */
