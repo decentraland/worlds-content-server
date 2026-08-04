@@ -49,7 +49,13 @@ export async function createWorldsManagerComponent({
   'coordinates' | 'logs' | 'database' | 'nameDenyListChecker' | 'search' | 'storage'
 >): Promise<IWorldsManager> {
   const logger = logs.getLogger('worlds-manager')
-  const { extractSpawnCoordinates, parseCoordinate, isCoordinateWithinRectangle, getRectangleCenter } = coordinates
+  const {
+    canonicalizeParcels,
+    extractSpawnCoordinates,
+    parseCoordinate,
+    isCoordinateWithinRectangle,
+    getRectangleCenter
+  } = coordinates
 
   type DeploymentTransactionQuery = (statement: SQLStatement) => Promise<void>
   type DeploymentTransactionClient = {
@@ -609,7 +615,8 @@ export async function createWorldsManagerComponent({
 
     // Apply coordinates filter (scenes that contain any of the specified coordinates)
     if (filters?.coordinates && filters.coordinates.length > 0) {
-      const coordinatesFilter = SQL` AND parcels && ${filters.coordinates}::text[]`
+      const canonicalCoordinates = canonicalizeParcels(filters.coordinates)
+      const coordinatesFilter = SQL` AND parcels && ${canonicalCoordinates}::text[]`
       countQuery.append(coordinatesFilter)
       mainQuery.append(coordinatesFilter)
     }
@@ -706,6 +713,7 @@ export async function createWorldsManagerComponent({
 
   async function undeployScene(worldName: string, parcels: string[]): Promise<void> {
     const normalizedWorldName = worldName.toLowerCase()
+    const canonicalParcels = canonicalizeParcels(parcels)
 
     await database.withAsyncContextTransaction(async () => {
       // Get current spawn_coordinates before deletion
@@ -718,7 +726,7 @@ export async function createWorldsManagerComponent({
       await database.query(SQL`
         UPDATE world_scenes SET status = 'UNDEPLOYED', updated_at = NOW()
         WHERE world_name = ${normalizedWorldName}
-        AND parcels && ${parcels}::text[]
+        AND parcels && ${canonicalParcels}::text[]
         AND status = 'DEPLOYED'
       `)
 
