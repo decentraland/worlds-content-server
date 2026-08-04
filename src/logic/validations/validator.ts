@@ -48,11 +48,11 @@ export function createBeforeStorageValidateFns(components: ValidatorComponents):
         validateDeprecatedConfig,
         createValidateParcelCoordinates(components),
         createValidateScenePointers(components),
+        createValidateSceneDimensions(components),
         async (deployment) =>
           components.deploymentProcessing.trackStage('authorization', 1, () =>
             Promise.resolve(authorizeScene(deployment))
           ),
-        createValidateSceneDimensions(components),
         validateMiniMapImages,
         validateSkyboxTextures,
         validateThumbnail
