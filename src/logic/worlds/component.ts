@@ -1,18 +1,28 @@
 import { Events, WorldScenesUndeploymentEvent, WorldUndeploymentEvent } from '@dcl/schemas'
 import { AppComponents, TWO_DAYS_IN_MS, WorldManifest, WorldScene } from '../../types'
+import { ICoordinatesComponent } from '../coordinates'
 import { IWorldsComponent } from './types'
 
 /**
  * The scene's effective base parcel — the value both the Places service (place base_position) and
  * the comms-gatekeeper scene-ban lookup key scene identity on. The declared metadata.scene.base is
- * trusted only when it is a non-empty member of the stored parcels; otherwise this falls back to
- * parcels[0]. Using parcels[0] unconditionally is wrong when a valid base isn't the first parcel in
- * the array: it points at a different scene identity, so places/ban lookups keyed on the base would
- * miss.
+ * canonicalized and trusted only when it is a non-empty member of the stored parcels; otherwise
+ * this falls back to parcels[0]. Using parcels[0] unconditionally is wrong when a valid base isn't
+ * the first parcel in the array: it points at a different scene identity, so places/ban lookups
+ * keyed on the base would miss.
  */
-function effectiveBaseParcel(scene: WorldScene): string {
+function effectiveBaseParcel(
+  scene: WorldScene,
+  coordinates: Pick<ICoordinatesComponent, 'canonicalizeParcel'>
+): string {
   const base = scene.entity.metadata?.scene?.base
-  return typeof base === 'string' && base.length > 0 && scene.parcels.includes(base) ? base : scene.parcels[0]
+  if (typeof base === 'string' && base.length > 0) {
+    const canonicalBase = coordinates.canonicalizeParcel(base)
+    if (scene.parcels.includes(canonicalBase)) {
+      return canonicalBase
+    }
+  }
+  return scene.parcels[0]
 }
 
 /**
@@ -25,13 +35,13 @@ function effectiveBaseParcel(scene: WorldScene): string {
  * 4. Handles world and scene undeployment with event publishing
  * 5. Rechecks the owner's blocked status after freeing space
  *
- * @param components Required components: blocking, snsClient, worldsManager
+ * @param components Required components: blocking, coordinates, snsClient, worldsManager
  * @returns IWorldsComponent implementation
  */
 export const createWorldsComponent = (
-  components: Pick<AppComponents, 'blocking' | 'snsClient' | 'worldsManager'>
+  components: Pick<AppComponents, 'blocking' | 'coordinates' | 'snsClient' | 'worldsManager'>
 ): IWorldsComponent => {
-  const { blocking, snsClient, worldsManager } = components
+  const { blocking, coordinates, snsClient, worldsManager } = components
 
   /**
    * Checks if a world is blocked and beyond the grace period
@@ -91,7 +101,7 @@ export const createWorldsComponent = (
    */
   async function getWorldSceneBaseParcel(worldName: string, sceneId: string): Promise<string | undefined> {
     const { scenes } = await worldsManager.getWorldScenes({ worldName, entityId: sceneId }, { limit: 1 })
-    return scenes.length > 0 ? effectiveBaseParcel(scenes[0]) : undefined
+    return scenes.length > 0 ? effectiveBaseParcel(scenes[0], coordinates) : undefined
   }
 
   /**
@@ -213,7 +223,7 @@ export const createWorldsComponent = (
             // Emit the effective base parcel (see effectiveBaseParcel) used as the downstream scene
             // identity. This preserves a valid declared base without trusting one outside the stored
             // parcel set, and prevents undeployment from targeting an unrelated place record.
-            baseParcel: effectiveBaseParcel(scene)
+            baseParcel: effectiveBaseParcel(scene, coordinates)
           }))
         }
       }
@@ -232,7 +242,7 @@ export const createWorldsComponent = (
       { worldName, entityId: sceneId, includeUndeployed: true },
       { limit: 1 }
     )
-    return scenes.length > 0 ? effectiveBaseParcel(scenes[0]) : undefined
+    return scenes.length > 0 ? effectiveBaseParcel(scenes[0], coordinates) : undefined
   }
 
   async function evictUndeployedWorlds(olderThanMs: number): Promise<number> {

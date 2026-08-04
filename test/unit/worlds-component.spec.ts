@@ -5,6 +5,7 @@ import { IBlockingComponent } from '../../src/adapters/blocking'
 import { Entity, EntityType, Events, SceneParcels } from '@dcl/schemas'
 import { IPublisherComponent } from '@dcl/sns-component'
 import { createMockBlockingComponent } from '../mocks/blocking-mock'
+import { createCoordinatesComponent, ICoordinatesComponent } from '../../src/logic/coordinates'
 
 /**
  * Builds a deployed WorldScene fixture with a scene metadata whose `base` and `parcels`
@@ -43,6 +44,7 @@ describe('WorldsComponent', () => {
   let worldsManager: jest.Mocked<IWorldsManager>
   let snsClient: jest.Mocked<IPublisherComponent>
   let blocking: jest.Mocked<IBlockingComponent>
+  let coordinates: ICoordinatesComponent
 
   beforeEach(() => {
     worldsManager = {
@@ -59,8 +61,9 @@ describe('WorldsComponent', () => {
     } as jest.Mocked<IPublisherComponent>
 
     blocking = createMockBlockingComponent()
+    coordinates = createCoordinatesComponent()
 
-    worldsComponent = createWorldsComponent({ blocking, worldsManager, snsClient })
+    worldsComponent = createWorldsComponent({ blocking, coordinates, worldsManager, snsClient })
   })
 
   afterEach(() => {
@@ -583,6 +586,33 @@ describe('WorldsComponent', () => {
     })
   })
 
+  describe('when undeploying a legacy scene whose declared base is a non-canonical stored parcel', () => {
+    beforeEach(() => {
+      worldsManager.getWorldScenes.mockResolvedValueOnce({
+        scenes: [createWorldScene({ entityId: 'entity-x', base: '02,01', parcels: ['1,1', '2,1'] })],
+        total: 1
+      })
+      worldsManager.undeployScene.mockResolvedValue(undefined)
+      snsClient.publishMessages.mockResolvedValue({
+        Successful: [{ Id: 'id', MessageId: 'msg-id', SequenceNumber: '1' }],
+        Failed: [],
+        $metadata: {}
+      } as any)
+    })
+
+    it('should publish the canonical declared base instead of parcels[0]', async () => {
+      await worldsComponent.undeployWorldScenes('test-world', ['1,1'])
+
+      expect(snsClient.publishMessages).toHaveBeenCalledWith([
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            scenes: [{ entityId: 'entity-x', baseParcel: '2,1' }]
+          })
+        })
+      ])
+    })
+  })
+
   describe('when undeploying a scene whose stored base is missing or malformed', () => {
     beforeEach(() => {
       // Empty/invalid declared base — the derivation must fall back to parcels[0].
@@ -622,6 +652,20 @@ describe('WorldsComponent', () => {
     it('should return the declared scene.base, not parcels[0]', async () => {
       const result = await worldsComponent.getWorldSceneBaseParcelIncludingUndeployed('test-world', 'scene-123')
       expect(result).toBe('1,1')
+    })
+  })
+
+  describe('when getting the base parcel of a legacy scene whose declared base is non-canonical', () => {
+    beforeEach(() => {
+      worldsManager.getWorldScenes.mockResolvedValueOnce({
+        scenes: [createWorldScene({ entityId: 'scene-123', base: '02,01', parcels: ['1,1', '2,1'] })],
+        total: 1
+      })
+    })
+
+    it('should return the canonical declared base instead of parcels[0]', async () => {
+      const result = await worldsComponent.getWorldSceneBaseParcelIncludingUndeployed('test-world', 'scene-123')
+      expect(result).toBe('2,1')
     })
   })
 
