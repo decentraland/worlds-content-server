@@ -445,7 +445,7 @@ export type IWorldsManager = {
   getEntityForWorlds(worldNames: string[]): Promise<Entity[]>
   /** Persists a scene and its already-calculated deployment metadata. */
   deployScene(worldName: string, scene: Entity, owner: EthAddress, deployment?: SceneDeploymentData): Promise<void>
-  undeployScene(worldName: string, parcels: string[]): Promise<void>
+  undeployScene(worldName: string, parcels: string[], authorizedEntityIds?: string[]): Promise<void>
   storeAccess(worldName: string, access: AccessSetting): Promise<void>
   modifyAccessAtomically(
     worldName: string,

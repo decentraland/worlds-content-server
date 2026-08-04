@@ -464,6 +464,12 @@ describe('WorldsComponent', () => {
         expect(worldsManager.undeployScene).toHaveBeenCalledWith('test-world', ['0,0', '5,5'])
       })
 
+      it('should constrain undeployment to the authorized scene identities when provided', async () => {
+        await worldsComponent.undeployWorldScenes('test-world', ['0,0', '5,5'], ['entity-1'])
+
+        expect(worldsManager.undeployScene).toHaveBeenCalledWith('test-world', ['0,0', '5,5'], ['entity-1'])
+      })
+
       it('should publish a WorldScenesUndeploymentEvent with entity IDs and base parcels', async () => {
         await worldsComponent.undeployWorldScenes('test-world', ['0,0', '5,5'])
 
@@ -479,6 +485,19 @@ describe('WorldsComponent', () => {
                 { entityId: 'entity-1', baseParcel: '0,0' },
                 { entityId: 'entity-2', baseParcel: '5,5' }
               ]
+            }
+          })
+        ])
+      })
+
+      it('should exclude scene identities outside the authorized snapshot from the event', async () => {
+        await worldsComponent.undeployWorldScenes('test-world', ['0,0', '5,5'], ['entity-1'])
+
+        expect(snsClient.publishMessages).toHaveBeenCalledWith([
+          expect.objectContaining({
+            metadata: {
+              worldName: 'test-world',
+              scenes: [{ entityId: 'entity-1', baseParcel: '0,0' }]
             }
           })
         ])

@@ -711,7 +711,7 @@ export async function createWorldsManagerComponent({
     return { scenes, total }
   }
 
-  async function undeployScene(worldName: string, parcels: string[]): Promise<void> {
+  async function undeployScene(worldName: string, parcels: string[], authorizedEntityIds?: string[]): Promise<void> {
     const normalizedWorldName = worldName.toLowerCase()
     const canonicalParcels = canonicalizeParcels(parcels)
 
@@ -722,13 +722,18 @@ export async function createWorldsManagerComponent({
       )
       const currentSpawnCoordinates = worldResult.rows[0]?.spawn_coordinates
 
-      // Soft-delete the scene(s) matching the parcels
-      await database.query(SQL`
+      // Soft-delete only the scene identities authorized from the caller's snapshot. Name owners
+      // omit this constraint because their permission covers the whole world.
+      const undeployQuery = SQL`
         UPDATE world_scenes SET status = 'UNDEPLOYED', updated_at = NOW()
         WHERE world_name = ${normalizedWorldName}
         AND parcels && ${canonicalParcels}::text[]
         AND status = 'DEPLOYED'
-      `)
+      `
+      if (authorizedEntityIds) {
+        undeployQuery.append(SQL` AND entity_id = ANY(${authorizedEntityIds}::text[])`)
+      }
+      await database.query(undeployQuery)
 
       // Calculate new bounding rectangle (after deletion) using the shared function
       const boundingRectangle = await getWorldBoundingRectangle(normalizedWorldName)

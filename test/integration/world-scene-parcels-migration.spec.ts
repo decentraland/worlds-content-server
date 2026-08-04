@@ -20,7 +20,7 @@ test('WorldSceneParcelsMigration', function ({ components }) {
 
       await database.query(
         SQL`UPDATE world_scenes
-            SET parcels = ${[' 01,01 ', '02,01', 'not-a-coordinate']}
+            SET parcels = ${[' 01,01 ', '02,01', '2,1', 'not-a-coordinate', 'not-a-coordinate']}
             WHERE world_name = ${worldName}`
       )
 
@@ -31,7 +31,7 @@ test('WorldSceneParcelsMigration', function ({ components }) {
       jest.resetAllMocks()
     })
 
-    it('should canonicalize coordinates while preserving their order and malformed values', async () => {
+    it('should canonicalize and deduplicate parcels in first-occurrence order', async () => {
       const { scenes } = await components.worldsManager.getWorldScenes({ worldName })
 
       expect(scenes[0].parcels).toEqual(['1,1', '2,1', 'not-a-coordinate'])

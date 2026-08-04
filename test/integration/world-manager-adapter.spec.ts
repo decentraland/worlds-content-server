@@ -611,6 +611,36 @@ test('WorldManagerAdapter', function ({ components }) {
     })
   })
 
+  describe('when an undeployment is constrained to previously authorized scene identities', function () {
+    let remainingEntityIds: string[]
+    let replacementEntityId: string
+
+    beforeEach(async () => {
+      const { worldCreator, worldsManager } = components
+      const original = await worldCreator.createWorldWithScene()
+      const replacement = await worldCreator.createWorldWithScene({
+        worldName: original.worldName,
+        owner: original.owner,
+        metadata: {
+          main: 'abc.txt',
+          scene: { base: '20,24', parcels: ['20,24'] },
+          display: { title: 'Concurrent replacement' },
+          worldConfiguration: { name: original.worldName }
+        }
+      })
+      replacementEntityId = replacement.entityId
+
+      await worldsManager.undeployScene(original.worldName, ['20,24'], [original.entityId])
+
+      const { scenes } = await worldsManager.getWorldScenes({ worldName: original.worldName })
+      remainingEntityIds = scenes.map((scene) => scene.entityId)
+    })
+
+    it('should not undeploy a replacement scene that was absent from the authorization snapshot', function () {
+      expect(remainingEntityIds).toEqual([replacementEntityId])
+    })
+  })
+
   describe('when soft-deleting scenes', function () {
     describe('when undeploying a world', function () {
       let worldName: string

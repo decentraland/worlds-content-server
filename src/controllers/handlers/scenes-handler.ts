@@ -92,6 +92,7 @@ export async function undeploySceneHandler(
 
   // Check if user owns the name
   const hasNamePermission = await ctx.components.namePermissionChecker.checkPermission(signer, world_name)
+  let authorizedEntityIds: string[] | undefined
 
   if (!hasNamePermission) {
     // Undeploying a parcel removes every scene overlapping it, so authorize the wallet
@@ -103,6 +104,7 @@ export async function undeploySceneHandler(
     })
     const affectedParcels = Array.from(new Set(scenes.flatMap((scene) => scene.parcels)))
     const parcelsToAuthorize = affectedParcels.length > 0 ? affectedParcels : [coordinate]
+    authorizedEntityIds = Array.from(new Set(scenes.map((scene) => scene.entityId)))
 
     const hasDeploymentPermission = await ctx.components.permissions.hasPermissionForParcels(
       world_name,
@@ -116,7 +118,7 @@ export async function undeploySceneHandler(
     }
   }
 
-  await ctx.components.worlds.undeployWorldScenes(world_name, [coordinate])
+  await ctx.components.worlds.undeployWorldScenes(world_name, [coordinate], authorizedEntityIds)
 
   return {
     status: 200,
