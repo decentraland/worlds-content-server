@@ -1,5 +1,5 @@
 import { DeploymentFile, DeploymentToValidate, Validation, ValidationResult, ValidatorComponents } from '../../types'
-import { Entity, Scene } from '@dcl/schemas'
+import { Entity, Scene, SceneParcels } from '@dcl/schemas'
 import { createValidationResult, OK } from './utils'
 import { ICoordinatesComponent } from '../coordinates'
 import { ContentMapping } from '@dcl/schemas/dist/misc/content-mapping'
@@ -38,40 +38,32 @@ export const validateSceneEntity: Validation = async (deployment: DeploymentToVa
  * Ensures the entity pointers and `scene.parcels` reference the same set of parcels, so a
  * deployment can't be authorized/sized against one set while it is placed on another.
  */
-export function createValidateScenePointers(components: Pick<ValidatorComponents, 'coordinates'>) {
+export function createValidateScenePointers(_components: Pick<ValidatorComponents, 'coordinates'>) {
   return async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
     const declaredPointers = deployment.entity.pointers
-    const declaredSceneParcels = deployment.entity.metadata?.scene?.parcels || []
-    const canonicalPointers = components.coordinates.canonicalizeParcels(declaredPointers)
-    const canonicalSceneParcels = components.coordinates.canonicalizeParcels(declaredSceneParcels)
-    const declaredBase = deployment.entity.metadata?.scene?.base
-    const baseParcel =
-      typeof declaredBase === 'string' ? components.coordinates.canonicalizeParcels([declaredBase])[0] : undefined
-    const hasAliasesOrDuplicates =
-      canonicalPointers.some((pointer, index) => pointer !== declaredPointers[index]) ||
-      canonicalSceneParcels.some((parcel, index) => parcel !== declaredSceneParcels[index]) ||
-      baseParcel !== declaredBase ||
-      new Set(canonicalPointers).size !== canonicalPointers.length ||
-      new Set(canonicalSceneParcels).size !== canonicalSceneParcels.length
-
-    if (hasAliasesOrDuplicates) {
+    const scene = deployment.entity.metadata?.scene
+    if (!SceneParcels.validate(scene)) {
+      if (SceneParcels.validate.errors?.some((error) => error.keyword === 'contains')) {
+        return createValidationResult([
+          `The scene base parcel [${scene?.base ?? ''}] must be included in the scene parcels [${scene?.parcels?.join(', ') ?? ''}].`
+        ])
+      }
       return createValidationResult(['Scene pointers and parcels must be unique canonical parcel coordinates.'])
     }
 
-    const pointers = new Set(canonicalPointers)
-    const sceneParcels = new Set(canonicalSceneParcels)
+    if (
+      declaredPointers.length === 0 ||
+      !SceneParcels.validate({ base: declaredPointers[0], parcels: declaredPointers })
+    ) {
+      return createValidationResult(['Scene pointers and parcels must be unique canonical parcel coordinates.'])
+    }
+
+    const pointers = new Set(declaredPointers)
+    const sceneParcels = new Set(scene.parcels)
     const sameParcels = pointers.size === sceneParcels.size && [...pointers].every((parcel) => sceneParcels.has(parcel))
     if (!sameParcels) {
       return createValidationResult([
         `The scene pointers [${[...pointers].join(', ')}] must match the scene parcels [${[...sceneParcels].join(
-          ', '
-        )}].`
-      ])
-    }
-
-    if (!baseParcel || !sceneParcels.has(baseParcel)) {
-      return createValidationResult([
-        `The scene base parcel [${declaredBase ?? ''}] must be included in the scene parcels [${[...sceneParcels].join(
           ', '
         )}].`
       ])
