@@ -711,8 +711,9 @@ test('WorldManagerAdapter', function ({ components }) {
     })
   })
 
-  describe('when a scene undeployment creates a downstream event', function () {
-    let undeploymentEvent: Awaited<ReturnType<typeof components.worldsManager.undeployScene>>['event']
+  describe('when a scene undeployment returns the records needed for a downstream event', function () {
+    let createdEntityId: string
+    let undeploymentResult: Awaited<ReturnType<typeof components.worldsManager.undeployScene>>
 
     beforeEach(async () => {
       const { worldCreator, worldsManager } = components
@@ -725,98 +726,23 @@ test('WorldManagerAdapter', function ({ components }) {
           worldConfiguration: { name: worldName }
         }
       })
-      const result = await worldsManager.undeployScene(created.worldName, ['20,24'])
-      undeploymentEvent = result.event
+      createdEntityId = created.entityId
+      undeploymentResult = await worldsManager.undeployScene(created.worldName, ['20,24'])
     })
 
-    it('should return the canonical identity of the scene changed by the transaction', function () {
-      expect(undeploymentEvent).toEqual(
-        expect.objectContaining({
-          metadata: expect.objectContaining({ scenes: [expect.objectContaining({ baseParcel: '21,24' })] })
-        })
-      )
-    })
-
-    describe('and the declared base is outside the stored parcel set', function () {
-      let eventScenes: Array<{ entityId: string; baseParcel: string }> | undefined
-
-      beforeEach(async () => {
-        const { worldCreator, worldsManager } = components
-        const worldName = worldCreator.randomWorldName()
-        const created = await worldCreator.createWorldWithScene({
-          worldName,
-          metadata: {
-            main: 'abc.txt',
-            scene: { base: '9,9', parcels: ['20,24', '21,24'] },
-            worldConfiguration: { name: worldName }
+    it('should return only the scene data needed to construct the event', function () {
+      expect(undeploymentResult).toEqual({
+        scenes: [
+          {
+            entityId: createdEntityId,
+            declaredBase: '21,24',
+            parcels: ['20,24', '21,24']
           }
-        })
-
-        const result = await worldsManager.undeployScene(created.worldName, ['21,24'])
-        eventScenes = result.event?.metadata.scenes
-      })
-
-      it('should use the first canonical stored parcel instead of the untrusted base', function () {
-        expect(eventScenes).toEqual([expect.objectContaining({ baseParcel: '20,24' })])
-      })
-    })
-
-    describe('and the declared base is a non-canonical alias of a non-first stored parcel', function () {
-      let eventScenes: Array<{ entityId: string; baseParcel: string }> | undefined
-
-      beforeEach(async () => {
-        const { worldCreator, worldsManager } = components
-        const worldName = worldCreator.randomWorldName()
-        const created = await worldCreator.createWorldWithScene({
-          worldName,
-          metadata: {
-            main: 'abc.txt',
-            scene: { base: '021,024', parcels: ['20,24', '21,24'] },
-            worldConfiguration: { name: worldName }
-          }
-        })
-
-        const result = await worldsManager.undeployScene(created.worldName, ['20,24'])
-        eventScenes = result.event?.metadata.scenes
-      })
-
-      it('should emit the canonical non-first stored parcel', function () {
-        expect(eventScenes).toEqual([expect.objectContaining({ baseParcel: '21,24' })])
-      })
-    })
-
-    describe('and the fallback stored parcel is non-canonical', function () {
-      let eventScenes: Array<{ entityId: string; baseParcel: string }> | undefined
-
-      beforeEach(async () => {
-        const { database, worldCreator, worldsManager } = components
-        const worldName = worldCreator.randomWorldName()
-        const created = await worldCreator.createWorldWithScene({
-          worldName,
-          metadata: {
-            main: 'abc.txt',
-            scene: { base: '9,9', parcels: ['20,24', '21,24'] },
-            worldConfiguration: { name: worldName }
-          }
-        })
-        await database.query(SQL`
-          UPDATE world_scenes
-          SET parcels = ${['020,024', '21,24']}::text[]
-          WHERE world_name = ${created.worldName.toLowerCase()} AND entity_id = ${created.entityId}
-        `)
-
-        const result = await worldsManager.undeployScene(created.worldName, ['21,24'])
-        eventScenes = result.event?.metadata.scenes
-      })
-
-      it('should canonicalize the first stored parcel used as the fallback identity', function () {
-        expect(eventScenes).toEqual([expect.objectContaining({ baseParcel: '20,24' })])
+        ]
       })
     })
 
     describe('and the stored parcel array is empty', function () {
-      let createdEntityId: string
-      let undeploymentResult: Awaited<ReturnType<typeof components.worldsManager.undeployScene>>
       let remainingEntityIds: string[]
 
       beforeEach(async () => {
@@ -834,7 +760,7 @@ test('WorldManagerAdapter', function ({ components }) {
         remainingEntityIds = scenes.map((scene) => scene.entityId)
       })
 
-      it('should leave the unmatched corrupt row deployed without producing an event', function () {
+      it('should leave the unmatched corrupt row deployed without returning event input', function () {
         expect({ remainingEntityIds, undeploymentResult }).toEqual({
           remainingEntityIds: [createdEntityId],
           undeploymentResult: { scenes: [] }

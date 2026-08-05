@@ -25,7 +25,6 @@ import {
   GetRawWorldRecordsResult,
   GetOccupiedParcelsOptions,
   GetOccupiedParcelsResult,
-  InvalidStoredSceneParcelsError,
   SceneDeploymentStatus,
   SceneDeploymentData,
   SceneReplacementAuthorization,
@@ -33,12 +32,11 @@ import {
   SceneUndeploymentResult
 } from '../types'
 import { streamToBuffer } from '@dcl/catalyst-storage'
-import { Entity, EthAddress, Events, WorldScenesUndeploymentEvent } from '@dcl/schemas'
+import { Entity, EthAddress } from '@dcl/schemas'
 import SQL, { type SQLStatement } from 'sql-template-strings'
 import { buildWorldRuntimeMetadata, shouldShowInPlaces } from '../logic/world-runtime-metadata-utils'
 import { AccessSetting, defaultAccess } from '../logic/access'
 import { raceWithSignal } from '../logic/concurrency'
-import { effectiveBaseParcel } from '../logic/worlds/effective-base-parcel'
 
 type BoundingRow = { min_x: number; max_x: number; min_y: number; max_y: number }
 
@@ -776,10 +774,10 @@ export async function createWorldsManagerComponent({
       if (authorizedEntityIds) {
         undeployQuery.append(SQL` AND entity_id = ANY(${authorizedEntityIds}::text[])`)
       }
-      undeployQuery.append(SQL` RETURNING entity_id, entity, parcels`)
+      undeployQuery.append(SQL` RETURNING entity_id, entity->'metadata'->'scene'->>'base' AS declared_base, parcels`)
       const undeployedResult = await database.query<{
         entity_id: string
-        entity: Entity
+        declared_base: string | null
         parcels: string[]
       }>(undeployQuery)
 
@@ -815,31 +813,11 @@ export async function createWorldsManagerComponent({
 
       const scenes = undeployedResult.rows.map((row) => ({
         entityId: row.entity_id,
-        entity: row.entity,
+        declaredBase: row.declared_base,
         parcels: row.parcels
       }))
 
-      if (scenes.length === 0) {
-        return { scenes }
-      }
-
-      const event: WorldScenesUndeploymentEvent = {
-        type: Events.Type.WORLD,
-        subType: Events.SubType.Worlds.WORLD_SCENES_UNDEPLOYMENT,
-        key: worldName,
-        timestamp: Date.now(),
-        metadata: {
-          worldName,
-          scenes: scenes.map((scene) => {
-            const baseParcel = effectiveBaseParcel(scene, coordinates)
-            if (!baseParcel) {
-              throw new InvalidStoredSceneParcelsError(scene.entityId)
-            }
-            return { entityId: scene.entityId, baseParcel }
-          })
-        }
-      }
-      return { scenes, event }
+      return { scenes }
     })
   }
 
