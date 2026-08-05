@@ -1,5 +1,5 @@
 import { Events, WorldScenesUndeploymentEvent, WorldUndeploymentEvent } from '@dcl/schemas'
-import { AppComponents, InvalidStoredSceneParcelsError, TWO_DAYS_IN_MS, WorldManifest } from '../../types'
+import { AppComponents, TWO_DAYS_IN_MS, WorldManifest } from '../../types'
 import { IWorldsComponent } from './types'
 
 /**
@@ -12,13 +12,14 @@ import { IWorldsComponent } from './types'
  * 4. Handles world and scene undeployment with event publishing
  * 5. Rechecks the owner's blocked status after freeing space
  *
- * @param components Required components: blocking, coordinates, snsClient, worldsManager
+ * @param components Required components: blocking, coordinates, logs, snsClient, worldsManager
  * @returns IWorldsComponent implementation
  */
 export const createWorldsComponent = (
-  components: Pick<AppComponents, 'blocking' | 'coordinates' | 'snsClient' | 'worldsManager'>
+  components: Pick<AppComponents, 'blocking' | 'coordinates' | 'logs' | 'snsClient' | 'worldsManager'>
 ): IWorldsComponent => {
-  const { blocking, coordinates, snsClient, worldsManager } = components
+  const { blocking, coordinates, logs, snsClient, worldsManager } = components
+  const logger = logs.getLogger('worlds-component')
 
   /**
    * Resolves the canonical parcel used as a scene's downstream identity.
@@ -197,7 +198,9 @@ export const createWorldsComponent = (
   /**
    * Undeploys specific scenes from a world by parcels and publishes a WorldScenesUndeploymentEvent
    *
-   * Publishes only the scene identities returned by the atomic undeployment update.
+   * Publishes only the scene identities returned by the atomic undeployment update. Rows without an
+   * effective base parcel have no downstream identity, so they are logged and left out of the event
+   * instead of failing an undeployment that already committed.
    *
    * @param worldName - The name of the world
    * @param parcels - The parcel coordinates of the scenes to undeploy
@@ -212,7 +215,20 @@ export const createWorldsComponent = (
 
     const { scenes } = await worldsManager.undeployScene(worldName, parcels, authorizedEntityIds)
 
-    if (scenes.length > 0) {
+    const undeployedScenes = scenes.flatMap((scene) => {
+      const baseParcel = effectiveBaseParcel(scene.declaredBase, scene.parcels)
+      // Defensive: undeployScene matches rows by parcel overlap, so a returned row always has parcels.
+      if (!baseParcel) {
+        logger.warn('Skipping undeployed scene without an effective base parcel', {
+          worldName,
+          entityId: scene.entityId
+        })
+        return []
+      }
+      return [{ entityId: scene.entityId, baseParcel }]
+    })
+
+    if (undeployedScenes.length > 0) {
       const event: WorldScenesUndeploymentEvent = {
         type: Events.Type.WORLD,
         subType: Events.SubType.Worlds.WORLD_SCENES_UNDEPLOYMENT,
@@ -220,13 +236,7 @@ export const createWorldsComponent = (
         timestamp: Date.now(),
         metadata: {
           worldName,
-          scenes: scenes.map((scene) => {
-            const baseParcel = effectiveBaseParcel(scene.declaredBase, scene.parcels)
-            if (!baseParcel) {
-              throw new InvalidStoredSceneParcelsError(scene.entityId)
-            }
-            return { entityId: scene.entityId, baseParcel }
-          })
+          scenes: undeployedScenes
         }
       }
       await snsClient.publishMessages([event])

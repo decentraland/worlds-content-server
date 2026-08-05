@@ -2,7 +2,6 @@ import { createWorldsComponent } from '../../src/logic/worlds/component'
 import { IWorldsComponent } from '../../src/logic/worlds/types'
 import {
   IWorldsManager,
-  InvalidStoredSceneParcelsError,
   SceneDeploymentStatus,
   SceneUndeploymentResult,
   TWO_DAYS_IN_MS,
@@ -10,8 +9,10 @@ import {
 } from '../../src/types'
 import { IBlockingComponent } from '../../src/adapters/blocking'
 import { Entity, EntityType, Events, SceneParcels } from '@dcl/schemas'
+import { ILoggerComponent } from '@well-known-components/interfaces'
 import { IPublisherComponent } from '@dcl/sns-component'
 import { createMockBlockingComponent } from '../mocks/blocking-mock'
+import { createMockLogs } from '../mocks/logs-mock'
 import { createCoordinatesComponent, ICoordinatesComponent } from '../../src/logic/coordinates'
 
 /**
@@ -62,6 +63,8 @@ describe('WorldsComponent', () => {
   let snsClient: jest.Mocked<IPublisherComponent>
   let blocking: jest.Mocked<IBlockingComponent>
   let coordinates: ICoordinatesComponent
+  let logs: jest.Mocked<ILoggerComponent>
+  let logger: jest.Mocked<ILoggerComponent.ILogger>
 
   beforeEach(() => {
     worldsManager = {
@@ -80,9 +83,19 @@ describe('WorldsComponent', () => {
     blocking = createMockBlockingComponent()
     coordinates = createCoordinatesComponent()
 
+    logger = {
+      log: jest.fn(),
+      debug: jest.fn(),
+      info: jest.fn(),
+      warn: jest.fn(),
+      error: jest.fn()
+    } as jest.Mocked<ILoggerComponent.ILogger>
+    logs = createMockLogs({ getLogger: jest.fn().mockReturnValue(logger) })
+
     worldsComponent = createWorldsComponent({
       blocking,
       coordinates,
+      logs,
       worldsManager,
       snsClient
     })
@@ -518,23 +531,65 @@ describe('WorldsComponent', () => {
       })
     })
 
-    describe('and an undeployed scene has no stored parcels', () => {
-      let caughtError: unknown
+    describe('and the only undeployed scene has no stored parcels', () => {
+      let outcome: unknown
 
       beforeEach(async () => {
         worldsManager.undeployScene.mockResolvedValue({
           scenes: [{ entityId: 'entity-empty', declaredBase: '0,0', parcels: [] }]
         })
 
-        caughtError = await worldsComponent.undeployWorldScenes('test-world', ['0,0']).catch((error: unknown) => error)
+        outcome = await worldsComponent.undeployWorldScenes('test-world', ['0,0']).catch((error: unknown) => error)
       })
 
-      it('should reject event construction with a typed stored-scene error', () => {
-        expect(caughtError).toEqual(new InvalidStoredSceneParcelsError('entity-empty'))
+      it('should complete the undeployment without failing', () => {
+        expect(outcome).toBeUndefined()
       })
 
-      it('should not publish an event without a downstream scene identity', () => {
+      it('should warn about the scene it left out of the event', () => {
+        expect(logger.warn).toHaveBeenCalledWith('Skipping undeployed scene without an effective base parcel', {
+          worldName: 'test-world',
+          entityId: 'entity-empty'
+        })
+      })
+
+      it('should not publish an event without any downstream scene identity', () => {
         expect(snsClient.publishMessages).not.toHaveBeenCalled()
+      })
+    })
+
+    describe('and one of several undeployed scenes has no stored parcels', () => {
+      beforeEach(async () => {
+        worldsManager.undeployScene.mockResolvedValue({
+          scenes: [
+            { entityId: 'entity-empty', declaredBase: '0,0', parcels: [] },
+            { entityId: 'entity-2', declaredBase: '5,5', parcels: ['5,5'] }
+          ]
+        })
+        snsClient.publishMessages.mockResolvedValue({
+          successfulMessageIds: ['msg-id'],
+          failedEvents: []
+        })
+
+        await worldsComponent.undeployWorldScenes('test-world', ['0,0', '5,5'])
+      })
+
+      it('should publish an event containing only the scenes with a downstream identity', () => {
+        expect(snsClient.publishMessages).toHaveBeenCalledWith([
+          expect.objectContaining({
+            metadata: {
+              worldName: 'test-world',
+              scenes: [{ entityId: 'entity-2', baseParcel: '5,5' }]
+            }
+          })
+        ])
+      })
+
+      it('should warn about the scene it left out of the event', () => {
+        expect(logger.warn).toHaveBeenCalledWith('Skipping undeployed scene without an effective base parcel', {
+          worldName: 'test-world',
+          entityId: 'entity-empty'
+        })
       })
     })
   })

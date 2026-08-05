@@ -449,13 +449,6 @@ export class SceneReplacementConflictError extends Error {
   }
 }
 
-export class InvalidStoredSceneParcelsError extends Error {
-  constructor(entityId: string) {
-    super(`Stored scene "${entityId}" has no parcel that can be used as its downstream identity.`)
-    this.name = 'InvalidStoredSceneParcelsError'
-  }
-}
-
 export class MissingSceneReplacementAuthorizationError extends Error {
   constructor(entityId: string) {
     super(`Cannot deploy scene "${entityId}": replacement authorization is missing.`)
