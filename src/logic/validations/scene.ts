@@ -116,7 +116,8 @@ export function createValidateBannedNames(
 
 /**
  * Authorizes the deployment: the signer must either own the world name or hold deployment
- * permission for every parcel being deployed.
+ * permission for every parcel being deployed and every parcel of each existing scene that the
+ * deployment would replace.
  */
 export function createValidateDeploymentPermission(
   components: Pick<ValidatorComponents, 'coordinates' | 'namePermissionChecker' | 'permissions' | 'worldsManager'>
@@ -128,17 +129,34 @@ export function createValidateDeploymentPermission(
 
     // The signer owns the name
     if (await components.namePermissionChecker.checkPermission(signer, worldSpecifiedName)) {
+      deployment.sceneReplacementAuthorization = { mode: 'unrestricted-owner' }
       return OK
     }
 
-    // ...or has world-wide or parcel-specific deployment permission for those parcels
+    const { scenes: overlappingScenes } = await components.worldsManager.getWorldScenes({
+      worldName: worldSpecifiedName,
+      coordinates: parcels
+    })
+    const parcelsRequiringPermission = Array.from(
+      new Set([
+        ...parcels,
+        ...overlappingScenes.flatMap((scene) => components.coordinates.canonicalizeParcels(scene.parcels))
+      ])
+    )
+
+    // ...or has permission for the new scene and the complete footprint of every deployed scene
+    // it would replace.
     const allowed = await components.permissions.hasPermissionForParcels(
       worldSpecifiedName,
       'deployment',
       signer,
-      parcels
+      parcelsRequiringPermission
     )
     if (allowed) {
+      deployment.sceneReplacementAuthorization = {
+        mode: 'scoped',
+        entityIds: overlappingScenes.map((scene) => scene.entityId)
+      }
       return OK
     }
 

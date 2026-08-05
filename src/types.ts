@@ -5,7 +5,7 @@ import type {
   IMetricsComponent
 } from '@well-known-components/interfaces'
 import type { IHttpServerComponent } from '@dcl/core-commons'
-import { PaginatedParameters } from '@dcl/schemas'
+import { PaginatedParameters, WorldScenesUndeploymentEvent } from '@dcl/schemas'
 import { metricDeclarations } from './metrics'
 import { FileInfo, IContentStorageComponent } from '@dcl/catalyst-storage'
 import { HTTPProvider } from 'eth-connect'
@@ -84,6 +84,8 @@ export type DeploymentToValidate = {
   contentFileInfos?: Map<string, FileInfo | undefined>
   /** Cancels request-scoped processing after disconnect or the configured processing deadline. */
   signal?: AbortSignal
+  /** Replacement authority established during deployment authorization. */
+  sceneReplacementAuthorization?: SceneReplacementAuthorization
 }
 
 export type DeploymentProcessingStage = 'total' | 'authorization' | 'metadata' | 'hash' | 'storage' | 'persistence'
@@ -122,6 +124,8 @@ export type SceneDeploymentData = {
   /** Cancels persistence until the transaction reaches its commit boundary. */
   signal?: AbortSignal
 }
+
+export type SceneReplacementAuthorization = { mode: 'unrestricted-owner' } | { mode: 'scoped'; entityIds: string[] }
 
 export type WorldRuntimeMetadata = {
   entityIds: string[]
@@ -179,6 +183,11 @@ export type WorldScene = {
 }
 
 export type UndeployedWorldScene = Pick<WorldScene, 'entityId' | 'entity' | 'parcels'>
+
+export type SceneUndeploymentResult = {
+  scenes: UndeployedWorldScene[]
+  event?: WorldScenesUndeploymentEvent
+}
 
 export type BoundingBox = {
   x1: number
@@ -432,6 +441,27 @@ export class NoDeployedScenesError extends Error {
   }
 }
 
+export class SceneReplacementConflictError extends Error {
+  constructor(worldName: string) {
+    super(`Scene replacement authorization changed while deploying to world "${worldName}". Please retry.`)
+    this.name = 'SceneReplacementConflictError'
+  }
+}
+
+export class InvalidStoredSceneParcelsError extends Error {
+  constructor(entityId: string) {
+    super(`Stored scene "${entityId}" has no parcel that can be used as its downstream identity.`)
+    this.name = 'InvalidStoredSceneParcelsError'
+  }
+}
+
+export class MissingSceneReplacementAuthorizationError extends Error {
+  constructor(entityId: string) {
+    super(`Cannot deploy scene "${entityId}": replacement authorization is missing.`)
+    this.name = 'MissingSceneReplacementAuthorizationError'
+  }
+}
+
 export type AccessModificationResult = {
   previousAccess: AccessSetting
   updatedAccess: AccessSetting
@@ -446,8 +476,15 @@ export type IWorldsManager = {
   getMetadataForWorld(worldName: string): Promise<WorldMetadata | undefined>
   getEntityForWorlds(worldNames: string[]): Promise<Entity[]>
   /** Persists a scene and its already-calculated deployment metadata. */
-  deployScene(worldName: string, scene: Entity, owner: EthAddress, deployment?: SceneDeploymentData): Promise<void>
-  undeployScene(worldName: string, parcels: string[], authorizedEntityIds?: string[]): Promise<UndeployedWorldScene[]>
+  deployScene(
+    worldName: string,
+    scene: Entity,
+    owner: EthAddress,
+    replacementAuthorization: SceneReplacementAuthorization,
+    deployment?: SceneDeploymentData
+  ): Promise<void>
+  /** Atomically undeploys matching scenes and returns the event describing the rows actually changed. */
+  undeployScene(worldName: string, parcels: string[], authorizedEntityIds?: string[]): Promise<SceneUndeploymentResult>
   storeAccess(worldName: string, access: AccessSetting): Promise<void>
   modifyAccessAtomically(
     worldName: string,
@@ -542,7 +579,8 @@ export type IEntityDeployer = {
     authChain: AuthLink[],
     deploymentSize: number,
     signal?: AbortSignal,
-    deadlineAt?: number
+    deadlineAt?: number,
+    sceneReplacementAuthorization?: SceneReplacementAuthorization
   ): Promise<DeploymentResult>
 }
 

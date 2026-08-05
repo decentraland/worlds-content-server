@@ -1,4 +1,11 @@
-import { AppComponents, DeploymentFile, DeploymentResult, IEntityDeployer } from '../types'
+import {
+  AppComponents,
+  DeploymentFile,
+  DeploymentResult,
+  IEntityDeployer,
+  MissingSceneReplacementAuthorizationError,
+  SceneReplacementAuthorization
+} from '../types'
 import { AuthLink, Entity, EntityType, Events, WorldDeploymentEvent } from '@dcl/schemas'
 import { bufferToStream } from '@dcl/catalyst-storage'
 import { stringToUtf8Bytes } from 'eth-connect'
@@ -10,7 +17,8 @@ type PostDeploymentHook = (
   authChain: AuthLink[],
   deploymentSize: number,
   signal?: AbortSignal,
-  deadlineAt?: number
+  deadlineAt?: number,
+  sceneReplacementAuthorization?: SceneReplacementAuthorization
 ) => Promise<DeploymentResult>
 
 /** Maximum number of independent content-addressed objects uploaded concurrently. */
@@ -52,7 +60,8 @@ export function createEntityDeployer(
     authChain: AuthLink[],
     deploymentSize: number,
     signal?: AbortSignal,
-    deadlineAt?: number
+    deadlineAt?: number,
+    sceneReplacementAuthorization?: SceneReplacementAuthorization
   ): Promise<DeploymentResult> {
     const contentByHash = new Map((entity.content || []).map((file) => [file.hash, file]))
     const filesToStore = Array.from(contentByHash).filter(([hash]) => !allContentHashesInStorage.get(hash))
@@ -94,7 +103,7 @@ export function createEntityDeployer(
 
     signal?.throwIfAborted()
     return await deploymentProcessing.trackStage('persistence', 1, () =>
-      postDeployment(baseUrl, entity, authChain, deploymentSize, signal, deadlineAt)
+      postDeployment(baseUrl, entity, authChain, deploymentSize, signal, deadlineAt, sceneReplacementAuthorization)
     )
   }
 
@@ -108,10 +117,11 @@ export function createEntityDeployer(
     authChain: AuthLink[],
     deploymentSize: number,
     signal?: AbortSignal,
-    deadlineAt?: number
+    deadlineAt?: number,
+    sceneReplacementAuthorization?: SceneReplacementAuthorization
   ): Promise<DeploymentResult> {
     const hookForType = postDeploymentHooks[entity.type] || noPostDeploymentHook
-    return hookForType(baseUrl, entity, authChain, deploymentSize, signal, deadlineAt)
+    return hookForType(baseUrl, entity, authChain, deploymentSize, signal, deadlineAt, sceneReplacementAuthorization)
   }
 
   async function noPostDeploymentHook(
@@ -120,7 +130,8 @@ export function createEntityDeployer(
     _authChain: AuthLink[],
     _deploymentSize: number,
     _signal?: AbortSignal,
-    _deadlineAt?: number
+    _deadlineAt?: number,
+    _sceneReplacementAuthorization?: SceneReplacementAuthorization
   ): Promise<DeploymentResult> {
     return { message: 'No post deployment hook for this entity type' }
   }
@@ -131,7 +142,8 @@ export function createEntityDeployer(
     authChain: AuthLink[],
     deploymentSize: number,
     signal?: AbortSignal,
-    deadlineAt?: number
+    deadlineAt?: number,
+    sceneReplacementAuthorization?: SceneReplacementAuthorization
   ) {
     const { config, metrics, snsClient } = components
 
@@ -147,9 +159,12 @@ export function createEntityDeployer(
         `Cannot deploy scene "${entity.id}" to world "${worldName}": owner address could not be resolved.`
       )
     }
+    if (!sceneReplacementAuthorization) {
+      throw new MissingSceneReplacementAuthorizationError(entity.id)
+    }
 
     signal?.throwIfAborted()
-    await worldsManager.deployScene(worldName, entity, owner, {
+    await worldsManager.deployScene(worldName, entity, owner, sceneReplacementAuthorization, {
       authChain,
       size: deploymentSize,
       ...(deadlineAt === undefined ? {} : { deadlineAt }),

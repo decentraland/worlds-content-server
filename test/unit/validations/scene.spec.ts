@@ -443,9 +443,12 @@ describe('scene validations', function () {
         deployment = await createSceneDeployment(identity.authChain)
       })
 
-      it('should return a successful result', async () => {
+      it('should return a successful result with explicit unrestricted replacement authority', async () => {
         const result = await validateDeploymentPermission(deployment)
-        expect(result.ok()).toBeTruthy()
+        expect({ authorization: deployment.sceneReplacementAuthorization, valid: result.ok() }).toEqual({
+          authorization: { mode: 'unrestricted-owner' },
+          valid: true
+        })
       })
     })
 

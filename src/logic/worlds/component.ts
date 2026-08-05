@@ -1,30 +1,7 @@
-import { Events, WorldScenesUndeploymentEvent, WorldUndeploymentEvent } from '@dcl/schemas'
-import { AppComponents, TWO_DAYS_IN_MS, WorldManifest, WorldScene } from '../../types'
-import { ICoordinatesComponent } from '../coordinates'
+import { Events, WorldUndeploymentEvent } from '@dcl/schemas'
+import { AppComponents, TWO_DAYS_IN_MS, WorldManifest } from '../../types'
+import { effectiveBaseParcel } from './effective-base-parcel'
 import { IWorldsComponent } from './types'
-
-/**
- * The scene's effective base parcel — the value both the Places service (place base_position) and
- * the comms-gatekeeper scene-ban lookup key scene identity on. The declared metadata.scene.base is
- * canonicalized and trusted only when it is a non-empty member of the canonicalized stored parcel
- * set; otherwise this falls back to the first canonicalized stored parcel. Using parcels[0]
- * unconditionally is wrong when a valid base isn't the first parcel in the array: it points at a
- * different scene identity, so places/ban lookups keyed on the base would miss.
- */
-function effectiveBaseParcel(
-  scene: Pick<WorldScene, 'entity' | 'parcels'>,
-  coordinates: Pick<ICoordinatesComponent, 'canonicalizeParcel' | 'canonicalizeParcels'>
-): string {
-  const canonicalParcels = coordinates.canonicalizeParcels(scene.parcels)
-  const base = scene.entity.metadata?.scene?.base
-  if (typeof base === 'string' && base.length > 0) {
-    const canonicalBase = coordinates.canonicalizeParcel(base)
-    if (canonicalParcels.includes(canonicalBase)) {
-      return canonicalBase
-    }
-  }
-  return canonicalParcels[0]
-}
 
 /**
  * Creates the Worlds component
@@ -211,27 +188,10 @@ export const createWorldsComponent = (
   ): Promise<void> {
     const blockedOwner = await getBlockedOwner(worldName)
 
-    const scenes = await worldsManager.undeployScene(worldName, parcels, authorizedEntityIds)
+    const result = await worldsManager.undeployScene(worldName, parcels, authorizedEntityIds)
 
-    if (scenes.length > 0) {
-      const event: WorldScenesUndeploymentEvent = {
-        type: Events.Type.WORLD,
-        subType: Events.SubType.Worlds.WORLD_SCENES_UNDEPLOYMENT,
-        key: worldName,
-        timestamp: Date.now(),
-        metadata: {
-          worldName,
-          scenes: scenes.map((scene) => ({
-            entityId: scene.entityId,
-            // Emit the effective base parcel (see effectiveBaseParcel) used as the downstream scene
-            // identity. This preserves a valid declared base without trusting one outside the stored
-            // parcel set, and prevents undeployment from targeting an unrelated place record.
-            baseParcel: effectiveBaseParcel(scene, coordinates)
-          }))
-        }
-      }
-
-      await snsClient.publishMessages([event])
+    if (result.event) {
+      await snsClient.publishMessages([result.event])
     }
 
     await recheckBlockedOwner(blockedOwner)
