@@ -1,6 +1,5 @@
-import { Events, WorldUndeploymentEvent } from '@dcl/schemas'
-import { AppComponents, TWO_DAYS_IN_MS, WorldManifest } from '../../types'
-import { effectiveBaseParcel } from './effective-base-parcel'
+import { Events, WorldScenesUndeploymentEvent, WorldUndeploymentEvent } from '@dcl/schemas'
+import { AppComponents, InvalidStoredSceneParcelsError, TWO_DAYS_IN_MS, WorldManifest } from '../../types'
 import { IWorldsComponent } from './types'
 
 /**
@@ -20,6 +19,27 @@ export const createWorldsComponent = (
   components: Pick<AppComponents, 'blocking' | 'coordinates' | 'snsClient' | 'worldsManager'>
 ): IWorldsComponent => {
   const { blocking, coordinates, snsClient, worldsManager } = components
+
+  /**
+   * Resolves the canonical parcel used as a scene's downstream identity.
+   *
+   * The declared base is trusted only when it belongs to the canonicalized stored parcel set.
+   * Corrupt rows without stored parcels have no effective identity and return undefined.
+   *
+   * @param declaredBase - Base parcel declared by the stored scene metadata
+   * @param parcels - Parcels occupied by the stored scene
+   * @returns The canonical effective base parcel, or undefined when no stored parcel exists
+   */
+  function effectiveBaseParcel(declaredBase: unknown, parcels: string[]): string | undefined {
+    const canonicalParcels = coordinates.canonicalizeParcels(parcels)
+    if (typeof declaredBase === 'string' && declaredBase.length > 0) {
+      const canonicalBase = coordinates.canonicalizeParcel(declaredBase)
+      if (canonicalParcels.includes(canonicalBase)) {
+        return canonicalBase
+      }
+    }
+    return canonicalParcels[0]
+  }
 
   /**
    * Checks if a world is blocked and beyond the grace period
@@ -79,7 +99,9 @@ export const createWorldsComponent = (
    */
   async function getWorldSceneBaseParcel(worldName: string, sceneId: string): Promise<string | undefined> {
     const { scenes } = await worldsManager.getWorldScenes({ worldName, entityId: sceneId }, { limit: 1 })
-    return scenes.length > 0 ? effectiveBaseParcel(scenes[0], coordinates) : undefined
+    return scenes.length > 0
+      ? effectiveBaseParcel(scenes[0].entity.metadata?.scene?.base, scenes[0].parcels)
+      : undefined
   }
 
   /**
@@ -188,10 +210,26 @@ export const createWorldsComponent = (
   ): Promise<void> {
     const blockedOwner = await getBlockedOwner(worldName)
 
-    const result = await worldsManager.undeployScene(worldName, parcels, authorizedEntityIds)
+    const { scenes } = await worldsManager.undeployScene(worldName, parcels, authorizedEntityIds)
 
-    if (result.event) {
-      await snsClient.publishMessages([result.event])
+    if (scenes.length > 0) {
+      const event: WorldScenesUndeploymentEvent = {
+        type: Events.Type.WORLD,
+        subType: Events.SubType.Worlds.WORLD_SCENES_UNDEPLOYMENT,
+        key: worldName,
+        timestamp: Date.now(),
+        metadata: {
+          worldName,
+          scenes: scenes.map((scene) => {
+            const baseParcel = effectiveBaseParcel(scene.declaredBase, scene.parcels)
+            if (!baseParcel) {
+              throw new InvalidStoredSceneParcelsError(scene.entityId)
+            }
+            return { entityId: scene.entityId, baseParcel }
+          })
+        }
+      }
+      await snsClient.publishMessages([event])
     }
 
     await recheckBlockedOwner(blockedOwner)
@@ -205,7 +243,9 @@ export const createWorldsComponent = (
       { worldName, entityId: sceneId, includeUndeployed: true },
       { limit: 1 }
     )
-    return scenes.length > 0 ? effectiveBaseParcel(scenes[0], coordinates) : undefined
+    return scenes.length > 0
+      ? effectiveBaseParcel(scenes[0].entity.metadata?.scene?.base, scenes[0].parcels)
+      : undefined
   }
 
   async function evictUndeployedWorlds(olderThanMs: number): Promise<number> {

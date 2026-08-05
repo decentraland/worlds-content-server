@@ -5,7 +5,7 @@ import type {
   IMetricsComponent
 } from '@well-known-components/interfaces'
 import type { IHttpServerComponent } from '@dcl/core-commons'
-import { PaginatedParameters, WorldScenesUndeploymentEvent } from '@dcl/schemas'
+import { PaginatedParameters } from '@dcl/schemas'
 import { metricDeclarations } from './metrics'
 import { FileInfo, IContentStorageComponent } from '@dcl/catalyst-storage'
 import { HTTPProvider } from 'eth-connect'
@@ -182,11 +182,12 @@ export type WorldScene = {
   updatedAt: Date
 }
 
-export type UndeployedWorldScene = Pick<WorldScene, 'entityId' | 'entity' | 'parcels'>
+export type UndeployedWorldScene = Pick<WorldScene, 'entityId' | 'parcels'> & {
+  declaredBase: string | null
+}
 
 export type SceneUndeploymentResult = {
   scenes: UndeployedWorldScene[]
-  event?: WorldScenesUndeploymentEvent
 }
 
 export type BoundingBox = {
@@ -483,7 +484,7 @@ export type IWorldsManager = {
     replacementAuthorization: SceneReplacementAuthorization,
     deployment?: SceneDeploymentData
   ): Promise<void>
-  /** Atomically undeploys matching scenes and returns the event describing the rows actually changed. */
+  /** Atomically undeploys matching scenes and returns the rows actually changed. */
   undeployScene(worldName: string, parcels: string[], authorizedEntityIds?: string[]): Promise<SceneUndeploymentResult>
   storeAccess(worldName: string, access: AccessSetting): Promise<void>
   modifyAccessAtomically(

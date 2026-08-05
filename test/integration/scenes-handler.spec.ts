@@ -514,7 +514,16 @@ test('ScenesHandler', function ({ components, stubComponents }) {
         const { worldCreator } = components
 
         identity = await getIdentity()
-        const created = await worldCreator.createWorldWithScene({ owner: identity.authChain })
+        worldName = worldCreator.randomWorldName()
+        const created = await worldCreator.createWorldWithScene({
+          worldName,
+          owner: identity.authChain,
+          metadata: {
+            main: 'abc.txt',
+            scene: { base: '21,24', parcels: ['20,24', '21,24'] },
+            worldConfiguration: { name: worldName }
+          }
+        })
         worldName = created.worldName
 
         stubComponents.namePermissionChecker.checkPermission.mockImplementation(
@@ -557,7 +566,7 @@ test('ScenesHandler', function ({ components, stubComponents }) {
             scenes: expect.arrayContaining([
               expect.objectContaining({
                 entityId: expect.any(String),
-                baseParcel: '20,24'
+                baseParcel: '21,24'
               })
             ])
           })
