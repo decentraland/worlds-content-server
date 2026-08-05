@@ -122,6 +122,7 @@ export async function createWorldsManagerMockComponent({
     worldName: string,
     scene: Entity,
     owner: EthAddress,
+    _replacementAuthorization: Parameters<IWorldsManager['deployScene']>[3],
     deployment?: SceneDeploymentData
   ): Promise<void> {
     const parcels: string[] = scene.metadata?.scene?.parcels || []
@@ -154,8 +155,9 @@ export async function createWorldsManagerMockComponent({
     })
   }
 
-  async function undeployScene(_worldName: string, _parcels: string[]): Promise<void> {
+  async function undeployScene(_worldName: string, _parcels: string[]): Promise<{ scenes: [] }> {
     // Mock implementation - no-op
+    return { scenes: [] }
   }
 
   async function getWorldScenes(

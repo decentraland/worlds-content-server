@@ -4,6 +4,8 @@ import { createEntityDeployer, DEFAULT_STORAGE_UPLOAD_CONCURRENCY } from '../../
 import { AppComponents, DeploymentFile, IEntityDeployer } from '../../src/types'
 import { createDeploymentProcessingMock } from '../mocks/deployment-processing-mock'
 
+const unrestrictedReplacementAuthorization = { mode: 'unrestricted-owner' } as const
+
 type EntityDeployerComponents = Pick<
   AppComponents,
   | 'blocking'
@@ -102,7 +104,10 @@ describe('entity deployer', () => {
         files,
         JSON.stringify(entity),
         [],
-        12
+        12,
+        undefined,
+        undefined,
+        unrestrictedReplacementAuthorization
       )
       contentUploadCalls = storageStoreStream.mock.calls.filter(([hash]) => contentHashes.includes(hash)).length
       // The real-timer paced uploads can exceed the default 5s hook budget when jest runs the
@@ -117,10 +122,12 @@ describe('entity deployer', () => {
       expect({
         contentUploadCalls,
         maximumActiveContentUploads,
-        deployment: worldsDeployScene.mock.calls[0][3]
+        authorization: worldsDeployScene.mock.calls[0][3],
+        deployment: worldsDeployScene.mock.calls[0][4]
       }).toEqual({
         contentUploadCalls: contentHashes.length,
         maximumActiveContentUploads: configuredConcurrency,
+        authorization: unrestrictedReplacementAuthorization,
         deployment: { authChain: [], size: 12 }
       })
     })
@@ -211,7 +218,10 @@ describe('entity deployer', () => {
         files,
         JSON.stringify(entity),
         [],
-        2
+        2,
+        undefined,
+        undefined,
+        unrestrictedReplacementAuthorization
       )
       uploadedContentHashes = storageStoreStream.mock.calls
         .map(([hash]) => hash)
@@ -356,7 +366,7 @@ describe('entity deployer', () => {
         releasePostCommitWork = resolve
       })
       setup.components.blocking.unblockIfUnderQuota = jest.fn(async () => postCommitWork) as jest.Mock
-      setup.worldsDeployScene.mockImplementation(async (_worldName, _entity, _owner, deployment) => {
+      setup.worldsDeployScene.mockImplementation(async (_worldName, _entity, _owner, _authorization, deployment) => {
         signalPassedToPersistence = deployment.signal
         controller.abort(new Error('deadline exceeded after commit'))
       })
@@ -372,7 +382,8 @@ describe('entity deployer', () => {
         [],
         0,
         controller.signal,
-        Date.now() + 10
+        Date.now() + 10,
+        unrestrictedReplacementAuthorization
       )
     })
 
@@ -410,7 +421,10 @@ describe('entity deployer', () => {
         new Map(),
         JSON.stringify(entity),
         [],
-        0
+        0,
+        undefined,
+        undefined,
+        unrestrictedReplacementAuthorization
       )
     })
 

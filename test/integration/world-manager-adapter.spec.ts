@@ -29,11 +29,17 @@ test('WorldManagerAdapter', function ({ components }) {
       retrieveSpy = jest.spyOn(storage, 'retrieve')
       fileInfoMultipleSpy = jest.spyOn(storage, 'fileInfoMultiple')
 
-      await worldsManager.deployScene(created.worldName, redeployedEntity, created.owner.authChain[0].payload, {
-        authChain: created.owner.authChain,
-        size: deploymentSize,
-        deadlineAt: Date.now() + 30_000
-      })
+      await worldsManager.deployScene(
+        created.worldName,
+        redeployedEntity,
+        created.owner.authChain[0].payload,
+        { mode: 'unrestricted-owner' },
+        {
+          authChain: created.owner.authChain,
+          size: deploymentSize,
+          deadlineAt: Date.now() + 30_000
+        }
+      )
       const result = await worldsManager.getWorldScenes({ worldName: created.worldName })
       deployedScene = result.scenes[0]
     })
@@ -59,6 +65,41 @@ test('WorldManagerAdapter', function ({ components }) {
     })
   })
 
+  describe('when the authorized replacement snapshot is stale', () => {
+    let caughtError: unknown
+    let deployedEntityIds: string[]
+    let originalEntityId: string
+
+    beforeEach(async () => {
+      const { worldCreator, worldsManager } = components
+      const created = await worldCreator.createWorldWithScene()
+      originalEntityId = created.entityId
+      const replacement = { ...created.entity, id: `${created.entity.id}-replacement` }
+
+      caughtError = await worldsManager
+        .deployScene(
+          created.worldName,
+          replacement,
+          created.owner.authChain[0].payload,
+          { mode: 'scoped', entityIds: [] },
+          { authChain: created.owner.authChain, size: 123 }
+        )
+        .catch((error) => error)
+      const result = await worldsManager.getWorldScenes({ worldName: created.worldName })
+      deployedEntityIds = result.scenes.map((scene) => scene.entityId)
+    })
+
+    it('should abort the transaction without replacing the unexpected overlapping scene', () => {
+      expect({ caughtError, deployedEntityIds }).toEqual({
+        caughtError: expect.objectContaining({
+          name: 'SceneReplacementConflictError',
+          message: expect.stringContaining('Scene replacement authorization changed')
+        }),
+        deployedEntityIds: [originalEntityId]
+      })
+    })
+  })
+
   describe('when the request is aborted while scene persistence is waiting on PostgreSQL', () => {
     let caughtError: unknown
     let lockClient: LockClient | undefined
@@ -78,6 +119,7 @@ test('WorldManagerAdapter', function ({ components }) {
         created.worldName,
         redeployedEntity,
         created.owner.authChain[0].payload,
+        { mode: 'unrestricted-owner' },
         {
           authChain: created.owner.authChain,
           size: 123,
@@ -139,12 +181,18 @@ test('WorldManagerAdapter', function ({ components }) {
         return client
       }) as never)
 
-      await worldsManager.deployScene(created.worldName, redeployedEntity, created.owner.authChain[0].payload, {
-        authChain: created.owner.authChain,
-        size: 123,
-        deadlineAt: Date.now() + 30_000,
-        signal: new AbortController().signal
-      })
+      await worldsManager.deployScene(
+        created.worldName,
+        redeployedEntity,
+        created.owner.authChain[0].payload,
+        { mode: 'unrestricted-owner' },
+        {
+          authChain: created.owner.authChain,
+          size: 123,
+          deadlineAt: Date.now() + 30_000,
+          signal: new AbortController().signal
+        }
+      )
 
       const describeStatement = (statement: { text: string; values?: unknown[] }): string =>
         statement.text.includes('set_config') ? `set_config:${statement.values?.[0]}` : statement.text
@@ -179,11 +227,13 @@ test('WorldManagerAdapter', function ({ components }) {
       const redeployedEntity = { ...created.entity, id: `${created.entity.id}-deadline-no-signal` }
       const querySpy = jest.spyOn(database, 'query')
 
-      await worldsManager.deployScene(created.worldName, redeployedEntity, created.owner.authChain[0].payload, {
-        authChain: created.owner.authChain,
-        size: 123,
-        deadlineAt: Date.now() + 30_000
-      })
+      await worldsManager.deployScene(
+        created.worldName,
+        redeployedEntity,
+        created.owner.authChain[0].payload,
+        { mode: 'unrestricted-owner' },
+        { authChain: created.owner.authChain, size: 123, deadlineAt: Date.now() + 30_000 }
+      )
 
       const lastCall = querySpy.mock.calls[querySpy.mock.calls.length - 1]?.[0] as
         | string
@@ -231,6 +281,7 @@ test('WorldManagerAdapter', function ({ components }) {
         created.worldName,
         redeployedEntity,
         created.owner.authChain[0].payload,
+        { mode: 'unrestricted-owner' },
         {
           authChain: created.owner.authChain,
           size: 123,
@@ -293,12 +344,18 @@ test('WorldManagerAdapter', function ({ components }) {
       jest.spyOn(pool, 'connect').mockImplementation((async () => fakeClient) as never)
 
       caughtError = await worldsManager
-        .deployScene(created.worldName, redeployedEntity, created.owner.authChain[0].payload, {
-          authChain: created.owner.authChain,
-          size: 123,
-          deadlineAt: Date.now() + 30_000,
-          signal: new AbortController().signal
-        })
+        .deployScene(
+          created.worldName,
+          redeployedEntity,
+          created.owner.authChain[0].payload,
+          { mode: 'unrestricted-owner' },
+          {
+            authChain: created.owner.authChain,
+            size: 123,
+            deadlineAt: Date.now() + 30_000,
+            signal: new AbortController().signal
+          }
+        )
         .catch((error) => error)
       jest.restoreAllMocks()
     })
@@ -510,6 +567,14 @@ test('WorldManagerAdapter', function ({ components }) {
         expect(size).toBe(firstSceneSize + secondSceneSize)
       })
 
+      it('should canonicalize parcel aliases before calculating the replaced scene size', async () => {
+        const { worldsManager } = components
+
+        const size = await worldsManager.getDeployedSceneSizeForParcels(worldName, ['01,01'])
+
+        expect(size).toBe(secondSceneSize)
+      })
+
       it('should return zero when no deployed scene overlaps the given parcels', async () => {
         const { worldsManager } = components
 
@@ -608,6 +673,173 @@ test('WorldManagerAdapter', function ({ components }) {
 
       expect(total).toBe(1)
       expect(scenes[0].parcels).toEqual(['0,0'])
+    })
+  })
+
+  describe('when an undeployment is constrained to previously authorized scene identities', function () {
+    let undeployedScenes: Awaited<ReturnType<typeof components.worldsManager.undeployScene>>
+    let remainingEntityIds: string[]
+    let replacementEntityId: string
+
+    beforeEach(async () => {
+      const { worldCreator, worldsManager } = components
+      const original = await worldCreator.createWorldWithScene()
+      const replacement = await worldCreator.createWorldWithScene({
+        worldName: original.worldName,
+        owner: original.owner,
+        metadata: {
+          main: 'abc.txt',
+          scene: { base: '20,24', parcels: ['20,24'] },
+          display: { title: 'Concurrent replacement' },
+          worldConfiguration: { name: original.worldName }
+        }
+      })
+      replacementEntityId = replacement.entityId
+
+      undeployedScenes = await worldsManager.undeployScene(original.worldName, ['20,24'], [original.entityId])
+
+      const { scenes } = await worldsManager.getWorldScenes({ worldName: original.worldName })
+      remainingEntityIds = scenes.map((scene) => scene.entityId)
+    })
+
+    it('should not undeploy a replacement scene that was absent from the authorization snapshot', function () {
+      expect(remainingEntityIds).toEqual([replacementEntityId])
+    })
+
+    it('should report that no authorized scene was undeployed', function () {
+      expect(undeployedScenes.scenes).toEqual([])
+    })
+  })
+
+  describe('when a scene undeployment creates a downstream event', function () {
+    let undeploymentEvent: Awaited<ReturnType<typeof components.worldsManager.undeployScene>>['event']
+
+    beforeEach(async () => {
+      const { worldCreator, worldsManager } = components
+      const worldName = worldCreator.randomWorldName()
+      const created = await worldCreator.createWorldWithScene({
+        worldName,
+        metadata: {
+          main: 'abc.txt',
+          scene: { base: '21,24', parcels: ['20,24', '21,24'] },
+          worldConfiguration: { name: worldName }
+        }
+      })
+      const result = await worldsManager.undeployScene(created.worldName, ['20,24'])
+      undeploymentEvent = result.event
+    })
+
+    it('should return the canonical identity of the scene changed by the transaction', function () {
+      expect(undeploymentEvent).toEqual(
+        expect.objectContaining({
+          metadata: expect.objectContaining({ scenes: [expect.objectContaining({ baseParcel: '21,24' })] })
+        })
+      )
+    })
+
+    describe('and the declared base is outside the stored parcel set', function () {
+      let eventScenes: Array<{ entityId: string; baseParcel: string }> | undefined
+
+      beforeEach(async () => {
+        const { worldCreator, worldsManager } = components
+        const worldName = worldCreator.randomWorldName()
+        const created = await worldCreator.createWorldWithScene({
+          worldName,
+          metadata: {
+            main: 'abc.txt',
+            scene: { base: '9,9', parcels: ['20,24', '21,24'] },
+            worldConfiguration: { name: worldName }
+          }
+        })
+
+        const result = await worldsManager.undeployScene(created.worldName, ['21,24'])
+        eventScenes = result.event?.metadata.scenes
+      })
+
+      it('should use the first canonical stored parcel instead of the untrusted base', function () {
+        expect(eventScenes).toEqual([expect.objectContaining({ baseParcel: '20,24' })])
+      })
+    })
+
+    describe('and the declared base is a non-canonical alias of a non-first stored parcel', function () {
+      let eventScenes: Array<{ entityId: string; baseParcel: string }> | undefined
+
+      beforeEach(async () => {
+        const { worldCreator, worldsManager } = components
+        const worldName = worldCreator.randomWorldName()
+        const created = await worldCreator.createWorldWithScene({
+          worldName,
+          metadata: {
+            main: 'abc.txt',
+            scene: { base: '021,024', parcels: ['20,24', '21,24'] },
+            worldConfiguration: { name: worldName }
+          }
+        })
+
+        const result = await worldsManager.undeployScene(created.worldName, ['20,24'])
+        eventScenes = result.event?.metadata.scenes
+      })
+
+      it('should emit the canonical non-first stored parcel', function () {
+        expect(eventScenes).toEqual([expect.objectContaining({ baseParcel: '21,24' })])
+      })
+    })
+
+    describe('and the fallback stored parcel is non-canonical', function () {
+      let eventScenes: Array<{ entityId: string; baseParcel: string }> | undefined
+
+      beforeEach(async () => {
+        const { database, worldCreator, worldsManager } = components
+        const worldName = worldCreator.randomWorldName()
+        const created = await worldCreator.createWorldWithScene({
+          worldName,
+          metadata: {
+            main: 'abc.txt',
+            scene: { base: '9,9', parcels: ['20,24', '21,24'] },
+            worldConfiguration: { name: worldName }
+          }
+        })
+        await database.query(SQL`
+          UPDATE world_scenes
+          SET parcels = ${['020,024', '21,24']}::text[]
+          WHERE world_name = ${created.worldName.toLowerCase()} AND entity_id = ${created.entityId}
+        `)
+
+        const result = await worldsManager.undeployScene(created.worldName, ['21,24'])
+        eventScenes = result.event?.metadata.scenes
+      })
+
+      it('should canonicalize the first stored parcel used as the fallback identity', function () {
+        expect(eventScenes).toEqual([expect.objectContaining({ baseParcel: '20,24' })])
+      })
+    })
+
+    describe('and the stored parcel array is empty', function () {
+      let createdEntityId: string
+      let undeploymentResult: Awaited<ReturnType<typeof components.worldsManager.undeployScene>>
+      let remainingEntityIds: string[]
+
+      beforeEach(async () => {
+        const { database, worldCreator, worldsManager } = components
+        const created = await worldCreator.createWorldWithScene()
+        createdEntityId = created.entityId
+        await database.query(SQL`
+          UPDATE world_scenes
+          SET parcels = ${[]}::text[]
+          WHERE world_name = ${created.worldName.toLowerCase()} AND entity_id = ${created.entityId}
+        `)
+
+        undeploymentResult = await worldsManager.undeployScene(created.worldName, ['20,24'])
+        const { scenes } = await worldsManager.getWorldScenes({ worldName: created.worldName })
+        remainingEntityIds = scenes.map((scene) => scene.entityId)
+      })
+
+      it('should leave the unmatched corrupt row deployed without producing an event', function () {
+        expect({ remainingEntityIds, undeploymentResult }).toEqual({
+          remainingEntityIds: [createdEntityId],
+          undeploymentResult: { scenes: [] }
+        })
+      })
     })
   })
 

@@ -143,6 +143,49 @@ describe('validator', function () {
     })
   })
 
+  describe('when the scene exceeds its configured parcel limit', () => {
+    let namePermissionCheck: jest.Mock
+    let parcelPermissionCheck: jest.Mock
+    let result: Awaited<ReturnType<ReturnType<typeof createValidator>['validateBeforeStorage']>>
+
+    beforeEach(async () => {
+      namePermissionCheck = jest.fn().mockResolvedValue(true)
+      parcelPermissionCheck = jest.fn().mockResolvedValue(true)
+      const parcels = ['0,0', '1,0', '2,0', '3,0', '4,0']
+      const deployment = await createSceneDeployment(identity.authChain, {
+        type: EntityType.SCENE,
+        pointers: parcels,
+        timestamp: Date.now(),
+        metadata: {
+          main: 'abc.txt',
+          scene: { base: '0,0', parcels },
+          worldConfiguration: { name: 'whatever.dcl.eth' }
+        },
+        files: []
+      })
+      const validator = createValidator({
+        ...components,
+        namePermissionChecker: { checkPermission: namePermissionCheck } as IWorldNamePermissionChecker,
+        permissions: {
+          ...permissions,
+          hasPermissionForParcels: parcelPermissionCheck
+        }
+      })
+
+      result = await validator.validateBeforeStorage(deployment)
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should reject the deployment before authorization checks', () => {
+      expect(result.errors).toContain('Max allowed scene dimensions is 4 parcels.')
+      expect(namePermissionCheck).not.toHaveBeenCalled()
+      expect(parcelPermissionCheck).not.toHaveBeenCalled()
+    })
+  })
+
   describe('when a signed deployment requires delegated authorization', () => {
     let contentHashCalls: number
     let permissionChecks: jest.Mock

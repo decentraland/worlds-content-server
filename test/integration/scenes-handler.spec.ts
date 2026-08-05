@@ -563,6 +563,27 @@ test('ScenesHandler', function ({ components, stubComponents }) {
           })
         })
       })
+
+      describe('and the requested coordinate is a non-canonical alias', function () {
+        let result: { responseStatus: number; remainingParcels: string[]; total: number }
+
+        beforeEach(async () => {
+          const { localFetch } = components
+          const response = await makeSignedRequest(localFetch, `/world/${worldName}/scenes/020,024`, identity)
+          const scenesResponse = await localFetch.fetch(`/world/${worldName}/scenes`)
+          const scenesBody = await scenesResponse.json()
+
+          result = {
+            responseStatus: response.status,
+            remainingParcels: scenesBody.scenes.map((scene: { parcels: string[] }) => scene.parcels[0]),
+            total: scenesBody.total
+          }
+        })
+
+        it('should undeploy the scene stored at the canonical coordinate', function () {
+          expect(result).toEqual({ responseStatus: 200, remainingParcels: [], total: 0 })
+        })
+      })
     })
 
     describe('when the user has deployment permission', function () {
