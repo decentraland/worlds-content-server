@@ -12,7 +12,7 @@ import { IWorldsComponent } from './types'
  * keyed on the base would miss.
  */
 function effectiveBaseParcel(
-  scene: WorldScene,
+  scene: Pick<WorldScene, 'entity' | 'parcels'>,
   coordinates: Pick<ICoordinatesComponent, 'canonicalizeParcel'>
 ): string {
   const base = scene.entity.metadata?.scene?.base
@@ -197,8 +197,7 @@ export const createWorldsComponent = (
   /**
    * Undeploys specific scenes from a world by parcels and publishes a WorldScenesUndeploymentEvent
    *
-   * Queries affected scenes before deletion to capture entity IDs and base parcels
-   * for the event payload.
+   * Publishes only the scene identities returned by the atomic undeployment update.
    *
    * @param worldName - The name of the world
    * @param parcels - The parcel coordinates of the scenes to undeploy
@@ -209,19 +208,11 @@ export const createWorldsComponent = (
     parcels: string[],
     authorizedEntityIds?: string[]
   ): Promise<void> {
-    // Query affected scenes before deletion to get entity IDs and base parcels
-    const { scenes: affectedScenes } = await worldsManager.getWorldScenes({ worldName, coordinates: parcels })
-    const authorizedEntityIdSet = authorizedEntityIds ? new Set(authorizedEntityIds) : undefined
-    const scenes = authorizedEntityIdSet
-      ? affectedScenes.filter((scene) => authorizedEntityIdSet.has(scene.entityId))
-      : affectedScenes
     const blockedOwner = await getBlockedOwner(worldName)
 
-    if (authorizedEntityIds) {
-      await worldsManager.undeployScene(worldName, parcels, authorizedEntityIds)
-    } else {
-      await worldsManager.undeployScene(worldName, parcels)
-    }
+    const scenes = authorizedEntityIds
+      ? await worldsManager.undeployScene(worldName, parcels, authorizedEntityIds)
+      : await worldsManager.undeployScene(worldName, parcels)
 
     if (scenes.length > 0) {
       const event: WorldScenesUndeploymentEvent = {

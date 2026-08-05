@@ -178,6 +178,8 @@ export type WorldScene = {
   updatedAt: Date
 }
 
+export type UndeployedWorldScene = Pick<WorldScene, 'entityId' | 'entity' | 'parcels'>
+
 export type BoundingBox = {
   x1: number
   x2: number
@@ -445,7 +447,7 @@ export type IWorldsManager = {
   getEntityForWorlds(worldNames: string[]): Promise<Entity[]>
   /** Persists a scene and its already-calculated deployment metadata. */
   deployScene(worldName: string, scene: Entity, owner: EthAddress, deployment?: SceneDeploymentData): Promise<void>
-  undeployScene(worldName: string, parcels: string[], authorizedEntityIds?: string[]): Promise<void>
+  undeployScene(worldName: string, parcels: string[], authorizedEntityIds?: string[]): Promise<UndeployedWorldScene[]>
   storeAccess(worldName: string, access: AccessSetting): Promise<void>
   modifyAccessAtomically(
     worldName: string,

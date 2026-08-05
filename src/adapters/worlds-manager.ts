@@ -26,7 +26,8 @@ import {
   GetOccupiedParcelsOptions,
   GetOccupiedParcelsResult,
   SceneDeploymentStatus,
-  SceneDeploymentData
+  SceneDeploymentData,
+  UndeployedWorldScene
 } from '../types'
 import { streamToBuffer } from '@dcl/catalyst-storage'
 import { Entity, EthAddress } from '@dcl/schemas'
@@ -711,11 +712,15 @@ export async function createWorldsManagerComponent({
     return { scenes, total }
   }
 
-  async function undeployScene(worldName: string, parcels: string[], authorizedEntityIds?: string[]): Promise<void> {
+  async function undeployScene(
+    worldName: string,
+    parcels: string[],
+    authorizedEntityIds?: string[]
+  ): Promise<UndeployedWorldScene[]> {
     const normalizedWorldName = worldName.toLowerCase()
     const canonicalParcels = canonicalizeParcels(parcels)
 
-    await database.withAsyncContextTransaction(async () => {
+    return await database.withAsyncContextTransaction(async () => {
       // Get current spawn_coordinates before deletion
       const worldResult = await database.query<{ spawn_coordinates: string | null }>(
         SQL`SELECT spawn_coordinates FROM worlds WHERE name = ${normalizedWorldName}`
@@ -733,7 +738,12 @@ export async function createWorldsManagerComponent({
       if (authorizedEntityIds) {
         undeployQuery.append(SQL` AND entity_id = ANY(${authorizedEntityIds}::text[])`)
       }
-      await database.query(undeployQuery)
+      undeployQuery.append(SQL` RETURNING entity_id, entity, parcels`)
+      const undeployedResult = await database.query<{
+        entity_id: string
+        entity: Entity
+        parcels: string[]
+      }>(undeployQuery)
 
       // Calculate new bounding rectangle (after deletion) using the shared function
       const boundingRectangle = await getWorldBoundingRectangle(normalizedWorldName)
@@ -764,6 +774,12 @@ export async function createWorldsManagerComponent({
 
       // Update denormalized scene stats
       await recalculateWorldSceneStats(normalizedWorldName)
+
+      return undeployedResult.rows.map((row) => ({
+        entityId: row.entity_id,
+        entity: row.entity,
+        parcels: row.parcels
+      }))
     })
   }
 
@@ -895,12 +911,13 @@ export async function createWorldsManagerComponent({
       return 0n
     }
 
+    const canonicalParcels = canonicalizeParcels(parcels)
     const result = await database.query<{ total_size: string }>(SQL`
       SELECT COALESCE(SUM(size), 0) as total_size
       FROM world_scenes
       WHERE world_name = ${worldName.toLowerCase()}
       AND status = 'DEPLOYED'
-      AND parcels && ${parcels}::text[]
+      AND parcels && ${canonicalParcels}::text[]
     `)
 
     return BigInt(result.rows[0]?.total_size || 0)

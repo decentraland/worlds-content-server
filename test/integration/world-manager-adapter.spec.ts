@@ -510,6 +510,14 @@ test('WorldManagerAdapter', function ({ components }) {
         expect(size).toBe(firstSceneSize + secondSceneSize)
       })
 
+      it('should canonicalize parcel aliases before calculating the replaced scene size', async () => {
+        const { worldsManager } = components
+
+        const size = await worldsManager.getDeployedSceneSizeForParcels(worldName, ['01,01'])
+
+        expect(size).toBe(secondSceneSize)
+      })
+
       it('should return zero when no deployed scene overlaps the given parcels', async () => {
         const { worldsManager } = components
 
@@ -612,6 +620,7 @@ test('WorldManagerAdapter', function ({ components }) {
   })
 
   describe('when an undeployment is constrained to previously authorized scene identities', function () {
+    let undeployedScenes: Awaited<ReturnType<typeof components.worldsManager.undeployScene>>
     let remainingEntityIds: string[]
     let replacementEntityId: string
 
@@ -630,7 +639,7 @@ test('WorldManagerAdapter', function ({ components }) {
       })
       replacementEntityId = replacement.entityId
 
-      await worldsManager.undeployScene(original.worldName, ['20,24'], [original.entityId])
+      undeployedScenes = await worldsManager.undeployScene(original.worldName, ['20,24'], [original.entityId])
 
       const { scenes } = await worldsManager.getWorldScenes({ worldName: original.worldName })
       remainingEntityIds = scenes.map((scene) => scene.entityId)
@@ -638,6 +647,10 @@ test('WorldManagerAdapter', function ({ components }) {
 
     it('should not undeploy a replacement scene that was absent from the authorization snapshot', function () {
       expect(remainingEntityIds).toEqual([replacementEntityId])
+    })
+
+    it('should report that no authorized scene was undeployed', function () {
+      expect(undeployedScenes).toEqual([])
     })
   })
 

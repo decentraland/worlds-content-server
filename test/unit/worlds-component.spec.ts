@@ -397,65 +397,18 @@ describe('WorldsComponent', () => {
 
   describe('when undeploying specific scenes from a world', () => {
     describe('and there are matching scenes', () => {
+      let firstScene: WorldScene
+      let secondScene: WorldScene
+
       beforeEach(() => {
-        worldsManager.getWorldScenes.mockResolvedValueOnce({
-          scenes: [
-            {
-              worldName: 'test-world',
-              entityId: 'entity-1',
-              deployer: '0x1234',
-              deploymentAuthChain: [],
-              entity: {
-                id: 'entity-1',
-                version: 'v3',
-                type: EntityType.SCENE,
-                pointers: ['0,0', '1,0'],
-                timestamp: Date.now(),
-                content: []
-              },
-              parcels: ['0,0', '1,0'],
-              size: BigInt(1000),
-              status: SceneDeploymentStatus.Deployed,
-              createdAt: new Date(),
-              updatedAt: new Date()
-            },
-            {
-              worldName: 'test-world',
-              entityId: 'entity-2',
-              deployer: '0x1234',
-              deploymentAuthChain: [],
-              entity: {
-                id: 'entity-2',
-                version: 'v3',
-                type: EntityType.SCENE,
-                pointers: ['5,5'],
-                timestamp: Date.now(),
-                content: []
-              },
-              parcels: ['5,5'],
-              size: BigInt(500),
-              status: SceneDeploymentStatus.Deployed,
-              createdAt: new Date(),
-              updatedAt: new Date()
-            }
-          ],
-          total: 2
-        })
-        worldsManager.undeployScene.mockResolvedValue(undefined)
+        firstScene = createWorldScene({ entityId: 'entity-1', parcels: ['0,0', '1,0'] })
+        secondScene = createWorldScene({ entityId: 'entity-2', parcels: ['5,5'] })
+        worldsManager.undeployScene.mockResolvedValue([firstScene, secondScene])
         snsClient.publishMessages.mockResolvedValue({
           Successful: [{ Id: 'id', MessageId: 'msg-id', SequenceNumber: '1' }],
           Failed: [],
           $metadata: {}
         } as any)
-      })
-
-      it('should query the affected scenes by world name and coordinates', async () => {
-        await worldsComponent.undeployWorldScenes('test-world', ['0,0', '5,5'])
-
-        expect(worldsManager.getWorldScenes).toHaveBeenCalledWith({
-          worldName: 'test-world',
-          coordinates: ['0,0', '5,5']
-        })
       })
 
       it('should undeploy the scenes for the given parcels', async () => {
@@ -490,7 +443,9 @@ describe('WorldsComponent', () => {
         ])
       })
 
-      it('should exclude scene identities outside the authorized snapshot from the event', async () => {
+      it('should publish only scene identities returned by the atomic undeployment', async () => {
+        worldsManager.undeployScene.mockResolvedValueOnce([firstScene])
+
         await worldsComponent.undeployWorldScenes('test-world', ['0,0', '5,5'], ['entity-1'])
 
         expect(snsClient.publishMessages).toHaveBeenCalledWith([
@@ -527,11 +482,7 @@ describe('WorldsComponent', () => {
 
     describe('and there are no matching scenes', () => {
       beforeEach(() => {
-        worldsManager.getWorldScenes.mockResolvedValueOnce({
-          scenes: [],
-          total: 0
-        })
-        worldsManager.undeployScene.mockResolvedValue(undefined)
+        worldsManager.undeployScene.mockResolvedValue([])
       })
 
       it('should still undeploy the given parcels', async () => {
@@ -552,11 +503,9 @@ describe('WorldsComponent', () => {
     beforeEach(() => {
       // Declared base ('1,1') is NOT the first parcel ('2,2') — like a world whose parcels
       // array doesn't start at its base. Places keys base_position on metadata.scene.base.
-      worldsManager.getWorldScenes.mockResolvedValueOnce({
-        scenes: [createWorldScene({ entityId: 'entity-x', base: '1,1', parcels: ['2,2', '1,1'] })],
-        total: 1
-      })
-      worldsManager.undeployScene.mockResolvedValue(undefined)
+      worldsManager.undeployScene.mockResolvedValue([
+        createWorldScene({ entityId: 'entity-x', base: '1,1', parcels: ['2,2', '1,1'] })
+      ])
       snsClient.publishMessages.mockResolvedValue({
         Successful: [{ Id: 'id', MessageId: 'msg-id', SequenceNumber: '1' }],
         Failed: [],
@@ -580,11 +529,9 @@ describe('WorldsComponent', () => {
 
   describe('when undeploying a scene whose declared base is outside its parcels', () => {
     beforeEach(() => {
-      worldsManager.getWorldScenes.mockResolvedValueOnce({
-        scenes: [createWorldScene({ entityId: 'entity-x', base: '9,9', parcels: ['2,2'] })],
-        total: 1
-      })
-      worldsManager.undeployScene.mockResolvedValue(undefined)
+      worldsManager.undeployScene.mockResolvedValue([
+        createWorldScene({ entityId: 'entity-x', base: '9,9', parcels: ['2,2'] })
+      ])
       snsClient.publishMessages.mockResolvedValue({
         Successful: [{ Id: 'id', MessageId: 'msg-id', SequenceNumber: '1' }],
         Failed: [],
@@ -607,11 +554,9 @@ describe('WorldsComponent', () => {
 
   describe('when undeploying a legacy scene whose declared base is a non-canonical stored parcel', () => {
     beforeEach(() => {
-      worldsManager.getWorldScenes.mockResolvedValueOnce({
-        scenes: [createWorldScene({ entityId: 'entity-x', base: '02,01', parcels: ['1,1', '2,1'] })],
-        total: 1
-      })
-      worldsManager.undeployScene.mockResolvedValue(undefined)
+      worldsManager.undeployScene.mockResolvedValue([
+        createWorldScene({ entityId: 'entity-x', base: '02,01', parcels: ['1,1', '2,1'] })
+      ])
       snsClient.publishMessages.mockResolvedValue({
         Successful: [{ Id: 'id', MessageId: 'msg-id', SequenceNumber: '1' }],
         Failed: [],
@@ -635,11 +580,9 @@ describe('WorldsComponent', () => {
   describe('when undeploying a scene whose stored base is missing or malformed', () => {
     beforeEach(() => {
       // Empty/invalid declared base — the derivation must fall back to parcels[0].
-      worldsManager.getWorldScenes.mockResolvedValueOnce({
-        scenes: [createWorldScene({ entityId: 'entity-y', base: '', parcels: ['2,2', '1,1'] })],
-        total: 1
-      })
-      worldsManager.undeployScene.mockResolvedValue(undefined)
+      worldsManager.undeployScene.mockResolvedValue([
+        createWorldScene({ entityId: 'entity-y', base: '', parcels: ['2,2', '1,1'] })
+      ])
       snsClient.publishMessages.mockResolvedValue({
         Successful: [{ Id: 'id', MessageId: 'msg-id', SequenceNumber: '1' }],
         Failed: [],

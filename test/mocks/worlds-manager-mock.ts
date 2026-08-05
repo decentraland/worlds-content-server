@@ -154,8 +154,9 @@ export async function createWorldsManagerMockComponent({
     })
   }
 
-  async function undeployScene(_worldName: string, _parcels: string[]): Promise<void> {
+  async function undeployScene(_worldName: string, _parcels: string[]): Promise<[]> {
     // Mock implementation - no-op
+    return []
   }
 
   async function getWorldScenes(
