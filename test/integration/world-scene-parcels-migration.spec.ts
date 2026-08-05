@@ -20,7 +20,7 @@ test('WorldSceneParcelsMigration', function ({ components }) {
 
       await database.query(
         SQL`UPDATE world_scenes
-            SET parcels = ${[' 01,01 ', '02,01', '2,1', 'not-a-coordinate', 'not-a-coordinate']}
+            SET parcels = ${[' 01,01 ', '02,01', '2,1']}
             WHERE world_name = ${worldName}`
       )
 
@@ -36,7 +36,7 @@ test('WorldSceneParcelsMigration', function ({ components }) {
     it('should canonicalize and deduplicate parcels in first-occurrence order', async () => {
       const { scenes } = await components.worldsManager.getWorldScenes({ worldName })
 
-      expect(scenes[0].parcels).toEqual(['1,1', '2,1', 'not-a-coordinate'])
+      expect(scenes[0].parcels).toEqual(['1,1', '2,1'])
     })
   })
 
@@ -104,7 +104,7 @@ test('WorldSceneParcelsMigration', function ({ components }) {
     it('should reject the migration with the conflicting world, parcel, and scene identities', () => {
       expect(migrationError).toEqual(
         expect.objectContaining({
-          name: 'WorldSceneParcelCollisionError',
+          name: 'WorldSceneParcelIntegrityError',
           message: expect.stringContaining(expectedCollision)
         })
       )
@@ -115,6 +115,57 @@ test('WorldSceneParcelsMigration', function ({ components }) {
         [firstEntityId]: ['01,01'],
         [secondEntityId]: ['1,1']
       })
+    })
+  })
+
+  describe('when a deployed scene contains an invalid parcel', () => {
+    let entityId: string
+    let expectedInvalidParcel: string
+    let migrationError: unknown
+    let storedParcels: string[]
+    let worldName: string
+
+    beforeEach(async () => {
+      const { database, worldCreator } = components
+      worldName = worldCreator.randomWorldName()
+      migrationError = undefined
+      const scene = await worldCreator.createWorldWithScene({ worldName })
+      entityId = scene.entityId
+      expectedInvalidParcel = `${worldName}:${entityId} ("not-a-coordinate")`
+
+      await database.query(
+        SQL`UPDATE world_scenes SET parcels = ${['01,01', 'not-a-coordinate']} WHERE entity_id = ${entityId}`
+      )
+
+      try {
+        await migration.run(components)
+      } catch (error) {
+        migrationError = error
+      }
+
+      const storedScene = await database.query<{ parcels: string[] }>(
+        SQL`SELECT parcels FROM world_scenes WHERE entity_id = ${entityId}`
+      )
+      storedParcels = storedScene.rows[0]?.parcels ?? []
+    })
+
+    afterEach(async () => {
+      await components.database.query(SQL`DELETE FROM world_scenes WHERE world_name = ${worldName}`)
+      await components.database.query(SQL`DELETE FROM worlds WHERE name = ${worldName}`)
+      jest.resetAllMocks()
+    })
+
+    it('should reject the migration with the invalid parcel and scene identity', () => {
+      expect(migrationError).toEqual(
+        expect.objectContaining({
+          name: 'WorldSceneParcelIntegrityError',
+          message: expect.stringContaining(expectedInvalidParcel)
+        })
+      )
+    })
+
+    it('should leave the invalid scene unchanged', () => {
+      expect(storedParcels).toEqual(['01,01', 'not-a-coordinate'])
     })
   })
 })
