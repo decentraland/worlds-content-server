@@ -6,23 +6,24 @@ import { IWorldsComponent } from './types'
 /**
  * The scene's effective base parcel — the value both the Places service (place base_position) and
  * the comms-gatekeeper scene-ban lookup key scene identity on. The declared metadata.scene.base is
- * canonicalized and trusted only when it is a non-empty member of the stored parcels; otherwise
- * this falls back to parcels[0]. Using parcels[0] unconditionally is wrong when a valid base isn't
- * the first parcel in the array: it points at a different scene identity, so places/ban lookups
- * keyed on the base would miss.
+ * canonicalized and trusted only when it is a non-empty member of the canonicalized stored parcel
+ * set; otherwise this falls back to the first canonicalized stored parcel. Using parcels[0]
+ * unconditionally is wrong when a valid base isn't the first parcel in the array: it points at a
+ * different scene identity, so places/ban lookups keyed on the base would miss.
  */
 function effectiveBaseParcel(
   scene: Pick<WorldScene, 'entity' | 'parcels'>,
-  coordinates: Pick<ICoordinatesComponent, 'canonicalizeParcel'>
+  coordinates: Pick<ICoordinatesComponent, 'canonicalizeParcel' | 'canonicalizeParcels'>
 ): string {
+  const canonicalParcels = coordinates.canonicalizeParcels(scene.parcels)
   const base = scene.entity.metadata?.scene?.base
   if (typeof base === 'string' && base.length > 0) {
     const canonicalBase = coordinates.canonicalizeParcel(base)
-    if (scene.parcels.includes(canonicalBase)) {
+    if (canonicalParcels.includes(canonicalBase)) {
       return canonicalBase
     }
   }
-  return scene.parcels[0]
+  return canonicalParcels[0]
 }
 
 /**

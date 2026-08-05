@@ -603,6 +603,31 @@ describe('WorldsComponent', () => {
     })
   })
 
+  describe('when undeploying a legacy scene whose stored parcels are non-canonical', () => {
+    beforeEach(() => {
+      worldsManager.undeployScene.mockResolvedValue([
+        createWorldScene({ entityId: 'entity-y', base: '9,9', parcels: ['02,02', '01,01'] })
+      ])
+      snsClient.publishMessages.mockResolvedValue({
+        Successful: [{ Id: 'id', MessageId: 'msg-id', SequenceNumber: '1' }],
+        Failed: [],
+        $metadata: {}
+      } as any)
+    })
+
+    it('should publish the canonical first stored parcel as the fallback baseParcel', async () => {
+      await worldsComponent.undeployWorldScenes('test-world', ['2,2'])
+
+      expect(snsClient.publishMessages).toHaveBeenCalledWith([
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            scenes: [{ entityId: 'entity-y', baseParcel: '2,2' }]
+          })
+        })
+      ])
+    })
+  })
+
   describe('when getting the base parcel of a scene whose declared base is not the first parcel', () => {
     beforeEach(() => {
       worldsManager.getWorldScenes.mockResolvedValueOnce({
