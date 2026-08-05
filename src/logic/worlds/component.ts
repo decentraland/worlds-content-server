@@ -210,9 +210,7 @@ export const createWorldsComponent = (
   ): Promise<void> {
     const blockedOwner = await getBlockedOwner(worldName)
 
-    const scenes = authorizedEntityIds
-      ? await worldsManager.undeployScene(worldName, parcels, authorizedEntityIds)
-      : await worldsManager.undeployScene(worldName, parcels)
+    const scenes = await worldsManager.undeployScene(worldName, parcels, authorizedEntityIds)
 
     if (scenes.length > 0) {
       const event: WorldScenesUndeploymentEvent = {

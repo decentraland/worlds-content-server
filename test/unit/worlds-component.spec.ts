@@ -414,7 +414,7 @@ describe('WorldsComponent', () => {
       it('should undeploy the scenes for the given parcels', async () => {
         await worldsComponent.undeployWorldScenes('test-world', ['0,0', '5,5'])
 
-        expect(worldsManager.undeployScene).toHaveBeenCalledWith('test-world', ['0,0', '5,5'])
+        expect(worldsManager.undeployScene).toHaveBeenCalledWith('test-world', ['0,0', '5,5'], undefined)
       })
 
       it('should constrain undeployment to the authorized scene identities when provided', async () => {
@@ -488,7 +488,7 @@ describe('WorldsComponent', () => {
       it('should still undeploy the given parcels', async () => {
         await worldsComponent.undeployWorldScenes('test-world', ['99,99'])
 
-        expect(worldsManager.undeployScene).toHaveBeenCalledWith('test-world', ['99,99'])
+        expect(worldsManager.undeployScene).toHaveBeenCalledWith('test-world', ['99,99'], undefined)
       })
 
       it('should not publish any event', async () => {
