@@ -32,6 +32,27 @@ export async function createPermissionsManagerComponent({
   }
 
   /**
+   * Resolve the owner a permission is being granted under, so it can be recorded alongside the
+   * permission itself.
+   *
+   * This deliberately does not go through `getOwner`: that one prefers the `worlds.owner` column,
+   * which is only refreshed by the update owner job. Stamping a grant with a stale owner would
+   * make the very next run of that job delete a permission the current owner had just granted.
+   *
+   * Returns undefined when the owner cannot be resolved, which records the grant as being of
+   * unknown provenance and gets it cleaned up on the next ownership change.
+   */
+  async function resolveGrantingOwner(worldName: string): Promise<EthAddress | undefined> {
+    try {
+      const owners = await nameOwnership.findOwners([worldName])
+      return owners?.get(worldName)?.toLowerCase()
+    } catch (error: any) {
+      logger.warn(`Failed to resolve the current owner of world ${worldName}: ${error.message}`)
+      return undefined
+    }
+  }
+
+  /**
    * Add multiple addresses to the permitted list for a permission with world-wide access.
    * If addresses already exist, their parcels are removed to make them world-wide.
    * Returns the addresses that were newly added (for notifications).
@@ -48,27 +69,37 @@ export async function createPermissionsManagerComponent({
     const lowerCaseWorldName = worldName.toLowerCase()
     const lowerCaseAddresses = addresses.map((a) => a.toLowerCase())
     const now = new Date()
+    // Resolved before opening the transaction so the network call does not hold a pooled client.
+    const grantedUnderOwner = await resolveGrantingOwner(worldName)
 
     return await database.withAsyncContextTransaction(async () => {
-      // Build batch insert query (skips existing, returns only newly inserted)
+      // Build batch insert query. Existing rows have their granting owner refreshed: re-granting
+      // an address is an explicit act by whoever owns the name now, so the permission belongs to
+      // the current owner even if a previous one had originally granted it.
       const insertQuery = SQL`
-        INSERT INTO world_permissions (world_name, permission_type, address, created_at, updated_at)
+        INSERT INTO world_permissions (world_name, permission_type, address, granted_under_owner, created_at, updated_at)
         VALUES `
 
       lowerCaseAddresses.forEach((address, index) => {
         if (index > 0) {
           insertQuery.append(SQL`, `)
         }
-        insertQuery.append(SQL`(${lowerCaseWorldName}, ${permission}, ${address}, ${now}, ${now})`)
+        insertQuery.append(
+          SQL`(${lowerCaseWorldName}, ${permission}, ${address}, ${grantedUnderOwner ?? null}, ${now}, ${now})`
+        )
       })
 
+      // `xmax = 0` is only true for tuples this statement inserted, so it separates the rows that
+      // were newly added (which must be notified) from the ones that were merely refreshed.
       insertQuery.append(SQL`
-        ON CONFLICT (world_name, permission_type, address) DO NOTHING
-        RETURNING address
+        ON CONFLICT (world_name, permission_type, address) DO UPDATE
+          SET granted_under_owner = EXCLUDED.granted_under_owner,
+              updated_at = EXCLUDED.updated_at
+        RETURNING address, (xmax = 0) AS inserted
       `)
 
-      const insertResult = await database.query<{ address: string }>(insertQuery)
-      const newlyAddedAddresses = insertResult.rows.map((r) => r.address)
+      const insertResult = await database.query<{ address: string; inserted: boolean }>(insertQuery)
+      const newlyAddedAddresses = insertResult.rows.filter((r) => r.inserted).map((r) => r.address)
 
       // Delete any existing parcels for ALL addresses (making them world-wide)
       // This affects both new and existing addresses
@@ -112,6 +143,35 @@ export async function createPermissionsManagerComponent({
     `)
 
     return result.rows.map((r) => r.address)
+  }
+
+  /**
+   * Delete every permission of a world that was not granted under the given owner.
+   *
+   * Used when a name changes hands: permissions the previous owner handed out must not survive the
+   * transfer, while the ones the new owner already granted must. Rows whose granting owner is
+   * unknown (NULL) are deleted too, since their provenance cannot be established and leaving a
+   * stale permission in place is worse than making the new owner grant it again.
+   *
+   * Parcels are removed as well through the `world_permission_parcels` foreign key cascade.
+   *
+   * @returns The permissions that were deleted.
+   */
+  async function deletePermissionsNotGrantedUnderOwner(
+    worldName: string,
+    owner: EthAddress
+  ): Promise<{ address: string; permissionType: AllowListPermission }[]> {
+    const result = await database.query<{ address: string; permission_type: string }>(SQL`
+      DELETE FROM world_permissions
+      WHERE world_name = ${worldName.toLowerCase()}
+        AND granted_under_owner IS DISTINCT FROM ${owner.toLowerCase()}
+      RETURNING address, permission_type
+    `)
+
+    return result.rows.map((r) => ({
+      address: r.address,
+      permissionType: r.permission_type as AllowListPermission
+    }))
   }
 
   async function getAddressPermissions(
@@ -316,6 +376,8 @@ export async function createPermissionsManagerComponent({
     const lowerCaseAddress = address.toLowerCase()
     const canonicalParcels = coordinates.canonicalizeParcels(parcels)
     const now = new Date()
+    // Resolved before opening the transaction so the network call does not hold a pooled client.
+    const grantedUnderOwner = await resolveGrantingOwner(worldName)
 
     return await database.withAsyncContextTransaction(async () => {
       // Check if permission exists
@@ -332,18 +394,20 @@ export async function createPermissionsManagerComponent({
       if (existingResult.rowCount === 0) {
         // Create new permission
         const insertResult = await database.query<{ id: number }>(SQL`
-          INSERT INTO world_permissions (world_name, permission_type, address, created_at, updated_at)
-          VALUES (${lowerCaseWorldName}, ${permission}, ${lowerCaseAddress}, ${now}, ${now})
+          INSERT INTO world_permissions (world_name, permission_type, address, granted_under_owner, created_at, updated_at)
+          VALUES (${lowerCaseWorldName}, ${permission}, ${lowerCaseAddress}, ${grantedUnderOwner ?? null}, ${now}, ${now})
           RETURNING id
         `)
         permissionId = insertResult.rows[0].id
         created = true
       } else {
         permissionId = existingResult.rows[0].id
-        // Update timestamp
+        // Update timestamp, and re-stamp the granting owner: widening an existing permission is an
+        // explicit act by whoever owns the name now.
         await database.query(SQL`
-          UPDATE world_permissions 
-          SET updated_at = ${now} 
+          UPDATE world_permissions
+          SET updated_at = ${now},
+              granted_under_owner = ${grantedUnderOwner ?? null}
           WHERE id = ${permissionId}
         `)
       }
@@ -456,6 +520,7 @@ export async function createPermissionsManagerComponent({
     getOwner,
     grantAddressesWorldWidePermission,
     removeAddressesPermission,
+    deletePermissionsNotGrantedUnderOwner,
     getAddressPermissions,
     getParcelsForPermission,
     getWorldPermissionRecords,

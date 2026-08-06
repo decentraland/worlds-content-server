@@ -255,7 +255,8 @@ export async function initComponents(): Promise<AppComponents> {
     blocking,
     database,
     logs,
-    nameOwnership
+    nameOwnership,
+    permissionsManager
   })
 
   const settings = await createSettingsComponent({

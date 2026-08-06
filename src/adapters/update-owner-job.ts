@@ -10,9 +10,9 @@ type WorldData = {
 }
 
 export async function createUpdateOwnerJob(
-  components: Pick<AppComponents, 'blocking' | 'database' | 'logs' | 'nameOwnership'>
+  components: Pick<AppComponents, 'blocking' | 'database' | 'logs' | 'nameOwnership' | 'permissionsManager'>
 ): Promise<IRunnable<void>> {
-  const { blocking, database, logs, nameOwnership } = components
+  const { blocking, database, logs, nameOwnership, permissionsManager } = components
   const logger = logs.getLogger('update-owner-job')
 
   async function run() {
@@ -42,19 +42,52 @@ export async function createUpdateOwnerJob(
     const worldWithOwners = await nameOwnership.findOwners([...recordsByName.keys()])
 
     // Step 1
-    // Compare the owners of stored vs retrieved from name ownership
-    // Update owners in DB (and in memory)
+    // Compare the owners of stored vs retrieved from name ownership. Update owners in DB (and in
+    // memory), and drop the permissions the previous owner had granted. Errors are isolated per
+    // world so one failure cannot prevent the others from being processed.
     for (const worldData of onlyDclNameRecords) {
-      // DCL names never expire, there will always be an owner. It is safe to use ! here.
-      const newOwner = worldWithOwners.get(worldData.name)!
-      if (worldData.owner.toLowerCase() !== newOwner?.toLowerCase()) {
-        logger.info(`Updating owner of ${worldData.name} from ${worldData.owner} to ${newOwner}`)
-        const sql = SQL`
+      const newOwner = worldWithOwners.get(worldData.name)
+      // DCL names never expire, so a missing owner means the lookup failed rather than the name
+      // being unowned. Treating it as a change would blank the owner column and, worse, revoke
+      // every permission of the world over what is only a transient failure.
+      if (!newOwner) {
+        logger.warn(`Skipping ${worldData.name}: its current owner could not be resolved`)
+        continue
+      }
+
+      const lowerCaseNewOwner = newOwner.toLowerCase()
+      if (worldData.owner.toLowerCase() === lowerCaseNewOwner) {
+        continue
+      }
+
+      logger.info(`Updating owner of ${worldData.name} from ${worldData.owner} to ${newOwner}`)
+
+      try {
+        // Both statements have to commit together. Persisting the new owner on its own would make
+        // the next run see no change at all, so a failed cleanup would leave the previous owner's
+        // permissions in place forever instead of being retried.
+        await database.withAsyncContextTransaction(async () => {
+          await database.query(SQL`
             UPDATE worlds
-            SET owner = ${newOwner?.toLowerCase()}
-            WHERE name = ${worldData.name.toLowerCase()}`
-        await database.query(sql)
+            SET owner = ${lowerCaseNewOwner}
+            WHERE name = ${worldData.name.toLowerCase()}`)
+
+          const revoked = await permissionsManager.deletePermissionsNotGrantedUnderOwner(
+            worldData.name,
+            lowerCaseNewOwner
+          )
+
+          if (revoked.length > 0) {
+            logger.info(
+              `Revoked ${revoked.length} permission(s) of ${worldData.name} that predate its ownership change: ` +
+                revoked.map((r) => `${r.permissionType}:${r.address}`).join(', ')
+            )
+          }
+        })
+
         worldData.owner = newOwner
+      } catch (error) {
+        logger.error(`Failed to apply the ownership change of ${worldData.name}`, { error: errorMessage(error) })
       }
     }
 
