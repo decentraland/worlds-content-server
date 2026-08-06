@@ -8,8 +8,11 @@ export const migration: Migration = {
 
     logger.info('Adding granted_under_owner column to world_permissions')
 
+    // The migration record is only written once `run` returns, so a crash midway has to be safe to
+    // replay: the column is added conditionally and the backfill only fills rows that are still
+    // unset, leaving any provenance already recorded untouched.
     await database.query(`
-      ALTER TABLE world_permissions ADD COLUMN granted_under_owner VARCHAR;
+      ALTER TABLE world_permissions ADD COLUMN IF NOT EXISTS granted_under_owner VARCHAR;
     `)
 
     // Backfill with the owner currently stored for the world. Existing rows have no recorded
@@ -22,7 +25,8 @@ export const migration: Migration = {
       SET granted_under_owner = LOWER(w.owner)
       FROM worlds w
       WHERE w.name = wp.world_name
-        AND w.owner IS NOT NULL;
+        AND w.owner IS NOT NULL
+        AND wp.granted_under_owner IS NULL;
     `)
 
     logger.info(`Backfilled granted_under_owner for ${result.rowCount} permission rows`)

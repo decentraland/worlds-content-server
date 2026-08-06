@@ -508,6 +508,7 @@ export type IPermissionsManager = {
     addresses: string[]
   ): Promise<string[]>
   removeAddressesPermission(worldName: string, permission: AllowListPermission, addresses: string[]): Promise<string[]>
+  refreshGrantingOwner(worldName: string, permission: AllowListPermission, addresses: string[]): Promise<void>
   deletePermissionsNotGrantedUnderOwner(
     worldName: string,
     owner: EthAddress

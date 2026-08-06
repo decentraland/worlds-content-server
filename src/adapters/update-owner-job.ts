@@ -7,6 +7,7 @@ type WorldData = {
   name: string
   owner: string
   size: bigint
+  hasDeployedScenes: boolean
 }
 
 export async function createUpdateOwnerJob(
@@ -18,11 +19,29 @@ export async function createUpdateOwnerJob(
   async function run() {
     const startDate = new Date()
 
-    // Get worlds with at least one scene deployed, aggregating total size from world_scenes
-    const records = await database.query<WorldData>(`
-      SELECT w.name, w.owner, COALESCE(SUM(ws.size), 0)::text as size
+    // Get the worlds that need their owner reconciled, aggregating total size from world_scenes.
+    // Worlds with no deployed scene are included when they carry permissions: the permission APIs
+    // create the world entry on their own, so a name transferred while empty would otherwise never
+    // have its owner refreshed and would keep the previous owner's permissions indefinitely.
+    const records = await database.query<{
+      name: string
+      owner: string
+      size: string
+      has_deployed_scenes: boolean
+    }>(`
+      SELECT
+        w.name,
+        w.owner,
+        COALESCE(SUM(ws.size), 0)::text as size,
+        COUNT(ws.world_name) > 0 as has_deployed_scenes
       FROM worlds w
-      INNER JOIN world_scenes ws ON w.name = ws.world_name AND ws.status = 'DEPLOYED'
+      LEFT JOIN world_scenes ws ON w.name = ws.world_name AND ws.status = 'DEPLOYED'
+      WHERE EXISTS (
+              SELECT 1 FROM world_scenes s WHERE s.world_name = w.name AND s.status = 'DEPLOYED'
+            )
+         OR EXISTS (
+              SELECT 1 FROM world_permissions p WHERE p.world_name = w.name
+            )
       GROUP BY w.name, w.owner
     `)
     const onlyDclNameRecords = records.rows
@@ -31,7 +50,8 @@ export async function createUpdateOwnerJob(
         return {
           name: row.name,
           owner: row.owner,
-          size: BigInt(row.size)
+          size: BigInt(row.size),
+          hasDeployedScenes: row.has_deployed_scenes
         }
       })
     const recordsByName = onlyDclNameRecords.reduce((acc, curr) => {
@@ -56,7 +76,9 @@ export async function createUpdateOwnerJob(
       }
 
       const lowerCaseNewOwner = newOwner.toLowerCase()
-      if (worldData.owner.toLowerCase() === lowerCaseNewOwner) {
+      // A world can predate the owner column, so its stored owner may be missing. That counts as a
+      // change: it gets recorded, and the permissions of whoever held the name before are dropped.
+      if (worldData.owner?.toLowerCase() === lowerCaseNewOwner) {
         continue
       }
 
@@ -96,8 +118,14 @@ export async function createUpdateOwnerJob(
     // owner so one failure cannot prevent the others from being processed. Finally, clear up
     // all blocking records that were not refreshed in this run — except those of owners whose
     // status could not be evaluated, which must remain blocked until the next run.
+    // Only worlds holding deployed scenes count towards a wallet's quota, so the reconciliation
+    // above being wider than that must not pull extra wallets into the blocking evaluation.
     const owners = new Set<string>()
-    for (const owner of worldWithOwners.values()) {
+    for (const worldData of onlyDclNameRecords) {
+      if (!worldData.hasDeployedScenes) {
+        continue
+      }
+      const owner = worldWithOwners.get(worldData.name)
       if (owner) {
         owners.add(owner)
       }

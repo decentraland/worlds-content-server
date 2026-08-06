@@ -1,12 +1,14 @@
 import { test } from '../../components'
 import { getIdentity, Identity } from '../../utils'
 import { INameOwnership, IPermissionsManager, IWorldCreator } from '../../../src/types'
+import { IPermissionsComponent, PermissionType } from '../../../src/logic/permissions'
 
 test('permissions cleanup after a world changes owners', ({ components }) => {
   const previousOwner = '0xa100000000000000000000000000000000000001'
   const newOwner = '0xb200000000000000000000000000000000000002'
 
   let permissionsManager: IPermissionsManager
+  let permissions: IPermissionsComponent
   let worldCreator: IWorldCreator
   let nameOwnership: jest.Mocked<INameOwnership>
 
@@ -17,6 +19,7 @@ test('permissions cleanup after a world changes owners', ({ components }) => {
 
   beforeEach(async () => {
     permissionsManager = components.permissionsManager
+    permissions = components.permissions
     worldCreator = components.worldCreator
     nameOwnership = components.nameOwnership
 
@@ -100,6 +103,66 @@ test('permissions cleanup after a world changes owners', ({ components }) => {
 
     it('should remove the parcel scoped permission as well', () => {
       expect(remainingAddresses).not.toContain(parcelHolder.realAccount.address.toLowerCase())
+    })
+  })
+
+  describe('when the new owner submits an allow-list that keeps an address the previous owner had granted', () => {
+    let remainingAddresses: string[]
+
+    beforeEach(async () => {
+      await permissions.setDeploymentPermission(worldName, newOwner, PermissionType.AllowList, [
+        grantedByPreviousOwner.realAccount.address,
+        grantedByNewOwner.realAccount.address
+      ])
+
+      await permissionsManager.deletePermissionsNotGrantedUnderOwner(worldName, newOwner)
+      const records = await permissionsManager.getWorldPermissionRecords(worldName)
+      remainingAddresses = records.map((record) => record.address)
+    })
+
+    it('should keep the address that the new owner kept in the list', () => {
+      expect(remainingAddresses).toContain(grantedByPreviousOwner.realAccount.address.toLowerCase())
+    })
+  })
+
+  describe('when the same address is granted twice in a single request', () => {
+    let duplicatedAddress: string
+    let remainingAddresses: string[]
+
+    beforeEach(async () => {
+      const holder = await getIdentity()
+      duplicatedAddress = holder.realAccount.address
+
+      await permissionsManager.grantAddressesWorldWidePermission(worldName, 'deployment', [
+        duplicatedAddress,
+        duplicatedAddress.toLowerCase()
+      ])
+
+      const records = await permissionsManager.getWorldPermissionRecords(worldName)
+      remainingAddresses = records.map((record) => record.address)
+    })
+
+    it('should grant the permission once instead of failing the request', () => {
+      expect(remainingAddresses.filter((address) => address === duplicatedAddress.toLowerCase())).toHaveLength(1)
+    })
+  })
+
+  describe('and a permission is re-granted while the current owner cannot be resolved', () => {
+    let remainingAddresses: string[]
+
+    beforeEach(async () => {
+      nameOwnership.findOwners.mockRejectedValue(new Error('boom: the subgraph is unavailable'))
+      await permissionsManager.grantAddressesWorldWidePermission(worldName, 'deployment', [
+        grantedByNewOwner.realAccount.address
+      ])
+
+      await permissionsManager.deletePermissionsNotGrantedUnderOwner(worldName, newOwner)
+      const records = await permissionsManager.getWorldPermissionRecords(worldName)
+      remainingAddresses = records.map((record) => record.address)
+    })
+
+    it('should keep the owner already recorded rather than downgrading it to unknown', () => {
+      expect(remainingAddresses).toContain(grantedByNewOwner.realAccount.address.toLowerCase())
     })
   })
 

@@ -26,8 +26,8 @@ describe('UpdateOwnerJob', () => {
     database = createDatabaseMock([
       {
         rows: [
-          { name: 'bad-world.dcl.eth', owner: badOwner, size: '100' },
-          { name: 'good-world.dcl.eth', owner: goodOwner, size: '100' }
+          { name: 'bad-world.dcl.eth', owner: badOwner, size: '100', has_deployed_scenes: true },
+          { name: 'good-world.dcl.eth', owner: goodOwner, size: '100', has_deployed_scenes: true }
         ],
         rowCount: 2
       }
@@ -137,6 +137,41 @@ describe('UpdateOwnerJob', () => {
     })
   })
 
+  describe('when a world that changed owners holds permissions but no deployed scene', () => {
+    const newOwner = '0xnew0000000000000000000000000000000000003'.toLowerCase()
+
+    beforeEach(async () => {
+      blocking = createMockBlockingComponent()
+
+      database = createDatabaseMock([
+        {
+          rows: [{ name: 'empty-world.dcl.eth', owner: badOwner, size: '0', has_deployed_scenes: false }],
+          rowCount: 1
+        },
+        // The UPDATE of the owner column
+        { rows: [], rowCount: 1 }
+      ])
+
+      const nameOwnership = createMockedNameOwnership({
+        findOwners: jest.fn().mockResolvedValue(new Map([['empty-world.dcl.eth', newOwner]]))
+      })
+
+      const job = await createUpdateOwnerJob({ blocking, database, logs, nameOwnership, permissionsManager })
+      await job.run()
+    })
+
+    it('should still revoke the permissions that predate the ownership change', () => {
+      expect(permissionsManager.deletePermissionsNotGrantedUnderOwner).toHaveBeenCalledWith(
+        'empty-world.dcl.eth',
+        newOwner
+      )
+    })
+
+    it('should not evaluate the blocking status of its owner, since it uses no quota', () => {
+      expect(blocking.blockIfOverQuota).not.toHaveBeenCalled()
+    })
+  })
+
   describe('when the current owner of a world cannot be resolved', () => {
     let querySpy: jest.SpyInstance
 
@@ -145,7 +180,7 @@ describe('UpdateOwnerJob', () => {
 
       database = createDatabaseMock([
         {
-          rows: [{ name: 'unresolved-world.dcl.eth', owner: badOwner, size: '100' }],
+          rows: [{ name: 'unresolved-world.dcl.eth', owner: badOwner, size: '100', has_deployed_scenes: true }],
           rowCount: 1
         }
       ])
@@ -187,7 +222,7 @@ describe('UpdateOwnerJob', () => {
 
       database = createDatabaseMock([
         {
-          rows: [{ name: 'sold-world.dcl.eth', owner: badOwner, size: '100' }],
+          rows: [{ name: 'sold-world.dcl.eth', owner: badOwner, size: '100', has_deployed_scenes: true }],
           rowCount: 1
         },
         // The UPDATE of the owner column
@@ -249,8 +284,8 @@ describe('UpdateOwnerJob', () => {
       database = createDatabaseMock([
         {
           rows: [
-            { name: 'sold-world.dcl.eth', owner: badOwner, size: '100' },
-            { name: 'good-world.dcl.eth', owner: goodOwner, size: '100' }
+            { name: 'sold-world.dcl.eth', owner: badOwner, size: '100', has_deployed_scenes: true },
+            { name: 'good-world.dcl.eth', owner: goodOwner, size: '100', has_deployed_scenes: true }
           ],
           rowCount: 2
         }

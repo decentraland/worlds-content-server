@@ -67,7 +67,9 @@ export async function createPermissionsManagerComponent({
     }
 
     const lowerCaseWorldName = worldName.toLowerCase()
-    const lowerCaseAddresses = addresses.map((a) => a.toLowerCase())
+    // Deduplicated because `ON CONFLICT DO UPDATE` rejects a statement that proposes the same
+    // conflicting row twice, and the callers build this list straight from user supplied wallets.
+    const lowerCaseAddresses = [...new Set(addresses.map((a) => a.toLowerCase()))]
     const now = new Date()
     // Resolved before opening the transaction so the network call does not hold a pooled client.
     const grantedUnderOwner = await resolveGrantingOwner(worldName)
@@ -91,9 +93,11 @@ export async function createPermissionsManagerComponent({
 
       // `xmax = 0` is only true for tuples this statement inserted, so it separates the rows that
       // were newly added (which must be notified) from the ones that were merely refreshed.
+      // COALESCE keeps the recorded owner when it could not be resolved now: downgrading a known
+      // provenance to unknown would get the permission deleted on the next ownership change.
       insertQuery.append(SQL`
         ON CONFLICT (world_name, permission_type, address) DO UPDATE
-          SET granted_under_owner = EXCLUDED.granted_under_owner,
+          SET granted_under_owner = COALESCE(EXCLUDED.granted_under_owner, world_permissions.granted_under_owner),
               updated_at = EXCLUDED.updated_at
         RETURNING address, (xmax = 0) AS inserted
       `)
@@ -143,6 +147,41 @@ export async function createPermissionsManagerComponent({
     `)
 
     return result.rows.map((r) => r.address)
+  }
+
+  /**
+   * Re-record the owner the given permissions are held under.
+   *
+   * The flows that replace a whole allow-list only remove the addresses that dropped out and grant
+   * the ones that came in, so an address kept across the change is never written to. Without this,
+   * its recorded owner would still be a previous one and the update owner job would revoke a
+   * permission that the current owner explicitly kept in the list they just submitted.
+   *
+   * Does nothing when the owner cannot be resolved, so a failed lookup never downgrades a known
+   * provenance to unknown.
+   */
+  async function refreshGrantingOwner(
+    worldName: string,
+    permission: AllowListPermission,
+    addresses: string[]
+  ): Promise<void> {
+    if (addresses.length === 0) {
+      return
+    }
+
+    const grantedUnderOwner = await resolveGrantingOwner(worldName)
+    if (!grantedUnderOwner) {
+      return
+    }
+
+    await database.query(SQL`
+      UPDATE world_permissions
+      SET granted_under_owner = ${grantedUnderOwner},
+          updated_at = ${new Date()}
+      WHERE world_name = ${worldName.toLowerCase()}
+        AND permission_type = ${permission}
+        AND address = ANY(${addresses.map((a) => a.toLowerCase())})
+    `)
   }
 
   /**
@@ -403,11 +442,12 @@ export async function createPermissionsManagerComponent({
       } else {
         permissionId = existingResult.rows[0].id
         // Update timestamp, and re-stamp the granting owner: widening an existing permission is an
-        // explicit act by whoever owns the name now.
+        // explicit act by whoever owns the name now. The recorded owner is kept when it could not
+        // be resolved now, so a failed lookup never downgrades a known provenance to unknown.
         await database.query(SQL`
           UPDATE world_permissions
           SET updated_at = ${now},
-              granted_under_owner = ${grantedUnderOwner ?? null}
+              granted_under_owner = COALESCE(${grantedUnderOwner ?? null}::varchar, granted_under_owner)
           WHERE id = ${permissionId}
         `)
       }
@@ -520,6 +560,7 @@ export async function createPermissionsManagerComponent({
     getOwner,
     grantAddressesWorldWidePermission,
     removeAddressesPermission,
+    refreshGrantingOwner,
     deletePermissionsNotGrantedUnderOwner,
     getAddressPermissions,
     getParcelsForPermission,
