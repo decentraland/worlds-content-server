@@ -206,6 +206,11 @@ describe('UpdateOwnerJob', () => {
       const logger = logs.getLogger('update-owner-job')
       expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('unresolved-world.dcl.eth'))
     })
+
+    it('should keep the blocking record of the owner the world is still attributed to', () => {
+      const [, keepWallets] = blocking.collectStaleBlockingRecords.mock.calls[0]
+      expect(keepWallets.has(badOwner)).toBe(true)
+    })
   })
 
   describe('when a world changed owners', () => {
@@ -322,6 +327,11 @@ describe('UpdateOwnerJob', () => {
 
     it('should still collect stale blocking records at the end of the run', () => {
       expect(blocking.collectStaleBlockingRecords).toHaveBeenCalledTimes(1)
+    })
+
+    it('should keep the blocking record of the owner the world is still attributed to', () => {
+      const [, keepWallets] = blocking.collectStaleBlockingRecords.mock.calls[0]
+      expect(keepWallets.has(badOwner)).toBe(true)
     })
   })
 })

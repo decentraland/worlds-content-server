@@ -157,26 +157,23 @@ export async function createPermissionsManagerComponent({
    * its recorded owner would still be a previous one and the update owner job would revoke a
    * permission that the current owner explicitly kept in the list they just submitted.
    *
-   * Does nothing when the owner cannot be resolved, so a failed lookup never downgrades a known
-   * provenance to unknown.
+   * The owner is taken from the caller rather than resolved here: those flows have already had it
+   * verified against the name to authorize the request, so reusing it keeps the write deterministic
+   * instead of leaving it at the mercy of a second lookup that could miss.
    */
   async function refreshGrantingOwner(
     worldName: string,
     permission: AllowListPermission,
-    addresses: string[]
+    addresses: string[],
+    owner: EthAddress
   ): Promise<void> {
     if (addresses.length === 0) {
       return
     }
 
-    const grantedUnderOwner = await resolveGrantingOwner(worldName)
-    if (!grantedUnderOwner) {
-      return
-    }
-
     await database.query(SQL`
       UPDATE world_permissions
-      SET granted_under_owner = ${grantedUnderOwner},
+      SET granted_under_owner = ${owner.toLowerCase()},
           updated_at = ${new Date()}
       WHERE world_name = ${worldName.toLowerCase()}
         AND permission_type = ${permission}

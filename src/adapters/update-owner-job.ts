@@ -61,6 +61,16 @@ export async function createUpdateOwnerJob(
 
     const worldWithOwners = await nameOwnership.findOwners([...recordsByName.keys()])
 
+    // Wallets that Step 2 will not evaluate even though the database still attributes a deployed
+    // world to them. Their blocking records have to survive the stale cleanup, otherwise a wallet
+    // that is still over quota gets unblocked over a failure to reconcile its worlds.
+    const unevaluatedOwners = new Set<string>()
+    function keepBlockingRecordOf(worldData: WorldData) {
+      if (worldData.hasDeployedScenes && worldData.owner) {
+        unevaluatedOwners.add(worldData.owner.toLowerCase())
+      }
+    }
+
     // Step 1
     // Compare the owners of stored vs retrieved from name ownership. Update owners in DB (and in
     // memory), and drop the permissions the previous owner had granted. Errors are isolated per
@@ -72,6 +82,9 @@ export async function createUpdateOwnerJob(
       // every permission of the world over what is only a transient failure.
       if (!newOwner) {
         logger.warn(`Skipping ${worldData.name}: its current owner could not be resolved`)
+        // Step 2 keys off the resolved owner, so nothing evaluates the wallet this world is still
+        // attributed to. Preserve whatever blocking record it already has.
+        keepBlockingRecordOf(worldData)
         continue
       }
 
@@ -100,8 +113,11 @@ export async function createUpdateOwnerJob(
           )
 
           if (revoked.length > 0) {
-            logger.info(
-              `Revoked ${revoked.length} permission(s) of ${worldData.name} that predate its ownership change: ` +
+            // The allow-list of a world is uncapped, so the addresses go to debug rather than
+            // padding every run of the job with a line that can carry thousands of them.
+            logger.info(`Revoked ${revoked.length} permission(s) of ${worldData.name} that predate its transfer`)
+            logger.debug(
+              `Revoked permissions of ${worldData.name}: ` +
                 revoked.map((r) => `${r.permissionType}:${r.address}`).join(', ')
             )
           }
@@ -110,6 +126,9 @@ export async function createUpdateOwnerJob(
         worldData.owner = newOwner
       } catch (error) {
         logger.error(`Failed to apply the ownership change of ${worldData.name}`, { error: errorMessage(error) })
+        // The transaction rolled back, so the world is still attributed to its stored owner while
+        // Step 2 goes on to evaluate the newly resolved one. Preserve the stored owner's record.
+        keepBlockingRecordOf(worldData)
       }
     }
 
@@ -131,7 +150,7 @@ export async function createUpdateOwnerJob(
       }
     }
 
-    const failedOwners = new Set<string>()
+    const failedOwners = new Set<string>(unevaluatedOwners)
     for (const owner of owners) {
       try {
         await blocking.blockIfOverQuota(owner)
