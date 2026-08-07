@@ -48,7 +48,7 @@ export function createWorldCreator({
 
     const entity = { id: entityId, ...entityWithoutId }
 
-    await worldsManager.deployScene(worldName, entity, signer.authChain[0].payload)
+    await worldsManager.deployScene(worldName, entity, signer.authChain[0].payload, { mode: 'unrestricted-owner' })
 
     return {
       worldName,

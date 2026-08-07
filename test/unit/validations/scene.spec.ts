@@ -187,6 +187,28 @@ describe('scene validations', function () {
       })
     })
 
+    describe('and more than one thousand unique canonical parcels match the pointers', () => {
+      beforeEach(async () => {
+        const parcels = Array.from({ length: 1001 }, (_, index) => `${index},0`)
+        deployment = await createSceneDeployment(identity.authChain, {
+          type: EntityType.SCENE,
+          pointers: parcels,
+          timestamp: Date.now(),
+          metadata: {
+            main: 'abc.txt',
+            scene: { base: '0,0', parcels },
+            worldConfiguration: { name: 'whatever.dcl.eth' }
+          },
+          files: []
+        })
+      })
+
+      it('should leave parcel count enforcement to the limits manager validation', async () => {
+        const result = await createValidateScenePointers(components)(deployment)
+        expect(result.ok()).toBeTruthy()
+      })
+    })
+
     describe('and the pointers and scene parcels are equivalent but not in canonical form', () => {
       beforeEach(async () => {
         deployment = await createSceneDeployment(identity.authChain, {
@@ -202,9 +224,30 @@ describe('scene validations', function () {
         })
       })
 
-      it('should return a successful result', async () => {
+      it('should reject the non-canonical coordinate alias', async () => {
         const result = await createValidateScenePointers(components)(deployment)
-        expect(result.ok()).toBeTruthy()
+        expect(result.ok()).toBeFalsy()
+      })
+    })
+
+    describe('and only the scene base uses a non-canonical coordinate alias', () => {
+      beforeEach(async () => {
+        deployment = await createSceneDeployment(identity.authChain, {
+          type: EntityType.SCENE,
+          pointers: ['0,0'],
+          timestamp: Date.now(),
+          metadata: {
+            main: 'abc.txt',
+            scene: { base: '00,00', parcels: ['0,0'] },
+            worldConfiguration: { name: 'whatever.dcl.eth' }
+          },
+          files: []
+        })
+      })
+
+      it('should reject the non-canonical base', async () => {
+        const result = await createValidateScenePointers(components)(deployment)
+        expect(result.ok()).toBeFalsy()
       })
     })
 
@@ -227,6 +270,32 @@ describe('scene validations', function () {
         const result = await createValidateScenePointers(components)(deployment)
         expect(result.ok()).toBeFalsy()
         expect(result.errors).toContain('The scene pointers [0,0] must match the scene parcels [100,100].')
+      })
+    })
+
+    describe('and the base is not included in the matching pointers and scene parcels', () => {
+      beforeEach(async () => {
+        deployment = await createSceneDeployment(identity.authChain, {
+          type: EntityType.SCENE,
+          pointers: ['0,0'],
+          timestamp: Date.now(),
+          metadata: {
+            main: 'abc.txt',
+            scene: { base: '100,100', parcels: ['0,0'] },
+            worldConfiguration: { name: 'whatever.dcl.eth' }
+          },
+          files: []
+        })
+      })
+
+      it('should reject the deployment because the base is outside the scene parcels', async () => {
+        const result = await createValidateScenePointers(components)(deployment)
+        expect(result.ok()).toBeFalsy()
+      })
+
+      it('should return an error requiring the base to belong to the scene parcels', async () => {
+        const result = await createValidateScenePointers(components)(deployment)
+        expect(result.errors).toContain('The scene base parcel [100,100] must be included in the scene parcels [0,0].')
       })
     })
   })
@@ -374,9 +443,12 @@ describe('scene validations', function () {
         deployment = await createSceneDeployment(identity.authChain)
       })
 
-      it('should return a successful result', async () => {
+      it('should return a successful result with explicit unrestricted replacement authority', async () => {
         const result = await validateDeploymentPermission(deployment)
-        expect(result.ok()).toBeTruthy()
+        expect({ authorization: deployment.sceneReplacementAuthorization, valid: result.ok() }).toEqual({
+          authorization: { mode: 'unrestricted-owner' },
+          valid: true
+        })
       })
     })
 

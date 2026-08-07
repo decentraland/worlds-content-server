@@ -84,6 +84,8 @@ export type DeploymentToValidate = {
   contentFileInfos?: Map<string, FileInfo | undefined>
   /** Cancels request-scoped processing after disconnect or the configured processing deadline. */
   signal?: AbortSignal
+  /** Replacement authority established during deployment authorization. */
+  sceneReplacementAuthorization?: SceneReplacementAuthorization
 }
 
 export type DeploymentProcessingStage = 'total' | 'authorization' | 'metadata' | 'hash' | 'storage' | 'persistence'
@@ -122,6 +124,8 @@ export type SceneDeploymentData = {
   /** Cancels persistence until the transaction reaches its commit boundary. */
   signal?: AbortSignal
 }
+
+export type SceneReplacementAuthorization = { mode: 'unrestricted-owner' } | { mode: 'scoped'; entityIds: string[] }
 
 export type WorldRuntimeMetadata = {
   entityIds: string[]
@@ -176,6 +180,14 @@ export type WorldScene = {
   status: SceneDeploymentStatus
   createdAt: Date
   updatedAt: Date
+}
+
+export type UndeployedWorldScene = Pick<WorldScene, 'entityId' | 'parcels'> & {
+  declaredBase: string | null
+}
+
+export type SceneUndeploymentResult = {
+  scenes: UndeployedWorldScene[]
 }
 
 export type BoundingBox = {
@@ -430,6 +442,20 @@ export class NoDeployedScenesError extends Error {
   }
 }
 
+export class SceneReplacementConflictError extends Error {
+  constructor(worldName: string) {
+    super(`Scene replacement authorization changed while deploying to world "${worldName}". Please retry.`)
+    this.name = 'SceneReplacementConflictError'
+  }
+}
+
+export class MissingSceneReplacementAuthorizationError extends Error {
+  constructor(entityId: string) {
+    super(`Cannot deploy scene "${entityId}": replacement authorization is missing.`)
+    this.name = 'MissingSceneReplacementAuthorizationError'
+  }
+}
+
 export type AccessModificationResult = {
   previousAccess: AccessSetting
   updatedAccess: AccessSetting
@@ -444,8 +470,15 @@ export type IWorldsManager = {
   getMetadataForWorld(worldName: string): Promise<WorldMetadata | undefined>
   getEntityForWorlds(worldNames: string[]): Promise<Entity[]>
   /** Persists a scene and its already-calculated deployment metadata. */
-  deployScene(worldName: string, scene: Entity, owner: EthAddress, deployment?: SceneDeploymentData): Promise<void>
-  undeployScene(worldName: string, parcels: string[]): Promise<void>
+  deployScene(
+    worldName: string,
+    scene: Entity,
+    owner: EthAddress,
+    replacementAuthorization: SceneReplacementAuthorization,
+    deployment?: SceneDeploymentData
+  ): Promise<void>
+  /** Atomically undeploys matching scenes and returns the rows actually changed. */
+  undeployScene(worldName: string, parcels: string[], authorizedEntityIds?: string[]): Promise<SceneUndeploymentResult>
   storeAccess(worldName: string, access: AccessSetting): Promise<void>
   modifyAccessAtomically(
     worldName: string,
@@ -540,7 +573,8 @@ export type IEntityDeployer = {
     authChain: AuthLink[],
     deploymentSize: number,
     signal?: AbortSignal,
-    deadlineAt?: number
+    deadlineAt?: number,
+    sceneReplacementAuthorization?: SceneReplacementAuthorization
   ): Promise<DeploymentResult>
 }
 

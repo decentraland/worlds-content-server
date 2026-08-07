@@ -88,6 +88,7 @@ paths:
       summary: GET /world/{world_name}/scenes
       description: |
         Browse scenes in a world. Use query params for filtering and pagination.
+        - **Query (entity_id)**: Return the active scene with this entity ID in the requested world.
         - **Query (x1, x2, y1, y2)**: Bounding box. When provided, all four must be set.
         - **Query (limit, offset)**: Pagination (defaults: limit 100, offset 0).
       operationId: worldsContentServer_getWorldScenes
@@ -104,6 +105,11 @@ paths:
           required: false
           schema: { type: integer }
           description: 'Bounding box min x (required with x2, y1, y2)'
+        - name: entity_id
+          in: query
+          required: false
+          schema: { type: string }
+          description: 'IPFS CIDv1 of an active scene deployment in this world'
         - name: x2
           in: query
           required: false
@@ -174,6 +180,7 @@ paths:
       description: |
         Query scenes with optional coordinate filter in the body. Body is validated; same query params as GET.
         - **Body (coordinates)**: Required key; array can be empty. When non-empty, return only scenes that contain any of these parcel coordinates (e.g. "0,0", "-1,2").
+        - **Query (entity_id)**: Return the active scene with this entity ID in the requested world.
         - **Query (x1, x2, y1, y2)**: Bounding box. When provided, all four must be set.
         - **Query (limit, offset)**: Pagination (defaults: limit 100, offset 0).
       operationId: worldsContentServer_postWorldScenes
@@ -190,6 +197,11 @@ paths:
           required: false
           schema: { type: integer }
           description: 'Bounding box min x (required with x2, y1, y2)'
+        - name: entity_id
+          in: query
+          required: false
+          schema: { type: string }
+          description: 'IPFS CIDv1 of an active scene deployment in this world'
         - name: x2
           in: query
           required: false
@@ -348,6 +360,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '408':
           description: Multipart upload or post-body deployment processing timed out
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Scene replacement authorization changed during deployment; retry authorization and deployment
           content:
             application/json:
               schema:
