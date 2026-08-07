@@ -58,14 +58,14 @@ export async function getIdentity(ephemeralKeyTTLInMinutes = 10): Promise<Identi
 
 export function getAuthHeaders(
   method: string,
-  path: string,
+  pathname: string,
   metadata: Record<string, any>,
-  chainProvider: (payload: string) => AuthChain
+  chainProvider: (payload: string) => AuthChain,
+  timestamp = Date.now()
 ) {
   const headers: Record<string, string> = {}
-  const timestamp = Date.now()
   const metadataJSON = JSON.stringify(metadata)
-  const payloadParts = [method.toLowerCase(), path.toLowerCase(), timestamp.toString(), metadataJSON]
+  const payloadParts = [method.toLowerCase(), pathname.toLowerCase(), timestamp.toString(), metadataJSON]
   const payloadToSign = payloadParts.join(':').toLowerCase()
 
   const chain = chainProvider(payloadToSign)
