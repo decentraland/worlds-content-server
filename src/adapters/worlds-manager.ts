@@ -340,17 +340,16 @@ export async function createWorldsManagerComponent({
       }
 
       await query(SQL`
-        WITH metadata_check AS (
-          SELECT (
-            (SELECT COUNT(*) FROM world_scenes WHERE world_name = ${worldName.toLowerCase()} AND status = 'DEPLOYED') = 0
-            OR (
-              (SELECT COUNT(*) FROM world_scenes WHERE world_name = ${worldName.toLowerCase()} AND status = 'DEPLOYED') = 1
-              AND EXISTS (
-                SELECT 1 FROM world_scenes
-                WHERE world_name = ${worldName.toLowerCase()} AND status = 'DEPLOYED' AND parcels && ${parcels}::text[]
-              )
-            )
-          ) AS should_update
+        WITH scene_stats AS (
+          SELECT
+            COUNT(*) AS deployed_count,
+            COUNT(*) FILTER (WHERE parcels && ${parcels}::text[]) AS overlap_count
+          FROM world_scenes
+          WHERE world_name = ${worldName.toLowerCase()} AND status = 'DEPLOYED'
+        ),
+        metadata_check AS (
+          SELECT (deployed_count = 0 OR (deployed_count = 1 AND overlap_count > 0)) AS should_update
+          FROM scene_stats
         )
         INSERT INTO worlds (
           name, owner, access, spawn_coordinates,
