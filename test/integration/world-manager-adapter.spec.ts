@@ -1696,9 +1696,9 @@ test('WorldManagerAdapter', function ({ components }) {
         })
       })
 
-      it('should update the scene metadata because the overlapping scene was replaced', async () => {
+      it('should preserve the existing world metadata because there are multiple deployed scenes', async () => {
         const metadata = await getWorldMetadata(worldName)
-        expect(metadata.title).toBe('Scene A Replaced Title')
+        expect(metadata.title).toBe('Scene A Title')
       })
     })
   })

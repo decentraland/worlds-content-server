@@ -343,9 +343,12 @@ export async function createWorldsManagerComponent({
         WITH metadata_check AS (
           SELECT (
             (SELECT COUNT(*) FROM world_scenes WHERE world_name = ${worldName.toLowerCase()} AND status = 'DEPLOYED') = 0
-            OR EXISTS (
-              SELECT 1 FROM world_scenes
-              WHERE world_name = ${worldName.toLowerCase()} AND status = 'DEPLOYED' AND parcels && ${parcels}::text[]
+            OR (
+              (SELECT COUNT(*) FROM world_scenes WHERE world_name = ${worldName.toLowerCase()} AND status = 'DEPLOYED') = 1
+              AND EXISTS (
+                SELECT 1 FROM world_scenes
+                WHERE world_name = ${worldName.toLowerCase()} AND status = 'DEPLOYED' AND parcels && ${parcels}::text[]
+              )
             )
           ) AS should_update
         )
