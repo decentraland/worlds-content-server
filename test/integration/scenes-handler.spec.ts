@@ -32,12 +32,14 @@ test('ScenesHandler', function ({ components, stubComponents }) {
   describe('GET and POST /world/:world_name/scenes', function () {
     describe('when the world has scenes deployed', function () {
       let worldName: string
+      let entityId: string
 
       beforeEach(async () => {
         const { worldCreator } = components
 
         const created = await worldCreator.createWorldWithScene()
         worldName = created.worldName
+        entityId = created.entityId
       })
 
       it('should return the scenes', async () => {
@@ -54,6 +56,51 @@ test('ScenesHandler', function ({ components, stubComponents }) {
             })
           ]),
           total: 1
+        })
+      })
+
+      describe('and entity_id identifies an active scene in the world', function () {
+        it('should return only that scene', async () => {
+          const { localFetch } = components
+
+          const response = await localFetch.fetch(
+            `/world/${worldName}/scenes?entity_id=${encodeURIComponent(entityId)}&limit=1`
+          )
+          const body = await response.json()
+
+          expect(body).toMatchObject({
+            scenes: [expect.objectContaining({ entityId })],
+            total: 1
+          })
+        })
+      })
+
+      describe('and entity_id identifies a scene from another world', function () {
+        let otherEntityId: string
+
+        beforeEach(async () => {
+          const created = await components.worldCreator.createWorldWithScene()
+          otherEntityId = created.entityId
+        })
+
+        it('should not return the other world scene', async () => {
+          const { localFetch } = components
+
+          const response = await localFetch.fetch(
+            `/world/${worldName}/scenes?entity_id=${encodeURIComponent(otherEntityId)}&limit=1`
+          )
+
+          expect(await response.json()).toEqual({ scenes: [], total: 0 })
+        })
+      })
+
+      describe('and entity_id is not a valid CIDv1', function () {
+        it('should respond with 400', async () => {
+          const { localFetch } = components
+
+          const response = await localFetch.fetch(`/world/${worldName}/scenes?entity_id=not-a-cid`)
+
+          expect(response.status).toBe(400)
         })
       })
 
@@ -514,7 +561,16 @@ test('ScenesHandler', function ({ components, stubComponents }) {
         const { worldCreator } = components
 
         identity = await getIdentity()
-        const created = await worldCreator.createWorldWithScene({ owner: identity.authChain })
+        worldName = worldCreator.randomWorldName()
+        const created = await worldCreator.createWorldWithScene({
+          worldName,
+          owner: identity.authChain,
+          metadata: {
+            main: 'abc.txt',
+            scene: { base: '21,24', parcels: ['20,24', '21,24'] },
+            worldConfiguration: { name: worldName }
+          }
+        })
         worldName = created.worldName
 
         stubComponents.namePermissionChecker.checkPermission.mockImplementation(
@@ -557,10 +613,31 @@ test('ScenesHandler', function ({ components, stubComponents }) {
             scenes: expect.arrayContaining([
               expect.objectContaining({
                 entityId: expect.any(String),
-                baseParcel: '20,24'
+                baseParcel: '21,24'
               })
             ])
           })
+        })
+      })
+
+      describe('and the requested coordinate is a non-canonical alias', function () {
+        let result: { responseStatus: number; remainingParcels: string[]; total: number }
+
+        beforeEach(async () => {
+          const { localFetch } = components
+          const response = await makeSignedRequest(localFetch, `/world/${worldName}/scenes/020,024`, identity)
+          const scenesResponse = await localFetch.fetch(`/world/${worldName}/scenes`)
+          const scenesBody = await scenesResponse.json()
+
+          result = {
+            responseStatus: response.status,
+            remainingParcels: scenesBody.scenes.map((scene: { parcels: string[] }) => scene.parcels[0]),
+            total: scenesBody.total
+          }
+        })
+
+        it('should undeploy the scene stored at the canonical coordinate', function () {
+          expect(result).toEqual({ responseStatus: 200, remainingParcels: [], total: 0 })
         })
       })
     })

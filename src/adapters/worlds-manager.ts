@@ -26,7 +26,10 @@ import {
   GetOccupiedParcelsOptions,
   GetOccupiedParcelsResult,
   SceneDeploymentStatus,
-  SceneDeploymentData
+  SceneDeploymentData,
+  SceneReplacementAuthorization,
+  SceneReplacementConflictError,
+  SceneUndeploymentResult
 } from '../types'
 import { streamToBuffer } from '@dcl/catalyst-storage'
 import { Entity, EthAddress } from '@dcl/schemas'
@@ -49,11 +52,22 @@ export async function createWorldsManagerComponent({
   'coordinates' | 'logs' | 'database' | 'nameDenyListChecker' | 'search' | 'storage'
 >): Promise<IWorldsManager> {
   const logger = logs.getLogger('worlds-manager')
-  const { extractSpawnCoordinates, parseCoordinate, isCoordinateWithinRectangle, getRectangleCenter } = coordinates
+  const {
+    canonicalizeParcels,
+    extractSpawnCoordinates,
+    parseCoordinate,
+    isCoordinateWithinRectangle,
+    getRectangleCenter
+  } = coordinates
 
-  type DeploymentTransactionQuery = (statement: SQLStatement) => Promise<void>
+  type DeploymentTransactionResult<T extends Record<string, unknown>> = { rows: T[] }
+  type DeploymentTransactionQuery = <T extends Record<string, unknown> = Record<string, never>>(
+    statement: SQLStatement
+  ) => Promise<DeploymentTransactionResult<T>>
   type DeploymentTransactionClient = {
-    query(statement: string | SQLStatement): Promise<unknown>
+    query<T extends Record<string, unknown> = Record<string, never>>(
+      statement: string | SQLStatement
+    ): Promise<DeploymentTransactionResult<T>>
     release(error?: Error): void
   }
 
@@ -68,9 +82,7 @@ export async function createWorldsManagerComponent({
   ): Promise<void> {
     if (!signal) {
       await database.withAsyncContextTransaction(() =>
-        operation(async (statement) => {
-          await database.query(statement)
-        })
+        operation(<T extends Record<string, unknown>>(statement: SQLStatement) => database.query<T>(statement))
       )
       return
     }
@@ -104,10 +116,11 @@ export async function createWorldsManagerComponent({
     try {
       signal.throwIfAborted()
       await client.query('BEGIN')
-      const query: DeploymentTransactionQuery = async (statement) => {
+      const query: DeploymentTransactionQuery = async <T extends Record<string, unknown>>(statement: SQLStatement) => {
         signal.throwIfAborted()
-        await client.query(statement)
+        const result = await client.query<T>(statement)
         signal.throwIfAborted()
+        return result
       }
       await operation(query)
       signal.throwIfAborted()
@@ -284,6 +297,7 @@ export async function createWorldsManagerComponent({
    * @param worldName - The name of the world to deploy the scene to
    * @param scene - The scene entity containing metadata, content, and parcel information
    * @param owner - The Ethereum address of the world owner
+   * @param replacementAuthorization - Explicit owner-wide or scene-identity-scoped replacement authority
    * @param deployment - Prevalidated deployment data, deadline, and optional cancellation signal
    * @throws {Error} If the deployment auth chain cannot be retrieved or parsed
    * @throws {Error} If any database operation fails (triggers rollback)
@@ -292,6 +306,7 @@ export async function createWorldsManagerComponent({
     worldName: string,
     scene: Entity,
     owner: EthAddress,
+    replacementAuthorization: SceneReplacementAuthorization,
     deployment?: SceneDeploymentData
   ): Promise<void> {
     // Canonicalize so the stored parcels, the overlap-based replacement here, the undeploy
@@ -387,13 +402,37 @@ export async function createWorldsManagerComponent({
           updated_at = ${new Date()}
       `)
 
-      // Soft-delete any existing deployed scenes on these parcels
-      await query(SQL`
-        UPDATE world_scenes SET status = 'UNDEPLOYED', updated_at = NOW()
-        WHERE world_name = ${worldName.toLowerCase()}
-        AND parcels && ${parcels}::text[]
-        AND status = 'DEPLOYED'
-      `)
+      if (replacementAuthorization.mode === 'unrestricted-owner') {
+        // World-name owners may replace every overlapping scene.
+        await query(SQL`
+          UPDATE world_scenes SET status = 'UNDEPLOYED', updated_at = NOW()
+          WHERE world_name = ${worldName.toLowerCase()}
+          AND parcels && ${parcels}::text[]
+          AND status = 'DEPLOYED'
+        `)
+      } else {
+        // Parcel-scoped deployers may replace only the exact scenes whose full footprints were
+        // authorized. The world upsert above locks this world's row, serializing deployments;
+        // this final overlap check also protects against a stale authorization snapshot.
+        await query(SQL`
+          UPDATE world_scenes SET status = 'UNDEPLOYED', updated_at = NOW()
+          WHERE world_name = ${worldName.toLowerCase()}
+          AND parcels && ${parcels}::text[]
+          AND status = 'DEPLOYED'
+          AND entity_id = ANY(${replacementAuthorization.entityIds}::text[])
+        `)
+
+        const unexpectedOverlap = await query<{ entity_id: string }>(SQL`
+          SELECT entity_id FROM world_scenes
+          WHERE world_name = ${worldName.toLowerCase()}
+          AND parcels && ${parcels}::text[]
+          AND status = 'DEPLOYED'
+          LIMIT 1
+        `)
+        if (unexpectedOverlap.rows.length > 0) {
+          throw new SceneReplacementConflictError(worldName)
+        }
+      }
 
       // Insert new scene
       await query(SQL`
@@ -524,6 +563,9 @@ export async function createWorldsManagerComponent({
     const normalizedWorldName = worldName.toLowerCase()
 
     await database.withAsyncContextTransaction(async () => {
+      // Serialize all scene mutations for this world with deployScene and undeployScene.
+      await database.query(SQL`SELECT name FROM worlds WHERE name = ${normalizedWorldName} FOR UPDATE`)
+
       // Soft-delete all scenes for the world
       await database.query(SQL`
         UPDATE world_scenes SET status = 'UNDEPLOYED', updated_at = NOW()
@@ -625,7 +667,8 @@ export async function createWorldsManagerComponent({
 
     // Apply coordinates filter (scenes that contain any of the specified coordinates)
     if (filters?.coordinates && filters.coordinates.length > 0) {
-      const coordinatesFilter = SQL` AND parcels && ${filters.coordinates}::text[]`
+      const canonicalCoordinates = canonicalizeParcels(filters.coordinates)
+      const coordinatesFilter = SQL` AND parcels && ${canonicalCoordinates}::text[]`
       countQuery.append(coordinatesFilter)
       mainQuery.append(coordinatesFilter)
     }
@@ -720,23 +763,39 @@ export async function createWorldsManagerComponent({
     return { scenes, total }
   }
 
-  async function undeployScene(worldName: string, parcels: string[]): Promise<void> {
+  async function undeployScene(
+    worldName: string,
+    parcels: string[],
+    authorizedEntityIds?: string[]
+  ): Promise<SceneUndeploymentResult> {
     const normalizedWorldName = worldName.toLowerCase()
+    const canonicalParcels = canonicalizeParcels(parcels)
 
-    await database.withAsyncContextTransaction(async () => {
-      // Get current spawn_coordinates before deletion
+    return await database.withAsyncContextTransaction(async () => {
+      // Serialize deployment and undeployment for this world. Deployment takes this same lock
+      // through its worlds-table upsert before changing scenes or denormalized world state.
       const worldResult = await database.query<{ spawn_coordinates: string | null }>(
-        SQL`SELECT spawn_coordinates FROM worlds WHERE name = ${normalizedWorldName}`
+        SQL`SELECT spawn_coordinates FROM worlds WHERE name = ${normalizedWorldName} FOR UPDATE`
       )
       const currentSpawnCoordinates = worldResult.rows[0]?.spawn_coordinates
 
-      // Soft-delete the scene(s) matching the parcels
-      await database.query(SQL`
+      // Soft-delete only the scene identities authorized from the caller's snapshot. Name owners
+      // omit this constraint because their permission covers the whole world.
+      const undeployQuery = SQL`
         UPDATE world_scenes SET status = 'UNDEPLOYED', updated_at = NOW()
         WHERE world_name = ${normalizedWorldName}
-        AND parcels && ${parcels}::text[]
+        AND parcels && ${canonicalParcels}::text[]
         AND status = 'DEPLOYED'
-      `)
+      `
+      if (authorizedEntityIds) {
+        undeployQuery.append(SQL` AND entity_id = ANY(${authorizedEntityIds}::text[])`)
+      }
+      undeployQuery.append(SQL` RETURNING entity_id, entity->'metadata'->'scene'->>'base' AS declared_base, parcels`)
+      const undeployedResult = await database.query<{
+        entity_id: string
+        declared_base: string | null
+        parcels: string[]
+      }>(undeployQuery)
 
       // Calculate new bounding rectangle (after deletion) using the shared function
       const boundingRectangle = await getWorldBoundingRectangle(normalizedWorldName)
@@ -767,6 +826,14 @@ export async function createWorldsManagerComponent({
 
       // Update denormalized scene stats
       await recalculateWorldSceneStats(normalizedWorldName)
+
+      const scenes = undeployedResult.rows.map((row) => ({
+        entityId: row.entity_id,
+        declaredBase: row.declared_base,
+        parcels: row.parcels
+      }))
+
+      return { scenes }
     })
   }
 
@@ -898,12 +965,13 @@ export async function createWorldsManagerComponent({
       return 0n
     }
 
+    const canonicalParcels = canonicalizeParcels(parcels)
     const result = await database.query<{ total_size: string }>(SQL`
       SELECT COALESCE(SUM(size), 0) as total_size
       FROM world_scenes
       WHERE world_name = ${worldName.toLowerCase()}
       AND status = 'DEPLOYED'
-      AND parcels && ${parcels}::text[]
+      AND parcels && ${canonicalParcels}::text[]
     `)
 
     return BigInt(result.rows[0]?.total_size || 0)

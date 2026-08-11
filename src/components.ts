@@ -269,7 +269,7 @@ export async function initComponents(): Promise<AppComponents> {
   })
   const schemaValidator = createSchemaValidatorComponent()
 
-  const worlds = createWorldsComponent({ blocking, snsClient, worldsManager })
+  const worlds = createWorldsComponent({ blocking, coordinates, logs, snsClient, worldsManager })
 
   const evictionJob = await createEvictionJob({ config, logs, worlds })
 

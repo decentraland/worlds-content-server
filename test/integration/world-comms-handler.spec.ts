@@ -1,8 +1,10 @@
 import { test } from '../components'
-import { getIdentity, Identity } from '../utils'
+import { getAuthHeaders, getIdentity, Identity } from '../utils'
 import { IAuthenticatedFetchComponent } from '../components/local-auth-fetch'
 import { IWorldsManager } from '../../src/types'
 import { AccessType } from '../../src/logic/access'
+import { AuthLinkType, Authenticator } from '@dcl/crypto'
+import { AuthChain } from '@dcl/schemas'
 
 const EXPLORER_METADATA = {
   origin: 'https://play.decentraland.org',
@@ -219,6 +221,171 @@ test('world comms handler', function ({ components, stubComponents }) {
         })
 
         expect(r.status).toEqual(400)
+      })
+    })
+
+    describe('and the signed-fetch metadata has a signer spelled in mixed case', () => {
+      // `getAuthHeaders` lowercases the payload before signing, so this signature is byte-identical
+      // to the canonical-signer one above while the delivered header keeps its casing. Without the
+      // library's canonical-metadata guard the mixed-case spelling slips past the strict
+      // `!== 'decentraland-kernel-scene'` check in routes.ts and the scene request is served as a
+      // directly user-signed one.
+      it('should respond with 400 rather than let it past the scene gate', async () => {
+        const r = await localFetch.fetch(`/worlds/${worldName}/comms`, {
+          method: 'POST',
+          identity,
+          metadata: {
+            ...EXPLORER_METADATA,
+            signer: 'Decentraland-Kernel-Scene'
+          }
+        })
+
+        expect(r.status).toEqual(400)
+        expect(await r.json()).toMatchObject({ error: expect.stringMatching(/^Invalid chain metadata: /) })
+      })
+    })
+
+    describe.each([
+      ['signer', 'Dcl:Explorer'],
+      ['signer', ' dcl:explorer '],
+      ['intent', 'Dcl:Explorer:Comms-Handshake'],
+      ['intent', ' dcl:explorer:comms-handshake ']
+    ])('and signed-fetch metadata has a non-canonical %s', (field, value) => {
+      it('should respond with the middleware metadata-validation 400', async () => {
+        const r = await localFetch.fetch(`/worlds/${worldName}/comms`, {
+          method: 'POST',
+          identity,
+          metadata: { ...EXPLORER_METADATA, [field]: value }
+        })
+
+        expect(r.status).toEqual(400)
+        expect(await r.json()).toMatchObject({ error: expect.stringMatching(/^Invalid chain metadata: /) })
+      })
+    })
+
+    describe('and the auth chain has a malformed link', () => {
+      it('should respond with 400', async () => {
+        const r = await localFetch.fetch(`/worlds/${worldName}/comms`, {
+          method: 'POST',
+          headers: {
+            'x-identity-auth-chain-0': JSON.stringify({ type: 'SIGNER' }),
+            'x-identity-auth-chain-1': JSON.stringify({ type: 'ECDSA_PERSONAL_EPHEMERAL' })
+          }
+        })
+
+        expect(r.status).toEqual(400)
+        expect(await r.json()).toMatchObject({
+          error: expect.stringMatching(/^Invalid chain format: malformed auth link/)
+        })
+      })
+    })
+
+    describe('and the signed-fetch timestamp is expired', () => {
+      it('should respond with 401', async () => {
+        const path = `/worlds/${worldName}/comms`
+        const r = await localFetch.fetch(path, {
+          method: 'POST',
+          headers: getAuthHeaders(
+            'POST',
+            path,
+            EXPLORER_METADATA,
+            (payload) =>
+              Authenticator.signPayload(
+                {
+                  ephemeralIdentity: identity.ephemeralIdentity,
+                  expiration: new Date(),
+                  authChain: identity.authChain.authChain
+                },
+                payload
+              ),
+            Date.now() - 10 * 60 * 1000
+          )
+        })
+
+        expect(r.status).toEqual(401)
+        expect(await r.json()).toMatchObject({ error: expect.stringMatching(/^Expired signature:/) })
+      })
+    })
+
+    describe('and the signature was made for a different payload', () => {
+      it('should respond with 401', async () => {
+        const path = `/worlds/${worldName}/comms`
+        const r = await localFetch.fetch(path, {
+          method: 'POST',
+          headers: getAuthHeaders('POST', `${path}/other`, EXPLORER_METADATA, (payload) =>
+            Authenticator.signPayload(
+              {
+                ephemeralIdentity: identity.ephemeralIdentity,
+                expiration: new Date(),
+                authChain: identity.authChain.authChain
+              },
+              payload
+            )
+          )
+        })
+
+        expect(r.status).toEqual(401)
+        expect(await r.json()).toMatchObject({ error: expect.stringMatching(/^Invalid signature:/) })
+      })
+    })
+
+    describe('and the auth chain signs the legacy method:path payload', () => {
+      it('should respond with 401 despite ADR-44 headers being present', async () => {
+        const path = `/worlds/${worldName}/comms`
+        const timestamp = Date.now()
+        const metadataJSON = JSON.stringify(EXPLORER_METADATA)
+        const legacyPayload = `POST:${path}`.toLowerCase()
+        const chain = Authenticator.signPayload(
+          {
+            ephemeralIdentity: identity.ephemeralIdentity,
+            expiration: new Date(),
+            authChain: identity.authChain.authChain
+          },
+          legacyPayload
+        )
+        const headers: Record<string, string> = {
+          'x-identity-timestamp': String(timestamp),
+          'x-identity-metadata': metadataJSON
+        }
+        chain.forEach((link, index) => {
+          headers[`x-identity-auth-chain-${index}`] = JSON.stringify(link)
+        })
+
+        const r = await localFetch.fetch(path, { method: 'POST', headers })
+
+        expect(r.status).toEqual(401)
+        expect(await r.json()).toMatchObject({ error: expect.stringMatching(/^Invalid signature:/) })
+      })
+    })
+
+    describe('and the auth chain is an EIP-1654 chain', () => {
+      it('should use the mocked Catalyst validation response and respond with 200', async () => {
+        const path = `/worlds/${worldName}/comms`
+        const ownerAddress = identity.authChain.authChain[0].payload.toLowerCase()
+        const catalystUrl = 'https://peer.decentraland.org/lambdas/crypto/validate-signature'
+        const originalFetch = globalThis.fetch
+        const catalystFetch = jest.spyOn(globalThis, 'fetch').mockImplementation((url, init) => {
+          if (url === catalystUrl) {
+            return Promise.resolve(new Response(JSON.stringify({ valid: true, ownerAddress }), { status: 200 }))
+          }
+          return originalFetch(url, init)
+        })
+        const chain: AuthChain = [
+          { type: AuthLinkType.SIGNER, payload: ownerAddress, signature: '' },
+          { type: AuthLinkType.ECDSA_EIP_1654_EPHEMERAL, payload: 'ephemeral', signature: 'signature' }
+        ]
+
+        try {
+          const r = await localFetch.fetch(path, {
+            method: 'POST',
+            headers: getAuthHeaders('POST', path, EXPLORER_METADATA, () => chain)
+          })
+
+          expect(r.status).toEqual(200)
+          expect(catalystFetch).toHaveBeenCalledWith(catalystUrl, expect.objectContaining({ method: 'POST' }))
+        } finally {
+          catalystFetch.mockRestore()
+        }
       })
     })
   })

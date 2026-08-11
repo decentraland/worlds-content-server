@@ -122,6 +122,7 @@ export async function createWorldsManagerMockComponent({
     worldName: string,
     scene: Entity,
     owner: EthAddress,
+    _replacementAuthorization: Parameters<IWorldsManager['deployScene']>[3],
     deployment?: SceneDeploymentData
   ): Promise<void> {
     const parcels: string[] = scene.metadata?.scene?.parcels || []
@@ -154,32 +155,52 @@ export async function createWorldsManagerMockComponent({
     })
   }
 
-  async function undeployScene(_worldName: string, _parcels: string[]): Promise<void> {
+  async function undeployScene(_worldName: string, _parcels: string[]): Promise<{ scenes: [] }> {
     // Mock implementation - no-op
+    return { scenes: [] }
+  }
+
+  async function getAllStoredScenes(): Promise<WorldScene[]> {
+    const scenes: WorldScene[] = []
+    for await (const key of storage.allFileIds('name-')) {
+      const metadata = await getMetadataForWorld(key.substring(5))
+      if (metadata?.scenes) {
+        scenes.push(...metadata.scenes)
+      }
+    }
+    return scenes
   }
 
   async function getWorldScenes(
     filters?: GetWorldScenesFilters,
     options?: GetWorldScenesOptions
   ): Promise<GetWorldScenesResult> {
-    if (!filters?.worldName) {
-      return { scenes: [], total: 0 }
+    // Without a world name the real query scans every world, as the AB reprocess handler relies on.
+    let scenes: WorldScene[]
+    if (filters?.worldName) {
+      const metadata = await getMetadataForWorld(filters.worldName)
+      scenes = metadata?.scenes ? [...metadata.scenes] : []
+    } else {
+      scenes = await getAllStoredScenes()
     }
 
-    const metadata = await getMetadataForWorld(filters.worldName)
-    if (!metadata || !metadata.scenes) {
-      return { scenes: [], total: 0 }
+    // Only DEPLOYED scenes are returned unless undeployed ones are explicitly requested
+    if (!filters?.includeUndeployed) {
+      scenes = scenes.filter((s) => s.status === SceneDeploymentStatus.Deployed)
     }
 
-    let scenes = [...metadata.scenes]
+    // Apply entityId filter
+    if (filters?.entityId) {
+      scenes = scenes.filter((s) => s.entityId === filters.entityId)
+    }
 
     // Apply coordinates filter (scenes that contain any of the specified coordinates)
-    if (filters.coordinates && filters.coordinates.length > 0) {
+    if (filters?.coordinates && filters.coordinates.length > 0) {
       scenes = scenes.filter((s) => s.parcels.some((p) => filters.coordinates!.includes(p)))
     }
 
     // Apply bounding box filter (scenes that have at least one parcel within the rectangle)
-    if (filters.boundingBox) {
+    if (filters?.boundingBox) {
       const { x1, x2, y1, y2 } = filters.boundingBox
       const xMin = Math.min(x1, x2)
       const xMax = Math.max(x1, x2)
@@ -192,6 +213,8 @@ export async function createWorldsManagerMockComponent({
         })
       )
     }
+
+    // authorized_deployer is not mirrored: the real filter joins world_permissions, out of this mock's reach.
 
     const total = scenes.length
 

@@ -1062,10 +1062,10 @@
     "@dcl/core-commons" "^0.10.0"
     "@dcl/crypto" "3.7.0"
 
-"@dcl/crypto-middleware@^4.1.1":
-  version "4.1.1"
-  resolved "https://registry.yarnpkg.com/@dcl/crypto-middleware/-/crypto-middleware-4.1.1.tgz#a46861caa68bf38f0355ce72d77a8232200d54ed"
-  integrity sha512-wNo3D00SyZKoxy3THQj+EMWWatU9F2VTPwqTIVWZj3JlnaKRScNpLOsrHVPETN9FYtTIlJqqhjlUWsjoUGVisw==
+"@dcl/crypto-middleware@^5.1.0":
+  version "5.1.0"
+  resolved "https://registry.yarnpkg.com/@dcl/crypto-middleware/-/crypto-middleware-5.1.0.tgz#382bc899d4f9cb07541baa7d35a4322e5810ea77"
+  integrity sha512-aiG/aInYDgL5Er+KStaIqjOmGGLlmIHSRlcAK5Jzyn+wiPU/kYiQIpMDyaIsrZ0om9HOi0M6lnqcR7ZVNpj4bA==
   dependencies:
     "@dcl/core-commons" "^0.10.0"
     "@dcl/crypto" "3.7.0"
@@ -1227,10 +1227,10 @@
     ajv-keywords "^5.1.0"
     mitt "^3.0.1"
 
-"@dcl/schemas@^26.1.0":
-  version "26.1.0"
-  resolved "https://registry.npmjs.org/@dcl/schemas/-/schemas-26.1.0.tgz"
-  integrity sha512-BrtZm/BNEpDde1U5yCfbRsp8IMajYiThNj5QCgilXCcqO2JYB6RL5FZj+9KRZPyW+/zzeYgLVDAnn/eiSW6dmA==
+"@dcl/schemas@^27.0.0":
+  version "27.0.0"
+  resolved "https://registry.yarnpkg.com/@dcl/schemas/-/schemas-27.0.0.tgz#fbda0293c221db90b83cf89b300c43b4b6111cc6"
+  integrity sha512-KwW6ms2p2k8WW+167ta4AOLwQeqJGV1L8jrPcuRiw06kZhbDnlcnOkTqwBibigeIFtN5aoae9you0W3+SceAiA==
   dependencies:
     ajv "^8.11.0"
     ajv-errors "^3.0.0"

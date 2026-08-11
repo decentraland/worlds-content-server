@@ -55,8 +55,9 @@ export interface IWorldsComponent {
    *
    * @param worldName - The name of the world
    * @param parcels - The parcel coordinates of the scenes to undeploy
+   * @param authorizedEntityIds - When provided, restricts deletion to the exact scene identities already authorized
    */
-  undeployWorldScenes(worldName: string, parcels: string[]): Promise<void>
+  undeployWorldScenes(worldName: string, parcels: string[], authorizedEntityIds?: string[]): Promise<void>
 
   /**
    * Gets the base parcel of a scene in a world by its entity ID, including undeployed scenes
