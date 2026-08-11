@@ -8,12 +8,6 @@ export type UndeployedSceneEventSource = {
   parcels: string[]
 }
 
-export type WorldScenesUndeploymentEventWithParcels = Omit<WorldScenesUndeploymentEvent, 'metadata'> & {
-  metadata: Omit<WorldScenesUndeploymentEvent['metadata'], 'scenes'> & {
-    scenes: Array<WorldScenesUndeploymentEvent['metadata']['scenes'][number] & { parcels?: string[] }>
-  }
-}
-
 export class WorldScenesUndeploymentEventTooLargeError extends Error {
   constructor(size: number, budget: number) {
     super(`World scene undeployment event identity payload is ${size} bytes, exceeding the ${budget}-byte SNS budget`)
@@ -39,8 +33,8 @@ export function buildWorldScenesUndeploymentEvent(
   timestamp: number,
   scenes: UndeployedSceneEventSource[],
   messageBodyBudgetBytes = SNS_MESSAGE_BODY_BUDGET_BYTES
-): { event: WorldScenesUndeploymentEventWithParcels; omittedFootprints: number } {
-  const event: WorldScenesUndeploymentEventWithParcels = {
+): { event: WorldScenesUndeploymentEvent; omittedFootprints: number } {
+  const event: WorldScenesUndeploymentEvent = {
     type: Events.Type.WORLD,
     subType: Events.SubType.Worlds.WORLD_SCENES_UNDEPLOYMENT,
     key: worldName,

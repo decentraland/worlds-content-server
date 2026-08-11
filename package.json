@@ -30,7 +30,7 @@
     "@dcl/queue-consumer-component": "^3.0.5",
     "@dcl/redis-component": "^3.1.3",
     "@dcl/schema-validator-component": "^1.0.1",
-    "@dcl/schemas": "^27.0.0",
+    "@dcl/schemas": "^27.1.0",
     "@dcl/sns-component": "^3.1.5",
     "@dcl/sqs-component": "^2.2.5",
     "@dcl/thegraph-component": "^0.1.2",
