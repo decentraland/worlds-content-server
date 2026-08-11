@@ -613,7 +613,8 @@ test('ScenesHandler', function ({ components, stubComponents }) {
             scenes: expect.arrayContaining([
               expect.objectContaining({
                 entityId: expect.any(String),
-                baseParcel: '21,24'
+                baseParcel: '21,24',
+                parcels: ['20,24', '21,24']
               })
             ])
           })
