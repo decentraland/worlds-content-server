@@ -8,6 +8,8 @@ export function createMockedPermissionsManager(
     getWorldPermissionRecords: jest.fn(),
     grantAddressesWorldWidePermission: jest.fn(),
     removeAddressesPermission: jest.fn(),
+    refreshGrantingOwner: jest.fn().mockResolvedValue(undefined),
+    deletePermissionsNotGrantedUnderOwner: jest.fn().mockResolvedValue([]),
     checkParcelsAllowed: jest.fn(),
     getAddressPermissions: jest.fn(),
     addParcelsToPermission: jest.fn(),

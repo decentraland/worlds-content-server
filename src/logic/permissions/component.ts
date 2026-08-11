@@ -256,6 +256,11 @@ export async function createPermissionsComponent({
     if (walletsToAdd.length > 0) {
       await grantWorldWidePermission(lowerCaseWorldName, 'deployment', walletsToAdd)
     }
+
+    // Wallets kept across the change are neither removed nor granted, so re-record the owner they
+    // are held under: submitting a list that keeps them is an explicit act by the current owner.
+    const walletsToKeep = newWallets.filter((wallet) => currentDeploymentAddresses.includes(wallet))
+    await permissionsManager.refreshGrantingOwner(lowerCaseWorldName, 'deployment', walletsToKeep, owner)
   }
 
   /**
@@ -309,6 +314,11 @@ export async function createPermissionsComponent({
       if (walletsToAdd.length > 0) {
         await grantWorldWidePermission(lowerCaseWorldName, 'streaming', walletsToAdd)
       }
+
+      // Wallets kept across the change are neither removed nor granted, so re-record the owner
+      // they are held under: keeping them in the list is an explicit act by the current owner.
+      const walletsToKeep = newWallets.filter((wallet) => currentStreamingAddresses.includes(wallet))
+      await permissionsManager.refreshGrantingOwner(lowerCaseWorldName, 'streaming', walletsToKeep, owner)
     }
   }
 
