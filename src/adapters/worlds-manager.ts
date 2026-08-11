@@ -333,7 +333,7 @@ export async function createWorldsManagerComponent({
 
     const spawnCoordinates = extractSpawnCoordinates(scene)
 
-    // Extract settings from scene metadata
+    // Extract settings from scene metadata for first deployment
     const sceneMetadata = scene.metadata || {}
     const title = sceneMetadata.display?.title || null
     const description = sceneMetadata.display?.description || null
@@ -354,27 +354,19 @@ export async function createWorldsManagerComponent({
         await query(SQL`SELECT set_config('statement_timeout', ${remainingMs.toString()}, true)`)
       }
 
+      // Ensure world record exists, update if it does
+      // On first deployment (INSERT), set settings from scene metadata
+      // On subsequent deployments (UPDATE), preserve existing settings
       await query(SQL`
-        WITH scene_stats AS (
-          SELECT
-            COUNT(*) AS deployed_count,
-            COUNT(*) FILTER (WHERE parcels && ${parcels}::text[]) AS overlap_count
-          FROM world_scenes
-          WHERE world_name = ${worldName.toLowerCase()} AND status = 'DEPLOYED'
-        ),
-        metadata_check AS (
-          SELECT (deployed_count = 0 OR (deployed_count = 1 AND overlap_count > 0)) AS should_update
-          FROM scene_stats
-        )
         INSERT INTO worlds (
-          name, owner, access, spawn_coordinates,
+          name, owner, access, spawn_coordinates, 
           title, description, content_rating, skybox_time, categories,
           single_player, show_in_places, thumbnail_hash,
           created_at, updated_at
         )
         VALUES (
-          ${worldName.toLowerCase()},
-          ${owner.toLowerCase()},
+          ${worldName.toLowerCase()}, 
+          ${owner.toLowerCase()}, 
           ${JSON.stringify(defaultAccess())}::jsonb,
           ${spawnCoordinates},
           ${title},
@@ -385,20 +377,12 @@ export async function createWorldsManagerComponent({
           ${singlePlayer},
           ${showInPlaces},
           ${thumbnailHash},
-          ${new Date()},
+          ${new Date()}, 
           ${new Date()}
         )
         ON CONFLICT (name) DO UPDATE SET
           owner = ${owner.toLowerCase()},
           spawn_coordinates = COALESCE(worlds.spawn_coordinates, EXCLUDED.spawn_coordinates),
-          title = CASE WHEN (SELECT should_update FROM metadata_check) THEN EXCLUDED.title ELSE worlds.title END,
-          description = CASE WHEN (SELECT should_update FROM metadata_check) THEN EXCLUDED.description ELSE worlds.description END,
-          content_rating = CASE WHEN (SELECT should_update FROM metadata_check) THEN EXCLUDED.content_rating ELSE worlds.content_rating END,
-          skybox_time = CASE WHEN (SELECT should_update FROM metadata_check) THEN EXCLUDED.skybox_time ELSE worlds.skybox_time END,
-          categories = CASE WHEN (SELECT should_update FROM metadata_check) THEN EXCLUDED.categories ELSE worlds.categories END,
-          single_player = CASE WHEN (SELECT should_update FROM metadata_check) THEN EXCLUDED.single_player ELSE worlds.single_player END,
-          show_in_places = CASE WHEN (SELECT should_update FROM metadata_check) THEN EXCLUDED.show_in_places ELSE worlds.show_in_places END,
-          thumbnail_hash = CASE WHEN (SELECT should_update FROM metadata_check) THEN EXCLUDED.thumbnail_hash ELSE worlds.thumbnail_hash END,
           updated_at = ${new Date()}
       `)
 

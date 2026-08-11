@@ -1076,20 +1076,21 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
         secondFiles = secondResult.files
       })
 
-      it('should update metadata when redeploying to the same parcels', async () => {
+      it('should preserve the original settings and not overwrite them', async () => {
         const { worldsManager } = components
         const authChain = Authenticator.signPayload(identity.authChain, secondEntityId)
 
         await contentClient.deploy({ files: secondFiles, entityId: secondEntityId, authChain })
 
         const settings = await worldsManager.getWorldSettings(worldName)
+        // Settings should remain from the first deployment
         expect(settings).toMatchObject({
-          title: 'New Title',
-          description: 'New description',
+          title: 'Original Title',
+          description: 'Original description',
           spawnCoordinates: '0,0',
-          skyboxTime: 2400,
-          categories: ['updated'],
-          showInPlaces: true
+          skyboxTime: 1200,
+          categories: ['original'],
+          showInPlaces: false
         })
       })
     })
