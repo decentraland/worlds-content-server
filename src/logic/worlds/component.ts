@@ -1,6 +1,7 @@
-import { Events, WorldScenesUndeploymentEvent, WorldUndeploymentEvent } from '@dcl/schemas'
+import { Events, WorldUndeploymentEvent } from '@dcl/schemas'
 import { AppComponents, TWO_DAYS_IN_MS, WorldManifest } from '../../types'
 import { IWorldsComponent } from './types'
+import { buildWorldScenesUndeploymentEvent } from './world-scenes-undeployment-event'
 
 /**
  * Creates the Worlds component
@@ -225,19 +226,18 @@ export const createWorldsComponent = (
         })
         return []
       }
-      return [{ entityId: scene.entityId, baseParcel }]
+      const canonicalParcels = [...new Set(coordinates.canonicalizeParcels(scene.parcels))]
+      return [{ entityId: scene.entityId, baseParcel, parcels: canonicalParcels }]
     })
 
     if (undeployedScenes.length > 0) {
-      const event: WorldScenesUndeploymentEvent = {
-        type: Events.Type.WORLD,
-        subType: Events.SubType.Worlds.WORLD_SCENES_UNDEPLOYMENT,
-        key: worldName,
-        timestamp: Date.now(),
-        metadata: {
+      const { event, omittedFootprints } = buildWorldScenesUndeploymentEvent(worldName, Date.now(), undeployedScenes)
+      if (omittedFootprints > 0) {
+        logger.warn('Omitted world scene footprints that exceed the SNS message budget', {
           worldName,
-          scenes: undeployedScenes
-        }
+          sceneCount: undeployedScenes.length,
+          omittedFootprints
+        })
       }
       await snsClient.publishMessages([event])
     }

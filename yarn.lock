@@ -1227,10 +1227,10 @@
     ajv-keywords "^5.1.0"
     mitt "^3.0.1"
 
-"@dcl/schemas@^27.0.0":
-  version "27.0.0"
-  resolved "https://registry.yarnpkg.com/@dcl/schemas/-/schemas-27.0.0.tgz#fbda0293c221db90b83cf89b300c43b4b6111cc6"
-  integrity sha512-KwW6ms2p2k8WW+167ta4AOLwQeqJGV1L8jrPcuRiw06kZhbDnlcnOkTqwBibigeIFtN5aoae9you0W3+SceAiA==
+"@dcl/schemas@^27.1.0":
+  version "27.1.0"
+  resolved "https://registry.yarnpkg.com/@dcl/schemas/-/schemas-27.1.0.tgz#8724d990d762a818dca91e9f4ac1af8b73459075"
+  integrity sha512-l4CjnaxYj2k3UlQtGKucNikjmdFn1U2Plmnrj5Txck7Nh/I6tRf1MnhHq+S0XcSe8kRiIxG6L7n5zXQTaqyXsA==
   dependencies:
     ajv "^8.11.0"
     ajv-errors "^3.0.0"

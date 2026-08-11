@@ -456,7 +456,7 @@ describe('WorldsComponent', () => {
         expect(worldsManager.undeployScene).toHaveBeenCalledWith('test-world', ['0,0', '5,5'], ['entity-1'])
       })
 
-      it('should publish a WorldScenesUndeploymentEvent with entity IDs and base parcels', async () => {
+      it('should publish a WorldScenesUndeploymentEvent with entity IDs, base parcels and footprints', async () => {
         await worldsComponent.undeployWorldScenes('test-world', ['0,0', '5,5'])
 
         expect(snsClient.publishMessages).toHaveBeenCalledWith([
@@ -468,8 +468,8 @@ describe('WorldsComponent', () => {
             metadata: {
               worldName: 'test-world',
               scenes: [
-                { entityId: 'entity-1', baseParcel: '0,0' },
-                { entityId: 'entity-2', baseParcel: '5,5' }
+                { entityId: 'entity-1', baseParcel: '0,0', parcels: ['0,0', '1,0'] },
+                { entityId: 'entity-2', baseParcel: '5,5', parcels: ['5,5'] }
               ]
             }
           })
@@ -485,7 +485,7 @@ describe('WorldsComponent', () => {
           expect.objectContaining({
             metadata: {
               worldName: 'test-world',
-              scenes: [{ entityId: 'entity-1', baseParcel: '0,0' }]
+              scenes: [{ entityId: 'entity-1', baseParcel: '0,0', parcels: ['0,0', '1,0'] }]
             }
           })
         ])
@@ -579,7 +579,7 @@ describe('WorldsComponent', () => {
           expect.objectContaining({
             metadata: {
               worldName: 'test-world',
-              scenes: [{ entityId: 'entity-2', baseParcel: '5,5' }]
+              scenes: [{ entityId: 'entity-2', baseParcel: '5,5', parcels: ['5,5'] }]
             }
           })
         ])
@@ -632,7 +632,7 @@ describe('WorldsComponent', () => {
         expect.objectContaining({
           subType: Events.SubType.Worlds.WORLD_SCENES_UNDEPLOYMENT,
           metadata: expect.objectContaining({
-            scenes: [{ entityId: 'entity-x', baseParcel: '1,1' }]
+            scenes: [{ entityId: 'entity-x', baseParcel: '1,1', parcels: ['2,2', '1,1'] }]
           })
         })
       ])
@@ -656,7 +656,7 @@ describe('WorldsComponent', () => {
       expect(snsClient.publishMessages).toHaveBeenCalledWith([
         expect.objectContaining({
           metadata: expect.objectContaining({
-            scenes: [{ entityId: 'entity-x', baseParcel: '2,2' }]
+            scenes: [{ entityId: 'entity-x', baseParcel: '2,2', parcels: ['2,2'] }]
           })
         })
       ])
@@ -682,7 +682,7 @@ describe('WorldsComponent', () => {
       expect(snsClient.publishMessages).toHaveBeenCalledWith([
         expect.objectContaining({
           metadata: expect.objectContaining({
-            scenes: [{ entityId: 'entity-x', baseParcel: '2,1' }]
+            scenes: [{ entityId: 'entity-x', baseParcel: '2,1', parcels: ['1,1', '2,1'] }]
           })
         })
       ])
@@ -707,7 +707,7 @@ describe('WorldsComponent', () => {
       expect(snsClient.publishMessages).toHaveBeenCalledWith([
         expect.objectContaining({
           metadata: expect.objectContaining({
-            scenes: [{ entityId: 'entity-y', baseParcel: '2,2' }]
+            scenes: [{ entityId: 'entity-y', baseParcel: '2,2', parcels: ['2,2', '1,1'] }]
           })
         })
       ])
@@ -733,7 +733,7 @@ describe('WorldsComponent', () => {
       expect(snsClient.publishMessages).toHaveBeenCalledWith([
         expect.objectContaining({
           metadata: expect.objectContaining({
-            scenes: [{ entityId: 'entity-y', baseParcel: '2,2' }]
+            scenes: [{ entityId: 'entity-y', baseParcel: '2,2', parcels: ['2,2', '1,1'] }]
           })
         })
       ])
