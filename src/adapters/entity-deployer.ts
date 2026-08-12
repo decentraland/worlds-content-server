@@ -185,68 +185,61 @@ export function createEntityDeployer(
     // promise remains observed if cancellation lets the response finish first.
     const publishDeployment = async (): Promise<void> => {
       const snsArn = await config.getString('AWS_SNS_ARN')
-      if (snsArn) {
-        const deploymentToSqs: WorldDeploymentEvent = {
-          entity: {
-            entityId: entity.id,
-            authChain
-          },
-          contentServerUrls: [baseUrl],
-          type: Events.Type.WORLD,
-          subType: Events.SubType.Worlds.DEPLOYMENT,
-          key: entity.id,
-          timestamp: Date.now()
-        }
-        const isMultiplayer = !!entity.metadata?.multiplayerId
-        const receipt = await snsClient.publishMessage(deploymentToSqs, {
-          isMultiplayer: { DataType: 'String', StringValue: isMultiplayer ? 'true' : 'false' },
-          priority: { DataType: 'String', StringValue: '1' }
-        })
-        logger.info('notification sent', {
-          MessageId: `${receipt.MessageId}`,
-          SequenceNumber: `${receipt.SequenceNumber}`,
-          isMultiplayer: isMultiplayer ? 'true' : 'false'
-        })
-      }
-    }
-
-    // When the deploy path updates world-level metadata (first deploy or single-scene redeploy),
-    // emit WORLD_SETTINGS_CHANGED so downstream consumers (Places) see the refreshed values.
-    const publishSettingsChanged = async (): Promise<void> => {
-      if (!metadataUpdated) return
-      const snsArn = await config.getString('AWS_SNS_ARN')
       if (!snsArn) return
 
-      const settings = await worldsManager.getWorldSettings(worldName)
-      if (!settings) return
-
-      const timestamp = Date.now()
-      const settingsChangedEvent: WorldSettingsChangedEvent = {
+      const deploymentToSqs: WorldDeploymentEvent = {
+        entity: {
+          entityId: entity.id,
+          authChain
+        },
+        contentServerUrls: [baseUrl],
         type: Events.Type.WORLD,
-        subType: Events.SubType.Worlds.WORLD_SETTINGS_CHANGED,
-        key: `${worldName}-${timestamp}`,
-        timestamp,
-        metadata: {
-          worldName,
-          title: settings.title,
-          description: settings.description,
-          contentRating: settings.contentRating,
-          skyboxTime: settings.skyboxTime,
-          categories: settings.categories ?? [],
-          singlePlayer: settings.singlePlayer,
-          showInPlaces: settings.showInPlaces,
-          thumbnailUrl: settings.thumbnailHash ? `${baseUrl}/contents/${settings.thumbnailHash}` : undefined
+        subType: Events.SubType.Worlds.DEPLOYMENT,
+        key: entity.id,
+        timestamp: Date.now()
+      }
+      const isMultiplayer = !!entity.metadata?.multiplayerId
+      const receipt = await snsClient.publishMessage(deploymentToSqs, {
+        isMultiplayer: { DataType: 'String', StringValue: isMultiplayer ? 'true' : 'false' },
+        priority: { DataType: 'String', StringValue: '1' }
+      })
+      logger.info('notification sent', {
+        MessageId: `${receipt.MessageId}`,
+        SequenceNumber: `${receipt.SequenceNumber}`,
+        isMultiplayer: isMultiplayer ? 'true' : 'false'
+      })
+
+      if (metadataUpdated) {
+        const settings = await worldsManager.getWorldSettings(worldName)
+        if (settings) {
+          const timestamp = Date.now()
+          const settingsChangedEvent: WorldSettingsChangedEvent = {
+            type: Events.Type.WORLD,
+            subType: Events.SubType.Worlds.WORLD_SETTINGS_CHANGED,
+            key: `${worldName}-${timestamp}`,
+            timestamp,
+            metadata: {
+              worldName,
+              title: settings.title,
+              description: settings.description,
+              contentRating: settings.contentRating,
+              skyboxTime: settings.skyboxTime,
+              categories: settings.categories ?? [],
+              singlePlayer: settings.singlePlayer,
+              showInPlaces: settings.showInPlaces,
+              thumbnailUrl: settings.thumbnailHash ? `${baseUrl}/contents/${settings.thumbnailHash}` : undefined
+            }
+          }
+          await snsClient.publishMessage(settingsChangedEvent)
+          logger.info('world settings changed notification sent after deploy', { worldName })
         }
       }
-      await snsClient.publishMessage(settingsChangedEvent)
-      logger.info('world settings changed notification sent after deploy', { worldName })
     }
 
     // Run independent hooks concurrently so a slow quota service cannot delay notification delivery.
     const postCommitTasks = Promise.allSettled([
       components.blocking.unblockIfUnderQuota(owner),
-      publishDeployment(),
-      publishSettingsChanged()
+      publishDeployment()
     ]).then((results) => {
       for (const result of results) {
         if (result.status === 'rejected') {
