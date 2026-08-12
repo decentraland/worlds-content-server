@@ -16,6 +16,9 @@ import { extractCommsRateLimitSubject } from './comms-rate-limit-subject'
 
 type CommsMetadata = {
   secret?: string
+  // Hardware fingerprint the explorer puts in its signed-fetch metadata. Self-reported, so it
+  // only widens ban matching; it never grants access.
+  deviceIdentifier?: string
 }
 
 function extractSubject(context: HandlerContext): string {
@@ -38,7 +41,12 @@ export async function worldCommsHandler(context: HandlerContext): Promise<IHttpS
 
   const { auth: identity, authMetadata } = context.verification!
 
-  const accessOptions = { secret: authMetadata?.secret }
+  const connectionOptions = {
+    secret: authMetadata?.secret,
+    deviceId: authMetadata?.deviceIdentifier,
+    // Same header the comms-gatekeeper records from, so both services store the same value.
+    ipAddress: context.request.headers.get('cf-connecting-ip') || undefined
+  }
 
   const accessSetting = await access.getAccessForWorld(worldName)
   const isSharedSecret = accessSetting.type === AccessType.SharedSecret
@@ -53,9 +61,9 @@ export async function worldCommsHandler(context: HandlerContext): Promise<IHttpS
 
     let fixedAdapter: string
     if (sceneId) {
-      fixedAdapter = await comms.getWorldSceneRoomConnectionString(identity, worldName, sceneId, accessOptions)
+      fixedAdapter = await comms.getWorldSceneRoomConnectionString(identity, worldName, sceneId, connectionOptions)
     } else {
-      fixedAdapter = await comms.getWorldRoomConnectionString(identity, worldName, accessOptions)
+      fixedAdapter = await comms.getWorldRoomConnectionString(identity, worldName, connectionOptions)
     }
 
     if (isSharedSecret) {

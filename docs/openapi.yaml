@@ -1412,6 +1412,13 @@ paths:
       description: |
         Get comms adapter connection string for a world. Requires signed fetch.
         Auth metadata may include optional secret for access. Returns fixedAdapter.
+
+        Recognised signed-fetch auth metadata fields:
+          - `secret` — shared secret for worlds with shared-secret access.
+          - `deviceIdentifier` — the explorer's hardware fingerprint. Self-reported, so it is
+            only used to widen platform-ban matching (a ban recorded against this device is
+            enforced even under a different wallet) and is reported to the comms-gatekeeper so
+            a later ban can capture it. It never grants access.
       operationId: worldsContentServer_worldComms
       security:
         - SignedFetch: []
@@ -1452,6 +1459,8 @@ paths:
       summary: POST /worlds/{worldName}/scenes/{sceneId}/comms
       description: |
         Get comms adapter connection string for a specific scene in a world. Requires signed fetch.
+        Accepts the same signed-fetch auth metadata as `POST /worlds/{worldName}/comms`,
+        including the optional `deviceIdentifier` hardware fingerprint.
         Auth metadata may include optional secret for access. Returns fixedAdapter.
       operationId: worldsContentServer_worldSceneComms
       security:

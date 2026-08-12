@@ -44,7 +44,7 @@ import { IJobComponent } from '@dcl/job-component'
 import { IQueueConsumerComponent } from '@dcl/queue-consumer-component'
 import { ICacheStorageComponent } from '@dcl/core-commons'
 import { IDenyListComponent } from './logic/denylist/types'
-import { IBansComponent } from './adapters/bans-adapter'
+import { IBansComponent } from './adapters/bans'
 
 export type GlobalContext = {
   components: BaseComponents

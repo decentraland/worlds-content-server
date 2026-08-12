@@ -13,7 +13,7 @@ import { ICommsAdapter, IWorldNamePermissionChecker } from '../../src/types'
 import { IAccessComponent } from '../../src/logic/access/types'
 import { IWorldsComponent } from '../../src/logic/worlds/types'
 import { IDenyListComponent } from '../../src/logic/denylist/types'
-import { IBansComponent } from '../../src/adapters/bans-adapter'
+import { IBansComponent } from '../../src/adapters/bans'
 import { IConfigComponent } from '@well-known-components/interfaces'
 import { createMockedNamePermissionChecker } from '../mocks/dcl-name-checker-mock'
 import { createMockAccess } from '../mocks/access-mock'
@@ -468,6 +468,147 @@ describe('CommsComponent', () => {
         }
         expect(denyList.isDenylisted).not.toHaveBeenCalled()
       })
+    })
+  })
+
+  describe('when the connection reports a device id', () => {
+    const userAddress = '0x1234'
+    const worldName = 'test-world'
+    const sceneId = 'scene-123'
+    const deviceId = 'a-device-fingerprint'
+
+    let connectionOptions: { deviceId: string }
+
+    beforeEach(() => {
+      connectionOptions = { deviceId }
+      worlds.isWorldValid.mockResolvedValue(true)
+      namePermissionChecker.checkPermission.mockResolvedValue(true)
+      access.checkAccess.mockResolvedValue(true)
+    })
+
+    describe('and getting the world room connection string', () => {
+      it('should check the platform ban against the device id', async () => {
+        await commsComponent.getWorldRoomConnectionString(userAddress, worldName, connectionOptions)
+
+        expect(bans.isPlayerBanned).toHaveBeenCalledWith(userAddress, deviceId)
+      })
+    })
+
+    describe('and getting the scene room connection string', () => {
+      beforeEach(() => {
+        worlds.getWorldSceneBaseParcelIncludingUndeployed.mockResolvedValue('0,0')
+      })
+
+      it('should check the platform ban against the device id', async () => {
+        await commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, sceneId, connectionOptions)
+
+        expect(bans.isPlayerBanned).toHaveBeenCalledWith(userAddress, deviceId)
+      })
+    })
+
+    describe('and only the device is banned, not the wallet', () => {
+      beforeEach(() => {
+        bans.isPlayerBanned.mockImplementation(async (_address: string, device?: string) => device === deviceId)
+        worlds.getWorldSceneBaseParcelIncludingUndeployed.mockResolvedValue('0,0')
+      })
+
+      it('should throw UserPlatformBannedError from the world room', async () => {
+        await expect(
+          commsComponent.getWorldRoomConnectionString(userAddress, worldName, connectionOptions)
+        ).rejects.toThrow(UserPlatformBannedError)
+      })
+
+      it('should throw UserPlatformBannedError from the scene room', async () => {
+        await expect(
+          commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, sceneId, connectionOptions)
+        ).rejects.toThrow(UserPlatformBannedError)
+      })
+
+      it('should not mint a scene room connection string', async () => {
+        await commsComponent
+          .getWorldSceneRoomConnectionString(userAddress, worldName, sceneId, connectionOptions)
+          .catch(() => undefined)
+
+        expect(commsAdapter.getSceneRoomConnectionString).not.toHaveBeenCalled()
+      })
+
+      it('should still record the connection of the rejected player', async () => {
+        await commsComponent
+          .getWorldRoomConnectionString(userAddress, worldName, connectionOptions)
+          .catch(() => undefined)
+
+        expect(bans.recordPlayerConnection).toHaveBeenCalledWith(userAddress, {
+          deviceId,
+          ipAddress: undefined
+        })
+      })
+    })
+  })
+
+  describe('when the connection reports a device id and an IP', () => {
+    const userAddress = '0x1234'
+    const worldName = 'test-world'
+    const sceneId = 'scene-123'
+    const deviceId = 'a-device-fingerprint'
+    const ipAddress = '203.0.113.10'
+
+    let connectionOptions: { deviceId: string; ipAddress: string }
+
+    beforeEach(() => {
+      connectionOptions = { deviceId, ipAddress }
+      worlds.isWorldValid.mockResolvedValue(true)
+      namePermissionChecker.checkPermission.mockResolvedValue(true)
+      access.checkAccess.mockResolvedValue(true)
+      worlds.getWorldSceneBaseParcelIncludingUndeployed.mockResolvedValue('0,0')
+    })
+
+    describe('and getting the world room connection string', () => {
+      it('should record the connection with both values', async () => {
+        await commsComponent.getWorldRoomConnectionString(userAddress, worldName, connectionOptions)
+
+        expect(bans.recordPlayerConnection).toHaveBeenCalledWith(userAddress, { deviceId, ipAddress })
+      })
+    })
+
+    describe('and getting the scene room connection string', () => {
+      it('should record the connection with both values', async () => {
+        await commsComponent.getWorldSceneRoomConnectionString(userAddress, worldName, sceneId, connectionOptions)
+
+        expect(bans.recordPlayerConnection).toHaveBeenCalledWith(userAddress, { deviceId, ipAddress })
+      })
+    })
+
+    describe('and recording the connection throws unexpectedly', () => {
+      const connectionString = 'livekit:wss://host?access_token=abc123'
+
+      beforeEach(() => {
+        bans.recordPlayerConnection.mockRejectedValueOnce(new Error('gatekeeper down'))
+        commsAdapter.getWorldRoomParticipantCount.mockResolvedValueOnce(0)
+        commsAdapter.getWorldRoomConnectionString.mockResolvedValueOnce(connectionString)
+      })
+
+      it('should still let a legitimate player in', async () => {
+        await expect(
+          commsComponent.getWorldRoomConnectionString(userAddress, worldName, connectionOptions)
+        ).resolves.toBe(connectionString)
+      })
+    })
+  })
+
+  describe('when the connection reports no device id', () => {
+    const userAddress = '0x1234'
+    const worldName = 'test-world'
+
+    beforeEach(() => {
+      worlds.isWorldValid.mockResolvedValue(true)
+      namePermissionChecker.checkPermission.mockResolvedValue(true)
+      access.checkAccess.mockResolvedValue(true)
+    })
+
+    it('should check the platform ban with an undefined device id', async () => {
+      await commsComponent.getWorldRoomConnectionString(userAddress, worldName)
+
+      expect(bans.isPlayerBanned).toHaveBeenCalledWith(userAddress, undefined)
     })
   })
 

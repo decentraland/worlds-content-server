@@ -67,14 +67,21 @@ export async function withRetry<T>(
     logger?: ILoggerComponent.ILogger
     maxRetries?: number
     baseDelay?: number
+    /**
+     * Lets a caller mark an error as permanent so it is rethrown immediately rather than
+     * re-attempted. Defaults to retrying everything, which is what existing callers expect.
+     */
+    shouldRetry?: (error: any) => boolean
   }
 ): Promise<T> {
-  const { logger = undefined, maxRetries = 5, baseDelay = 100 } = options || {}
+  const { logger = undefined, maxRetries = 5, baseDelay = 100, shouldRetry = () => true } = options || {}
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
       return await operation()
     } catch (error: any) {
+      if (!shouldRetry(error)) throw error
+
       const isLastAttempt = attempt === maxRetries - 1
       if (isLastAttempt) throw error
 
