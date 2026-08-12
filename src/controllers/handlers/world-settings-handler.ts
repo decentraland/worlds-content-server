@@ -15,6 +15,7 @@ type SnakeCaseWorldSettings = {
   single_player?: boolean
   show_in_places?: boolean
   thumbnail_hash?: string
+  updated_at?: string
 }
 
 // Allowed thumbnail image formats, identified by their leading magic bytes. The thumbnail is
@@ -58,7 +59,8 @@ function toSnakeCaseSettings(settings: WorldSettings): SnakeCaseWorldSettings {
     categories: settings.categories,
     single_player: settings.singlePlayer,
     show_in_places: settings.showInPlaces,
-    thumbnail_hash: settings.thumbnailHash
+    thumbnail_hash: settings.thumbnailHash,
+    updated_at: settings.updatedAt?.toISOString()
   }
 }
 

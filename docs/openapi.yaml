@@ -1988,6 +1988,14 @@ components:
           description: URL of the world thumbnail image
           example: 'https://worlds-content-server.decentraland.org/contents/world-thumbnails/my-world.dcl.eth/abc123'
           nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+          description: |
+            Timestamp of the last write to the world record. Monotonic per world; consumers that
+            mirror settings (e.g. Places) use it as a version to reject out-of-order updates.
+          example: '2026-08-12T15:30:00.000Z'
+          nullable: true
 
     WorldSettingsInput:
       type: object

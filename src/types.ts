@@ -150,6 +150,8 @@ export type WorldSettings = {
   singlePlayer?: boolean
   showInPlaces?: boolean
   thumbnailHash?: string
+  /** Last write to the worlds row; consumers use it as a monotonic version when mirroring settings. */
+  updatedAt?: Date
 }
 
 export type WorldSettingsInput = {

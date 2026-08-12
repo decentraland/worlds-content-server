@@ -70,6 +70,15 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
           spawn_coordinates: '20,24'
         })
       })
+
+      it('should return the row updated_at as an ISO timestamp so mirrors can order writes', async () => {
+        const { localFetch } = components
+
+        const response = await localFetch.fetch(`/world/${worldName}/settings`)
+        const body = await response.json()
+
+        expect(new Date(body.updated_at).toISOString()).toBe(body.updated_at)
+      })
     })
 
     describe('when the world exists with a scene', () => {
