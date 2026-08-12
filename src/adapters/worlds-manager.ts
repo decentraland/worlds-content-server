@@ -356,25 +356,11 @@ export async function createWorldsManagerComponent({
         await query(SQL`SELECT set_config('statement_timeout', ${remainingMs.toString()}, true)`)
       }
 
-      // Ensure world record exists, update if it does.
-      // A CTE determines whether scene-derived metadata columns should be refreshed:
-      //   - First effective scene (no deployed scenes exist): always update
-      //   - Redeploying the only deployed scene (overlap): update
-      //   - Multi-scene world (overlap or non-overlap): preserve existing metadata
-      // COALESCE(EXCLUDED.x, worlds.x) ensures scene.json fields that are absent (null)
-      // never overwrite owner-set values from the settings API.
-      const upsertResult = await query<{ metadata_updated: boolean }>(SQL`
-        WITH scene_stats AS (
-          SELECT
-            COUNT(*) AS deployed_count,
-            COUNT(*) FILTER (WHERE parcels && ${parcels}::text[]) AS overlap_count
-          FROM world_scenes
-          WHERE world_name = ${worldName.toLowerCase()} AND status = 'DEPLOYED'
-        ),
-        metadata_check AS (
-          SELECT (deployed_count = 0 OR (deployed_count = 1 AND overlap_count > 0)) AS should_update
-          FROM scene_stats
-        )
+      // Upsert the worlds row first to acquire the row lock. Metadata columns are written
+      // on INSERT (first deploy) but left unchanged on UPDATE — the metadata update decision
+      // requires a scene count check that must run AFTER the lock is acquired to avoid
+      // snapshot staleness under READ COMMITTED.
+      const upsertResult = await query<{ is_insert: boolean }>(SQL`
         INSERT INTO worlds (
           name, owner, access, spawn_coordinates,
           title, description, content_rating, skybox_time, categories,
@@ -400,19 +386,42 @@ export async function createWorldsManagerComponent({
         ON CONFLICT (name) DO UPDATE SET
           owner = ${owner.toLowerCase()},
           spawn_coordinates = COALESCE(worlds.spawn_coordinates, EXCLUDED.spawn_coordinates),
-          title = CASE WHEN (SELECT should_update FROM metadata_check) THEN COALESCE(EXCLUDED.title, worlds.title) ELSE worlds.title END,
-          description = CASE WHEN (SELECT should_update FROM metadata_check) THEN COALESCE(EXCLUDED.description, worlds.description) ELSE worlds.description END,
-          content_rating = CASE WHEN (SELECT should_update FROM metadata_check) THEN COALESCE(EXCLUDED.content_rating, worlds.content_rating) ELSE worlds.content_rating END,
-          skybox_time = CASE WHEN (SELECT should_update FROM metadata_check) THEN COALESCE(EXCLUDED.skybox_time, worlds.skybox_time) ELSE worlds.skybox_time END,
-          categories = CASE WHEN (SELECT should_update FROM metadata_check) THEN COALESCE(EXCLUDED.categories, worlds.categories) ELSE worlds.categories END,
-          single_player = CASE WHEN (SELECT should_update FROM metadata_check) THEN COALESCE(EXCLUDED.single_player, worlds.single_player) ELSE worlds.single_player END,
-          show_in_places = CASE WHEN (SELECT should_update FROM metadata_check) THEN COALESCE(EXCLUDED.show_in_places, worlds.show_in_places) ELSE worlds.show_in_places END,
-          thumbnail_hash = CASE WHEN (SELECT should_update FROM metadata_check) THEN COALESCE(EXCLUDED.thumbnail_hash, worlds.thumbnail_hash) ELSE worlds.thumbnail_hash END,
           updated_at = ${new Date()}
-        RETURNING (SELECT should_update FROM metadata_check) AS metadata_updated
+        RETURNING (xmax = 0) AS is_insert
       `)
 
-      metadataUpdated = upsertResult.rows[0]?.metadata_updated ?? false
+      const isInsert = upsertResult.rows[0]?.is_insert ?? false
+
+      // After the row lock is held, check scene stats with a fresh snapshot.
+      // This avoids the CTE snapshot staleness race described in the P1 review.
+      if (!isInsert) {
+        const statsResult = await query<{ should_update: boolean }>(SQL`
+          SELECT (
+            COUNT(*) = 0 OR (COUNT(*) = 1 AND COUNT(*) FILTER (WHERE parcels && ${parcels}::text[]) > 0)
+          ) AS should_update
+          FROM world_scenes
+          WHERE world_name = ${worldName.toLowerCase()} AND status = 'DEPLOYED'
+        `)
+        const shouldUpdate = statsResult.rows[0]?.should_update ?? false
+
+        if (shouldUpdate) {
+          await query(SQL`
+            UPDATE worlds SET
+              title = COALESCE(${title}, title),
+              description = COALESCE(${description}, description),
+              content_rating = COALESCE(${rating}, content_rating),
+              skybox_time = COALESCE(${skyboxTime}, skybox_time),
+              categories = COALESCE(${categories}::text[], categories),
+              single_player = COALESCE(${singlePlayer}, single_player),
+              show_in_places = COALESCE(${showInPlaces}, show_in_places),
+              thumbnail_hash = COALESCE(${thumbnailHash}, thumbnail_hash)
+            WHERE name = ${worldName.toLowerCase()}
+          `)
+          metadataUpdated = true
+        }
+      } else {
+        metadataUpdated = true
+      }
 
       if (replacementAuthorization.mode === 'unrestricted-owner') {
         // World-name owners may replace every overlapping scene.
