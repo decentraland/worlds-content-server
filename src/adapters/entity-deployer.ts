@@ -6,7 +6,7 @@ import {
   MissingSceneReplacementAuthorizationError,
   SceneReplacementAuthorization
 } from '../types'
-import { AuthLink, Entity, EntityType, Events, WorldDeploymentEvent } from '@dcl/schemas'
+import { AuthLink, Entity, EntityType, Events, WorldDeploymentEvent, WorldSettingsChangedEvent } from '@dcl/schemas'
 import { bufferToStream } from '@dcl/catalyst-storage'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { mapWithConcurrency, raceWithSignal } from '../logic/concurrency'
@@ -164,7 +164,7 @@ export function createEntityDeployer(
     }
 
     signal?.throwIfAborted()
-    await worldsManager.deployScene(worldName, entity, owner, sceneReplacementAuthorization, {
+    const { metadataUpdated } = await worldsManager.deployScene(worldName, entity, owner, sceneReplacementAuthorization, {
       authChain,
       size: deploymentSize,
       ...(deadlineAt === undefined ? {} : { deadlineAt }),
@@ -203,10 +203,44 @@ export function createEntityDeployer(
         })
       }
     }
+
+    // When the deploy path updates world-level metadata (first deploy or single-scene redeploy),
+    // emit WORLD_SETTINGS_CHANGED so downstream consumers (Places) see the refreshed values.
+    const publishSettingsChanged = async (): Promise<void> => {
+      if (!metadataUpdated) return
+      const snsArn = await config.getString('AWS_SNS_ARN')
+      if (!snsArn) return
+
+      const settings = await worldsManager.getWorldSettings(worldName)
+      if (!settings) return
+
+      const timestamp = Date.now()
+      const settingsChangedEvent: WorldSettingsChangedEvent = {
+        type: Events.Type.WORLD,
+        subType: Events.SubType.Worlds.WORLD_SETTINGS_CHANGED,
+        key: `${worldName}-${timestamp}`,
+        timestamp,
+        metadata: {
+          worldName,
+          title: settings.title,
+          description: settings.description,
+          contentRating: settings.contentRating,
+          skyboxTime: settings.skyboxTime,
+          categories: settings.categories ?? [],
+          singlePlayer: settings.singlePlayer,
+          showInPlaces: settings.showInPlaces,
+          thumbnailUrl: settings.thumbnailHash ? `${baseUrl}/contents/${settings.thumbnailHash}` : undefined
+        }
+      }
+      await snsClient.publishMessage(settingsChangedEvent)
+      logger.info('world settings changed notification sent after deploy', { worldName })
+    }
+
     // Run independent hooks concurrently so a slow quota service cannot delay notification delivery.
     const postCommitTasks = Promise.allSettled([
       components.blocking.unblockIfUnderQuota(owner),
-      publishDeployment()
+      publishDeployment(),
+      publishSettingsChanged()
     ]).then((results) => {
       for (const result of results) {
         if (result.status === 'rejected') {

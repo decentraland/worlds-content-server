@@ -1632,4 +1632,351 @@ test('WorldManagerAdapter', function ({ components }) {
       })
     })
   })
+
+  describe('when checking metadata update behavior on deploy', function () {
+    describe('when deploying the first scene to a world', function () {
+      let worldName: string
+      let result: { metadataUpdated: boolean }
+
+      beforeEach(async () => {
+        const { worldCreator, worldsManager } = components
+
+        worldName = worldCreator.randomWorldName()
+
+        const files = new Map<string, Uint8Array>()
+        files.set('abc.txt', stringToUtf8Bytes(makeid(100)))
+
+        const { entity, owner } = await worldCreator.createWorldWithScene({
+          worldName,
+          metadata: {
+            main: 'abc.txt',
+            display: { title: 'First Scene' },
+            scene: { base: '0,0', parcels: ['0,0'] },
+            worldConfiguration: { name: worldName }
+          },
+          files
+        })
+
+        // Deploy a fresh scene to a new world to get the return value
+        const freshWorldName = worldCreator.randomWorldName()
+        const freshEntity = { ...entity, id: `${entity.id}-fresh` }
+        result = await worldsManager.deployScene(
+          freshWorldName,
+          freshEntity,
+          owner.authChain[0].payload,
+          { mode: 'unrestricted-owner' },
+          { authChain: owner.authChain, size: 100 }
+        )
+      })
+
+      it('should report metadataUpdated as true', function () {
+        expect(result.metadataUpdated).toBe(true)
+      })
+    })
+
+    describe('when redeploying the only deployed scene (overlap)', function () {
+      let worldName: string
+      let result: { metadataUpdated: boolean }
+
+      beforeEach(async () => {
+        const { worldCreator, worldsManager } = components
+
+        worldName = worldCreator.randomWorldName()
+
+        const files = new Map<string, Uint8Array>()
+        files.set('abc.txt', stringToUtf8Bytes(makeid(100)))
+
+        const created = await worldCreator.createWorldWithScene({
+          worldName,
+          metadata: {
+            main: 'abc.txt',
+            display: { title: 'Scene A Title', description: 'Scene A Desc' },
+            tags: ['original'],
+            scene: { base: '0,0', parcels: ['0,0'] },
+            worldConfiguration: { name: worldName }
+          },
+          files
+        })
+
+        // Redeploy with new metadata on the same parcels
+        const redeployEntity = {
+          ...created.entity,
+          id: `${created.entity.id}-redeploy`,
+          metadata: {
+            ...created.entity.metadata,
+            display: { title: 'Scene B Title', description: 'Scene B Desc' },
+            tags: ['updated']
+          }
+        }
+        result = await worldsManager.deployScene(
+          worldName,
+          redeployEntity,
+          created.owner.authChain[0].payload,
+          { mode: 'unrestricted-owner' },
+          { authChain: created.owner.authChain, size: 100 }
+        )
+      })
+
+      it('should report metadataUpdated as true', function () {
+        expect(result.metadataUpdated).toBe(true)
+      })
+
+      it('should update the world metadata with the new scene values', async function () {
+        const { worldsManager } = components
+        const settings = await worldsManager.getWorldSettings(worldName)
+        expect(settings?.title).toBe('Scene B Title')
+        expect(settings?.description).toBe('Scene B Desc')
+        expect(settings?.categories).toEqual(['updated'])
+      })
+    })
+
+    describe('when adding a non-overlapping scene to a multi-scene world', function () {
+      let worldName: string
+      let result: { metadataUpdated: boolean }
+
+      beforeEach(async () => {
+        const { worldCreator, worldsManager } = components
+
+        worldName = worldCreator.randomWorldName()
+
+        const files = new Map<string, Uint8Array>()
+        files.set('abc.txt', stringToUtf8Bytes(makeid(100)))
+
+        const created = await worldCreator.createWorldWithScene({
+          worldName,
+          metadata: {
+            main: 'abc.txt',
+            display: { title: 'Scene A Title', description: 'Scene A Desc' },
+            tags: ['scene-a'],
+            scene: { base: '0,0', parcels: ['0,0'] },
+            worldConfiguration: { name: worldName }
+          },
+          files
+        })
+
+        // Add a second non-overlapping scene
+        const secondEntity = {
+          ...created.entity,
+          id: `${created.entity.id}-second`,
+          metadata: {
+            ...created.entity.metadata,
+            display: { title: 'Scene B Title', description: 'Scene B Desc' },
+            tags: ['scene-b'],
+            scene: { base: '1,1', parcels: ['1,1'] }
+          }
+        }
+        result = await worldsManager.deployScene(
+          worldName,
+          secondEntity,
+          created.owner.authChain[0].payload,
+          { mode: 'unrestricted-owner' },
+          { authChain: created.owner.authChain, size: 100 }
+        )
+      })
+
+      it('should report metadataUpdated as false', function () {
+        expect(result.metadataUpdated).toBe(false)
+      })
+
+      it('should preserve world metadata from the first scene', async function () {
+        const { worldsManager } = components
+        const settings = await worldsManager.getWorldSettings(worldName)
+        expect(settings?.title).toBe('Scene A Title')
+        expect(settings?.description).toBe('Scene A Desc')
+        expect(settings?.categories).toEqual(['scene-a'])
+      })
+    })
+
+    describe('when replacing one scene in a multi-scene world (overlap)', function () {
+      let worldName: string
+      let result: { metadataUpdated: boolean }
+
+      beforeEach(async () => {
+        const { worldCreator, worldsManager } = components
+
+        worldName = worldCreator.randomWorldName()
+
+        const files = new Map<string, Uint8Array>()
+        files.set('abc.txt', stringToUtf8Bytes(makeid(100)))
+
+        // Deploy two non-overlapping scenes
+        const created = await worldCreator.createWorldWithScene({
+          worldName,
+          metadata: {
+            main: 'abc.txt',
+            display: { title: 'Scene A Title' },
+            tags: ['scene-a'],
+            scene: { base: '0,0', parcels: ['0,0'] },
+            worldConfiguration: { name: worldName }
+          },
+          files
+        })
+
+        const secondEntity = {
+          ...created.entity,
+          id: `${created.entity.id}-second`,
+          metadata: {
+            ...created.entity.metadata,
+            display: { title: 'Scene B Title' },
+            tags: ['scene-b'],
+            scene: { base: '1,1', parcels: ['1,1'] }
+          }
+        }
+        await worldsManager.deployScene(
+          worldName,
+          secondEntity,
+          created.owner.authChain[0].payload,
+          { mode: 'unrestricted-owner' },
+          { authChain: created.owner.authChain, size: 100 }
+        )
+
+        // Replace scene A with a new scene overlapping the same parcels
+        const replacementEntity = {
+          ...created.entity,
+          id: `${created.entity.id}-replacement`,
+          metadata: {
+            ...created.entity.metadata,
+            display: { title: 'Replacement Title' },
+            tags: ['replacement'],
+            scene: { base: '0,0', parcels: ['0,0'] }
+          }
+        }
+        result = await worldsManager.deployScene(
+          worldName,
+          replacementEntity,
+          created.owner.authChain[0].payload,
+          { mode: 'unrestricted-owner' },
+          { authChain: created.owner.authChain, size: 100 }
+        )
+      })
+
+      it('should report metadataUpdated as false', function () {
+        expect(result.metadataUpdated).toBe(false)
+      })
+
+      it('should preserve world metadata (not update to the replacement scene)', async function () {
+        const { worldsManager } = components
+        const settings = await worldsManager.getWorldSettings(worldName)
+        expect(settings?.title).toBe('Scene A Title')
+        expect(settings?.categories).toEqual(['scene-a'])
+      })
+    })
+
+    describe('when deploying to a world after full undeploy (0 deployed scenes)', function () {
+      let worldName: string
+      let result: { metadataUpdated: boolean }
+
+      beforeEach(async () => {
+        const { worldCreator, worldsManager } = components
+
+        worldName = worldCreator.randomWorldName()
+
+        const files = new Map<string, Uint8Array>()
+        files.set('abc.txt', stringToUtf8Bytes(makeid(100)))
+
+        const created = await worldCreator.createWorldWithScene({
+          worldName,
+          metadata: {
+            main: 'abc.txt',
+            display: { title: 'Original Title' },
+            scene: { base: '0,0', parcels: ['0,0'] },
+            worldConfiguration: { name: worldName }
+          },
+          files
+        })
+
+        // Undeploy all scenes
+        await worldsManager.undeployWorld(worldName)
+
+        // Deploy a new scene
+        const newEntity = {
+          ...created.entity,
+          id: `${created.entity.id}-after-undeploy`,
+          metadata: {
+            ...created.entity.metadata,
+            display: { title: 'After Undeploy Title', description: 'After Undeploy Desc' },
+            scene: { base: '3,4', parcels: ['3,4'] }
+          }
+        }
+        result = await worldsManager.deployScene(
+          worldName,
+          newEntity,
+          created.owner.authChain[0].payload,
+          { mode: 'unrestricted-owner' },
+          { authChain: created.owner.authChain, size: 100 }
+        )
+      })
+
+      it('should report metadataUpdated as true', function () {
+        expect(result.metadataUpdated).toBe(true)
+      })
+
+      it('should update the world metadata with the new scene values', async function () {
+        const { worldsManager } = components
+        const settings = await worldsManager.getWorldSettings(worldName)
+        expect(settings?.title).toBe('After Undeploy Title')
+        expect(settings?.description).toBe('After Undeploy Desc')
+      })
+    })
+
+    describe('when redeploying the only scene and the new scene omits some fields', function () {
+      let worldName: string
+
+      beforeEach(async () => {
+        const { worldCreator, worldsManager } = components
+
+        worldName = worldCreator.randomWorldName()
+
+        const files = new Map<string, Uint8Array>()
+        files.set('abc.txt', stringToUtf8Bytes(makeid(100)))
+
+        const created = await worldCreator.createWorldWithScene({
+          worldName,
+          metadata: {
+            main: 'abc.txt',
+            display: { title: 'Original Title', description: 'Original Desc' },
+            tags: ['original'],
+            rating: 'T',
+            scene: { base: '0,0', parcels: ['0,0'] },
+            worldConfiguration: {
+              name: worldName,
+              skyboxConfig: { fixedTime: 1200 }
+            }
+          },
+          files
+        })
+
+        // Redeploy with a scene that has a new title but omits description, tags, rating, skybox
+        const redeployEntity = {
+          ...created.entity,
+          id: `${created.entity.id}-partial`,
+          metadata: {
+            main: 'abc.txt',
+            display: { title: 'New Title' },
+            scene: { base: '0,0', parcels: ['0,0'] },
+            worldConfiguration: { name: worldName }
+          }
+        }
+        await worldsManager.deployScene(
+          worldName,
+          redeployEntity,
+          created.owner.authChain[0].payload,
+          { mode: 'unrestricted-owner' },
+          { authChain: created.owner.authChain, size: 100 }
+        )
+      })
+
+      it('should update provided fields and preserve omitted ones via COALESCE', async function () {
+        const { worldsManager } = components
+        const settings = await worldsManager.getWorldSettings(worldName)
+        // Title updated from the new scene
+        expect(settings?.title).toBe('New Title')
+        // These fields are preserved from the original because the new scene provided null
+        expect(settings?.description).toBe('Original Desc')
+        expect(settings?.contentRating).toBe('T')
+        expect(settings?.categories).toEqual(['original'])
+        expect(settings?.skyboxTime).toBe(1200)
+      })
+    })
+  })
 })

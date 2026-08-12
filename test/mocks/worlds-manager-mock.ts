@@ -124,7 +124,7 @@ export async function createWorldsManagerMockComponent({
     owner: EthAddress,
     _replacementAuthorization: Parameters<IWorldsManager['deployScene']>[3],
     deployment?: SceneDeploymentData
-  ): Promise<void> {
+  ): Promise<{ metadataUpdated: boolean }> {
     const parcels: string[] = scene.metadata?.scene?.parcels || []
     const existingMetadata = await getMetadataForWorld(worldName)
     const newScene: WorldScene = {
@@ -153,6 +153,8 @@ export async function createWorldsManagerMockComponent({
       spawnCoordinates,
       owner
     })
+
+    return { metadataUpdated: true }
   }
 
   async function undeployScene(_worldName: string, _parcels: string[]): Promise<{ scenes: [] }> {
@@ -401,7 +403,7 @@ export function createMockedWorldsManager(
     getDeployedWorldCount: jest.fn(),
     getMetadataForWorld: jest.fn(),
     getEntityForWorlds: jest.fn(),
-    deployScene: jest.fn(),
+    deployScene: jest.fn().mockResolvedValue({ metadataUpdated: false }),
     undeployScene: jest.fn(),
     storeAccess: jest.fn(),
     undeployWorld: jest.fn(),

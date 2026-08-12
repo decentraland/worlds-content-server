@@ -476,7 +476,7 @@ export type IWorldsManager = {
     owner: EthAddress,
     replacementAuthorization: SceneReplacementAuthorization,
     deployment?: SceneDeploymentData
-  ): Promise<void>
+  ): Promise<{ metadataUpdated: boolean }>
   /** Atomically undeploys matching scenes and returns the rows actually changed. */
   undeployScene(worldName: string, parcels: string[], authorizedEntityIds?: string[]): Promise<SceneUndeploymentResult>
   storeAccess(worldName: string, access: AccessSetting): Promise<void>

@@ -49,7 +49,7 @@ function createComponents(
   storageStoreStream: jest.Mock,
   storageConcurrency: number
 ): { components: EntityDeployerComponents; loggerError: jest.Mock; worldsDeployScene: jest.Mock } {
-  const worldsDeployScene = jest.fn().mockResolvedValue(undefined)
+  const worldsDeployScene = jest.fn().mockResolvedValue({ metadataUpdated: false })
   const loggerError = jest.fn()
   const components = {
     blocking: { unblockIfUnderQuota: jest.fn().mockResolvedValue(undefined) },
@@ -369,6 +369,7 @@ describe('entity deployer', () => {
       setup.worldsDeployScene.mockImplementation(async (_worldName, _entity, _owner, _authorization, deployment) => {
         signalPassedToPersistence = deployment.signal
         controller.abort(new Error('deadline exceeded after commit'))
+        return { metadataUpdated: false }
       })
       const entity = createScene(contentHashes)
       const deployer = createEntityDeployer(setup.components)

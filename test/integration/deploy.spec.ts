@@ -718,7 +718,7 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
         $metadata: {}
       })
 
-      // Deploy first scene at coordinates 0,0
+      // Deploy first scene at coordinates 0,0 with metadata
       const firstEntityFiles = new Map<string, Uint8Array>()
       firstEntityFiles.set('first.txt', stringToUtf8Bytes(makeid(100)))
 
@@ -728,6 +728,11 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
         files: firstEntityFiles,
         metadata: {
           main: 'first.txt',
+          display: {
+            title: 'Scene A Title',
+            description: 'Scene A Description'
+          },
+          tags: ['scene-a'],
           scene: {
             base: '0,0',
             parcels: ['0,0']
@@ -742,7 +747,7 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
       const firstAuthChain = Authenticator.signPayload(identity.authChain, firstEntityId)
       await contentClient.deploy({ files: firstResult.files, entityId: firstEntityId, authChain: firstAuthChain })
 
-      // Prepare second scene at different coordinates
+      // Prepare second scene at different coordinates with different metadata
       const secondEntityFiles = new Map<string, Uint8Array>()
       secondEntityFiles.set('second.txt', stringToUtf8Bytes(makeid(150)))
 
@@ -752,6 +757,11 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
         files: secondEntityFiles,
         metadata: {
           main: 'second.txt',
+          display: {
+            title: 'Scene B Title',
+            description: 'Scene B Description'
+          },
+          tags: ['scene-b'],
           scene: {
             base: '1,1',
             parcels: ['1,1']
@@ -828,6 +838,38 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
 
       const settings = await worldsManager.getWorldSettings(worldName)
       expect(settings?.spawnCoordinates).toBe('0,0')
+    })
+
+    it('should preserve world metadata from the first scene when adding a non-overlapping scene', async () => {
+      const { worldsManager } = components
+      const authChain = Authenticator.signPayload(identity.authChain, secondEntityId)
+
+      await contentClient.deploy({ files: secondFiles, entityId: secondEntityId, authChain })
+
+      const settings = await worldsManager.getWorldSettings(worldName)
+      // Metadata should remain from the first scene — adding a non-overlapping scene to a
+      // multi-scene world does not update world-level metadata
+      expect(settings).toMatchObject({
+        title: 'Scene A Title',
+        description: 'Scene A Description',
+        categories: ['scene-a']
+      })
+    })
+
+    it('should not emit WORLD_SETTINGS_CHANGED when adding a non-overlapping scene to a multi-scene world', async () => {
+      const { snsClient } = stubComponents
+      snsClient.publishMessage.mockClear()
+      const authChain = Authenticator.signPayload(identity.authChain, secondEntityId)
+
+      await contentClient.deploy({ files: secondFiles, entityId: secondEntityId, authChain })
+
+      const settingsChangedCalls = snsClient.publishMessage.mock.calls.filter(
+        (call: unknown[]) => {
+          const event = call[0] as { subType?: string }
+          return event.subType === 'WORLD_SETTINGS_CHANGED'
+        }
+      )
+      expect(settingsChangedCalls).toHaveLength(0)
     })
   })
 
@@ -1076,22 +1118,49 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
         secondFiles = secondResult.files
       })
 
-      it('should preserve the original settings and not overwrite them', async () => {
+      it('should update metadata from the new scene when redeploying the only deployed scene', async () => {
         const { worldsManager } = components
         const authChain = Authenticator.signPayload(identity.authChain, secondEntityId)
 
         await contentClient.deploy({ files: secondFiles, entityId: secondEntityId, authChain })
 
         const settings = await worldsManager.getWorldSettings(worldName)
-        // Settings should remain from the first deployment
+        // Settings should be updated from the second deployment (single-scene redeploy)
+        // COALESCE preserves the thumbnail_hash from the first deploy since the second scene
+        // does not provide one
         expect(settings).toMatchObject({
-          title: 'Original Title',
-          description: 'Original description',
+          title: 'New Title',
+          description: 'New description',
           spawnCoordinates: '0,0',
-          skyboxTime: 1200,
-          categories: ['original'],
-          showInPlaces: false
+          skyboxTime: 2400,
+          categories: ['updated'],
+          singlePlayer: false,
+          showInPlaces: true
         })
+        // thumbnailHash is preserved from the first deploy via COALESCE
+        expect(settings?.thumbnailHash).toBeDefined()
+      })
+
+      it('should emit WORLD_SETTINGS_CHANGED event when metadata is updated on redeploy', async () => {
+        const { snsClient } = stubComponents
+        const authChain = Authenticator.signPayload(identity.authChain, secondEntityId)
+
+        await contentClient.deploy({ files: secondFiles, entityId: secondEntityId, authChain })
+
+        // Should have deployment event + settings changed event
+        const settingsChangedCalls = snsClient.publishMessage.mock.calls.filter(
+          (call: unknown[]) => {
+            const event = call[0] as { subType?: string }
+            return event.subType === 'WORLD_SETTINGS_CHANGED'
+          }
+        )
+        expect(settingsChangedCalls).toHaveLength(1)
+        const settingsEvent = settingsChangedCalls[0][0] as {
+          metadata: { worldName: string; title?: string; description?: string }
+        }
+        expect(settingsEvent.metadata.worldName).toBe(worldName)
+        expect(settingsEvent.metadata.title).toBe('New Title')
+        expect(settingsEvent.metadata.description).toBe('New description')
       })
     })
   })
