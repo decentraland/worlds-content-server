@@ -268,9 +268,12 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
 
         await contentClient.deploy({ files, entityId, authChain })
 
-        expect(snsClient.publishMessage).toHaveBeenCalledTimes(1)
-        const call = snsClient.publishMessage.mock.calls[0]
-        expect(call[1]?.isMultiplayer?.StringValue).toBe('false')
+        // Find the deployment event call (has message attributes as second arg)
+        const deploymentCall = snsClient.publishMessage.mock.calls.find(
+          (call) => (call[1] as Record<string, any>)?.isMultiplayer
+        )
+        expect(deploymentCall).toBeDefined()
+        expect((deploymentCall![1] as Record<string, any>)?.isMultiplayer?.StringValue).toBe('false')
       })
 
       it('should make the world accessible via /world/:world_name/about endpoint', async () => {
@@ -347,9 +350,12 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
 
         await contentClient.deploy({ files, entityId, authChain })
 
-        expect(snsClient.publishMessage).toHaveBeenCalledTimes(1)
-        const call = snsClient.publishMessage.mock.calls[0]
-        expect(call[1]?.isMultiplayer?.StringValue).toBe('true')
+        // Find the deployment event call (has message attributes as second arg)
+        const deploymentCall = snsClient.publishMessage.mock.calls.find(
+          (call) => (call[1] as Record<string, any>)?.isMultiplayer
+        )
+        expect(deploymentCall).toBeDefined()
+        expect((deploymentCall![1] as Record<string, any>)?.isMultiplayer?.StringValue).toBe('true')
       })
     })
 
@@ -865,7 +871,7 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
 
       const settingsChangedCalls = snsClient.publishMessage.mock.calls.filter((call: unknown[]) => {
         const event = call[0] as { subType?: string }
-        return event.subType === 'WORLD_SETTINGS_CHANGED'
+        return event.subType === 'world_settings_changed'
       })
       expect(settingsChangedCalls).toHaveLength(0)
     })
@@ -1141,6 +1147,7 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
 
       it('should emit WORLD_SETTINGS_CHANGED event when metadata is updated on redeploy', async () => {
         const { snsClient } = stubComponents
+        snsClient.publishMessage.mockClear()
         const authChain = Authenticator.signPayload(identity.authChain, secondEntityId)
 
         await contentClient.deploy({ files: secondFiles, entityId: secondEntityId, authChain })
@@ -1148,7 +1155,7 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
         // Should have deployment event + settings changed event
         const settingsChangedCalls = snsClient.publishMessage.mock.calls.filter((call: unknown[]) => {
           const event = call[0] as { subType?: string }
-          return event.subType === 'WORLD_SETTINGS_CHANGED'
+          return event.subType === 'world_settings_changed'
         })
         expect(settingsChangedCalls).toHaveLength(1)
         const settingsEvent = settingsChangedCalls[0][0] as unknown as {
