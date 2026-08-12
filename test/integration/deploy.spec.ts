@@ -863,12 +863,10 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
 
       await contentClient.deploy({ files: secondFiles, entityId: secondEntityId, authChain })
 
-      const settingsChangedCalls = snsClient.publishMessage.mock.calls.filter(
-        (call: unknown[]) => {
-          const event = call[0] as { subType?: string }
-          return event.subType === 'WORLD_SETTINGS_CHANGED'
-        }
-      )
+      const settingsChangedCalls = snsClient.publishMessage.mock.calls.filter((call: unknown[]) => {
+        const event = call[0] as { subType?: string }
+        return event.subType === 'WORLD_SETTINGS_CHANGED'
+      })
       expect(settingsChangedCalls).toHaveLength(0)
     })
   })
@@ -1148,14 +1146,12 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
         await contentClient.deploy({ files: secondFiles, entityId: secondEntityId, authChain })
 
         // Should have deployment event + settings changed event
-        const settingsChangedCalls = snsClient.publishMessage.mock.calls.filter(
-          (call: unknown[]) => {
-            const event = call[0] as { subType?: string }
-            return event.subType === 'WORLD_SETTINGS_CHANGED'
-          }
-        )
+        const settingsChangedCalls = snsClient.publishMessage.mock.calls.filter((call: unknown[]) => {
+          const event = call[0] as { subType?: string }
+          return event.subType === 'WORLD_SETTINGS_CHANGED'
+        })
         expect(settingsChangedCalls).toHaveLength(1)
-        const settingsEvent = settingsChangedCalls[0][0] as {
+        const settingsEvent = settingsChangedCalls[0][0] as unknown as {
           metadata: { worldName: string; title?: string; description?: string }
         }
         expect(settingsEvent.metadata.worldName).toBe(worldName)

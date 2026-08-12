@@ -164,12 +164,18 @@ export function createEntityDeployer(
     }
 
     signal?.throwIfAborted()
-    const { metadataUpdated } = await worldsManager.deployScene(worldName, entity, owner, sceneReplacementAuthorization, {
-      authChain,
-      size: deploymentSize,
-      ...(deadlineAt === undefined ? {} : { deadlineAt }),
-      ...(signal === undefined ? {} : { signal })
-    })
+    const { metadataUpdated } = await worldsManager.deployScene(
+      worldName,
+      entity,
+      owner,
+      sceneReplacementAuthorization,
+      {
+        authChain,
+        size: deploymentSize,
+        ...(deadlineAt === undefined ? {} : { deadlineAt }),
+        ...(signal === undefined ? {} : { signal })
+      }
+    )
 
     const kind = worldName.endsWith('dcl.eth') ? 'dcl-name' : 'ens-name'
     metrics.increment('world_deployments_counter', { kind })
