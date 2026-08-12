@@ -412,10 +412,7 @@ export async function createWorldsManagerComponent({
         RETURNING (SELECT should_update FROM metadata_check) AS metadata_updated
       `)
 
-      // RETURNING always yields a row (INSERT or UPDATE). The CTE evaluates
-      // deployed_count before the new scene is inserted, so a brand-new world returns
-      // deployed_count = 0 → should_update = true.
-      metadataUpdated = upsertResult.rows[0]?.metadata_updated ?? true
+      metadataUpdated = upsertResult.rows[0]?.metadata_updated ?? false
 
       if (replacementAuthorization.mode === 'unrestricted-owner') {
         // World-name owners may replace every overlapping scene.
