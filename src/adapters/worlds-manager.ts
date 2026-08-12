@@ -392,13 +392,13 @@ export async function createWorldsManagerComponent({
 
       const isInsert = upsertResult.rows[0]?.is_insert ?? false
 
-      // After the row lock is held, check scene stats with a fresh snapshot.
-      // This avoids the CTE snapshot staleness race described in the P1 review.
+      // After the row lock is held, check scene stats with a fresh snapshot (a single-statement
+      // CTE would take its snapshot before the lock wait ends under READ COMMITTED).
+      // Refresh metadata iff no non-overlapping scene survives this deploy: every currently
+      // deployed scene is being replaced (or none exist), so the incoming scene ends up alone.
       if (!isInsert) {
         const statsResult = await query<{ should_update: boolean }>(SQL`
-          SELECT (
-            COUNT(*) = 0 OR (COUNT(*) = 1 AND COUNT(*) FILTER (WHERE parcels && ${parcels}::text[]) > 0)
-          ) AS should_update
+          SELECT COUNT(*) FILTER (WHERE NOT (parcels && ${parcels}::text[])) = 0 AS should_update
           FROM world_scenes
           WHERE world_name = ${worldName.toLowerCase()} AND status = 'DEPLOYED'
         `)
@@ -942,8 +942,8 @@ export async function createWorldsManagerComponent({
 
   async function getWorldSettings(worldName: string): Promise<WorldSettings | undefined> {
     const result = await database.query<WorldRecord>(SQL`
-      SELECT title, description, content_rating, spawn_coordinates, skybox_time, 
-             categories, single_player, show_in_places, thumbnail_hash 
+      SELECT title, description, content_rating, spawn_coordinates, skybox_time,
+             categories, single_player, show_in_places, thumbnail_hash, updated_at
       FROM worlds WHERE name = ${worldName.toLowerCase()}
     `)
 
@@ -964,7 +964,8 @@ export async function createWorldsManagerComponent({
       categories: row.categories || undefined,
       singlePlayer: row.single_player ?? undefined,
       showInPlaces: row.show_in_places ?? undefined,
-      thumbnailHash: row.thumbnail_hash || undefined
+      thumbnailHash: row.thumbnail_hash || undefined,
+      updatedAt: row.updated_at ?? undefined
     }
   }
 

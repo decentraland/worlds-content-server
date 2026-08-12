@@ -1862,6 +1862,82 @@ test('WorldManagerAdapter', function ({ components }) {
       })
     })
 
+    describe('when replacing every scene of a multi-scene world with one overlapping scene', function () {
+      let worldName: string
+      let result: { metadataUpdated: boolean }
+
+      beforeEach(async () => {
+        const { worldCreator, worldsManager } = components
+
+        worldName = worldCreator.randomWorldName()
+
+        const files = new Map<string, Uint8Array>()
+        files.set('abc.txt', stringToUtf8Bytes(makeid(100)))
+
+        // Deploy two non-overlapping scenes
+        const created = await worldCreator.createWorldWithScene({
+          worldName,
+          metadata: {
+            main: 'abc.txt',
+            display: { title: 'Scene A Title' },
+            tags: ['scene-a'],
+            scene: { base: '0,0', parcels: ['0,0'] },
+            worldConfiguration: { name: worldName }
+          },
+          files
+        })
+
+        const secondEntity = {
+          ...created.entity,
+          id: `${created.entity.id}-second`,
+          metadata: {
+            ...created.entity.metadata,
+            display: { title: 'Scene B Title' },
+            tags: ['scene-b'],
+            scene: { base: '1,1', parcels: ['1,1'] }
+          }
+        }
+        await worldsManager.deployScene(
+          worldName,
+          secondEntity,
+          created.owner.authChain[0].payload,
+          { mode: 'unrestricted-owner' },
+          { authChain: created.owner.authChain, size: 100 }
+        )
+
+        // Replace both scenes with a single scene spanning all their parcels
+        const replacementEntity = {
+          ...created.entity,
+          id: `${created.entity.id}-replacement`,
+          metadata: {
+            ...created.entity.metadata,
+            display: { title: 'Replacement Title', description: 'Replacement Desc' },
+            tags: ['replacement'],
+            scene: { base: '0,0', parcels: ['0,0', '1,1'] }
+          }
+        }
+        result = await worldsManager.deployScene(
+          worldName,
+          replacementEntity,
+          created.owner.authChain[0].payload,
+          { mode: 'unrestricted-owner' },
+          { authChain: created.owner.authChain, size: 100 }
+        )
+      })
+
+      it('should report metadataUpdated as true', function () {
+        expect(result.metadataUpdated).toBe(true)
+      })
+
+      it('should update the world metadata with the replacement scene values', async function () {
+        const { worldsManager } = components
+        const settings = await worldsManager.getWorldSettings(worldName)
+        expect(settings?.title).toBe('Replacement Title')
+        expect(settings?.description).toBe('Replacement Desc')
+        expect(settings?.categories).toEqual(['replacement'])
+      })
+    })
+
     describe('when deploying to a world after full undeploy (0 deployed scenes)', function () {
       let worldName: string
       let result: { metadataUpdated: boolean }
