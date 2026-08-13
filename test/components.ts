@@ -22,7 +22,7 @@ import { createEntityDeployer } from '../src/adapters/entity-deployer'
 import { createMockNameDenyListChecker } from './mocks/name-deny-list-checker-mock'
 import { createWorldCreator } from './mocks/world-creator'
 import { createWorldsManagerComponent } from '../src/adapters/worlds-manager'
-import { createContentRatingComponent } from '../src/logic/content-rating'
+import { createWorldSettingsPolicyComponent } from '../src/logic/world-settings-policy'
 import { createCoordinatesComponent } from '../src/logic/coordinates'
 import { createThumbnailsComponent } from '../src/logic/thumbnails'
 import { createPermissionsManagerComponent } from '../src/adapters/permissions-manager'
@@ -145,12 +145,12 @@ async function initComponents(): Promise<TestComponents> {
 
   const search = await createSearchComponent({ database, logs })
 
-  const contentRating = createContentRatingComponent()
+  const settingsPolicy = createWorldSettingsPolicyComponent()
 
   const thumbnails = await createThumbnailsComponent({ logs, storage })
 
   const worldsManager = await createWorldsManagerComponent({
-    contentRating,
+    settingsPolicy,
     coordinates,
     logs,
     database,
@@ -274,7 +274,7 @@ async function initComponents(): Promise<TestComponents> {
     comms,
     config,
     commsAdapter,
-    contentRating,
+    settingsPolicy,
     coordinates,
     deploymentProcessing: components.deploymentProcessing,
     denyList,

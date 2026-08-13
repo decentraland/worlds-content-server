@@ -1966,10 +1966,12 @@ components:
             Does not need to be on a specific scene parcel, just anywhere within the rectangle.
             Supports both positive and negative coordinates (e.g., "10,20" or "-5,-10").
 
-            Outside the settings_version domain: it also tracks the world's deployed shape, so a
-            deploy or undeploy can change or clear it without advancing settings_version. Consumers
-            that mirror the spawn point should follow the WORLD_SPAWN_COORDINATE_SET and
-            undeployment events instead of relying on the settings version to detect a change.
+            Outside the settings_version domain, in every direction: a deploy or undeploy can change
+            or clear it without advancing the version, and so can an update to this endpoint that
+            changes nothing else. Consumers that mirror the spawn point must follow the
+            WORLD_SPAWN_COORDINATE_SET and undeployment events; the settings version will not tell
+            them it moved. The version deliberately says nothing about spawn rather than covering it
+            for some sources and not others, which would invite consumers to depend on it.
           pattern: '^-?\d+,-?\d+$'
           example: '10,20'
           nullable: true
