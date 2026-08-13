@@ -3,7 +3,7 @@ import { IHttpServerComponent } from '@dcl/core-commons'
 import { DecentralandSignatureContext } from '@dcl/crypto-middleware'
 import { UnauthorizedError, ValidationError, WorldNotFoundError } from '../../logic/settings'
 import { FormDataContext, isDefinedMultipartField, readUploadedFile } from '../../logic/multipart'
-import { IContentRatingComponent } from '../../logic/content-rating'
+import { IWorldSettingsPolicyComponent } from '../../logic/world-settings-policy'
 import { ICoordinatesComponent } from '../../logic/coordinates'
 import { IThumbnailsComponent } from '../../logic/thumbnails'
 
@@ -40,7 +40,7 @@ function toSnakeCaseSettings(settings: WorldSettings): SnakeCaseWorldSettings {
 async function parseMultipartInput(
   formData: FormDataContext['formData'],
   coordinates: ICoordinatesComponent,
-  contentRating: IContentRatingComponent,
+  settingsPolicy: IWorldSettingsPolicyComponent,
   thumbnails: IThumbnailsComponent
 ): Promise<WorldSettingsInput> {
   const { fields, files } = formData
@@ -48,11 +48,12 @@ async function parseMultipartInput(
 
   if (fields.title?.value?.length > 0) {
     const titleValue = fields.title.value[0]
-    if (titleValue.length < 3 || titleValue.length > 100) {
+    const { min, max } = settingsPolicy.titleLength
+    if (settingsPolicy.toStorableTitle(titleValue) === null) {
       throw new ValidationError(
         titleValue.length === 0
-          ? 'Invalid title: title cannot be empty. Expected between 3 and 100 characters.'
-          : `Invalid title: ${titleValue}. Expected between 3 and 100 characters.`
+          ? `Invalid title: title cannot be empty. Expected between ${min} and ${max} characters.`
+          : `Invalid title: ${titleValue}. Expected between ${min} and ${max} characters.`
       )
     }
     input.title = titleValue
@@ -60,20 +61,21 @@ async function parseMultipartInput(
 
   if (fields.description?.value?.length > 0) {
     const descriptionValue = fields.description.value[0]
-    if (descriptionValue.length < 3 || descriptionValue.length > 1000) {
+    const { min, max } = settingsPolicy.descriptionLength
+    if (settingsPolicy.toStorableDescription(descriptionValue) === null) {
       throw new ValidationError(
         descriptionValue.length === 0
-          ? 'Invalid description: description cannot be empty. Expected between 3 and 1000 characters.'
-          : `Invalid description: ${descriptionValue}. Expected between 3 and 1000 characters.`
+          ? `Invalid description: description cannot be empty. Expected between ${min} and ${max} characters.`
+          : `Invalid description: ${descriptionValue}. Expected between ${min} and ${max} characters.`
       )
     }
     input.description = descriptionValue
   }
 
   if (isDefinedMultipartField(fields.content_rating)) {
-    if (!contentRating.isValid(fields.content_rating.value[0])) {
+    if (!settingsPolicy.isValidContentRating(fields.content_rating.value[0])) {
       throw new ValidationError(
-        `Invalid content rating: ${fields.content_rating.value[0]}. Expected one of: ${contentRating.supported.join(', ')}`
+        `Invalid content rating: ${fields.content_rating.value[0]}. Expected one of: ${settingsPolicy.contentRatings.join(', ')}`
       )
     }
     input.contentRating = fields.content_rating.value[0]
@@ -100,8 +102,10 @@ async function parseMultipartInput(
     if (fields.categories.value.length === 1 && fields.categories.value[0] === 'null') {
       input.categories = []
     } else {
-      if (fields.categories.value.length > 20) {
-        throw new ValidationError(`Invalid categories: ${fields.categories.value.length} items. Expected at most 20`)
+      if (fields.categories.value.length > settingsPolicy.maxCategories) {
+        throw new ValidationError(
+          `Invalid categories: ${fields.categories.value.length} items. Expected at most ${settingsPolicy.maxCategories}`
+        )
       }
       input.categories = fields.categories.value
     }
@@ -161,18 +165,18 @@ export async function getWorldSettingsHandler(
 
 export async function updateWorldSettingsHandler(
   ctx: HandlerContextWithPath<
-    'contentRating' | 'coordinates' | 'namePermissionChecker' | 'settings' | 'thumbnails' | 'worldsManager',
+    'coordinates' | 'namePermissionChecker' | 'settings' | 'settingsPolicy' | 'thumbnails' | 'worldsManager',
     '/world/:world_name/settings'
   > &
     DecentralandSignatureContext<any> &
     FormDataContext
 ): Promise<IHttpServerComponent.IResponse> {
   const { world_name } = ctx.params
-  const { contentRating, coordinates, settings, thumbnails } = ctx.components
+  const { coordinates, settings, settingsPolicy, thumbnails } = ctx.components
   const signer = ctx.verification!.auth
 
   try {
-    const input = await parseMultipartInput(ctx.formData, coordinates, contentRating, thumbnails)
+    const input = await parseMultipartInput(ctx.formData, coordinates, settingsPolicy, thumbnails)
     const updatedSettings = await settings.updateWorldSettings(world_name, signer, input)
 
     return {

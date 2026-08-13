@@ -40,47 +40,131 @@ import { raceWithSignal } from '../logic/concurrency'
 
 type BoundingRow = { min_x: number; max_x: number; min_y: number; max_y: number }
 
-const PG_INT4_MIN = -2147483648
-const PG_INT4_MAX = 2147483647
+/**
+ * A change to a world's stored settings.
+ *
+ * An absent key means "leave this alone"; a present key is written, including when it is null, which
+ * clears the column. That distinction is what lets the deploy path preserve everything the scene does
+ * not express while the settings endpoint can clear a value on request.
+ */
+type WorldSettingsPatch = {
+  title?: string | null
+  description?: string | null
+  contentRating?: string | null
+  skyboxTime?: number | null
+  categories?: string[] | null
+  singlePlayer?: boolean | null
+  showInPlaces?: boolean | null
+  thumbnailHash?: string | null
+}
 
 /**
- * Narrows a scene's skybox fixed time to what `worlds.skybox_time` (INTEGER) can store.
- *
- * `Scene` types `fixedTime` as an unconstrained number, so a fractional or oversized value would
- * otherwise fail the whole deployment with a raw PostgreSQL cast error.
+ * Includes a settings field in a patch only when the source expressed it, so "not expressed" stays
+ * distinct from "expressed as null", which clears the column.
  */
-function toStorableSkyboxTime(fixedTime: unknown): number | null {
-  if (typeof fixedTime !== 'number' || !Number.isInteger(fixedTime)) {
-    return null
-  }
-  return fixedTime >= PG_INT4_MIN && fixedTime <= PG_INT4_MAX ? fixedTime : null
+function definedSetting<K extends keyof WorldSettingsPatch>(
+  key: K,
+  value: WorldSettingsPatch[K] | null
+): Partial<WorldSettingsPatch> {
+  return value === null ? {} : ({ [key]: value } as Partial<WorldSettingsPatch>)
 }
 
-// Same bounds PUT /world/:name/settings enforces. Scene metadata is unconstrained, so deploy-derived
-// values are held to the same contract; out-of-bounds values count as "not provided" (the existing
-// setting is preserved) rather than failing a deployment that is otherwise valid.
-const WORLD_TITLE_MIN_LENGTH = 3
-const WORLD_TITLE_MAX_LENGTH = 100
-const WORLD_DESCRIPTION_MIN_LENGTH = 3
-const WORLD_DESCRIPTION_MAX_LENGTH = 1000
-const WORLD_MAX_CATEGORIES = 20
-
-function toStorableText(value: unknown, minLength: number, maxLength: number): string | null {
-  if (typeof value !== 'string' || value.length < minLength || value.length > maxLength) {
-    return null
-  }
-  return value
+/** A column this patch writes, as fragments so each use gets its own bound parameters. */
+type PatchedSettingsColumn = {
+  name: () => SQLStatement
+  value: () => SQLStatement
 }
 
-function toStorableCategories(tags: unknown): string[] | null {
-  if (!Array.isArray(tags) || tags.length === 0 || tags.length > WORLD_MAX_CATEGORIES) {
+function patchedSettingsColumns(patch: WorldSettingsPatch): PatchedSettingsColumn[] {
+  const columns: PatchedSettingsColumn[] = []
+
+  if (patch.title !== undefined) {
+    columns.push({ name: () => SQL`title`, value: () => SQL`${patch.title}` })
+  }
+  if (patch.description !== undefined) {
+    columns.push({ name: () => SQL`description`, value: () => SQL`${patch.description}` })
+  }
+  if (patch.contentRating !== undefined) {
+    columns.push({ name: () => SQL`content_rating`, value: () => SQL`${patch.contentRating}` })
+  }
+  if (patch.skyboxTime !== undefined) {
+    columns.push({ name: () => SQL`skybox_time`, value: () => SQL`${patch.skyboxTime}` })
+  }
+  if (patch.categories !== undefined) {
+    columns.push({ name: () => SQL`categories`, value: () => SQL`${patch.categories}::text[]` })
+  }
+  if (patch.singlePlayer !== undefined) {
+    columns.push({ name: () => SQL`single_player`, value: () => SQL`${patch.singlePlayer}` })
+  }
+  if (patch.showInPlaces !== undefined) {
+    columns.push({ name: () => SQL`show_in_places`, value: () => SQL`${patch.showInPlaces}` })
+  }
+  if (patch.thumbnailHash !== undefined) {
+    columns.push({ name: () => SQL`thumbnail_hash`, value: () => SQL`${patch.thumbnailHash}` })
+  }
+
+  return columns
+}
+
+/**
+ * Builds the SET list for a settings change, always including the version bump so no write path can
+ * forget it. `worlds.settings_version` reads the row's current value in both a plain UPDATE and an
+ * ON CONFLICT DO UPDATE.
+ *
+ * @param patch - The settings to write
+ * @param updatedAt - Timestamp recorded on the row
+ * @returns The assignments, or null when the patch writes nothing
+ */
+function buildSettingsAssignments(patch: WorldSettingsPatch, updatedAt: Date): SQLStatement | null {
+  const columns = patchedSettingsColumns(patch)
+  if (columns.length === 0) {
     return null
   }
-  return tags.every((tag) => typeof tag === 'string') ? tags : null
+
+  const statement = SQL``
+  for (const column of columns) {
+    statement
+      .append(column.name())
+      .append(SQL` = `)
+      .append(column.value())
+      .append(SQL`, `)
+  }
+  return statement.append(SQL`settings_version = worlds.settings_version + 1, updated_at = ${updatedAt}`)
+}
+
+/**
+ * Builds a predicate that holds only when the patch would actually change the row, so an unchanged
+ * republish neither bumps the version nor makes callers announce a change that did not happen.
+ *
+ * @param patch - The settings to write
+ * @returns The predicate, or null when the patch writes nothing
+ */
+function buildSettingsChangedPredicate(patch: WorldSettingsPatch): SQLStatement | null {
+  const columns = patchedSettingsColumns(patch)
+  if (columns.length === 0) {
+    return null
+  }
+
+  const names = SQL``
+  const incoming = SQL``
+  columns.forEach((column, index) => {
+    if (index > 0) {
+      names.append(SQL`, `)
+      incoming.append(SQL`, `)
+    }
+    names.append(column.name())
+    incoming.append(column.value())
+  })
+
+  return SQL`(`
+    .append(names)
+    .append(SQL`) IS DISTINCT FROM (`)
+    .append(incoming)
+    .append(SQL`)`)
 }
 
 export async function createWorldsManagerComponent({
-  contentRating,
+  settingsPolicy,
   coordinates,
   logs,
   database,
@@ -90,7 +174,7 @@ export async function createWorldsManagerComponent({
   thumbnails
 }: Pick<
   AppComponents,
-  'contentRating' | 'coordinates' | 'logs' | 'database' | 'nameDenyListChecker' | 'search' | 'storage' | 'thumbnails'
+  'settingsPolicy' | 'coordinates' | 'logs' | 'database' | 'nameDenyListChecker' | 'search' | 'storage' | 'thumbnails'
 >): Promise<IWorldsManager> {
   const logger = logs.getLogger('worlds-manager')
   const {
@@ -374,31 +458,37 @@ export async function createWorldsManagerComponent({
 
     const spawnCoordinates = extractSpawnCoordinates(scene)
 
-    // Extract settings from scene metadata. Every field is null when the scene does not express it,
-    // so the COALESCE update below preserves whatever the owner set through PUT /settings. Deriving
-    // a default here instead (e.g. `fixedAdapter === 'offline:offline'`) would make "scene said
-    // nothing" indistinguishable from "scene opted out" and silently revert owner settings.
+    // Settings a scene does not express are left out of the patch entirely, so the update preserves
+    // whatever the owner set through PUT /settings. Deriving a default here instead (e.g.
+    // `fixedAdapter === 'offline:offline'`) would make "the scene said nothing" indistinguishable
+    // from "the scene opted out" and silently revert owner settings. Values the policy rejects count
+    // as not expressed rather than failing a deployment that is otherwise valid.
     const sceneMetadata = scene.metadata || {}
-    const title = toStorableText(sceneMetadata.display?.title, WORLD_TITLE_MIN_LENGTH, WORLD_TITLE_MAX_LENGTH)
-    const description = toStorableText(
-      sceneMetadata.display?.description,
-      WORLD_DESCRIPTION_MIN_LENGTH,
-      WORLD_DESCRIPTION_MAX_LENGTH
-    )
-    const skyboxTime = toStorableSkyboxTime(sceneMetadata.worldConfiguration?.skyboxConfig?.fixedTime)
-    const categories: string[] | null = toStorableCategories(sceneMetadata.tags)
-    // Scene metadata is deployer-controlled and unconstrained, so apply the settings allow-list.
-    const rating = contentRating.isValid(sceneMetadata?.rating) ? sceneMetadata.rating : null
     const fixedAdapter = sceneMetadata.worldConfiguration?.fixedAdapter
-    const singlePlayer = fixedAdapter === undefined ? null : fixedAdapter === 'offline:offline'
     const optOut = sceneMetadata.worldConfiguration?.placesConfig?.optOut
-    const showInPlaces = optOut === undefined ? null : !optOut
 
-    // Extract thumbnail hash from scene content. The bytes are checked against the same formats the
-    // settings endpoint accepts, since a promoted thumbnail is served verbatim to consumers.
+    // The bytes are checked against the same formats the settings endpoint accepts, since a promoted
+    // thumbnail is served verbatim to consumers.
     const navmapThumbnail = sceneMetadata.display?.navmapThumbnail
     const thumbnailContent = navmapThumbnail ? scene.content?.find((c) => c.file === navmapThumbnail) : null
     const thumbnailHash = thumbnailContent?.hash ? await thumbnails.resolveStorableHash(thumbnailContent.hash) : null
+
+    const scenePatch: WorldSettingsPatch = {
+      ...definedSetting('title', settingsPolicy.toStorableTitle(sceneMetadata.display?.title)),
+      ...definedSetting('description', settingsPolicy.toStorableDescription(sceneMetadata.display?.description)),
+      ...definedSetting(
+        'contentRating',
+        settingsPolicy.isValidContentRating(sceneMetadata?.rating) ? sceneMetadata.rating : null
+      ),
+      ...definedSetting(
+        'skyboxTime',
+        settingsPolicy.toStorableSkyboxTime(sceneMetadata.worldConfiguration?.skyboxConfig?.fixedTime)
+      ),
+      ...definedSetting('categories', settingsPolicy.toStorableCategories(sceneMetadata.tags)),
+      ...definedSetting('singlePlayer', fixedAdapter === undefined ? null : fixedAdapter === 'offline:offline'),
+      ...definedSetting('showInPlaces', optOut === undefined ? null : !optOut),
+      ...definedSetting('thumbnailHash', thumbnailHash)
+    }
 
     let metadataUpdated = false
 
@@ -424,14 +514,14 @@ export async function createWorldsManagerComponent({
           ${owner.toLowerCase()},
           ${JSON.stringify(defaultAccess())}::jsonb,
           ${spawnCoordinates},
-          ${title},
-          ${description},
-          ${rating},
-          ${skyboxTime},
-          ${categories}::text[],
-          ${singlePlayer},
-          ${showInPlaces},
-          ${thumbnailHash},
+          ${scenePatch.title ?? null},
+          ${scenePatch.description ?? null},
+          ${scenePatch.contentRating ?? null},
+          ${scenePatch.skyboxTime ?? null},
+          ${scenePatch.categories ?? null}::text[],
+          ${scenePatch.singlePlayer ?? null},
+          ${scenePatch.showInPlaces ?? null},
+          ${scenePatch.thumbnailHash ?? null},
           ${new Date()},
           ${new Date()}
         )
@@ -458,38 +548,20 @@ export async function createWorldsManagerComponent({
         `)
         const shouldUpdate = statsResult.rows[0]?.should_update ?? false
 
-        if (shouldUpdate) {
-          // The IS DISTINCT FROM guard keeps a republish of unchanged metadata from bumping the
-          // settings version and emitting a settings-changed event with content consumers already
-          // have. metadataUpdated therefore means "something actually changed", not "the statement ran".
-          const refreshResult = await query<{ refreshed: boolean }>(SQL`
-            UPDATE worlds SET
-              title = COALESCE(${title}, title),
-              description = COALESCE(${description}, description),
-              content_rating = COALESCE(${rating}, content_rating),
-              skybox_time = COALESCE(${skyboxTime}, skybox_time),
-              categories = COALESCE(${categories}::text[], categories),
-              single_player = COALESCE(${singlePlayer}, single_player),
-              show_in_places = COALESCE(${showInPlaces}, show_in_places),
-              thumbnail_hash = COALESCE(${thumbnailHash}, thumbnail_hash),
-              settings_version = settings_version + 1,
-              updated_at = ${new Date()}
-            WHERE name = ${worldName.toLowerCase()}
-            AND (
-              title, description, content_rating, skybox_time, categories,
-              single_player, show_in_places, thumbnail_hash
-            ) IS DISTINCT FROM (
-              COALESCE(${title}, title),
-              COALESCE(${description}, description),
-              COALESCE(${rating}, content_rating),
-              COALESCE(${skyboxTime}, skybox_time),
-              COALESCE(${categories}::text[], categories),
-              COALESCE(${singlePlayer}, single_player),
-              COALESCE(${showInPlaces}, show_in_places),
-              COALESCE(${thumbnailHash}, thumbnail_hash)
-            )
-            RETURNING true AS refreshed
-          `)
+        const assignments = shouldUpdate ? buildSettingsAssignments(scenePatch, new Date()) : null
+        const changed = shouldUpdate ? buildSettingsChangedPredicate(scenePatch) : null
+
+        if (assignments && changed) {
+          // The changed predicate keeps a republish of unchanged metadata from bumping the settings
+          // version and emitting a settings-changed event with content consumers already have, so
+          // metadataUpdated means "something actually changed", not "the statement ran".
+          const refreshResult = await query<{ refreshed: boolean }>(
+            SQL`UPDATE worlds SET `
+              .append(assignments)
+              .append(SQL` WHERE name = ${worldName.toLowerCase()} AND `)
+              .append(changed)
+              .append(SQL` RETURNING true AS refreshed`)
+          )
           metadataUpdated = refreshResult.rows.length > 0
         }
       } else {
@@ -973,18 +1045,28 @@ export async function createWorldsManagerComponent({
         }
       }
 
-      // Boolean flag to distinguish "not provided" (undefined) from "explicitly null"
-      // When skyboxTime is explicitly provided (even as null), we want to overwrite the DB value
-      const skyboxTimeProvided = settings.skyboxTime !== undefined
+      // Only what the request actually sent reaches the patch: an omitted field keeps its stored
+      // value, while an explicitly null one clears the column (a cleared list is stored as an empty
+      // array, since the column never holds NULL).
+      const ownerPatch: WorldSettingsPatch = {
+        ...(settings.title === undefined ? {} : { title: settings.title }),
+        ...(settings.description === undefined ? {} : { description: settings.description }),
+        ...(settings.contentRating === undefined ? {} : { contentRating: settings.contentRating }),
+        ...(settings.skyboxTime === undefined ? {} : { skyboxTime: settings.skyboxTime }),
+        ...(settings.categories === undefined ? {} : { categories: settings.categories ?? [] }),
+        ...(settings.singlePlayer === undefined ? {} : { singlePlayer: settings.singlePlayer }),
+        ...(settings.showInPlaces === undefined ? {} : { showInPlaces: settings.showInPlaces }),
+        ...(settings.thumbnailHash === undefined ? {} : { thumbnailHash: settings.thumbnailHash })
+      }
+      const now = new Date()
+      const ownerAssignments = buildSettingsAssignments(ownerPatch, now)
 
-      // Normalize null categories to an empty array so the DB always stores an array, never NULL
-      const categoriesValue = settings.categories === null ? [] : (settings.categories ?? null)
-
-      // Perform the upsert
-      const result = await database.query<WorldRecord>(SQL`
+      // The row is created with what the request supplied and, when it already exists, updated with
+      // the same patch the deploy path uses, so both share one definition of a settings write.
+      const upsert = SQL`
         INSERT INTO worlds (
           name, owner, access,
-          title, description, content_rating, spawn_coordinates, 
+          title, description, content_rating, spawn_coordinates,
           skybox_time, categories, single_player, show_in_places, thumbnail_hash,
           created_at, updated_at
         )
@@ -997,27 +1079,23 @@ export async function createWorldsManagerComponent({
           ${settings.contentRating ?? null},
           ${settings.spawnCoordinates ?? null},
           ${settings.skyboxTime ?? null},
-          ${categoriesValue}::text[],
+          ${settings.categories === null ? [] : (settings.categories ?? null)}::text[],
           ${settings.singlePlayer ?? null},
           ${settings.showInPlaces ?? null},
           ${settings.thumbnailHash ?? null},
-          ${new Date()},
-          ${new Date()}
+          ${now},
+          ${now}
         )
         ON CONFLICT (name) DO UPDATE SET
-          title = COALESCE(EXCLUDED.title, worlds.title),
-          description = COALESCE(EXCLUDED.description, worlds.description),
-          content_rating = COALESCE(EXCLUDED.content_rating, worlds.content_rating),
-          spawn_coordinates = COALESCE(EXCLUDED.spawn_coordinates, worlds.spawn_coordinates),
-          skybox_time = CASE WHEN ${skyboxTimeProvided}::boolean THEN EXCLUDED.skybox_time ELSE COALESCE(EXCLUDED.skybox_time, worlds.skybox_time) END,
-          categories = COALESCE(EXCLUDED.categories, worlds.categories),
-          single_player = COALESCE(EXCLUDED.single_player, worlds.single_player),
-          show_in_places = COALESCE(EXCLUDED.show_in_places, worlds.show_in_places),
-          thumbnail_hash = COALESCE(EXCLUDED.thumbnail_hash, worlds.thumbnail_hash),
-          settings_version = worlds.settings_version + 1,
-          updated_at = ${new Date()}
-        RETURNING *
-      `)
+          spawn_coordinates = COALESCE(EXCLUDED.spawn_coordinates, worlds.spawn_coordinates)`
+
+      if (ownerAssignments) {
+        upsert.append(SQL`, `).append(ownerAssignments)
+      } else {
+        upsert.append(SQL`, updated_at = ${now}`)
+      }
+
+      const result = await database.query<WorldRecord>(upsert.append(SQL` RETURNING *`))
 
       return {
         settings: mapWorldRecordToSettings(result.rows[0]),

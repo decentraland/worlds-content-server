@@ -24,7 +24,7 @@ import type { Room, VideoGrant, WebhookEvent } from 'livekit-server-sdk'
 import { IPublisherComponent } from '@dcl/sns-component'
 import { ISettingsComponent } from './logic/settings'
 import { ISchemaValidatorComponent } from '@dcl/schema-validator-component'
-import { IContentRatingComponent } from './logic/content-rating'
+import { IWorldSettingsPolicyComponent } from './logic/world-settings-policy'
 import { ICoordinatesComponent } from './logic/coordinates'
 import { ISearchComponent } from './adapters/search'
 import {
@@ -636,7 +636,7 @@ export type BaseComponents = {
   blocking: IBlockingComponent
   commsAdapter: ICommsAdapter
   config: IConfigComponent
-  contentRating: IContentRatingComponent
+  settingsPolicy: IWorldSettingsPolicyComponent
   coordinates: ICoordinatesComponent
   database: IPgComponent
   deploymentProcessing: IDeploymentProcessingComponent
