@@ -9,6 +9,7 @@ import {
   isValidContentRating
 } from '../../logic/settings'
 import { FormDataContext, isDefinedMultipartField, readUploadedFile } from '../../logic/multipart'
+import { detectImageFormat } from '../../logic/settings/thumbnail'
 import { ICoordinatesComponent } from '../../logic/coordinates'
 
 type SnakeCaseWorldSettings = {
@@ -23,37 +24,6 @@ type SnakeCaseWorldSettings = {
   thumbnail_hash?: string
   access_type?: string
   settings_version?: number
-}
-
-// Allowed thumbnail image formats, identified by their leading magic bytes. The thumbnail is
-// stored and later served verbatim, so we reject anything that is not a real raster image
-// (e.g. HTML/SVG/scripts smuggled as a "thumbnail").
-function detectImageFormat(buffer: Buffer): 'png' | 'jpeg' | 'gif' | 'webp' | null {
-  if (
-    buffer.length >= 8 &&
-    buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
-  ) {
-    return 'png'
-  }
-  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
-    return 'jpeg'
-  }
-  // GIF87a / GIF89a (full 6-byte signature, so e.g. "GIF8XX" does not pass)
-  if (
-    buffer.length >= 6 &&
-    (buffer.subarray(0, 6).toString('latin1') === 'GIF87a' || buffer.subarray(0, 6).toString('latin1') === 'GIF89a')
-  ) {
-    return 'gif'
-  }
-  // RIFF....WEBP
-  if (
-    buffer.length >= 12 &&
-    buffer.subarray(0, 4).toString('latin1') === 'RIFF' &&
-    buffer.subarray(8, 12).toString('latin1') === 'WEBP'
-  ) {
-    return 'webp'
-  }
-  return null
 }
 
 function toSnakeCaseSettings(settings: WorldSettings): SnakeCaseWorldSettings {

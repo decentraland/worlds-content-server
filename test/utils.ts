@@ -103,3 +103,13 @@ export function makeid(length: number) {
   }
   return result
 }
+
+/**
+ * Builds bytes that pass the world thumbnail image check: a PNG signature followed by filler, so
+ * fixtures exercise the same validation a real thumbnail upload would.
+ */
+export function makePngBytes(length: number = 500): Uint8Array {
+  const signature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+  const filler = Buffer.from(makeid(Math.max(0, length - signature.length)), 'utf8')
+  return new Uint8Array(Buffer.concat([signature, filler]))
+}

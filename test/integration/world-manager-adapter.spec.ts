@@ -1,5 +1,7 @@
 import { test } from '../components'
 import { stringToUtf8Bytes } from 'eth-connect'
+import { hashV1 } from '@dcl/hashing'
+import { bufferToStream } from '@dcl/catalyst-storage'
 import { makeid } from '../utils'
 import { defaultAccess } from '../../src/logic/access'
 import SQL from 'sql-template-strings'
@@ -2167,6 +2169,62 @@ test('WorldManagerAdapter', function ({ components }) {
           description: 'Original Desc',
           categories: ['original']
         })
+      })
+    })
+
+    describe('and the redeployed scene points its thumbnail at a file that is not an image', function () {
+      let worldName: string
+      let settings: Awaited<ReturnType<typeof components.worldsManager.getWorldSettings>>
+
+      beforeEach(async () => {
+        const { worldCreator, worldsManager, storage } = components
+
+        worldName = worldCreator.randomWorldName()
+
+        const notAnImage = stringToUtf8Bytes('<svg onload=alert(1)></svg>')
+        const notAnImageHash = await hashV1(notAnImage)
+        await storage.storeStream(notAnImageHash, bufferToStream(notAnImage))
+
+        const files = new Map<string, Uint8Array>()
+        files.set('abc.txt', stringToUtf8Bytes(makeid(100)))
+
+        const created = await worldCreator.createWorldWithScene({
+          worldName,
+          metadata: {
+            main: 'abc.txt',
+            display: { title: 'Original Title' },
+            scene: { base: '0,0', parcels: ['0,0'] },
+            worldConfiguration: { name: worldName }
+          },
+          files
+        })
+
+        const redeployEntity = {
+          ...created.entity,
+          id: `${created.entity.id}-fake-thumbnail`,
+          content: [...(created.entity.content ?? []), { file: 'thumbnail.png', hash: notAnImageHash }],
+          metadata: {
+            ...created.entity.metadata,
+            display: { title: 'Newer Title', navmapThumbnail: 'thumbnail.png' }
+          }
+        }
+        await worldsManager.deployScene(
+          worldName,
+          redeployEntity,
+          created.owner.authChain[0].payload,
+          { mode: 'unrestricted-owner' },
+          { authChain: created.owner.authChain, size: 100 }
+        )
+
+        settings = await worldsManager.getWorldSettings(worldName)
+      })
+
+      it('should not promote the file into the world thumbnail', function () {
+        expect(settings?.thumbnailHash).toBeUndefined()
+      })
+
+      it('should still refresh the rest of the settings', function () {
+        expect(settings?.title).toBe('Newer Title')
       })
     })
 

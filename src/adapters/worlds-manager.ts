@@ -36,6 +36,7 @@ import { Entity, EthAddress } from '@dcl/schemas'
 import SQL, { type SQLStatement } from 'sql-template-strings'
 import { buildWorldRuntimeMetadata } from '../logic/world-runtime-metadata-utils'
 import { isValidContentRating } from '../logic/settings/content-rating'
+import { THUMBNAIL_SIGNATURE_BYTES, detectImageFormat } from '../logic/settings/thumbnail'
 import { AccessSetting, defaultAccess } from '../logic/access'
 import { raceWithSignal } from '../logic/concurrency'
 
@@ -78,6 +79,22 @@ function toStorableCategories(tags: unknown): string[] | null {
     return null
   }
   return tags.every((tag) => typeof tag === 'string') ? tags : null
+}
+
+/** Reads at most `byteCount` bytes from a stream and stops consuming it. */
+async function readStreamPrefix(stream: AsyncIterable<Uint8Array>, byteCount: number): Promise<Buffer> {
+  const chunks: Uint8Array[] = []
+  let collected = 0
+
+  for await (const chunk of stream) {
+    chunks.push(chunk)
+    collected += chunk.byteLength
+    if (collected >= byteCount) {
+      break
+    }
+  }
+
+  return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk))).subarray(0, byteCount)
 }
 
 export async function createWorldsManagerComponent({
@@ -319,6 +336,37 @@ export async function createWorldsManagerComponent({
   }
 
   /**
+   * Keeps a scene's navmapThumbnail only when its stored bytes are one of the image formats the
+   * settings endpoint accepts, so a deploy cannot promote a non-image file into world settings.
+   * An unreadable or unsupported file is treated as no thumbnail, never as a deployment failure.
+   *
+   * @param hash - Content hash the scene's navmapThumbnail resolves to
+   * @returns The hash when it points at a supported image, null otherwise
+   */
+  async function resolveStorableThumbnailHash(hash: string): Promise<string | null> {
+    try {
+      const content = await storage.retrieve(hash)
+      if (!content) {
+        return null
+      }
+
+      const signature = await readStreamPrefix(await content.asStream(), THUMBNAIL_SIGNATURE_BYTES)
+      if (detectImageFormat(signature)) {
+        return hash
+      }
+
+      logger.info('Ignoring scene thumbnail that is not a supported image', { hash })
+      return null
+    } catch (error) {
+      logger.warn('Could not verify the scene thumbnail; storing the world without it', {
+        hash,
+        error: error instanceof Error ? error.message : String(error)
+      })
+      return null
+    }
+  }
+
+  /**
    * Deploys a scene to a world
    *
    * This method handles the complete scene deployment workflow within a database transaction:
@@ -393,10 +441,11 @@ export async function createWorldsManagerComponent({
     const optOut = sceneMetadata.worldConfiguration?.placesConfig?.optOut
     const showInPlaces = optOut === undefined ? null : !optOut
 
-    // Extract thumbnail hash from scene content
+    // Extract thumbnail hash from scene content. The bytes are checked against the same formats the
+    // settings endpoint accepts, since a promoted thumbnail is served verbatim to consumers.
     const navmapThumbnail = sceneMetadata.display?.navmapThumbnail
     const thumbnailContent = navmapThumbnail ? scene.content?.find((c) => c.file === navmapThumbnail) : null
-    const thumbnailHash = thumbnailContent?.hash || null
+    const thumbnailHash = thumbnailContent?.hash ? await resolveStorableThumbnailHash(thumbnailContent.hash) : null
 
     let metadataUpdated = false
 

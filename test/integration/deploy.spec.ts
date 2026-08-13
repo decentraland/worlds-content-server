@@ -4,7 +4,7 @@ import { EntityType, Events, WorldSettingsChangedEvent } from '@dcl/schemas'
 import { Authenticator } from '@dcl/crypto'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { hashV1 } from '@dcl/hashing'
-import { getIdentity, Identity, makeid, cleanup } from '../utils'
+import { getIdentity, Identity, makeid, makePngBytes, cleanup } from '../utils'
 import { defaultAccess } from '../../src/logic/access'
 
 type LockClient = {
@@ -917,7 +917,7 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
       beforeEach(async () => {
         const entityFiles = new Map<string, Uint8Array>()
         entityFiles.set('abc.txt', stringToUtf8Bytes(makeid(100)))
-        entityFiles.set('thumbnail.png', stringToUtf8Bytes(makeid(500)))
+        entityFiles.set('thumbnail.png', makePngBytes(500))
         thumbnailHash = await hashV1(entityFiles.get('thumbnail.png')!)
 
         const result = await DeploymentBuilder.buildEntity({
@@ -1058,7 +1058,7 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
         // First deployment with full settings
         const firstEntityFiles = new Map<string, Uint8Array>()
         firstEntityFiles.set('first.txt', stringToUtf8Bytes(makeid(100)))
-        firstEntityFiles.set('thumbnail.png', stringToUtf8Bytes(makeid(500)))
+        firstEntityFiles.set('thumbnail.png', makePngBytes(500))
 
         const firstResult = await DeploymentBuilder.buildEntity({
           type: EntityType.SCENE as any,
