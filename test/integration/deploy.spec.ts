@@ -1039,7 +1039,7 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
         expect(settings?.title).toBeUndefined()
         expect(settings?.description).toBeUndefined()
         expect(settings?.contentRating).toBeUndefined()
-        expect(settings?.skyboxTime).toBeUndefined()
+        expect(settings?.skyboxTime).toBeNull()
         expect(settings?.categories).toBeUndefined()
         // Stored as NULL because the scene declares neither fixedAdapter nor placesConfig, and
         // reported as the effective default so the API surface keeps returning booleans

@@ -1093,7 +1093,11 @@ export async function createWorldsManagerComponent({
       description: row.description || undefined,
       contentRating: row.content_rating || undefined,
       spawnCoordinates: row.spawn_coordinates || undefined,
-      skyboxTime: row.skybox_time ?? undefined,
+      // Null is reported as null rather than collapsed to undefined, so a mirror can tell "the owner
+      // cleared the fixed skybox" from "this response says nothing about it" and clear its own copy.
+      skyboxTime: row.skybox_time === undefined ? undefined : row.skybox_time,
+      // An empty array already means "cleared" here, so it survives as-is; only a missing column is
+      // reported as absent.
       categories: row.categories || undefined,
       // NULL means neither the owner nor any scene expressed a preference, so report the effective
       // default. The distinction only matters for storage, where NULL is what lets a scene that

@@ -49,15 +49,16 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
   describe('GET /world/:world_name/settings', () => {
     describe('when the world has settings configured', () => {
       let worldName: string
+      let ownerAddress: string
 
       beforeEach(async () => {
         const { worldCreator, worldsManager } = components
 
         const created = await worldCreator.createWorldWithScene()
         worldName = created.worldName
-        const owner = created.owner.authChain[0].payload
+        ownerAddress = created.owner.authChain[0].payload
 
-        await worldsManager.updateWorldSettings(worldName, owner, { spawnCoordinates: '20,24' })
+        await worldsManager.updateWorldSettings(worldName, ownerAddress, { spawnCoordinates: '20,24' })
       })
 
       it('should return the world settings', async () => {
@@ -69,6 +70,16 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
         expect(await response.json()).toMatchObject({
           spawn_coordinates: '20,24'
         })
+      })
+
+      it('should report a cleared fixed skybox as null so mirrors can clear their own copy', async () => {
+        const { localFetch, worldsManager } = components
+
+        await worldsManager.updateWorldSettings(worldName, ownerAddress, { skyboxTime: null })
+        const response = await localFetch.fetch(`/world/${worldName}/settings`)
+        const body = await response.json()
+
+        expect(body.skybox_time).toBeNull()
       })
 
       it('should return the current access type so mirrors do not depend on event payloads', async () => {
@@ -461,7 +472,8 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
         expect(response.status).toBe(200)
 
         const settings = await worldsManager.getWorldSettings(worldName)
-        expect(settings?.skyboxTime).toBeUndefined()
+        // Null rather than absent, so a mirror can tell a cleared skybox from an unmentioned one
+        expect(settings?.skyboxTime).toBeNull()
       })
     })
 
