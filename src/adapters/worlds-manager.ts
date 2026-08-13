@@ -989,11 +989,16 @@ export async function createWorldsManagerComponent({
     settings: WorldSettings
   ): Promise<UpdateWorldSettingsResult> {
     return await database.withAsyncContextTransaction(async () => {
-      // FOR UPDATE takes the same row lock deploy and undeploy acquire before touching world_scenes,
-      // so the world shape cannot change between validating the requested spawn against it and
-      // committing. Without it a concurrent undeploy could shrink the world and leave an
-      // out-of-bounds spawn stored. Rows that do not exist yet lock nothing, which is harmless:
-      // a world with no scenes fails validation below anyway.
+      // A spawn coordinate is validated against the world's deployed shape, so the row lock has to
+      // be held across validation and the write: deploy and undeploy take that same lock before
+      // touching world_scenes. FOR UPDATE locks nothing when the row does not exist yet, so
+      // materialize it first in that case — otherwise a concurrent first deploy could create the
+      // shape after the unlocked read and an undeploy could shrink it again before the write lands.
+      // A failed validation throws and rolls this row back with the rest of the transaction.
+      if (settings.spawnCoordinates) {
+        await createBasicWorldIfNotExists(worldName, owner)
+      }
+
       const oldSettingsResult = await database.query<{ spawn_coordinates: string | null }>(SQL`
         SELECT spawn_coordinates FROM worlds WHERE name = ${worldName.toLowerCase()} FOR UPDATE
       `)

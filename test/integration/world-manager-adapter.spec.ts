@@ -4,6 +4,7 @@ import { hashV1 } from '@dcl/hashing'
 import { bufferToStream } from '@dcl/catalyst-storage'
 import { makeid } from '../utils'
 import { defaultAccess } from '../../src/logic/access'
+import { NoDeployedScenesError } from '../../src/types'
 import SQL from 'sql-template-strings'
 
 type LockClient = {
@@ -196,6 +197,63 @@ test('WorldManagerAdapter', function ({ components }) {
 
     it('should hold the world row lock before reading the world shape it validates against', () => {
       expect(statementsBeforeShapeRead.some((statement) => statement.includes('FOR UPDATE'))).toBe(true)
+    })
+  })
+
+  describe('when updating the world settings with a spawn coordinate for a world that has no record yet', () => {
+    let statementOrder: { materialize: number; lock: number; shapeRead: number }
+    let caughtError: unknown
+    let worldName: string
+    let settingsAfterRollback: Awaited<ReturnType<typeof components.worldsManager.getWorldSettings>>
+
+    beforeEach(async () => {
+      const { database, worldCreator, worldsManager } = components
+      worldName = worldCreator.randomWorldName()
+      const statements: string[] = []
+      const pool = database.getPool()
+      const originalConnect = pool.connect.bind(pool)
+      jest.spyOn(pool, 'connect').mockImplementation((async () => {
+        const client = await originalConnect()
+        const originalQuery = client.query.bind(client)
+        jest.spyOn(client, 'query').mockImplementation(((statement: string | { text: string }) => {
+          statements.push(typeof statement === 'string' ? statement : statement.text)
+          return originalQuery(statement as never)
+        }) as never)
+        return client
+      }) as never)
+
+      caughtError = await worldsManager
+        .updateWorldSettings(worldName, '0x1234567890123456789012345678901234567890', {
+          spawnCoordinates: '20,24'
+        })
+        .catch((error) => error)
+
+      statementOrder = {
+        materialize: statements.findIndex((statement) => statement.includes('INSERT INTO worlds')),
+        lock: statements.findIndex((statement) => statement.includes('FOR UPDATE')),
+        shapeRead: statements.findIndex((statement) => statement.includes('FROM world_scenes'))
+      }
+      jest.restoreAllMocks()
+      settingsAfterRollback = await worldsManager.getWorldSettings(worldName)
+    })
+
+    afterEach(() => {
+      jest.restoreAllMocks()
+    })
+
+    it('should materialize the row and lock it before reading the world shape it validates against', () => {
+      // Without the row, FOR UPDATE is still issued but locks nothing, so the order is the invariant
+      expect(statementOrder.materialize).toBeGreaterThanOrEqual(0)
+      expect(statementOrder.lock).toBeGreaterThan(statementOrder.materialize)
+      expect(statementOrder.shapeRead).toBeGreaterThan(statementOrder.lock)
+    })
+
+    it('should still reject the spawn coordinate because the world has no scenes', () => {
+      expect(caughtError).toBeInstanceOf(NoDeployedScenesError)
+    })
+
+    it('should roll the materialized row back with the failed transaction', () => {
+      expect(settingsAfterRollback).toBeUndefined()
     })
   })
 
