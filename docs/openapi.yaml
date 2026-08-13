@@ -1994,11 +1994,21 @@ components:
             Content hash of the world thumbnail. Fetch it from `/contents/{hash}`.
           example: 'bafkreiabcdef123456'
           nullable: true
+        access_type:
+          type: string
+          enum: ['unrestricted', 'shared-secret', 'nft-ownership', 'allow-list']
+          description: |
+            Current access type for the world. Exposed alongside settings_version so consumers that
+            mirror world visibility derive it from authoritative state, ordered by the same version,
+            instead of from a WORLD_SETTINGS_CHANGED payload that carries no ordering relationship
+            with it.
+          example: 'unrestricted'
         settings_version:
           type: integer
           format: int64
           description: |
-            Monotonic per-world version, incremented on every settings change under the world row lock.
+            Monotonic per-world version, incremented under the world row lock on every change to the
+            settings above, including access_type.
             Consumers that mirror these settings persist it and apply an update only when the incoming
             version is greater than or equal to the stored one, which makes reordered or redelivered
             WORLD_SETTINGS_CHANGED events converge instead of overwriting newer data.

@@ -3,7 +3,7 @@ import FormData from 'form-data'
 import { getIdentity, Identity } from '../utils'
 import { IAuthenticatedFetchComponent } from '../components/local-auth-fetch'
 import { IPermissionsComponent } from '../../src/logic/permissions'
-import { defaultAccess } from '../../src/logic/access'
+import { AccessType, defaultAccess } from '../../src/logic/access'
 
 const SETTINGS_METADATA = {
   origin: 'https://builder.decentraland.org',
@@ -71,6 +71,15 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
         })
       })
 
+      it('should return the current access type so mirrors do not depend on event payloads', async () => {
+        const { localFetch } = components
+
+        const response = await localFetch.fetch(`/world/${worldName}/settings`)
+        const body = await response.json()
+
+        expect(body.access_type).toBe('unrestricted')
+      })
+
       it('should return a numeric settings version', async () => {
         const { localFetch } = components
 
@@ -102,6 +111,37 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
 
       it('should report a settings version greater than the previous one', () => {
         expect(secondVersion).toBeGreaterThan(firstVersion)
+      })
+    })
+
+    describe('when the world access changes', () => {
+      let worldName: string
+      let versionBeforeAccessChange: number
+      let versionAfterAccessChange: number
+      let accessTypeAfterAccessChange: string
+
+      beforeEach(async () => {
+        const { localFetch, worldCreator, worldsManager } = components
+
+        const created = await worldCreator.createWorldWithScene()
+        worldName = created.worldName
+
+        versionBeforeAccessChange = (await (await localFetch.fetch(`/world/${worldName}/settings`)).json())
+          .settings_version
+
+        await worldsManager.storeAccess(worldName, { type: AccessType.SharedSecret, secret: 'hashed-secret' })
+
+        const body = await (await localFetch.fetch(`/world/${worldName}/settings`)).json()
+        versionAfterAccessChange = body.settings_version
+        accessTypeAfterAccessChange = body.access_type
+      })
+
+      it('should report the new access type', () => {
+        expect(accessTypeAfterAccessChange).toBe('shared-secret')
+      })
+
+      it('should move the settings version forward so mirrors order the change', () => {
+        expect(versionAfterAccessChange).toBeGreaterThan(versionBeforeAccessChange)
       })
     })
 

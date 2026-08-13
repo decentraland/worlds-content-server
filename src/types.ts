@@ -150,6 +150,8 @@ export type WorldSettings = {
   singlePlayer?: boolean
   showInPlaces?: boolean
   thumbnailHash?: string
+  /** Current access type; read-only, mirrors derive world visibility from it. */
+  accessType?: string
   /**
    * Monotonic per-world version, incremented under the worlds row lock on every settings change.
    * Consumers mirroring settings compare it to reject out-of-order updates. Read-only: it is

@@ -21,6 +21,7 @@ type SnakeCaseWorldSettings = {
   single_player?: boolean
   show_in_places?: boolean
   thumbnail_hash?: string
+  access_type?: string
   settings_version?: number
 }
 
@@ -66,6 +67,7 @@ function toSnakeCaseSettings(settings: WorldSettings): SnakeCaseWorldSettings {
     single_player: settings.singlePlayer,
     show_in_places: settings.showInPlaces,
     thumbnail_hash: settings.thumbnailHash,
+    access_type: settings.accessType,
     settings_version: settings.settingsVersion
   }
 }

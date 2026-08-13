@@ -533,12 +533,15 @@ export async function createWorldsManagerComponent({
   }
 
   async function storeAccess(worldName: string, access: AccessSetting): Promise<void> {
+    // Bumps settings_version because mirrors read the access type through getWorldSettings and
+    // order it with that version, so a visibility change has to move the version forward too.
     const sql = SQL`
               INSERT INTO worlds (name, access, created_at, updated_at)
               VALUES (${worldName.toLowerCase()}, ${JSON.stringify(access)}::jsonb,
                       ${new Date()}, ${new Date()})
-              ON CONFLICT (name) 
+              ON CONFLICT (name)
                   DO UPDATE SET access = ${JSON.stringify(access)}::jsonb,
+                                settings_version = worlds.settings_version + 1,
                                 updated_at = ${new Date()}
     `
     await database.query(sql)
@@ -988,7 +991,7 @@ export async function createWorldsManagerComponent({
   async function getWorldSettings(worldName: string): Promise<WorldSettings | undefined> {
     const result = await database.query<WorldRecord>(SQL`
       SELECT title, description, content_rating, spawn_coordinates, skybox_time,
-             categories, single_player, show_in_places, thumbnail_hash, settings_version
+             categories, single_player, show_in_places, thumbnail_hash, access, settings_version
       FROM worlds WHERE name = ${worldName.toLowerCase()}
     `)
 
@@ -1013,6 +1016,9 @@ export async function createWorldsManagerComponent({
       singlePlayer: row.single_player === null ? false : row.single_player,
       showInPlaces: row.show_in_places === null ? true : row.show_in_places,
       thumbnailHash: row.thumbnail_hash || undefined,
+      // Exposed alongside the version so a mirror derives visibility from authoritative state
+      // instead of an event payload, which has no ordering relationship with this version.
+      accessType: row.access?.type,
       // BIGINT arrives as a string from node-postgres; consumers compare it numerically.
       settingsVersion: row.settings_version === undefined ? undefined : Number(row.settings_version)
     }
