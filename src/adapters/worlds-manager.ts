@@ -34,11 +34,68 @@ import {
 import { streamToBuffer } from '@dcl/catalyst-storage'
 import { Entity, EthAddress } from '@dcl/schemas'
 import SQL, { type SQLStatement } from 'sql-template-strings'
-import { buildWorldRuntimeMetadata, shouldShowInPlaces } from '../logic/world-runtime-metadata-utils'
+import { buildWorldRuntimeMetadata } from '../logic/world-runtime-metadata-utils'
+import { isValidContentRating } from '../logic/settings/content-rating'
+import { THUMBNAIL_SIGNATURE_BYTES, detectImageFormat } from '../logic/settings/thumbnail'
 import { AccessSetting, defaultAccess } from '../logic/access'
 import { raceWithSignal } from '../logic/concurrency'
 
 type BoundingRow = { min_x: number; max_x: number; min_y: number; max_y: number }
+
+const PG_INT4_MIN = -2147483648
+const PG_INT4_MAX = 2147483647
+
+/**
+ * Narrows a scene's skybox fixed time to what `worlds.skybox_time` (INTEGER) can store.
+ *
+ * `Scene` types `fixedTime` as an unconstrained number, so a fractional or oversized value would
+ * otherwise fail the whole deployment with a raw PostgreSQL cast error.
+ */
+function toStorableSkyboxTime(fixedTime: unknown): number | null {
+  if (typeof fixedTime !== 'number' || !Number.isInteger(fixedTime)) {
+    return null
+  }
+  return fixedTime >= PG_INT4_MIN && fixedTime <= PG_INT4_MAX ? fixedTime : null
+}
+
+// Same bounds PUT /world/:name/settings enforces. Scene metadata is unconstrained, so deploy-derived
+// values are held to the same contract; out-of-bounds values count as "not provided" (the existing
+// setting is preserved) rather than failing a deployment that is otherwise valid.
+const WORLD_TITLE_MIN_LENGTH = 3
+const WORLD_TITLE_MAX_LENGTH = 100
+const WORLD_DESCRIPTION_MIN_LENGTH = 3
+const WORLD_DESCRIPTION_MAX_LENGTH = 1000
+const WORLD_MAX_CATEGORIES = 20
+
+function toStorableText(value: unknown, minLength: number, maxLength: number): string | null {
+  if (typeof value !== 'string' || value.length < minLength || value.length > maxLength) {
+    return null
+  }
+  return value
+}
+
+function toStorableCategories(tags: unknown): string[] | null {
+  if (!Array.isArray(tags) || tags.length === 0 || tags.length > WORLD_MAX_CATEGORIES) {
+    return null
+  }
+  return tags.every((tag) => typeof tag === 'string') ? tags : null
+}
+
+/** Reads at most `byteCount` bytes from a stream and stops consuming it. */
+async function readStreamPrefix(stream: AsyncIterable<Uint8Array>, byteCount: number): Promise<Buffer> {
+  const chunks: Uint8Array[] = []
+  let collected = 0
+
+  for await (const chunk of stream) {
+    chunks.push(chunk)
+    collected += chunk.byteLength
+    if (collected >= byteCount) {
+      break
+    }
+  }
+
+  return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk))).subarray(0, byteCount)
+}
 
 export async function createWorldsManagerComponent({
   coordinates,
@@ -279,6 +336,37 @@ export async function createWorldsManagerComponent({
   }
 
   /**
+   * Keeps a scene's navmapThumbnail only when its stored bytes are one of the image formats the
+   * settings endpoint accepts, so a deploy cannot promote a non-image file into world settings.
+   * An unreadable or unsupported file is treated as no thumbnail, never as a deployment failure.
+   *
+   * @param hash - Content hash the scene's navmapThumbnail resolves to
+   * @returns The hash when it points at a supported image, null otherwise
+   */
+  async function resolveStorableThumbnailHash(hash: string): Promise<string | null> {
+    try {
+      const content = await storage.retrieve(hash)
+      if (!content) {
+        return null
+      }
+
+      const signature = await readStreamPrefix(await content.asStream(), THUMBNAIL_SIGNATURE_BYTES)
+      if (detectImageFormat(signature)) {
+        return hash
+      }
+
+      logger.info('Ignoring scene thumbnail that is not a supported image', { hash })
+      return null
+    } catch (error) {
+      logger.warn('Could not verify the scene thumbnail; storing the world without it', {
+        hash,
+        error: error instanceof Error ? error.message : String(error)
+      })
+      return null
+    }
+  }
+
+  /**
    * Deploys a scene to a world
    *
    * This method handles the complete scene deployment workflow within a database transaction:
@@ -308,7 +396,7 @@ export async function createWorldsManagerComponent({
     owner: EthAddress,
     replacementAuthorization: SceneReplacementAuthorization,
     deployment?: SceneDeploymentData
-  ): Promise<void> {
+  ): Promise<{ metadataUpdated: boolean }> {
     // Canonicalize so the stored parcels, the overlap-based replacement here, the undeploy
     // authorization, and the size credit-back all compare parcels by value (e.g. "00,00" ==
     // "0,0"). Otherwise a non-canonical scene.parcels could dodge replacement / over-credit.
@@ -333,20 +421,33 @@ export async function createWorldsManagerComponent({
 
     const spawnCoordinates = extractSpawnCoordinates(scene)
 
-    // Extract settings from scene metadata for first deployment
+    // Extract settings from scene metadata. Every field is null when the scene does not express it,
+    // so the COALESCE update below preserves whatever the owner set through PUT /settings. Deriving
+    // a default here instead (e.g. `fixedAdapter === 'offline:offline'`) would make "scene said
+    // nothing" indistinguishable from "scene opted out" and silently revert owner settings.
     const sceneMetadata = scene.metadata || {}
-    const title = sceneMetadata.display?.title || null
-    const description = sceneMetadata.display?.description || null
-    const skyboxTime = sceneMetadata.worldConfiguration?.skyboxConfig?.fixedTime ?? null
-    const categories: string[] | null = sceneMetadata.tags?.length > 0 ? sceneMetadata.tags : null
-    const rating = sceneMetadata?.rating ?? null
-    const singlePlayer = sceneMetadata.worldConfiguration?.fixedAdapter === 'offline:offline'
-    const showInPlaces = shouldShowInPlaces(sceneMetadata)
+    const title = toStorableText(sceneMetadata.display?.title, WORLD_TITLE_MIN_LENGTH, WORLD_TITLE_MAX_LENGTH)
+    const description = toStorableText(
+      sceneMetadata.display?.description,
+      WORLD_DESCRIPTION_MIN_LENGTH,
+      WORLD_DESCRIPTION_MAX_LENGTH
+    )
+    const skyboxTime = toStorableSkyboxTime(sceneMetadata.worldConfiguration?.skyboxConfig?.fixedTime)
+    const categories: string[] | null = toStorableCategories(sceneMetadata.tags)
+    // Scene metadata is deployer-controlled and unconstrained, so apply the settings allow-list.
+    const rating = isValidContentRating(sceneMetadata?.rating) ? sceneMetadata.rating : null
+    const fixedAdapter = sceneMetadata.worldConfiguration?.fixedAdapter
+    const singlePlayer = fixedAdapter === undefined ? null : fixedAdapter === 'offline:offline'
+    const optOut = sceneMetadata.worldConfiguration?.placesConfig?.optOut
+    const showInPlaces = optOut === undefined ? null : !optOut
 
-    // Extract thumbnail hash from scene content
+    // Extract thumbnail hash from scene content. The bytes are checked against the same formats the
+    // settings endpoint accepts, since a promoted thumbnail is served verbatim to consumers.
     const navmapThumbnail = sceneMetadata.display?.navmapThumbnail
     const thumbnailContent = navmapThumbnail ? scene.content?.find((c) => c.file === navmapThumbnail) : null
-    const thumbnailHash = thumbnailContent?.hash || null
+    const thumbnailHash = thumbnailContent?.hash ? await resolveStorableThumbnailHash(thumbnailContent.hash) : null
+
+    let metadataUpdated = false
 
     await withDeploymentTransaction(deployment?.signal, async (query) => {
       if (deployment?.deadlineAt !== undefined) {
@@ -354,19 +455,20 @@ export async function createWorldsManagerComponent({
         await query(SQL`SELECT set_config('statement_timeout', ${remainingMs.toString()}, true)`)
       }
 
-      // Ensure world record exists, update if it does
-      // On first deployment (INSERT), set settings from scene metadata
-      // On subsequent deployments (UPDATE), preserve existing settings
-      await query(SQL`
+      // Upsert the worlds row first to acquire the row lock. Metadata columns are written
+      // on INSERT (first deploy) but left unchanged on UPDATE — the metadata update decision
+      // requires a scene count check that must run AFTER the lock is acquired to avoid
+      // snapshot staleness under READ COMMITTED.
+      const upsertResult = await query<{ is_insert: boolean }>(SQL`
         INSERT INTO worlds (
-          name, owner, access, spawn_coordinates, 
+          name, owner, access, spawn_coordinates,
           title, description, content_rating, skybox_time, categories,
           single_player, show_in_places, thumbnail_hash,
           created_at, updated_at
         )
         VALUES (
-          ${worldName.toLowerCase()}, 
-          ${owner.toLowerCase()}, 
+          ${worldName.toLowerCase()},
+          ${owner.toLowerCase()},
           ${JSON.stringify(defaultAccess())}::jsonb,
           ${spawnCoordinates},
           ${title},
@@ -377,14 +479,69 @@ export async function createWorldsManagerComponent({
           ${singlePlayer},
           ${showInPlaces},
           ${thumbnailHash},
-          ${new Date()}, 
+          ${new Date()},
           ${new Date()}
         )
         ON CONFLICT (name) DO UPDATE SET
           owner = ${owner.toLowerCase()},
           spawn_coordinates = COALESCE(worlds.spawn_coordinates, EXCLUDED.spawn_coordinates),
           updated_at = ${new Date()}
+        RETURNING (xmax = 0) AS is_insert
       `)
+
+      // A fresh row already carries the scene's metadata from the INSERT above, so the refresh
+      // statement below is skipped and the settings version starts at its default.
+      const isInsert = upsertResult.rows[0]?.is_insert ?? false
+
+      // After the row lock is held, check scene stats with a fresh snapshot (a single-statement
+      // CTE would take its snapshot before the lock wait ends under READ COMMITTED).
+      // Refresh metadata iff no non-overlapping scene survives this deploy: every currently
+      // deployed scene is being replaced (or none exist), so the incoming scene ends up alone.
+      if (!isInsert) {
+        const statsResult = await query<{ should_update: boolean }>(SQL`
+          SELECT COUNT(*) FILTER (WHERE NOT (parcels && ${parcels}::text[])) = 0 AS should_update
+          FROM world_scenes
+          WHERE world_name = ${worldName.toLowerCase()} AND status = 'DEPLOYED'
+        `)
+        const shouldUpdate = statsResult.rows[0]?.should_update ?? false
+
+        if (shouldUpdate) {
+          // The IS DISTINCT FROM guard keeps a republish of unchanged metadata from bumping the
+          // settings version and emitting a settings-changed event with content consumers already
+          // have. metadataUpdated therefore means "something actually changed", not "the statement ran".
+          const refreshResult = await query<{ refreshed: boolean }>(SQL`
+            UPDATE worlds SET
+              title = COALESCE(${title}, title),
+              description = COALESCE(${description}, description),
+              content_rating = COALESCE(${rating}, content_rating),
+              skybox_time = COALESCE(${skyboxTime}, skybox_time),
+              categories = COALESCE(${categories}::text[], categories),
+              single_player = COALESCE(${singlePlayer}, single_player),
+              show_in_places = COALESCE(${showInPlaces}, show_in_places),
+              thumbnail_hash = COALESCE(${thumbnailHash}, thumbnail_hash),
+              settings_version = settings_version + 1,
+              updated_at = ${new Date()}
+            WHERE name = ${worldName.toLowerCase()}
+            AND (
+              title, description, content_rating, skybox_time, categories,
+              single_player, show_in_places, thumbnail_hash
+            ) IS DISTINCT FROM (
+              COALESCE(${title}, title),
+              COALESCE(${description}, description),
+              COALESCE(${rating}, content_rating),
+              COALESCE(${skyboxTime}, skybox_time),
+              COALESCE(${categories}::text[], categories),
+              COALESCE(${singlePlayer}, single_player),
+              COALESCE(${showInPlaces}, show_in_places),
+              COALESCE(${thumbnailHash}, thumbnail_hash)
+            )
+            RETURNING true AS refreshed
+          `)
+          metadataUpdated = refreshResult.rows.length > 0
+        }
+      } else {
+        metadataUpdated = true
+      }
 
       if (replacementAuthorization.mode === 'unrestricted-owner') {
         // World-name owners may replace every overlapping scene.
@@ -447,15 +604,20 @@ export async function createWorldsManagerComponent({
         await query(SQL`SELECT set_config('statement_timeout', ${'0'}, true)`)
       }
     })
+
+    return { metadataUpdated }
   }
 
   async function storeAccess(worldName: string, access: AccessSetting): Promise<void> {
+    // Bumps settings_version because mirrors read the access type through getWorldSettings and
+    // order it with that version, so a visibility change has to move the version forward too.
     const sql = SQL`
               INSERT INTO worlds (name, access, created_at, updated_at)
               VALUES (${worldName.toLowerCase()}, ${JSON.stringify(access)}::jsonb,
                       ${new Date()}, ${new Date()})
-              ON CONFLICT (name) 
+              ON CONFLICT (name)
                   DO UPDATE SET access = ${JSON.stringify(access)}::jsonb,
+                                settings_version = worlds.settings_version + 1,
                                 updated_at = ${new Date()}
     `
     await database.query(sql)
@@ -827,9 +989,18 @@ export async function createWorldsManagerComponent({
     settings: WorldSettings
   ): Promise<UpdateWorldSettingsResult> {
     return await database.withAsyncContextTransaction(async () => {
-      // Get old spawn coordinates atomically
+      // A spawn coordinate is validated against the world's deployed shape, so the row lock has to
+      // be held across validation and the write: deploy and undeploy take that same lock before
+      // touching world_scenes. FOR UPDATE locks nothing when the row does not exist yet, so
+      // materialize it first in that case — otherwise a concurrent first deploy could create the
+      // shape after the unlocked read and an undeploy could shrink it again before the write lands.
+      // A failed validation throws and rolls this row back with the rest of the transaction.
+      if (settings.spawnCoordinates) {
+        await createBasicWorldIfNotExists(worldName, owner)
+      }
+
       const oldSettingsResult = await database.query<{ spawn_coordinates: string | null }>(SQL`
-        SELECT spawn_coordinates FROM worlds WHERE name = ${worldName.toLowerCase()}
+        SELECT spawn_coordinates FROM worlds WHERE name = ${worldName.toLowerCase()} FOR UPDATE
       `)
       const oldSpawnCoordinates = oldSettingsResult.rows[0]?.spawn_coordinates || null
 
@@ -890,6 +1061,7 @@ export async function createWorldsManagerComponent({
           single_player = COALESCE(EXCLUDED.single_player, worlds.single_player),
           show_in_places = COALESCE(EXCLUDED.show_in_places, worlds.show_in_places),
           thumbnail_hash = COALESCE(EXCLUDED.thumbnail_hash, worlds.thumbnail_hash),
+          settings_version = worlds.settings_version + 1,
           updated_at = ${new Date()}
         RETURNING *
       `)
@@ -903,8 +1075,8 @@ export async function createWorldsManagerComponent({
 
   async function getWorldSettings(worldName: string): Promise<WorldSettings | undefined> {
     const result = await database.query<WorldRecord>(SQL`
-      SELECT title, description, content_rating, spawn_coordinates, skybox_time, 
-             categories, single_player, show_in_places, thumbnail_hash 
+      SELECT title, description, content_rating, spawn_coordinates, skybox_time,
+             categories, single_player, show_in_places, thumbnail_hash, access, settings_version
       FROM worlds WHERE name = ${worldName.toLowerCase()}
     `)
 
@@ -921,11 +1093,25 @@ export async function createWorldsManagerComponent({
       description: row.description || undefined,
       contentRating: row.content_rating || undefined,
       spawnCoordinates: row.spawn_coordinates || undefined,
-      skyboxTime: row.skybox_time ?? undefined,
+      // Null is reported as null rather than collapsed to undefined, so a mirror can tell "the owner
+      // cleared the fixed skybox" from "this response says nothing about it" and clear its own copy.
+      skyboxTime: row.skybox_time === undefined ? undefined : row.skybox_time,
+      // An empty array already means "cleared" here, so it survives as-is; only a missing column is
+      // reported as absent.
       categories: row.categories || undefined,
-      singlePlayer: row.single_player ?? undefined,
-      showInPlaces: row.show_in_places ?? undefined,
-      thumbnailHash: row.thumbnail_hash || undefined
+      // NULL means neither the owner nor any scene expressed a preference, so report the effective
+      // default. The distinction only matters for storage, where NULL is what lets a scene that
+      // omits these fields preserve whatever the owner configured.
+      singlePlayer: row.single_player === null ? false : row.single_player,
+      showInPlaces: row.show_in_places === null ? true : row.show_in_places,
+      thumbnailHash: row.thumbnail_hash || undefined,
+      // Exposed alongside the version so a mirror derives visibility from authoritative state
+      // instead of an event payload, which has no ordering relationship with this version.
+      accessType: row.access?.type,
+      // BIGINT arrives as a string from node-postgres. The column is BIGINT for headroom, but the
+      // value is a per-world change counter, so it stays far below Number.MAX_SAFE_INTEGER and the
+      // conversion is exact for any reachable value.
+      settingsVersion: row.settings_version === undefined ? undefined : Number(row.settings_version)
     }
   }
 
@@ -1056,8 +1242,10 @@ export async function createWorldsManagerComponent({
         w.spawn_coordinates,
         w.skybox_time,
         w.categories,
-        w.single_player,
-        w.show_in_places,
+        -- NULL means nothing set a preference; expose the effective default so the listing keeps
+        -- reporting plain booleans
+        COALESCE(w.single_player, false) as single_player,
+        COALESCE(w.show_in_places, true) as show_in_places,
         w.thumbnail_hash,
         w.last_deployed_at,
         w.scene_min_x as min_x,

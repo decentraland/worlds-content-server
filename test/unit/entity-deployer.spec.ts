@@ -1,10 +1,14 @@
 import { Readable } from 'stream'
-import { Entity, EntityType } from '@dcl/schemas'
+import { Entity, EntityType, Events, WorldSettingsChangedEvent } from '@dcl/schemas'
+import { generateLazyValidator } from '@dcl/schemas/dist/validation'
 import { createEntityDeployer, DEFAULT_STORAGE_UPLOAD_CONCURRENCY } from '../../src/adapters/entity-deployer'
 import { AppComponents, DeploymentFile, IEntityDeployer } from '../../src/types'
 import { createDeploymentProcessingMock } from '../mocks/deployment-processing-mock'
 
 const unrestrictedReplacementAuthorization = { mode: 'unrestricted-owner' } as const
+
+// The consumer discards events that fail this schema, so pin the emitted shape against it
+const validateWorldSettingsChangedEvent = generateLazyValidator(WorldSettingsChangedEvent.schema)
 
 type EntityDeployerComponents = Pick<
   AppComponents,
@@ -48,25 +52,33 @@ function createDeploymentFile(
 function createComponents(
   storageStoreStream: jest.Mock,
   storageConcurrency: number
-): { components: EntityDeployerComponents; loggerError: jest.Mock; worldsDeployScene: jest.Mock } {
-  const worldsDeployScene = jest.fn().mockResolvedValue(undefined)
+): {
+  components: EntityDeployerComponents
+  loggerError: jest.Mock
+  loggerWarn: jest.Mock
+  worldsDeployScene: jest.Mock
+  worldsGetWorldSettings: jest.Mock
+} {
+  const worldsDeployScene = jest.fn().mockResolvedValue({ metadataUpdated: false })
+  const worldsGetWorldSettings = jest.fn().mockResolvedValue(undefined)
   const loggerError = jest.fn()
+  const loggerWarn = jest.fn()
   const components = {
     blocking: { unblockIfUnderQuota: jest.fn().mockResolvedValue(undefined) },
     config: { getString: jest.fn().mockResolvedValue(undefined) },
     deploymentProcessing: createDeploymentProcessingMock({ storageConcurrency }),
     logs: {
-      getLogger: jest.fn().mockReturnValue({ debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: loggerError })
+      getLogger: jest.fn().mockReturnValue({ debug: jest.fn(), info: jest.fn(), warn: loggerWarn, error: loggerError })
     },
     metrics: { increment: jest.fn() },
     nameOwnership: {
       findOwners: jest.fn().mockResolvedValue(new Map([['world.dcl.eth', '0xowner']]))
     },
-    snsClient: { publishMessage: jest.fn() },
+    snsClient: { publishMessage: jest.fn().mockResolvedValue({ MessageId: 'mid', SequenceNumber: 'seq' }) },
     storage: { storeStream: storageStoreStream },
-    worldsManager: { deployScene: worldsDeployScene }
+    worldsManager: { deployScene: worldsDeployScene, getWorldSettings: worldsGetWorldSettings }
   } as unknown as EntityDeployerComponents
-  return { components, loggerError, worldsDeployScene }
+  return { components, loggerError, loggerWarn, worldsDeployScene, worldsGetWorldSettings }
 }
 
 describe('entity deployer', () => {
@@ -369,6 +381,7 @@ describe('entity deployer', () => {
       setup.worldsDeployScene.mockImplementation(async (_worldName, _entity, _owner, _authorization, deployment) => {
         signalPassedToPersistence = deployment.signal
         controller.abort(new Error('deadline exceeded after commit'))
+        return { metadataUpdated: false }
       })
       const entity = createScene(contentHashes)
       const deployer = createEntityDeployer(setup.components)
@@ -511,6 +524,183 @@ describe('entity deployer', () => {
         error: 'Cannot deploy scene "entity-id" to world "world.dcl.eth": owner address could not be resolved.',
         worldDeployments: 0
       })
+    })
+  })
+
+  describe('when a deployment refreshed the world metadata', () => {
+    let publishMessage: jest.Mock
+
+    beforeEach(async () => {
+      const setup = createComponents(jest.fn().mockResolvedValue(undefined), 2)
+      ;(setup.components.config.getString as jest.Mock).mockResolvedValue('some-arn')
+      setup.worldsDeployScene.mockResolvedValue({ metadataUpdated: true })
+      setup.worldsGetWorldSettings.mockResolvedValue({
+        title: 'A Title',
+        description: 'A Description',
+        contentRating: 'T',
+        spawnCoordinates: '0,0',
+        skyboxTime: 3600,
+        categories: ['art'],
+        singlePlayer: false,
+        showInPlaces: true,
+        thumbnailHash: 'thumb-hash',
+        settingsVersion: 7
+      })
+      publishMessage = setup.components.snsClient.publishMessage as jest.Mock
+
+      const entity = createScene([])
+      const deployer = createEntityDeployer(setup.components)
+      await deployer.deployEntity(
+        'https://worlds.example',
+        entity,
+        new Map(),
+        new Map(),
+        JSON.stringify(entity),
+        [],
+        12,
+        undefined,
+        undefined,
+        unrestrictedReplacementAuthorization
+      )
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should publish the deployment event and the settings changed event', () => {
+      expect(publishMessage.mock.calls.map(([event]) => event.subType)).toEqual([
+        Events.SubType.Worlds.DEPLOYMENT,
+        Events.SubType.Worlds.WORLD_SETTINGS_CHANGED
+      ])
+    })
+
+    it('should publish every stored setting in the event metadata', () => {
+      const settingsEvent = publishMessage.mock.calls
+        .map(([event]) => event)
+        .find((event) => event.subType === Events.SubType.Worlds.WORLD_SETTINGS_CHANGED)
+
+      expect(settingsEvent).toEqual({
+        type: Events.Type.WORLD,
+        subType: Events.SubType.Worlds.WORLD_SETTINGS_CHANGED,
+        key: `world.dcl.eth-${settingsEvent.timestamp}`,
+        timestamp: expect.any(Number),
+        metadata: {
+          worldName: 'world.dcl.eth',
+          title: 'A Title',
+          description: 'A Description',
+          contentRating: 'T',
+          skyboxTime: 3600,
+          categories: ['art'],
+          singlePlayer: false,
+          showInPlaces: true,
+          thumbnailUrl: 'https://worlds.example/contents/thumb-hash'
+        }
+      })
+    })
+
+    it('should validate against the published event schema', () => {
+      const settingsEvent = publishMessage.mock.calls
+        .map(([event]) => event)
+        .find((event) => event.subType === Events.SubType.Worlds.WORLD_SETTINGS_CHANGED)
+
+      expect(validateWorldSettingsChangedEvent(JSON.parse(JSON.stringify(settingsEvent)))).toBe(true)
+    })
+  })
+
+  describe('and the deployment event publish fails', () => {
+    let publishMessage: jest.Mock
+    let loggerError: jest.Mock
+
+    beforeEach(async () => {
+      const setup = createComponents(jest.fn().mockResolvedValue(undefined), 2)
+      ;(setup.components.config.getString as jest.Mock).mockResolvedValue('some-arn')
+      setup.worldsDeployScene.mockResolvedValue({ metadataUpdated: true })
+      setup.worldsGetWorldSettings.mockResolvedValue({ title: 'A Title' })
+      loggerError = setup.loggerError
+      publishMessage = setup.components.snsClient.publishMessage as jest.Mock
+      publishMessage.mockImplementation(async (event: { subType: string }) => {
+        if (event.subType === Events.SubType.Worlds.DEPLOYMENT) {
+          throw new Error('sns unavailable')
+        }
+        return { MessageId: 'mid', SequenceNumber: 'seq' }
+      })
+
+      const entity = createScene([])
+      const deployer = createEntityDeployer(setup.components)
+      await deployer.deployEntity(
+        'https://worlds.example',
+        entity,
+        new Map(),
+        new Map(),
+        JSON.stringify(entity),
+        [],
+        12,
+        undefined,
+        undefined,
+        unrestrictedReplacementAuthorization
+      )
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should still publish the settings changed event', () => {
+      expect(publishMessage.mock.calls.map(([event]) => event.subType)).toContain(
+        Events.SubType.Worlds.WORLD_SETTINGS_CHANGED
+      )
+    })
+
+    it('should report which post-deployment task failed', () => {
+      expect(loggerError).toHaveBeenCalledWith(
+        'Post-deployment work failed after the scene was committed',
+        expect.objectContaining({ task: 'publishDeployment', error: 'sns unavailable' })
+      )
+    })
+  })
+
+  describe('and the world settings are unavailable after the refresh', () => {
+    let publishMessage: jest.Mock
+    let loggerWarn: jest.Mock
+
+    beforeEach(async () => {
+      const setup = createComponents(jest.fn().mockResolvedValue(undefined), 2)
+      ;(setup.components.config.getString as jest.Mock).mockResolvedValue('some-arn')
+      setup.worldsDeployScene.mockResolvedValue({ metadataUpdated: true })
+      setup.worldsGetWorldSettings.mockResolvedValue(undefined)
+      loggerWarn = setup.loggerWarn
+      publishMessage = setup.components.snsClient.publishMessage as jest.Mock
+
+      const entity = createScene([])
+      const deployer = createEntityDeployer(setup.components)
+      await deployer.deployEntity(
+        'https://worlds.example',
+        entity,
+        new Map(),
+        new Map(),
+        JSON.stringify(entity),
+        [],
+        12,
+        undefined,
+        undefined,
+        unrestrictedReplacementAuthorization
+      )
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should publish only the deployment event', () => {
+      expect(publishMessage.mock.calls.map(([event]) => event.subType)).toEqual([Events.SubType.Worlds.DEPLOYMENT])
+    })
+
+    it('should warn that the settings event was skipped', () => {
+      expect(loggerWarn).toHaveBeenCalledWith(
+        'world settings unavailable after a committed metadata refresh; event skipped',
+        expect.objectContaining({ worldName: 'world.dcl.eth' })
+      )
     })
   })
 })

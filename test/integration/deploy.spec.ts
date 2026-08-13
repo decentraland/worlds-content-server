@@ -1,10 +1,10 @@
 import { test } from '../components'
 import { ContentClient, createContentClient, DeploymentBuilder } from 'dcl-catalyst-client'
-import { EntityType } from '@dcl/schemas'
+import { EntityType, Events, WorldSettingsChangedEvent } from '@dcl/schemas'
 import { Authenticator } from '@dcl/crypto'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { hashV1 } from '@dcl/hashing'
-import { getIdentity, Identity, makeid, cleanup } from '../utils'
+import { getIdentity, Identity, makeid, makePngBytes, cleanup } from '../utils'
 import { defaultAccess } from '../../src/logic/access'
 
 type LockClient = {
@@ -268,9 +268,12 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
 
         await contentClient.deploy({ files, entityId, authChain })
 
-        expect(snsClient.publishMessage).toHaveBeenCalledTimes(1)
-        const call = snsClient.publishMessage.mock.calls[0]
-        expect(call[1]?.isMultiplayer?.StringValue).toBe('false')
+        // Find the deployment event call (has message attributes as second arg)
+        const deploymentCall = snsClient.publishMessage.mock.calls.find(
+          (call) => (call[1] as Record<string, any>)?.isMultiplayer
+        )
+        expect(deploymentCall).toBeDefined()
+        expect((deploymentCall![1] as Record<string, any>)?.isMultiplayer?.StringValue).toBe('false')
       })
 
       it('should make the world accessible via /world/:world_name/about endpoint', async () => {
@@ -347,9 +350,12 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
 
         await contentClient.deploy({ files, entityId, authChain })
 
-        expect(snsClient.publishMessage).toHaveBeenCalledTimes(1)
-        const call = snsClient.publishMessage.mock.calls[0]
-        expect(call[1]?.isMultiplayer?.StringValue).toBe('true')
+        // Find the deployment event call (has message attributes as second arg)
+        const deploymentCall = snsClient.publishMessage.mock.calls.find(
+          (call) => (call[1] as Record<string, any>)?.isMultiplayer
+        )
+        expect(deploymentCall).toBeDefined()
+        expect((deploymentCall![1] as Record<string, any>)?.isMultiplayer?.StringValue).toBe('true')
       })
     })
 
@@ -718,7 +724,7 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
         $metadata: {}
       })
 
-      // Deploy first scene at coordinates 0,0
+      // Deploy first scene at coordinates 0,0 with metadata
       const firstEntityFiles = new Map<string, Uint8Array>()
       firstEntityFiles.set('first.txt', stringToUtf8Bytes(makeid(100)))
 
@@ -728,6 +734,11 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
         files: firstEntityFiles,
         metadata: {
           main: 'first.txt',
+          display: {
+            title: 'Scene A Title',
+            description: 'Scene A Description'
+          },
+          tags: ['scene-a'],
           scene: {
             base: '0,0',
             parcels: ['0,0']
@@ -742,7 +753,7 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
       const firstAuthChain = Authenticator.signPayload(identity.authChain, firstEntityId)
       await contentClient.deploy({ files: firstResult.files, entityId: firstEntityId, authChain: firstAuthChain })
 
-      // Prepare second scene at different coordinates
+      // Prepare second scene at different coordinates with different metadata
       const secondEntityFiles = new Map<string, Uint8Array>()
       secondEntityFiles.set('second.txt', stringToUtf8Bytes(makeid(150)))
 
@@ -752,6 +763,11 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
         files: secondEntityFiles,
         metadata: {
           main: 'second.txt',
+          display: {
+            title: 'Scene B Title',
+            description: 'Scene B Description'
+          },
+          tags: ['scene-b'],
           scene: {
             base: '1,1',
             parcels: ['1,1']
@@ -829,6 +845,36 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
       const settings = await worldsManager.getWorldSettings(worldName)
       expect(settings?.spawnCoordinates).toBe('0,0')
     })
+
+    it('should preserve world metadata from the first scene when adding a non-overlapping scene', async () => {
+      const { worldsManager } = components
+      const authChain = Authenticator.signPayload(identity.authChain, secondEntityId)
+
+      await contentClient.deploy({ files: secondFiles, entityId: secondEntityId, authChain })
+
+      const settings = await worldsManager.getWorldSettings(worldName)
+      // Metadata should remain from the first scene — adding a non-overlapping scene to a
+      // multi-scene world does not update world-level metadata
+      expect(settings).toMatchObject({
+        title: 'Scene A Title',
+        description: 'Scene A Description',
+        categories: ['scene-a']
+      })
+    })
+
+    it('should not emit WORLD_SETTINGS_CHANGED when adding a non-overlapping scene to a multi-scene world', async () => {
+      const { snsClient } = stubComponents
+      snsClient.publishMessage.mockClear()
+      const authChain = Authenticator.signPayload(identity.authChain, secondEntityId)
+
+      await contentClient.deploy({ files: secondFiles, entityId: secondEntityId, authChain })
+
+      const settingsChangedCalls = snsClient.publishMessage.mock.calls.filter((call: unknown[]) => {
+        const event = call[0] as { subType?: string }
+        return event.subType === 'world_settings_changed'
+      })
+      expect(settingsChangedCalls).toHaveLength(0)
+    })
   })
 
   describe('when deploying a scene for the first time', () => {
@@ -871,7 +917,7 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
       beforeEach(async () => {
         const entityFiles = new Map<string, Uint8Array>()
         entityFiles.set('abc.txt', stringToUtf8Bytes(makeid(100)))
-        entityFiles.set('thumbnail.png', stringToUtf8Bytes(makeid(500)))
+        entityFiles.set('thumbnail.png', makePngBytes(500))
         thumbnailHash = await hashV1(entityFiles.get('thumbnail.png')!)
 
         const result = await DeploymentBuilder.buildEntity({
@@ -993,8 +1039,10 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
         expect(settings?.title).toBeUndefined()
         expect(settings?.description).toBeUndefined()
         expect(settings?.contentRating).toBeUndefined()
-        expect(settings?.skyboxTime).toBeUndefined()
+        expect(settings?.skyboxTime).toBeNull()
         expect(settings?.categories).toBeUndefined()
+        // Stored as NULL because the scene declares neither fixedAdapter nor placesConfig, and
+        // reported as the effective default so the API surface keeps returning booleans
         expect(settings?.singlePlayer).toBe(false)
         expect(settings?.showInPlaces).toBe(true)
         expect(settings?.thumbnailHash).toBeUndefined()
@@ -1010,7 +1058,7 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
         // First deployment with full settings
         const firstEntityFiles = new Map<string, Uint8Array>()
         firstEntityFiles.set('first.txt', stringToUtf8Bytes(makeid(100)))
-        firstEntityFiles.set('thumbnail.png', stringToUtf8Bytes(makeid(500)))
+        firstEntityFiles.set('thumbnail.png', makePngBytes(500))
 
         const firstResult = await DeploymentBuilder.buildEntity({
           type: EntityType.SCENE as any,
@@ -1076,21 +1124,125 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
         secondFiles = secondResult.files
       })
 
-      it('should preserve the original settings and not overwrite them', async () => {
-        const { worldsManager } = components
-        const authChain = Authenticator.signPayload(identity.authChain, secondEntityId)
+      describe('and the second deployment replaces the only deployed scene', () => {
+        let thumbnailHashFromFirstDeploy: string | undefined
+        let settings: Awaited<ReturnType<typeof components.worldsManager.getWorldSettings>>
+        let publishedSubTypes: string[]
+        let settingsEventMetadata: Record<string, unknown> | undefined
 
-        await contentClient.deploy({ files: secondFiles, entityId: secondEntityId, authChain })
+        beforeEach(async () => {
+          const { worldsManager } = components
+          const { snsClient } = stubComponents
 
-        const settings = await worldsManager.getWorldSettings(worldName)
-        // Settings should remain from the first deployment
-        expect(settings).toMatchObject({
-          title: 'Original Title',
-          description: 'Original description',
-          spawnCoordinates: '0,0',
-          skyboxTime: 1200,
-          categories: ['original'],
-          showInPlaces: false
+          thumbnailHashFromFirstDeploy = (await worldsManager.getWorldSettings(worldName))?.thumbnailHash
+          // The first deploy in the parent beforeEach already published its own events
+          snsClient.publishMessage.mockClear()
+
+          const authChain = Authenticator.signPayload(identity.authChain, secondEntityId)
+          await contentClient.deploy({ files: secondFiles, entityId: secondEntityId, authChain })
+
+          settings = await worldsManager.getWorldSettings(worldName)
+          publishedSubTypes = snsClient.publishMessage.mock.calls.map((call) => call[0].subType)
+          settingsEventMetadata = snsClient.publishMessage.mock.calls
+            .map((call) => call[0])
+            .find(
+              (event): event is WorldSettingsChangedEvent =>
+                event.subType === Events.SubType.Worlds.WORLD_SETTINGS_CHANGED
+            )?.metadata
+        })
+
+        it('should refresh the settings the new scene provides', () => {
+          expect(settings).toMatchObject({
+            title: 'New Title',
+            description: 'New description',
+            spawnCoordinates: '0,0',
+            skyboxTime: 2400,
+            categories: ['updated']
+          })
+        })
+
+        it('should preserve the opt-out and the thumbnail the new scene does not declare', () => {
+          expect(settings).toMatchObject({
+            showInPlaces: false,
+            thumbnailHash: thumbnailHashFromFirstDeploy
+          })
+        })
+
+        it('should report the default single player value because no scene declared an adapter', () => {
+          expect(settings?.singlePlayer).toBe(false)
+        })
+
+        it('should publish the deployment event and exactly one settings changed event', () => {
+          expect(publishedSubTypes).toEqual([
+            Events.SubType.Worlds.DEPLOYMENT,
+            Events.SubType.Worlds.WORLD_SETTINGS_CHANGED
+          ])
+        })
+
+        it('should publish the refreshed settings in the event metadata', () => {
+          expect(settingsEventMetadata).toEqual({
+            worldName,
+            title: 'New Title',
+            description: 'New description',
+            contentRating: undefined,
+            skyboxTime: 2400,
+            categories: ['updated'],
+            singlePlayer: false,
+            showInPlaces: false,
+            thumbnailUrl: `http://localhost:3000/contents/${thumbnailHashFromFirstDeploy}`
+          })
+        })
+      })
+
+      describe('and a later deployment carries the same metadata as the deployed scene', () => {
+        let publishedSubTypes: string[]
+
+        beforeEach(async () => {
+          const { snsClient } = stubComponents
+
+          const secondAuthChain = Authenticator.signPayload(identity.authChain, secondEntityId)
+          await contentClient.deploy({ files: secondFiles, entityId: secondEntityId, authChain: secondAuthChain })
+
+          // A different entity (new content, new id) whose metadata resolves to the very same
+          // stored settings, so the refresh statement must find nothing to change
+          const republishFiles = new Map<string, Uint8Array>()
+          republishFiles.set('second.txt', stringToUtf8Bytes(makeid(120)))
+          const republishResult = await DeploymentBuilder.buildEntity({
+            type: EntityType.SCENE as any,
+            pointers: ['0,0'],
+            files: republishFiles,
+            metadata: {
+              main: 'second.txt',
+              display: {
+                title: 'New Title',
+                description: 'New description'
+              },
+              tags: ['updated'],
+              scene: {
+                base: '0,0',
+                parcels: ['0,0']
+              },
+              worldConfiguration: {
+                name: worldName,
+                skyboxConfig: {
+                  fixedTime: 2400
+                }
+              }
+            }
+          })
+
+          snsClient.publishMessage.mockClear()
+          await contentClient.deploy({
+            files: republishResult.files,
+            entityId: republishResult.entityId,
+            authChain: Authenticator.signPayload(identity.authChain, republishResult.entityId)
+          })
+
+          publishedSubTypes = snsClient.publishMessage.mock.calls.map((call) => call[0].subType)
+        })
+
+        it('should publish only the deployment event', () => {
+          expect(publishedSubTypes).toEqual([Events.SubType.Worlds.DEPLOYMENT])
         })
       })
     })

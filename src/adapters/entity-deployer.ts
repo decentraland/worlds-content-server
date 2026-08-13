@@ -10,6 +10,7 @@ import { AuthLink, Entity, EntityType, Events, WorldDeploymentEvent } from '@dcl
 import { bufferToStream } from '@dcl/catalyst-storage'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { mapWithConcurrency, raceWithSignal } from '../logic/concurrency'
+import { buildWorldSettingsChangedEvent } from '../logic/worlds/world-settings-changed-event'
 
 type PostDeploymentHook = (
   baseUrl: string,
@@ -164,12 +165,18 @@ export function createEntityDeployer(
     }
 
     signal?.throwIfAborted()
-    await worldsManager.deployScene(worldName, entity, owner, sceneReplacementAuthorization, {
-      authChain,
-      size: deploymentSize,
-      ...(deadlineAt === undefined ? {} : { deadlineAt }),
-      ...(signal === undefined ? {} : { signal })
-    })
+    const { metadataUpdated } = await worldsManager.deployScene(
+      worldName,
+      entity,
+      owner,
+      sceneReplacementAuthorization,
+      {
+        authChain,
+        size: deploymentSize,
+        ...(deadlineAt === undefined ? {} : { deadlineAt }),
+        ...(signal === undefined ? {} : { signal })
+      }
+    )
 
     const kind = worldName.endsWith('dcl.eth') ? 'dcl-name' : 'ens-name'
     metrics.increment('world_deployments_counter', { kind })
@@ -179,44 +186,75 @@ export function createEntityDeployer(
     // promise remains observed if cancellation lets the response finish first.
     const publishDeployment = async (): Promise<void> => {
       const snsArn = await config.getString('AWS_SNS_ARN')
-      if (snsArn) {
-        const deploymentToSqs: WorldDeploymentEvent = {
-          entity: {
-            entityId: entity.id,
-            authChain
-          },
-          contentServerUrls: [baseUrl],
-          type: Events.Type.WORLD,
-          subType: Events.SubType.Worlds.DEPLOYMENT,
-          key: entity.id,
-          timestamp: Date.now()
-        }
-        const isMultiplayer = !!entity.metadata?.multiplayerId
-        const receipt = await snsClient.publishMessage(deploymentToSqs, {
-          isMultiplayer: { DataType: 'String', StringValue: isMultiplayer ? 'true' : 'false' },
-          priority: { DataType: 'String', StringValue: '1' }
-        })
-        logger.info('notification sent', {
-          MessageId: `${receipt.MessageId}`,
-          SequenceNumber: `${receipt.SequenceNumber}`,
-          isMultiplayer: isMultiplayer ? 'true' : 'false'
-        })
+      if (!snsArn) return
+
+      const deploymentToSqs: WorldDeploymentEvent = {
+        entity: {
+          entityId: entity.id,
+          authChain
+        },
+        contentServerUrls: [baseUrl],
+        type: Events.Type.WORLD,
+        subType: Events.SubType.Worlds.DEPLOYMENT,
+        key: entity.id,
+        timestamp: Date.now()
       }
+      const isMultiplayer = !!entity.metadata?.multiplayerId
+      const receipt = await snsClient.publishMessage(deploymentToSqs, {
+        isMultiplayer: { DataType: 'String', StringValue: isMultiplayer ? 'true' : 'false' },
+        priority: { DataType: 'String', StringValue: '1' }
+      })
+      logger.info('notification sent', {
+        MessageId: `${receipt.MessageId}`,
+        SequenceNumber: `${receipt.SequenceNumber}`,
+        isMultiplayer: isMultiplayer ? 'true' : 'false'
+      })
     }
+
+    // Published independently of the deployment event: the settings refresh is already committed, so
+    // an SNS failure on either notification must not suppress the other.
+    const publishSettingsChanged = async (): Promise<void> => {
+      if (!metadataUpdated) return
+
+      const snsArn = await config.getString('AWS_SNS_ARN')
+      if (!snsArn) return
+
+      const settings = await worldsManager.getWorldSettings(worldName)
+      if (!settings) {
+        logger.warn('world settings unavailable after a committed metadata refresh; event skipped', {
+          worldName,
+          entityId: entity.id
+        })
+        return
+      }
+
+      const receipt = await snsClient.publishMessage(
+        buildWorldSettingsChangedEvent(worldName, baseUrl, settings, Date.now())
+      )
+      logger.info('world settings changed notification sent after deploy', {
+        worldName,
+        MessageId: `${receipt.MessageId}`,
+        SequenceNumber: `${receipt.SequenceNumber}`
+      })
+    }
+
     // Run independent hooks concurrently so a slow quota service cannot delay notification delivery.
     const postCommitTasks = Promise.allSettled([
       components.blocking.unblockIfUnderQuota(owner),
-      publishDeployment()
+      publishDeployment(),
+      publishSettingsChanged()
     ]).then((results) => {
-      for (const result of results) {
+      const taskNames = ['unblockIfUnderQuota', 'publishDeployment', 'publishSettingsChanged']
+      results.forEach((result, index) => {
         if (result.status === 'rejected') {
           logger.error('Post-deployment work failed after the scene was committed', {
+            task: taskNames[index],
             error: result.reason instanceof Error ? result.reason.message : String(result.reason),
             entityId: entity.id,
             worldName
           })
         }
-      }
+      })
     })
 
     try {

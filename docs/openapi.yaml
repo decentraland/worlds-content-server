@@ -1934,7 +1934,13 @@ components:
 
     WorldSettings:
       type: object
-      description: World settings configuration that defines how the world behaves and appears in Places
+      description: |
+        World settings as returned by the settings endpoints, in snake_case.
+
+        Do not treat the WORLD_SETTINGS_CHANGED SNS event as an equivalent of this object. That event
+        is a trigger whose camelCase payload is deliberately partial: it never carries
+        settings_version or spawn_coordinates, and events published for an access change carry only
+        the world name and access type. Read this endpoint for the full, current values.
       properties:
         title:
           type: string
@@ -1946,25 +1952,31 @@ components:
           description: A description of the world displayed in Places
           example: 'A beautiful world with amazing experiences'
           nullable: true
-        contentRating:
+        content_rating:
           type: string
+          enum: ['RP', 'E', 'T', 'A', 'R']
           description: Content rating for the world
           example: 'T'
           nullable: true
-        spawnCoordinates:
+        spawn_coordinates:
           type: string
           description: |
             The parcel coordinate where players will spawn.
             Must be within the world shape rectangle (the bounding box covering all deployed scene parcels).
             Does not need to be on a specific scene parcel, just anywhere within the rectangle.
             Supports both positive and negative coordinates (e.g., "10,20" or "-5,-10").
+
+            Outside the settings_version domain: it also tracks the world's deployed shape, so a
+            deploy or undeploy can change or clear it without advancing settings_version. Consumers
+            that mirror the spawn point should follow the WORLD_SPAWN_COORDINATE_SET and
+            undeployment events instead of relying on the settings version to detect a change.
           pattern: '^-?\d+,-?\d+$'
           example: '10,20'
           nullable: true
-        skyboxTime:
+        skybox_time:
           type: number
-          description: Fixed skybox time (0-24 hours). Null to use dynamic day/night cycle.
-          example: 12.5
+          description: Fixed skybox time in seconds. Null to use dynamic day/night cycle.
+          example: 43200
           nullable: true
         categories:
           type: array
@@ -1973,21 +1985,52 @@ components:
           description: Categories/tags for the world
           example: ['game', 'adventure']
           nullable: true
-        singlePlayer:
+        single_player:
           type: boolean
-          description: Whether the world is single player only
+          description: |
+            Whether the world is single player only. Reports the effective value: when neither the owner
+            nor any deployed scene set it, the default (false) is returned.
           example: false
-          nullable: true
-        showInPlaces:
+        show_in_places:
           type: boolean
-          description: Whether the world should be shown in Places
+          description: |
+            Whether the world should be shown in Places. Reports the effective value: when neither the
+            owner nor any deployed scene set it, the default (true) is returned.
           example: true
-          nullable: true
-        thumbnailUrl:
+        thumbnail_hash:
           type: string
-          description: URL of the world thumbnail image
-          example: 'https://worlds-content-server.decentraland.org/contents/world-thumbnails/my-world.dcl.eth/abc123'
+          description: |
+            Content hash of the world thumbnail. Fetch it from `/contents/{hash}`.
+          example: 'bafkreiabcdef123456'
           nullable: true
+        access_type:
+          type: string
+          enum: ['unrestricted', 'shared-secret', 'nft-ownership', 'allow-list']
+          description: |
+            Current access type for the world. Exposed alongside settings_version so consumers that
+            mirror world visibility derive it from authoritative state, ordered by the same version,
+            instead of from a WORLD_SETTINGS_CHANGED payload that carries no ordering relationship
+            with it.
+          example: 'unrestricted'
+        settings_version:
+          type: integer
+          format: int64
+          description: |
+            Monotonic per-world version, incremented under the world row lock on every change to the
+            owner-and-scene settings above (title, description, content_rating, skybox_time,
+            categories, single_player, show_in_places, thumbnail_hash and access_type).
+            It deliberately excludes spawn_coordinates — see that field.
+
+            WORLD_SETTINGS_CHANGED is a trigger, not a data feed: its payload is a snapshot taken at
+            publish time and the topic delivers out of order, so a consumer that mirrors settings
+            should re-read this endpoint on every event and persist what it returns, never the payload.
+
+            Persist this version alongside the mirrored values and apply an update only when the
+            incoming version is greater than the stored one. Equality means the response describes
+            state already applied, so it is a no-op for a consumer that re-reads and replaces state
+            wholesale, and it must be rejected by any consumer that merges partial fields, since two
+            different payloads can share a version.
+          example: 7
 
     WorldSettingsInput:
       type: object

@@ -3,7 +3,7 @@ import FormData from 'form-data'
 import { getIdentity, Identity } from '../utils'
 import { IAuthenticatedFetchComponent } from '../components/local-auth-fetch'
 import { IPermissionsComponent } from '../../src/logic/permissions'
-import { defaultAccess } from '../../src/logic/access'
+import { AccessType, defaultAccess } from '../../src/logic/access'
 
 const SETTINGS_METADATA = {
   origin: 'https://builder.decentraland.org',
@@ -49,15 +49,16 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
   describe('GET /world/:world_name/settings', () => {
     describe('when the world has settings configured', () => {
       let worldName: string
+      let ownerAddress: string
 
       beforeEach(async () => {
         const { worldCreator, worldsManager } = components
 
         const created = await worldCreator.createWorldWithScene()
         worldName = created.worldName
-        const owner = created.owner.authChain[0].payload
+        ownerAddress = created.owner.authChain[0].payload
 
-        await worldsManager.updateWorldSettings(worldName, owner, { spawnCoordinates: '20,24' })
+        await worldsManager.updateWorldSettings(worldName, ownerAddress, { spawnCoordinates: '20,24' })
       })
 
       it('should return the world settings', async () => {
@@ -69,6 +70,89 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
         expect(await response.json()).toMatchObject({
           spawn_coordinates: '20,24'
         })
+      })
+
+      it('should report a cleared fixed skybox as null so mirrors can clear their own copy', async () => {
+        const { localFetch, worldsManager } = components
+
+        await worldsManager.updateWorldSettings(worldName, ownerAddress, { skyboxTime: null })
+        const response = await localFetch.fetch(`/world/${worldName}/settings`)
+        const body = await response.json()
+
+        expect(body.skybox_time).toBeNull()
+      })
+
+      it('should return the current access type so mirrors do not depend on event payloads', async () => {
+        const { localFetch } = components
+
+        const response = await localFetch.fetch(`/world/${worldName}/settings`)
+        const body = await response.json()
+
+        expect(body.access_type).toBe('unrestricted')
+      })
+
+      it('should return a numeric settings version', async () => {
+        const { localFetch } = components
+
+        const response = await localFetch.fetch(`/world/${worldName}/settings`)
+        const body = await response.json()
+
+        expect(typeof body.settings_version).toBe('number')
+      })
+    })
+
+    describe('when the world settings are updated again', () => {
+      let worldName: string
+      let firstVersion: number
+      let secondVersion: number
+
+      beforeEach(async () => {
+        const { localFetch, worldCreator, worldsManager } = components
+
+        const created = await worldCreator.createWorldWithScene()
+        worldName = created.worldName
+        const owner = created.owner.authChain[0].payload
+
+        await worldsManager.updateWorldSettings(worldName, owner, { title: 'First' })
+        firstVersion = (await (await localFetch.fetch(`/world/${worldName}/settings`)).json()).settings_version
+
+        await worldsManager.updateWorldSettings(worldName, owner, { title: 'Second' })
+        secondVersion = (await (await localFetch.fetch(`/world/${worldName}/settings`)).json()).settings_version
+      })
+
+      it('should report a settings version greater than the previous one', () => {
+        expect(secondVersion).toBeGreaterThan(firstVersion)
+      })
+    })
+
+    describe('when the world access changes', () => {
+      let worldName: string
+      let versionBeforeAccessChange: number
+      let versionAfterAccessChange: number
+      let accessTypeAfterAccessChange: string
+
+      beforeEach(async () => {
+        const { localFetch, worldCreator, worldsManager } = components
+
+        const created = await worldCreator.createWorldWithScene()
+        worldName = created.worldName
+
+        versionBeforeAccessChange = (await (await localFetch.fetch(`/world/${worldName}/settings`)).json())
+          .settings_version
+
+        await worldsManager.storeAccess(worldName, { type: AccessType.SharedSecret, secret: 'hashed-secret' })
+
+        const body = await (await localFetch.fetch(`/world/${worldName}/settings`)).json()
+        versionAfterAccessChange = body.settings_version
+        accessTypeAfterAccessChange = body.access_type
+      })
+
+      it('should report the new access type', () => {
+        expect(accessTypeAfterAccessChange).toBe('shared-secret')
+      })
+
+      it('should move the settings version forward so mirrors order the change', () => {
+        expect(versionAfterAccessChange).toBeGreaterThan(versionBeforeAccessChange)
       })
     })
 
@@ -388,7 +472,8 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
         expect(response.status).toBe(200)
 
         const settings = await worldsManager.getWorldSettings(worldName)
-        expect(settings?.skyboxTime).toBeUndefined()
+        // Null rather than absent, so a mirror can tell a cleared skybox from an unmentioned one
+        expect(settings?.skyboxTime).toBeNull()
       })
     })
 

@@ -150,6 +150,14 @@ export type WorldSettings = {
   singlePlayer?: boolean
   showInPlaces?: boolean
   thumbnailHash?: string
+  /** Current access type; read-only, mirrors derive world visibility from it. */
+  accessType?: string
+  /**
+   * Monotonic per-world version, incremented under the worlds row lock on every settings change.
+   * Consumers mirroring settings compare it to reject out-of-order updates. Read-only: it is
+   * ignored when passed to `updateWorldSettings`.
+   */
+  settingsVersion?: number
 }
 
 export type WorldSettingsInput = {
@@ -476,7 +484,7 @@ export type IWorldsManager = {
     owner: EthAddress,
     replacementAuthorization: SceneReplacementAuthorization,
     deployment?: SceneDeploymentData
-  ): Promise<void>
+  ): Promise<{ metadataUpdated: boolean }>
   /** Atomically undeploys matching scenes and returns the rows actually changed. */
   undeployScene(worldName: string, parcels: string[], authorizedEntityIds?: string[]): Promise<SceneUndeploymentResult>
   storeAccess(worldName: string, access: AccessSetting): Promise<void>
@@ -738,6 +746,8 @@ export type WorldRecord = {
   single_player: boolean | null
   show_in_places: boolean | null
   thumbnail_hash: string | null
+  /** BIGINT: node-postgres returns it as a string. */
+  settings_version: string
   created_at: Date
   updated_at: Date
   blocked_since: Date | null
