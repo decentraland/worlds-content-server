@@ -22,7 +22,9 @@ import { createEntityDeployer } from '../src/adapters/entity-deployer'
 import { createMockNameDenyListChecker } from './mocks/name-deny-list-checker-mock'
 import { createWorldCreator } from './mocks/world-creator'
 import { createWorldsManagerComponent } from '../src/adapters/worlds-manager'
+import { createContentRatingComponent } from '../src/logic/content-rating'
 import { createCoordinatesComponent } from '../src/logic/coordinates'
+import { createThumbnailsComponent } from '../src/logic/thumbnails'
 import { createPermissionsManagerComponent } from '../src/adapters/permissions-manager'
 import { createPermissionsComponent } from '../src/logic/permissions'
 import { createAccessComponent } from '../src/logic/access'
@@ -143,13 +145,19 @@ async function initComponents(): Promise<TestComponents> {
 
   const search = await createSearchComponent({ database, logs })
 
+  const contentRating = createContentRatingComponent()
+
+  const thumbnails = await createThumbnailsComponent({ logs, storage })
+
   const worldsManager = await createWorldsManagerComponent({
+    contentRating,
     coordinates,
     logs,
     database,
     nameDenyListChecker,
     search,
-    storage
+    storage,
+    thumbnails
   })
 
   const worldsIndexer = await createWorldsIndexerComponent({ worldsManager })
@@ -266,6 +274,7 @@ async function initComponents(): Promise<TestComponents> {
     comms,
     config,
     commsAdapter,
+    contentRating,
     coordinates,
     deploymentProcessing: components.deploymentProcessing,
     denyList,
@@ -291,6 +300,7 @@ async function initComponents(): Promise<TestComponents> {
     socialService,
     status,
     storage,
+    thumbnails,
     updateOwnerJob,
     validator,
     walletStats,

@@ -24,6 +24,7 @@ import type { Room, VideoGrant, WebhookEvent } from 'livekit-server-sdk'
 import { IPublisherComponent } from '@dcl/sns-component'
 import { ISettingsComponent } from './logic/settings'
 import { ISchemaValidatorComponent } from '@dcl/schema-validator-component'
+import { IContentRatingComponent } from './logic/content-rating'
 import { ICoordinatesComponent } from './logic/coordinates'
 import { ISearchComponent } from './adapters/search'
 import {
@@ -45,6 +46,7 @@ import { IQueueConsumerComponent } from '@dcl/queue-consumer-component'
 import { ICacheStorageComponent } from '@dcl/core-commons'
 import { IDenyListComponent } from './logic/denylist/types'
 import { IBansComponent } from './adapters/bans-adapter'
+import { IThumbnailsComponent } from './logic/thumbnails'
 
 export type GlobalContext = {
   components: BaseComponents
@@ -634,6 +636,7 @@ export type BaseComponents = {
   blocking: IBlockingComponent
   commsAdapter: ICommsAdapter
   config: IConfigComponent
+  contentRating: IContentRatingComponent
   coordinates: ICoordinatesComponent
   database: IPgComponent
   deploymentProcessing: IDeploymentProcessingComponent
@@ -663,6 +666,7 @@ export type BaseComponents = {
   socialService: ISocialServiceComponent
   status: IStatusComponent
   storage: IContentStorageComponent
+  thumbnails: IThumbnailsComponent
   updateOwnerJob: IRunnable<void>
   validator: Validator
   walletStats: IWalletStats

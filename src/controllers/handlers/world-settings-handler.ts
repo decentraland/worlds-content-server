@@ -1,16 +1,11 @@
 import { HandlerContextWithPath, WorldSettings, WorldSettingsInput } from '../../types'
 import { IHttpServerComponent } from '@dcl/core-commons'
 import { DecentralandSignatureContext } from '@dcl/crypto-middleware'
-import {
-  UnauthorizedError,
-  ValidationError,
-  WORLD_CONTENT_RATINGS,
-  WorldNotFoundError,
-  isValidContentRating
-} from '../../logic/settings'
+import { UnauthorizedError, ValidationError, WorldNotFoundError } from '../../logic/settings'
 import { FormDataContext, isDefinedMultipartField, readUploadedFile } from '../../logic/multipart'
-import { detectImageFormat } from '../../logic/settings/thumbnail'
+import { IContentRatingComponent } from '../../logic/content-rating'
 import { ICoordinatesComponent } from '../../logic/coordinates'
+import { IThumbnailsComponent } from '../../logic/thumbnails'
 
 type SnakeCaseWorldSettings = {
   title?: string
@@ -44,7 +39,9 @@ function toSnakeCaseSettings(settings: WorldSettings): SnakeCaseWorldSettings {
 
 async function parseMultipartInput(
   formData: FormDataContext['formData'],
-  coordinates: ICoordinatesComponent
+  coordinates: ICoordinatesComponent,
+  contentRating: IContentRatingComponent,
+  thumbnails: IThumbnailsComponent
 ): Promise<WorldSettingsInput> {
   const { fields, files } = formData
   const input: WorldSettingsInput = {}
@@ -74,9 +71,9 @@ async function parseMultipartInput(
   }
 
   if (isDefinedMultipartField(fields.content_rating)) {
-    if (!isValidContentRating(fields.content_rating.value[0])) {
+    if (!contentRating.isValid(fields.content_rating.value[0])) {
       throw new ValidationError(
-        `Invalid content rating: ${fields.content_rating.value[0]}. Expected one of: ${WORLD_CONTENT_RATINGS.join(', ')}`
+        `Invalid content rating: ${fields.content_rating.value[0]}. Expected one of: ${contentRating.supported.join(', ')}`
       )
     }
     input.contentRating = fields.content_rating.value[0]
@@ -128,7 +125,7 @@ async function parseMultipartInput(
     }
     // Thumbnails are capped at 1MB, so reading the temp file fully into memory is fine.
     const thumbnail = await readUploadedFile(files.thumbnail)
-    if (!detectImageFormat(thumbnail)) {
+    if (!thumbnails.detectFormat(thumbnail)) {
       throw new ValidationError('Invalid thumbnail: expected a PNG, JPEG, GIF or WebP image.')
     }
     input.thumbnail = thumbnail
@@ -164,18 +161,18 @@ export async function getWorldSettingsHandler(
 
 export async function updateWorldSettingsHandler(
   ctx: HandlerContextWithPath<
-    'coordinates' | 'namePermissionChecker' | 'worldsManager' | 'settings',
+    'contentRating' | 'coordinates' | 'namePermissionChecker' | 'settings' | 'thumbnails' | 'worldsManager',
     '/world/:world_name/settings'
   > &
     DecentralandSignatureContext<any> &
     FormDataContext
 ): Promise<IHttpServerComponent.IResponse> {
   const { world_name } = ctx.params
-  const { coordinates, settings } = ctx.components
+  const { contentRating, coordinates, settings, thumbnails } = ctx.components
   const signer = ctx.verification!.auth
 
   try {
-    const input = await parseMultipartInput(ctx.formData, coordinates)
+    const input = await parseMultipartInput(ctx.formData, coordinates, contentRating, thumbnails)
     const updatedSettings = await settings.updateWorldSettings(world_name, signer, input)
 
     return {
