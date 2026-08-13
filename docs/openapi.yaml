@@ -1935,8 +1935,12 @@ components:
     WorldSettings:
       type: object
       description: |
-        World settings as returned by the settings endpoints. Field names are snake_case here;
-        the WORLD_SETTINGS_CHANGED SNS event carries the same values in camelCase.
+        World settings as returned by the settings endpoints, in snake_case.
+
+        Do not treat the WORLD_SETTINGS_CHANGED SNS event as an equivalent of this object. That event
+        is a trigger whose camelCase payload is deliberately partial: it never carries
+        settings_version or spawn_coordinates, and events published for an access change carry only
+        the world name and access type. Read this endpoint for the full, current values.
       properties:
         title:
           type: string
@@ -1961,6 +1965,11 @@ components:
             Must be within the world shape rectangle (the bounding box covering all deployed scene parcels).
             Does not need to be on a specific scene parcel, just anywhere within the rectangle.
             Supports both positive and negative coordinates (e.g., "10,20" or "-5,-10").
+
+            Outside the settings_version domain: it also tracks the world's deployed shape, so a
+            deploy or undeploy can change or clear it without advancing settings_version. Consumers
+            that mirror the spawn point should follow the WORLD_SPAWN_COORDINATE_SET and
+            undeployment events instead of relying on the settings version to detect a change.
           pattern: '^-?\d+,-?\d+$'
           example: '10,20'
           nullable: true
@@ -2008,7 +2017,9 @@ components:
           format: int64
           description: |
             Monotonic per-world version, incremented under the world row lock on every change to the
-            settings above, including access_type.
+            owner-and-scene settings above (title, description, content_rating, skybox_time,
+            categories, single_player, show_in_places, thumbnail_hash and access_type).
+            It deliberately excludes spawn_coordinates — see that field.
 
             WORLD_SETTINGS_CHANGED is a trigger, not a data feed: its payload is a snapshot taken at
             publish time and the topic delivers out of order, so a consumer that mirrors settings

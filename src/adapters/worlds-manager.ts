@@ -989,9 +989,13 @@ export async function createWorldsManagerComponent({
     settings: WorldSettings
   ): Promise<UpdateWorldSettingsResult> {
     return await database.withAsyncContextTransaction(async () => {
-      // Get old spawn coordinates atomically
+      // FOR UPDATE takes the same row lock deploy and undeploy acquire before touching world_scenes,
+      // so the world shape cannot change between validating the requested spawn against it and
+      // committing. Without it a concurrent undeploy could shrink the world and leave an
+      // out-of-bounds spawn stored. Rows that do not exist yet lock nothing, which is harmless:
+      // a world with no scenes fails validation below anyway.
       const oldSettingsResult = await database.query<{ spawn_coordinates: string | null }>(SQL`
-        SELECT spawn_coordinates FROM worlds WHERE name = ${worldName.toLowerCase()}
+        SELECT spawn_coordinates FROM worlds WHERE name = ${worldName.toLowerCase()} FOR UPDATE
       `)
       const oldSpawnCoordinates = oldSettingsResult.rows[0]?.spawn_coordinates || null
 

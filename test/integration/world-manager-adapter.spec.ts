@@ -161,6 +161,44 @@ test('WorldManagerAdapter', function ({ components }) {
     })
   })
 
+  describe('when updating the world settings with a spawn coordinate', () => {
+    let statementsBeforeShapeRead: string[]
+
+    beforeEach(async () => {
+      const { database, worldCreator, worldsManager } = components
+      const created = await worldCreator.createWorldWithScene()
+      const statements: string[] = []
+      const pool = database.getPool()
+      const originalConnect = pool.connect.bind(pool)
+      jest.spyOn(pool, 'connect').mockImplementation((async () => {
+        const client = await originalConnect()
+        const originalQuery = client.query.bind(client)
+        jest.spyOn(client, 'query').mockImplementation(((statement: string | { text: string }) => {
+          statements.push(typeof statement === 'string' ? statement : statement.text)
+          return originalQuery(statement as never)
+        }) as never)
+        return client
+      }) as never)
+
+      await worldsManager.updateWorldSettings(created.worldName, created.owner.authChain[0].payload, {
+        spawnCoordinates: '20,24'
+      })
+
+      // The shape read is what validation compares against, so everything the lock must cover
+      // happens at or before it
+      const shapeReadIndex = statements.findIndex((statement) => statement.includes('FROM world_scenes'))
+      statementsBeforeShapeRead = statements.slice(0, shapeReadIndex + 1)
+    })
+
+    afterEach(() => {
+      jest.restoreAllMocks()
+    })
+
+    it('should hold the world row lock before reading the world shape it validates against', () => {
+      expect(statementsBeforeShapeRead.some((statement) => statement.includes('FOR UPDATE'))).toBe(true)
+    })
+  })
+
   describe('when deploying with a processing deadline over a dedicated cancellable connection', () => {
     let armingValueIsPositiveMs: boolean
     let finalStatements: string[]
