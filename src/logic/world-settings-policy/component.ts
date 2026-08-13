@@ -1,12 +1,17 @@
-import { IWorldSettingsPolicyComponent, LengthBounds, WORLD_CONTENT_RATINGS, WorldContentRating } from './types'
+import {
+  IWorldSettingsPolicyComponent,
+  LengthBounds,
+  NumberRange,
+  WORLD_CONTENT_RATINGS,
+  WorldContentRating
+} from './types'
 
 const TITLE_LENGTH: LengthBounds = { min: 3, max: 100 }
 const DESCRIPTION_LENGTH: LengthBounds = { min: 3, max: 1000 }
 const MAX_CATEGORIES = 20
 
 // worlds.skybox_time is an INTEGER column
-const PG_INT4_MIN = -2147483648
-const PG_INT4_MAX = 2147483647
+const SKYBOX_TIME_RANGE: NumberRange = { min: -2147483648, max: 2147483647 }
 
 /**
  * Creates the component that decides what a world setting may contain.
@@ -38,7 +43,7 @@ export function createWorldSettingsPolicyComponent(): IWorldSettingsPolicyCompon
     if (typeof value !== 'number' || !Number.isInteger(value)) {
       return null
     }
-    return value >= PG_INT4_MIN && value <= PG_INT4_MAX ? value : null
+    return value >= SKYBOX_TIME_RANGE.min && value <= SKYBOX_TIME_RANGE.max ? value : null
   }
 
   return {
@@ -46,6 +51,7 @@ export function createWorldSettingsPolicyComponent(): IWorldSettingsPolicyCompon
     titleLength: TITLE_LENGTH,
     descriptionLength: DESCRIPTION_LENGTH,
     maxCategories: MAX_CATEGORIES,
+    skyboxTimeRange: SKYBOX_TIME_RANGE,
     isValidContentRating,
     toStorableTitle: (value: unknown) => toStorableText(value, TITLE_LENGTH),
     toStorableDescription: (value: unknown) => toStorableText(value, DESCRIPTION_LENGTH),

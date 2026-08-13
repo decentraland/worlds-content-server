@@ -8,6 +8,11 @@ export type LengthBounds = {
   max: number
 }
 
+export type NumberRange = {
+  min: number
+  max: number
+}
+
 /**
  * Owns what a world setting is allowed to contain.
  *
@@ -25,6 +30,8 @@ export type IWorldSettingsPolicyComponent = {
   readonly descriptionLength: LengthBounds
   /** Largest number of categories a world may carry. */
   readonly maxCategories: number
+  /** Range the skybox fixed time column can store, for callers that report the bounds. */
+  readonly skyboxTimeRange: NumberRange
 
   /** Narrows an untrusted value to a supported content rating. */
   isValidContentRating(value: unknown): value is WorldContentRating

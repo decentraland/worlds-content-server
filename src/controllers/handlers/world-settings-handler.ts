@@ -94,8 +94,22 @@ async function parseMultipartInput(
 
   if (isDefinedMultipartField(fields.skybox_time)) {
     const value = fields.skybox_time.value[0]
-    // Validate that skybox is either null or a valid number
-    input.skyboxTime = value === 'null' ? null : parseInt(value)
+    if (value === 'null') {
+      // An explicit null clears the fixed skybox
+      input.skyboxTime = null
+    } else {
+      // Number, not parseInt: the latter accepts trailing garbage and floors fractions, so "12abc"
+      // and "1.5" used to be stored silently as 12 and 1, and unstorable values reached PostgreSQL
+      // as a 500 instead of being refused here.
+      const parsed = settingsPolicy.toStorableSkyboxTime(Number(value))
+      if (parsed === null) {
+        const { min, max } = settingsPolicy.skyboxTimeRange
+        throw new ValidationError(
+          `Invalid skybox_time: ${value}. Expected an integer between ${min} and ${max}, or null.`
+        )
+      }
+      input.skyboxTime = parsed
+    }
   }
 
   if (isDefinedMultipartField(fields.categories)) {
