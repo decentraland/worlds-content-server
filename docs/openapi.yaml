@@ -2009,9 +2009,16 @@ components:
           description: |
             Monotonic per-world version, incremented under the world row lock on every change to the
             settings above, including access_type.
-            Consumers that mirror these settings persist it and apply an update only when the incoming
-            version is greater than or equal to the stored one, which makes reordered or redelivered
-            WORLD_SETTINGS_CHANGED events converge instead of overwriting newer data.
+
+            WORLD_SETTINGS_CHANGED is a trigger, not a data feed: its payload is a snapshot taken at
+            publish time and the topic delivers out of order, so a consumer that mirrors settings
+            should re-read this endpoint on every event and persist what it returns, never the payload.
+
+            Persist this version alongside the mirrored values and apply an update only when the
+            incoming version is greater than the stored one. Equality means the response describes
+            state already applied, so it is a no-op for a consumer that re-reads and replaces state
+            wholesale, and it must be rejected by any consumer that merges partial fields, since two
+            different payloads can share a version.
           example: 7
 
     WorldSettingsInput:
