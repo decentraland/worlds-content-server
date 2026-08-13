@@ -1,5 +1,3 @@
-export * from './content-rating'
-export * from './thumbnail'
 export * from './errors'
 export * from './types'
 export * from './component'

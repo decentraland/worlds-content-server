@@ -44,7 +44,9 @@ import { createSchemaValidatorComponent } from '@dcl/schema-validator-component'
 import { createLivekitClient } from './adapters/livekit-client'
 import { createPeersRegistry } from './adapters/peers-registry'
 import { createSettingsComponent } from './logic/settings'
+import { createContentRatingComponent } from './logic/content-rating'
 import { createCoordinatesComponent } from './logic/coordinates'
+import { createThumbnailsComponent } from './logic/thumbnails'
 import { createPermissionsComponent } from './logic/permissions'
 import { createAccessComponent } from './logic/access'
 import { createAccessCheckerComponent } from './logic/access-checker'
@@ -165,10 +167,16 @@ export async function initComponents(): Promise<AppComponents> {
 
   const coordinates = createCoordinatesComponent()
 
+  const contentRating = createContentRatingComponent()
+
+  const thumbnails = await createThumbnailsComponent({ logs, storage })
+
   const search = await createSearchComponent({ database, logs })
 
   const worldsManager = await createWorldsManagerComponent({
+    contentRating,
     coordinates,
+    thumbnails,
     logs,
     database,
     nameDenyListChecker,
@@ -310,6 +318,7 @@ export async function initComponents(): Promise<AppComponents> {
     comms,
     commsAdapter,
     config,
+    contentRating,
     coordinates,
     database,
     deploymentProcessing,
@@ -346,6 +355,7 @@ export async function initComponents(): Promise<AppComponents> {
     status,
     statusChecks,
     storage,
+    thumbnails,
     updateOwnerJob,
     validator,
     walletStats,
