@@ -11,6 +11,7 @@ import { UnauthorizedError, ValidationError, WorldNotFoundError } from './errors
 import { ISettingsComponent } from './types'
 import { bufferToStream } from '@dcl/catalyst-storage'
 import { Coordinate } from '../coordinates'
+import { buildWorldSettingsChangedEvent } from '../worlds/world-settings-changed-event'
 
 export async function createSettingsComponent(
   components: Pick<
@@ -98,10 +99,6 @@ export async function createSettingsComponent(
     return result.settings
   }
 
-  function getThumbnailUrl(hash: string): string {
-    return `${baseUrl}/contents/${hash}`
-  }
-
   async function emitSettingsChangedEvents(
     worldName: string,
     settings: WorldSettings,
@@ -111,25 +108,8 @@ export async function createSettingsComponent(
     const timestamp = Date.now()
     const events: (WorldSettingsChangedEvent | WorldSpawnCoordinateSetEvent)[] = []
 
-    // Build the settings changed event (without spawn coordinates)
-    const settingsChangedEvent: WorldSettingsChangedEvent = {
-      type: Events.Type.WORLD,
-      subType: Events.SubType.Worlds.WORLD_SETTINGS_CHANGED,
-      key: `${worldName}-${timestamp}`,
-      timestamp,
-      metadata: {
-        worldName,
-        title: settings.title,
-        description: settings.description,
-        contentRating: settings.contentRating,
-        skyboxTime: settings.skyboxTime,
-        categories: settings.categories ?? [],
-        singlePlayer: settings.singlePlayer,
-        showInPlaces: settings.showInPlaces,
-        thumbnailUrl: settings.thumbnailHash ? getThumbnailUrl(settings.thumbnailHash) : undefined
-      }
-    }
-    events.push(settingsChangedEvent)
+    // Shared with the deploy path so both notifications stay identical in shape
+    events.push(buildWorldSettingsChangedEvent(worldName, baseUrl, settings, timestamp))
 
     // Check if spawn coordinates changed using areCoordinatesEqual
     const spawnCoordinatesChanged =

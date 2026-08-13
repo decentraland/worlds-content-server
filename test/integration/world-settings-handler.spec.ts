@@ -71,13 +71,37 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
         })
       })
 
-      it('should return the row updated_at as an ISO timestamp so mirrors can order writes', async () => {
+      it('should return a numeric settings version', async () => {
         const { localFetch } = components
 
         const response = await localFetch.fetch(`/world/${worldName}/settings`)
         const body = await response.json()
 
-        expect(new Date(body.updated_at).toISOString()).toBe(body.updated_at)
+        expect(typeof body.settings_version).toBe('number')
+      })
+    })
+
+    describe('when the world settings are updated again', () => {
+      let worldName: string
+      let firstVersion: number
+      let secondVersion: number
+
+      beforeEach(async () => {
+        const { localFetch, worldCreator, worldsManager } = components
+
+        const created = await worldCreator.createWorldWithScene()
+        worldName = created.worldName
+        const owner = created.owner.authChain[0].payload
+
+        await worldsManager.updateWorldSettings(worldName, owner, { title: 'First' })
+        firstVersion = (await (await localFetch.fetch(`/world/${worldName}/settings`)).json()).settings_version
+
+        await worldsManager.updateWorldSettings(worldName, owner, { title: 'Second' })
+        secondVersion = (await (await localFetch.fetch(`/world/${worldName}/settings`)).json()).settings_version
+      })
+
+      it('should report a settings version greater than the previous one', () => {
+        expect(secondVersion).toBeGreaterThan(firstVersion)
       })
     })
 

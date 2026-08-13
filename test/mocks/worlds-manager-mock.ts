@@ -56,7 +56,8 @@ export async function createWorldsManagerMockComponent({
           categories: [],
           single_player: false,
           show_in_places: false,
-          thumbnail_hash: ''
+          thumbnail_hash: '',
+          settings_version: '0'
         })
       }
     }

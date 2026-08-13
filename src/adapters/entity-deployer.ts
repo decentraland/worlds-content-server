@@ -6,10 +6,11 @@ import {
   MissingSceneReplacementAuthorizationError,
   SceneReplacementAuthorization
 } from '../types'
-import { AuthLink, Entity, EntityType, Events, WorldDeploymentEvent, WorldSettingsChangedEvent } from '@dcl/schemas'
+import { AuthLink, Entity, EntityType, Events, WorldDeploymentEvent } from '@dcl/schemas'
 import { bufferToStream } from '@dcl/catalyst-storage'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { mapWithConcurrency, raceWithSignal } from '../logic/concurrency'
+import { buildWorldSettingsChangedEvent } from '../logic/worlds/world-settings-changed-event'
 
 type PostDeploymentHook = (
   baseUrl: string,
@@ -208,48 +209,52 @@ export function createEntityDeployer(
         SequenceNumber: `${receipt.SequenceNumber}`,
         isMultiplayer: isMultiplayer ? 'true' : 'false'
       })
+    }
 
-      if (metadataUpdated) {
-        const settings = await worldsManager.getWorldSettings(worldName)
-        if (settings) {
-          const timestamp = Date.now()
-          const settingsChangedEvent: WorldSettingsChangedEvent = {
-            type: Events.Type.WORLD,
-            subType: Events.SubType.Worlds.WORLD_SETTINGS_CHANGED,
-            key: `${worldName}-${timestamp}`,
-            timestamp,
-            metadata: {
-              worldName,
-              title: settings.title,
-              description: settings.description,
-              contentRating: settings.contentRating,
-              skyboxTime: settings.skyboxTime,
-              categories: settings.categories ?? [],
-              singlePlayer: settings.singlePlayer,
-              showInPlaces: settings.showInPlaces,
-              thumbnailUrl: settings.thumbnailHash ? `${baseUrl}/contents/${settings.thumbnailHash}` : undefined
-            }
-          }
-          await snsClient.publishMessage(settingsChangedEvent)
-          logger.info('world settings changed notification sent after deploy', { worldName })
-        }
+    // Published independently of the deployment event: the settings refresh is already committed, so
+    // an SNS failure on either notification must not suppress the other.
+    const publishSettingsChanged = async (): Promise<void> => {
+      if (!metadataUpdated) return
+
+      const snsArn = await config.getString('AWS_SNS_ARN')
+      if (!snsArn) return
+
+      const settings = await worldsManager.getWorldSettings(worldName)
+      if (!settings) {
+        logger.warn('world settings unavailable after a committed metadata refresh; event skipped', {
+          worldName,
+          entityId: entity.id
+        })
+        return
       }
+
+      const receipt = await snsClient.publishMessage(
+        buildWorldSettingsChangedEvent(worldName, baseUrl, settings, Date.now())
+      )
+      logger.info('world settings changed notification sent after deploy', {
+        worldName,
+        MessageId: `${receipt.MessageId}`,
+        SequenceNumber: `${receipt.SequenceNumber}`
+      })
     }
 
     // Run independent hooks concurrently so a slow quota service cannot delay notification delivery.
     const postCommitTasks = Promise.allSettled([
       components.blocking.unblockIfUnderQuota(owner),
-      publishDeployment()
+      publishDeployment(),
+      publishSettingsChanged()
     ]).then((results) => {
-      for (const result of results) {
+      const taskNames = ['unblockIfUnderQuota', 'publishDeployment', 'publishSettingsChanged']
+      results.forEach((result, index) => {
         if (result.status === 'rejected') {
           logger.error('Post-deployment work failed after the scene was committed', {
+            task: taskNames[index],
             error: result.reason instanceof Error ? result.reason.message : String(result.reason),
             entityId: entity.id,
             worldName
           })
         }
-      }
+      })
     })
 
     try {

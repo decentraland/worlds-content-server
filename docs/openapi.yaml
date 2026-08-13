@@ -1934,7 +1934,9 @@ components:
 
     WorldSettings:
       type: object
-      description: World settings configuration that defines how the world behaves and appears in Places
+      description: |
+        World settings as returned by the settings endpoints. Field names are snake_case here;
+        the WORLD_SETTINGS_CHANGED SNS event carries the same values in camelCase.
       properties:
         title:
           type: string
@@ -1946,12 +1948,13 @@ components:
           description: A description of the world displayed in Places
           example: 'A beautiful world with amazing experiences'
           nullable: true
-        contentRating:
+        content_rating:
           type: string
+          enum: ['RP', 'E', 'T', 'A', 'R']
           description: Content rating for the world
           example: 'T'
           nullable: true
-        spawnCoordinates:
+        spawn_coordinates:
           type: string
           description: |
             The parcel coordinate where players will spawn.
@@ -1961,10 +1964,10 @@ components:
           pattern: '^-?\d+,-?\d+$'
           example: '10,20'
           nullable: true
-        skyboxTime:
+        skybox_time:
           type: number
-          description: Fixed skybox time (0-24 hours). Null to use dynamic day/night cycle.
-          example: 12.5
+          description: Fixed skybox time in seconds. Null to use dynamic day/night cycle.
+          example: 43200
           nullable: true
         categories:
           type: array
@@ -1973,29 +1976,33 @@ components:
           description: Categories/tags for the world
           example: ['game', 'adventure']
           nullable: true
-        singlePlayer:
+        single_player:
           type: boolean
-          description: Whether the world is single player only
-          example: false
-          nullable: true
-        showInPlaces:
-          type: boolean
-          description: Whether the world should be shown in Places
-          example: true
-          nullable: true
-        thumbnailUrl:
-          type: string
-          description: URL of the world thumbnail image
-          example: 'https://worlds-content-server.decentraland.org/contents/world-thumbnails/my-world.dcl.eth/abc123'
-          nullable: true
-        updatedAt:
-          type: string
-          format: date-time
           description: |
-            Timestamp of the last write to the world record. Monotonic per world; consumers that
-            mirror settings (e.g. Places) use it as a version to reject out-of-order updates.
-          example: '2026-08-12T15:30:00.000Z'
+            Whether the world is single player only. Reports the effective value: when neither the owner
+            nor any deployed scene set it, the default (false) is returned.
+          example: false
+        show_in_places:
+          type: boolean
+          description: |
+            Whether the world should be shown in Places. Reports the effective value: when neither the
+            owner nor any deployed scene set it, the default (true) is returned.
+          example: true
+        thumbnail_hash:
+          type: string
+          description: |
+            Content hash of the world thumbnail. Fetch it from `/contents/{hash}`.
+          example: 'bafkreiabcdef123456'
           nullable: true
+        settings_version:
+          type: integer
+          format: int64
+          description: |
+            Monotonic per-world version, incremented on every settings change under the world row lock.
+            Consumers that mirror these settings persist it and apply an update only when the incoming
+            version is greater than or equal to the stored one, which makes reordered or redelivered
+            WORLD_SETTINGS_CHANGED events converge instead of overwriting newer data.
+          example: 7
 
     WorldSettingsInput:
       type: object

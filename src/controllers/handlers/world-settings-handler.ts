@@ -1,7 +1,13 @@
 import { HandlerContextWithPath, WorldSettings, WorldSettingsInput } from '../../types'
 import { IHttpServerComponent } from '@dcl/core-commons'
 import { DecentralandSignatureContext } from '@dcl/crypto-middleware'
-import { UnauthorizedError, ValidationError, WorldNotFoundError } from '../../logic/settings'
+import {
+  UnauthorizedError,
+  ValidationError,
+  WORLD_CONTENT_RATINGS,
+  WorldNotFoundError,
+  isValidContentRating
+} from '../../logic/settings'
 import { FormDataContext, isDefinedMultipartField, readUploadedFile } from '../../logic/multipart'
 import { ICoordinatesComponent } from '../../logic/coordinates'
 
@@ -15,7 +21,7 @@ type SnakeCaseWorldSettings = {
   single_player?: boolean
   show_in_places?: boolean
   thumbnail_hash?: string
-  updated_at?: string
+  settings_version?: number
 }
 
 // Allowed thumbnail image formats, identified by their leading magic bytes. The thumbnail is
@@ -60,7 +66,7 @@ function toSnakeCaseSettings(settings: WorldSettings): SnakeCaseWorldSettings {
     single_player: settings.singlePlayer,
     show_in_places: settings.showInPlaces,
     thumbnail_hash: settings.thumbnailHash,
-    updated_at: settings.updatedAt?.toISOString()
+    settings_version: settings.settingsVersion
   }
 }
 
@@ -96,10 +102,9 @@ async function parseMultipartInput(
   }
 
   if (isDefinedMultipartField(fields.content_rating)) {
-    const validRatings = ['RP', 'E', 'T', 'A', 'R']
-    if (!validRatings.includes(fields.content_rating.value[0])) {
+    if (!isValidContentRating(fields.content_rating.value[0])) {
       throw new ValidationError(
-        `Invalid content rating: ${fields.content_rating.value[0]}. Expected one of: ${validRatings.join(', ')}`
+        `Invalid content rating: ${fields.content_rating.value[0]}. Expected one of: ${WORLD_CONTENT_RATINGS.join(', ')}`
       )
     }
     input.contentRating = fields.content_rating.value[0]
