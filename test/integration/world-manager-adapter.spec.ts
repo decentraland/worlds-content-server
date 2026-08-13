@@ -2117,6 +2117,59 @@ test('WorldManagerAdapter', function ({ components }) {
       })
     })
 
+    describe('and the redeployed scene declares text beyond the settings endpoint bounds', function () {
+      let worldName: string
+      let settings: Awaited<ReturnType<typeof components.worldsManager.getWorldSettings>>
+
+      beforeEach(async () => {
+        const { worldCreator, worldsManager } = components
+
+        worldName = worldCreator.randomWorldName()
+
+        const files = new Map<string, Uint8Array>()
+        files.set('abc.txt', stringToUtf8Bytes(makeid(100)))
+
+        const created = await worldCreator.createWorldWithScene({
+          worldName,
+          metadata: {
+            main: 'abc.txt',
+            display: { title: 'Original Title', description: 'Original Desc' },
+            tags: ['original'],
+            scene: { base: '0,0', parcels: ['0,0'] },
+            worldConfiguration: { name: worldName }
+          },
+          files
+        })
+
+        const redeployEntity = {
+          ...created.entity,
+          id: `${created.entity.id}-oversized`,
+          metadata: {
+            ...created.entity.metadata,
+            display: { title: 'x'.repeat(101), description: 'y'.repeat(1001) },
+            tags: Array.from({ length: 21 }, (_, index) => `tag-${index}`)
+          }
+        }
+        await worldsManager.deployScene(
+          worldName,
+          redeployEntity,
+          created.owner.authChain[0].payload,
+          { mode: 'unrestricted-owner' },
+          { authChain: created.owner.authChain, size: 100 }
+        )
+
+        settings = await worldsManager.getWorldSettings(worldName)
+      })
+
+      it('should keep the stored values instead of persisting values the endpoint would reject', function () {
+        expect(settings).toMatchObject({
+          title: 'Original Title',
+          description: 'Original Desc',
+          categories: ['original']
+        })
+      })
+    })
+
     describe('and the redeployed scene declares an unsupported content rating', function () {
       let worldName: string
       let settings: Awaited<ReturnType<typeof components.worldsManager.getWorldSettings>>

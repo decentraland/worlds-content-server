@@ -57,6 +57,29 @@ function toStorableSkyboxTime(fixedTime: unknown): number | null {
   return fixedTime >= PG_INT4_MIN && fixedTime <= PG_INT4_MAX ? fixedTime : null
 }
 
+// Same bounds PUT /world/:name/settings enforces. Scene metadata is unconstrained, so deploy-derived
+// values are held to the same contract; out-of-bounds values count as "not provided" (the existing
+// setting is preserved) rather than failing a deployment that is otherwise valid.
+const WORLD_TITLE_MIN_LENGTH = 3
+const WORLD_TITLE_MAX_LENGTH = 100
+const WORLD_DESCRIPTION_MIN_LENGTH = 3
+const WORLD_DESCRIPTION_MAX_LENGTH = 1000
+const WORLD_MAX_CATEGORIES = 20
+
+function toStorableText(value: unknown, minLength: number, maxLength: number): string | null {
+  if (typeof value !== 'string' || value.length < minLength || value.length > maxLength) {
+    return null
+  }
+  return value
+}
+
+function toStorableCategories(tags: unknown): string[] | null {
+  if (!Array.isArray(tags) || tags.length === 0 || tags.length > WORLD_MAX_CATEGORIES) {
+    return null
+  }
+  return tags.every((tag) => typeof tag === 'string') ? tags : null
+}
+
 export async function createWorldsManagerComponent({
   coordinates,
   logs,
@@ -355,10 +378,14 @@ export async function createWorldsManagerComponent({
     // a default here instead (e.g. `fixedAdapter === 'offline:offline'`) would make "scene said
     // nothing" indistinguishable from "scene opted out" and silently revert owner settings.
     const sceneMetadata = scene.metadata || {}
-    const title = sceneMetadata.display?.title || null
-    const description = sceneMetadata.display?.description || null
+    const title = toStorableText(sceneMetadata.display?.title, WORLD_TITLE_MIN_LENGTH, WORLD_TITLE_MAX_LENGTH)
+    const description = toStorableText(
+      sceneMetadata.display?.description,
+      WORLD_DESCRIPTION_MIN_LENGTH,
+      WORLD_DESCRIPTION_MAX_LENGTH
+    )
     const skyboxTime = toStorableSkyboxTime(sceneMetadata.worldConfiguration?.skyboxConfig?.fixedTime)
-    const categories: string[] | null = sceneMetadata.tags?.length > 0 ? sceneMetadata.tags : null
+    const categories: string[] | null = toStorableCategories(sceneMetadata.tags)
     // Scene metadata is deployer-controlled and unconstrained, so apply the settings allow-list.
     const rating = isValidContentRating(sceneMetadata?.rating) ? sceneMetadata.rating : null
     const fixedAdapter = sceneMetadata.worldConfiguration?.fixedAdapter
@@ -1019,7 +1046,9 @@ export async function createWorldsManagerComponent({
       // Exposed alongside the version so a mirror derives visibility from authoritative state
       // instead of an event payload, which has no ordering relationship with this version.
       accessType: row.access?.type,
-      // BIGINT arrives as a string from node-postgres; consumers compare it numerically.
+      // BIGINT arrives as a string from node-postgres. The column is BIGINT for headroom, but the
+      // value is a per-world change counter, so it stays far below Number.MAX_SAFE_INTEGER and the
+      // conversion is exact for any reachable value.
       settingsVersion: row.settings_version === undefined ? undefined : Number(row.settings_version)
     }
   }
