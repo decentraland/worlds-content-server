@@ -123,6 +123,22 @@ describe('common validations', function () {
       expect(result.errors[0]).toContain('Deployment was created ')
       expect(result.errors[0]).toContain('secs ago. Max allowed: 10 secs.')
     })
+
+    it('with a deployment timestamp too far in the future', async () => {
+      const deployment = await createSceneDeployment(identity.authChain, {
+        type: EntityType.SCENE,
+        pointers: ['0,0'],
+        timestamp: Date.now() + 16 * 60 * 1000,
+        metadata: { worldConfiguration: { name: 'whatever.dcl.eth' } },
+        files: []
+      })
+
+      const validateDeploymentTtl = createValidateDeploymentTtl(components)
+      const result = await validateDeploymentTtl(deployment)
+      expect(result.ok()).toBeFalsy()
+      expect(result.errors[0]).toContain('in the future')
+      expect(result.errors[0]).toContain('Max allowed: 900 secs.')
+    })
   })
 
   describe('validateAuthChain', () => {

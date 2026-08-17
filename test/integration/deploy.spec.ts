@@ -1797,4 +1797,74 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
       expect(await storage.exist(entityId)).toBe(false)
     })
   })
+
+  describe('when the deployment timestamp is too far in the future', () => {
+    let contentClient: ContentClient
+    let identity: Identity
+    let worldName: string
+    let entityId: string
+    let files: Map<string, Uint8Array>
+
+    beforeEach(async () => {
+      const { config, fetch, worldCreator } = components
+      const { namePermissionChecker, nameOwnership } = stubComponents
+
+      identity = await getIdentity()
+      worldName = worldCreator.randomWorldName()
+
+      contentClient = createContentClient({
+        url: `http://${await config.requireString('HTTP_SERVER_HOST')}:${await config.requireNumber('HTTP_SERVER_PORT')}`,
+        fetcher: fetch
+      })
+
+      namePermissionChecker.checkPermission.mockImplementation(
+        async (ethAddress, name) => ethAddress === identity.authChain.authChain[0].payload && name === worldName
+      )
+      nameOwnership.findOwners.mockImplementation(async (worldNames) =>
+        worldNames.length === 1 && worldNames[0] === worldName
+          ? new Map([[worldName, identity.authChain.authChain[0].payload]])
+          : new Map()
+      )
+
+      const entityFiles = new Map<string, Uint8Array>()
+      entityFiles.set('abc.txt', stringToUtf8Bytes(makeid(100)))
+
+      // The entity carries a signed timestamp more than 15 minutes in the future.
+      const result = await DeploymentBuilder.buildEntity({
+        type: EntityType.SCENE as any,
+        pointers: ['0,0'],
+        files: entityFiles,
+        timestamp: Date.now() + 16 * 60 * 1000,
+        metadata: {
+          main: 'abc.txt',
+          scene: { base: '0,0', parcels: ['0,0'] },
+          worldConfiguration: { name: worldName }
+        }
+      })
+
+      entityId = result.entityId
+      files = result.files
+    })
+
+    it('should reject the deployment with a future timestamp error', async () => {
+      const authChain = Authenticator.signPayload(identity.authChain, entityId)
+
+      await expect(() => contentClient.deploy({ files, entityId, authChain })).rejects.toThrow(
+        /Deployment was created .* secs in the future/
+      )
+    })
+
+    it('should not store the entity in storage', async () => {
+      const { storage } = components
+      const authChain = Authenticator.signPayload(identity.authChain, entityId)
+
+      try {
+        await contentClient.deploy({ files, entityId, authChain })
+      } catch {
+        // Expected to fail
+      }
+
+      expect(await storage.exist(entityId)).toBe(false)
+    })
+  })
 })

@@ -5,6 +5,9 @@ import { Authenticator } from '@dcl/crypto'
 import { mapWithConcurrency } from '../concurrency'
 import { DEFAULT_FILE_HASH_CONCURRENCY } from '../deployment-processing'
 
+// Keep this aligned with Catalyst's request TTL forwards guard.
+const MAX_DEPLOYMENT_FUTURE_SKEW_MS = 15 * 60 * 1000
+
 export const validateEntityId: Validation = async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
   const entityFile = deployment.files.get(deployment.entity.id)
   if (!entityFile) {
@@ -34,6 +37,13 @@ export function createValidateDeploymentTtl(components: Pick<ValidatorComponents
   return async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
     const ttl = Date.now() - deployment.entity.timestamp
     const maxTtl = (await components.config.getNumber('DEPLOYMENT_TTL')) || 300_000
+    if (ttl < -MAX_DEPLOYMENT_FUTURE_SKEW_MS) {
+      return createValidationResult([
+        `Deployment was created ${Math.abs(ttl) / 1000} secs in the future. Max allowed: ${
+          MAX_DEPLOYMENT_FUTURE_SKEW_MS / 1000
+        } secs.`
+      ])
+    }
     if (ttl > maxTtl) {
       return createValidationResult([
         `Deployment was created ${ttl / 1000} secs ago. Max allowed: ${maxTtl / 1000} secs.`
