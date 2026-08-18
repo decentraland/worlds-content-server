@@ -224,42 +224,48 @@ test('world comms handler', function ({ components, stubComponents }) {
       })
     })
 
-    describe('and the signed-fetch metadata has a signer spelled in mixed case', () => {
-      // `getAuthHeaders` lowercases the payload before signing, so this signature is byte-identical
-      // to the canonical-signer one above while the delivered header keeps its casing. Without the
-      // library's canonical-metadata guard the mixed-case spelling slips past the strict
-      // `!== 'decentraland-kernel-scene'` check in routes.ts and the scene request is served as a
-      // directly user-signed one.
-      it('should respond with 400 rather than let it past the scene gate', async () => {
-        const r = await localFetch.fetch(`/worlds/${worldName}/comms`, {
-          method: 'POST',
-          identity,
-          metadata: {
-            ...EXPLORER_METADATA,
-            signer: 'Decentraland-Kernel-Scene'
-          }
-        })
+    describe.each([['Decentraland-Kernel-Scene'], ['DECENTRALAND-KERNEL-SCENE'], [' decentraland-kernel-scene ']])(
+      'and the signed-fetch metadata spells the kernel-scene signer as "%s"',
+      (signer) => {
+        // @dcl/crypto-middleware 6 signs the metadata bytes verbatim, so what the header carries is
+        // exactly what was signed and the request reaches the router with a valid signature. The
+        // library no longer rejects a non-canonical `signer` on its own; the scene gate in routes.ts
+        // normalizes the value before comparing, and that is what refuses the request here.
+        it('should respond with 400 rather than let it past the scene gate', async () => {
+          const r = await localFetch.fetch(`/worlds/${worldName}/comms`, {
+            method: 'POST',
+            identity,
+            metadata: {
+              ...EXPLORER_METADATA,
+              signer
+            }
+          })
 
-        expect(r.status).toEqual(400)
-        expect(await r.json()).toMatchObject({ error: expect.stringMatching(/^Invalid chain metadata: /) })
-      })
-    })
+          expect(r.status).toEqual(400)
+          expect(await r.json()).toMatchObject({ error: expect.stringMatching(/^Invalid metadata content: /) })
+        })
+      }
+    )
 
     describe.each([
       ['signer', 'Dcl:Explorer'],
       ['signer', ' dcl:explorer '],
       ['intent', 'Dcl:Explorer:Comms-Handshake'],
       ['intent', ' dcl:explorer:comms-handshake ']
-    ])('and signed-fetch metadata has a non-canonical %s', (field, value) => {
-      it('should respond with the middleware metadata-validation 400', async () => {
+    ])('and signed-fetch metadata has a non-canonical %s that is not the scene sentinel', (field, value) => {
+      // Up to @dcl/crypto-middleware 5 the library refused these outright, because the payload was
+      // lowercased before signing and casing therefore fell outside the signature. Version 6 signs
+      // the metadata bytes verbatim, so a value can no longer be re-spelled in flight and there is
+      // nothing left to canonicalize. Only the kernel-scene sentinel is gated by this service, and
+      // neither of these fields is authorized on anywhere else, so the request is served normally.
+      it('should respond with 200', async () => {
         const r = await localFetch.fetch(`/worlds/${worldName}/comms`, {
           method: 'POST',
           identity,
           metadata: { ...EXPLORER_METADATA, [field]: value }
         })
 
-        expect(r.status).toEqual(400)
-        expect(await r.json()).toMatchObject({ error: expect.stringMatching(/^Invalid chain metadata: /) })
+        expect(r.status).toEqual(200)
       })
     })
 

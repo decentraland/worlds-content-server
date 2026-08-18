@@ -65,8 +65,11 @@ export function getAuthHeaders(
 ) {
   const headers: Record<string, string> = {}
   const metadataJSON = JSON.stringify(metadata)
+  // Matches `createPayload` in @dcl/crypto-middleware 6: the method, path and timestamp are
+  // lowercased, then the metadata JSON is joined verbatim. The whole-payload `.toLowerCase()` the
+  // pre-6 format applied left metadata casing outside the signature; signing the raw bytes binds it.
   const payloadParts = [method.toLowerCase(), pathname.toLowerCase(), timestamp.toString(), metadataJSON]
-  const payloadToSign = payloadParts.join(':').toLowerCase()
+  const payloadToSign = payloadParts.join(':')
 
   const chain = chainProvider(payloadToSign)
 

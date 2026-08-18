@@ -19,7 +19,7 @@
     "@dcl/catalyst-storage": "^5.0.0",
     "@dcl/core-commons": "^0.10.1",
     "@dcl/crypto": "^3.7.0",
-    "@dcl/crypto-middleware": "^5.1.0",
+    "@dcl/crypto-middleware": "^6.0.0",
     "@dcl/fetch-component": "^1.1.1",
     "@dcl/hashing": "^3.0.4",
     "@dcl/http-commons": "^2.0.0",

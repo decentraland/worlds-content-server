@@ -146,7 +146,17 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   const signedFetchMiddleware = wellKnownComponents({
     fetcher: fetch,
     optional: false,
-    metadataValidator: (metadata: Record<string, any>): boolean => metadata.signer !== 'decentraland-kernel-scene',
+    // Scene-originated requests are refused here: the explorer stamps `decentraland-kernel-scene`
+    // as the signer for them, and none of the routes below may be driven by scene code.
+    //
+    // The spelling is normalized before comparing. Up to @dcl/crypto-middleware 5 the library
+    // rejected a non-canonical `signer` outright, so an exact match sufficed. Version 6 signs the
+    // metadata bytes verbatim and canonicalizes nothing, so `Decentraland-Kernel-Scene` now arrives
+    // with a perfectly valid signature; without this normalization that spelling would walk past
+    // the gate and the request would be served as a directly user-signed one.
+    metadataValidator: (metadata: Record<string, any>): boolean =>
+      (typeof metadata.signer === 'string' ? metadata.signer.trim().toLowerCase() : metadata.signer) !==
+      'decentraland-kernel-scene',
     onError: (err: any) => ({
       error: err.message,
       message: 'This endpoint requires a signed fetch request. See ADR-44.'
