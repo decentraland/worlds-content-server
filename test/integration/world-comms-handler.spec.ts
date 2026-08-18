@@ -248,21 +248,40 @@ test('world comms handler', function ({ components, stubComponents }) {
     )
 
     describe.each([
-      ['signer', 'Dcl:Explorer'],
-      ['signer', ' dcl:explorer '],
-      ['intent', 'Dcl:Explorer:Comms-Handshake'],
-      ['intent', ' dcl:explorer:comms-handshake ']
-    ])('and signed-fetch metadata has a non-canonical %s that is not the scene sentinel', (field, value) => {
-      // Up to @dcl/crypto-middleware 5 the library refused these outright, because the payload was
-      // lowercased before signing and casing therefore fell outside the signature. Version 6 signs
-      // the metadata bytes verbatim, so a value can no longer be re-spelled in flight and there is
-      // nothing left to canonicalize. Only the kernel-scene sentinel is gated by this service, and
-      // neither of these fields is authorized on anywhere else, so the request is served normally.
+      ['a mixed-case spelling', 'Dcl:Explorer'],
+      ['a padded spelling', ' dcl:explorer ']
+    ])('and signed-fetch metadata has a non-canonical signer in %s', (_case, value) => {
+      // `rejectIfSigner` refuses a `signer` that is not already canonical, not merely one matching
+      // the sentinel. That is deliberate: the gate compares by equality, and a value it cannot
+      // compare meaningfully is refused rather than waved through. So a non-canonical `dcl:explorer`
+      // is rejected too, even though it is not the scene signer.
+      it('should respond with 400', async () => {
+        const r = await localFetch.fetch(`/worlds/${worldName}/comms`, {
+          method: 'POST',
+          identity,
+          metadata: { ...EXPLORER_METADATA, signer: value }
+        })
+
+        expect(r.status).toEqual(400)
+      })
+    })
+
+    describe.each([
+      ['a mixed-case spelling', 'Dcl:Explorer:Comms-Handshake'],
+      ['a padded spelling', ' dcl:explorer:comms-handshake ']
+    ])('and signed-fetch metadata has a non-canonical intent in %s', (_case, value) => {
+      // `intent` is not gated on this route, so nothing refuses it. Up to 5.1.0 the library did,
+      // via a canonical guard it applied to every request; 6.x leaves that to the service, and this
+      // route has no reason to care. The value is still bound to the signature, so it cannot be
+      // re-spelled in flight — this is a request genuinely signed that way.
+      //
+      // Note the /comms adapter route DOES compare `intent`; if that check ever moves here it
+      // should use requireCanonicalField('intent', ...) rather than a bare equality.
       it('should respond with 200', async () => {
         const r = await localFetch.fetch(`/worlds/${worldName}/comms`, {
           method: 'POST',
           identity,
-          metadata: { ...EXPLORER_METADATA, [field]: value }
+          metadata: { ...EXPLORER_METADATA, intent: value }
         })
 
         expect(r.status).toEqual(200)
