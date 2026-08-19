@@ -1,5 +1,5 @@
 import { test } from '../../components'
-import { getIdentity, Identity } from '../../utils'
+import { getIdentity, getLegacyAuthHeaders, Identity, signWith } from '../../utils'
 import { IAuthenticatedFetchComponent } from '../../components/local-auth-fetch'
 import { IWorldCreator, IWorldsManager } from '../../../src/types'
 import { IPermissionsComponent, PermissionType } from '../../../src/logic/permissions'
@@ -362,6 +362,31 @@ test('POST /world/:world_name/permissions/:permission_name', ({ components, stub
         error: 'Invalid Auth Chain',
         message: 'This endpoint requires a signed fetch request. See ADR-44.'
       })
+    })
+  })
+
+  describe('when the auth chain signs the pre-6.0.0 folded payload', () => {
+    let path: string
+    let headers: Record<string, string>
+
+    beforeEach(() => {
+      path = `/world/${worldName}/permissions/access`
+      headers = getLegacyAuthHeaders(
+        'POST',
+        path,
+        { ...BUILDER_METADATA, type: AccessType.Unrestricted },
+        signWith(identity)
+      )
+    })
+
+    // The legacy fallback is scoped to the explorer comms handshakes. This route is builder and CLI
+    // traffic, whose callers can be released ahead of the service, so it stays on the current format
+    // only — the same request the comms routes now accept is still a 401 here.
+    it('should respond with 401 and an invalid signature error', async () => {
+      const response = await localFetch.fetch(path, { method: 'POST', headers })
+
+      expect(response.status).toEqual(401)
+      expect(await response.json()).toMatchObject({ error: expect.stringMatching(/^Invalid signature:/) })
     })
   })
 })

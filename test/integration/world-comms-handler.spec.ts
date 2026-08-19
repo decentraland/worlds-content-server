@@ -1,5 +1,5 @@
 import { test } from '../components'
-import { getAuthHeaders, getIdentity, Identity } from '../utils'
+import { getAuthHeaders, getIdentity, getLegacyAuthHeaders, Identity, signWith } from '../utils'
 import { IAuthenticatedFetchComponent } from '../components/local-auth-fetch'
 import { IWorldsManager } from '../../src/types'
 import { AccessType } from '../../src/logic/access'
@@ -380,6 +380,82 @@ test('world comms handler', function ({ components, stubComponents }) {
 
         expect(r.status).toEqual(401)
         expect(await r.json()).toMatchObject({ error: expect.stringMatching(/^Invalid signature:/) })
+      })
+    })
+
+    describe('and the auth chain signs the pre-6.0.0 folded payload', () => {
+      let path: string
+      let headers: Record<string, string>
+
+      beforeEach(() => {
+        path = `/worlds/${worldName}/comms`
+        headers = getLegacyAuthHeaders('POST', path, EXPLORER_METADATA, signWith(identity))
+      })
+
+      // `isGuest` alone makes folding the metadata a lossy operation, so the current-format check
+      // cannot verify this and falls through. The comms routes opt into the fallback because the
+      // three explorer clients still sign this way and cannot be released with the service.
+      it('should respond with 200 and the connection string', async () => {
+        const r = await localFetch.fetch(path, { method: 'POST', headers })
+
+        expect(r.status).toEqual(200)
+        expect(await r.json()).toEqual({
+          fixedAdapter: `ws-room:ws-room-service.decentraland.org/rooms/world-${worldName}`
+        })
+      })
+    })
+
+    describe('and the pre-6.0.0 payload delivers the scene signer under a re-cased key', () => {
+      let path: string
+      let headers: Record<string, string>
+
+      beforeEach(() => {
+        path = `/worlds/${worldName}/comms`
+        // No lowercase `signer` at all, so `rejectIfSigner` reads the field as absent and the scene
+        // gate passes it. Folded, this metadata signs identically to the same object spelling the
+        // key `signer` — which is exactly the bypass the declared-key guard exists to close.
+        const { signer: _omitted, ...withoutSigner } = EXPLORER_METADATA
+        headers = getLegacyAuthHeaders(
+          'POST',
+          path,
+          { ...withoutSigner, Signer: 'decentraland-kernel-scene' },
+          signWith(identity)
+        )
+      })
+
+      it('should respond with 400 and the declared-spelling error rather than run the handshake', async () => {
+        const r = await localFetch.fetch(path, { method: 'POST', headers })
+
+        expect(r.status).toEqual(400)
+        expect(await r.json()).toMatchObject({
+          error: expect.stringContaining('Invalid chain metadata: expected "signer", got "Signer"')
+        })
+      })
+    })
+
+    describe('and the pre-6.0.0 payload delivers a re-cased secret', () => {
+      let path: string
+      let headers: Record<string, string>
+
+      beforeEach(() => {
+        path = `/worlds/${worldName}/comms`
+        headers = getLegacyAuthHeaders(
+          'POST',
+          path,
+          { ...EXPLORER_METADATA, Secret: 'a-shared-secret' },
+          signWith(identity)
+        )
+      })
+
+      // `secret` is declared because both comms handlers authorize on it. A spelling the handler
+      // would read as absent is refused outright rather than folded into the canonical one.
+      it('should respond with 400 and the declared-spelling error', async () => {
+        const r = await localFetch.fetch(path, { method: 'POST', headers })
+
+        expect(r.status).toEqual(400)
+        expect(await r.json()).toMatchObject({
+          error: expect.stringContaining('Invalid chain metadata: expected "secret", got "Secret"')
+        })
       })
     })
 

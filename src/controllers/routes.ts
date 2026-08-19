@@ -143,21 +143,75 @@ export async function createMultipartUploadGuard(
 export async function setupRouter(globalContext: GlobalContext): Promise<Router<GlobalContext>> {
   const { fetch, schemaValidator, config } = globalContext.components
 
-  const signedFetchMiddleware = wellKnownComponents({
-    fetcher: fetch,
-    optional: false,
-    // Scene-originated requests are refused here: the explorer stamps `decentraland-kernel-scene`
-    // as the signer for them, and none of the routes below may be driven by scene code.
-    //
-    // The predicate refuses a `signer` that is not already canonical rather than folding it before
-    // comparing, so a re-spelled or padded value cannot read as "not a scene" and slip past. The
-    // value reaching handlers is still exactly what the client signed — nothing is rewritten.
-    metadataValidator: rejectIfSigner('decentraland-kernel-scene'),
-    onError: (err: any) => ({
-      error: err.message,
-      message: 'This endpoint requires a signed fetch request. See ADR-44.'
+  /**
+   * Builds a signed-fetch middleware.
+   *
+   * @param canonicalMetadataKeys When present, opts the routes using this instance into accepting
+   *   the pre-6.0.0 signed payload as a fallback. Absent — the default — means current format only.
+   */
+  const createSignedFetchMiddleware = (canonicalMetadataKeys?: string[]) =>
+    wellKnownComponents({
+      fetcher: fetch,
+      optional: false,
+      // Scene-originated requests are refused here: the explorer stamps `decentraland-kernel-scene`
+      // as the signer for them, and none of the routes below may be driven by scene code.
+      //
+      // The predicate refuses a `signer` that is not already canonical rather than folding it before
+      // comparing, so a re-spelled or padded value cannot read as "not a scene" and slip past. The
+      // value reaching handlers is still exactly what the client signed — nothing is rewritten.
+      //
+      // It also runs before signature verification, so it guards the legacy fallback below as well
+      // as the current-format path.
+      metadataValidator: rejectIfSigner('decentraland-kernel-scene'),
+      canonicalMetadataKeys,
+      onError: (err: any) => ({
+        error: err.message,
+        message: 'This endpoint requires a signed fetch request. See ADR-44.'
+      })
     })
-  })
+
+  // Strict: current signed-payload format only. Everything the builder, the CLI and the admin
+  // tooling drive stays here — those callers ship with the format they sign and can be sequenced
+  // ahead of a deploy, so they get no fallback.
+  const signedFetchMiddleware = createSignedFetchMiddleware()
+
+  // Explorer comms handshakes only. The unity, godot and bevy clients each still sign the pre-6.0.0
+  // folded payload and each send camelCase metadata, so every one of their handshakes 401s under
+  // 6.x. They are three separate client releases and cannot be deployed atomically with this
+  // service, so there is no deploy order that avoids breaking them; this accepts the old payload
+  // for the duration of that window. Remove it — and this second instance — once the clients ship.
+  //
+  // The legacy payload folds the metadata, so its casing is outside the signature and a delivered
+  // `{"Signer":…}` would share a valid signature with `{"signer":…}` while reading as absent to the
+  // scene gate above. Listing the keys this service authorizes on is what closes that: a legacy
+  // request spelling any of them differently is refused with a 400 rather than having its metadata
+  // rewritten. Derived from the reads in this repo, not from what clients happen to send:
+  //
+  //   signer       the scene gate above; `metadata.signer` in comms-adapter-handler
+  //   intent       `metadata.intent` in comms-adapter-handler
+  //   secret       `authMetadata.secret` in comms-adapter-handler and world-comms-handler
+  //   type         `authMetadata.type` in permissions-handlers, and `AccessInput.type`
+  //   wallets      `authMetadata.wallets` in permissions-handlers, and `AccessInput.wallets`
+  //   communities  `AccessInput.communities`, read via the `authMetadata as AccessInput` cast
+  //   nft          `AccessInput.nft`, read via that same cast
+  //
+  // The last four belong to routes the strict instance serves. They are listed anyway: the guard
+  // only checks keys that are actually delivered, so naming a field no handshake sends costs
+  // nothing, and it keeps the declaration correct if a route is ever moved onto this instance.
+  //
+  // Deliberately absent: `isGuest`, `origin`, `realmName`, `realm.serverName` and metadata `sceneId`
+  // are sent by the explorers but never read here, and an unread field cannot change an
+  // authorization decision. The scene comms route takes its `sceneId` from the URL path, not the
+  // metadata.
+  const explorerSignedFetchMiddleware = createSignedFetchMiddleware([
+    'signer',
+    'intent',
+    'secret',
+    'type',
+    'wallets',
+    'communities',
+    'nft'
+  ])
 
   const router = new Router<GlobalContext>()
   router.use(errorHandler)
@@ -295,11 +349,12 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
 
   router.post('/livekit-webhook', livekitWebhookHandler)
 
-  // Comms endpoints
-  router.post('/worlds/:worldName/comms', signedFetchMiddleware, worldCommsHandler)
-  router.post('/worlds/:worldName/scenes/:sceneId/comms', signedFetchMiddleware, worldCommsHandler)
+  // Comms endpoints. These three are the explorer handshakes, and the only routes that accept the
+  // legacy signed payload — see `explorerSignedFetchMiddleware` above.
+  router.post('/worlds/:worldName/comms', explorerSignedFetchMiddleware, worldCommsHandler)
+  router.post('/worlds/:worldName/scenes/:sceneId/comms', explorerSignedFetchMiddleware, worldCommsHandler)
 
-  router.post('/get-comms-adapter/:roomId', signedFetchMiddleware, commsAdapterHandler)
+  router.post('/get-comms-adapter/:roomId', explorerSignedFetchMiddleware, commsAdapterHandler)
 
   // administrative endpoints
   const secret = await config.requireString('AUTH_SECRET')
