@@ -11,6 +11,8 @@ import { bufferToStream } from '@dcl/catalyst-storage'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { mapWithConcurrency, raceWithSignal } from '../logic/concurrency'
 import { buildWorldSettingsChangedEvent } from '../logic/worlds/world-settings-changed-event'
+import { Authenticator } from '@dcl/crypto'
+import { isNameOwnershipValidationIgnored } from '../logic/name-ownership-validation'
 
 type PostDeploymentHook = (
   baseUrl: string,
@@ -153,7 +155,9 @@ export function createEntityDeployer(
     const parcels = entity.metadata?.scene?.parcels || []
     logger.debug(`Deployment for scene "${entity.id}" under world name "${worldName}" at parcels ${parcels.join(', ')}`)
 
-    const owner = (await raceWithSignal(components.nameOwnership.findOwners([worldName]), signal)).get(worldName)
+    const owner = (await isNameOwnershipValidationIgnored(config))
+      ? Authenticator.ownerAddress(authChain)
+      : (await raceWithSignal(components.nameOwnership.findOwners([worldName]), signal)).get(worldName)
 
     if (!owner) {
       throw new Error(

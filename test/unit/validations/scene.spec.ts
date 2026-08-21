@@ -384,6 +384,35 @@ describe('scene validations', function () {
         )
       })
     })
+
+    it('skips name ownership validation when explicitly enabled', async () => {
+      config = createConfigComponent({
+        DEPLOYMENT_TTL: '10000',
+        IGNORE_NAME_OWNERSHIP_VALIDATION: 'true'
+      })
+      components.config = config
+
+      const deployment = await createSceneDeployment(identity.authChain, {
+        type: EntityType.SCENE,
+        pointers: ['0,0'],
+        timestamp: Date.now(),
+        metadata: {
+          worldConfiguration: {
+            name: 'different.dcl.eth'
+          }
+        },
+        files: []
+      })
+
+      const validateDeploymentPermission = createValidateDeploymentPermission(components)
+      const permissionCheck = jest.spyOn(worldNamePermissionChecker, 'checkPermission')
+      const result = await validateDeploymentPermission(deployment)
+
+      expect(result.ok()).toBeTruthy()
+      expect(deployment.sceneReplacementAuthorization).toEqual({ mode: 'unrestricted-owner' })
+      expect(permissionCheck).not.toHaveBeenCalled()
+      expect(permissions.hasPermissionForParcels).not.toHaveBeenCalled()
+    })
   })
 
   describe('when validating banned names', () => {

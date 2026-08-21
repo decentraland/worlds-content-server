@@ -4,6 +4,7 @@ import { createValidationResult, OK } from './utils'
 import { ICoordinatesComponent } from '../coordinates'
 import { ContentMapping } from '@dcl/schemas/dist/misc/content-mapping'
 import { FileInfo } from '@dcl/catalyst-storage'
+import { isNameOwnershipValidationIgnored } from '../name-ownership-validation'
 
 /** Default cap on content files per deployment, used when MAX_FILE_COUNT is unset. */
 export const DEFAULT_MAX_FILE_COUNT = 10000
@@ -120,14 +121,25 @@ export function createValidateBannedNames(
  * deployment would replace.
  */
 export function createValidateDeploymentPermission(
-  components: Pick<ValidatorComponents, 'coordinates' | 'namePermissionChecker' | 'permissions' | 'worldsManager'>
+  components: Pick<
+    ValidatorComponents,
+    'config' | 'coordinates' | 'namePermissionChecker' | 'permissions' | 'worldsManager'
+  >
 ) {
   return async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
     const worldSpecifiedName = deployment.entity.metadata.worldConfiguration.name
     const signer = deployment.authChain[0].payload
     const parcels = getDeploymentParcels(deployment, components.coordinates)
 
-    // The signer owns the name
+    if (await isNameOwnershipValidationIgnored(components.config)) {
+      // This is deliberately an explicit development/test-only bypass. The
+      // auth chain, signatures, scene validation and technical limits still
+      // run, but the signer is not required to own the world name.
+      deployment.sceneReplacementAuthorization = { mode: 'unrestricted-owner' }
+      return OK
+    }
+
+    // Check the address owns the name
     if (await components.namePermissionChecker.checkPermission(signer, worldSpecifiedName)) {
       deployment.sceneReplacementAuthorization = { mode: 'unrestricted-owner' }
       return OK

@@ -28,7 +28,7 @@ import { createMigrationExecutor } from './adapters/migration-executor'
 import { createNameDenyListChecker } from './adapters/name-deny-list-checker'
 import { createDatabaseComponent } from './adapters/database-component'
 import { createPermissionsManagerComponent } from './adapters/permissions-manager'
-import { createNameOwnership } from './adapters/name-ownership'
+import { createDummyNameOwnership, createDummyNameSubgraph, createNameOwnership } from './adapters/name-ownership'
 import { createEthereumProvider } from './adapters/rpc-provider'
 import { createNameChecker } from './adapters/dcl-name-checker'
 import { createWalletStatsComponent } from './adapters/wallet-stats'
@@ -69,6 +69,7 @@ import { createDenyListComponent } from './logic/denylist'
 import { createBansComponent } from './adapters/bans-adapter'
 import { createEvictionJob } from './adapters/eviction-job'
 import { createDeploymentProcessingComponent } from './logic/deployment-processing'
+import { isNameOwnershipValidationIgnored } from './logic/name-ownership-validation'
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
@@ -139,8 +140,13 @@ export async function initComponents(): Promise<AppComponents> {
     storage = await createFolderBasedFileSystemContentStorage({ fs, logs }, storageFolder)
   }
 
-  const subGraphUrl = await config.requireString('MARKETPLACE_SUBGRAPH_URL')
-  const marketplaceSubGraph = await createSubgraphComponent({ config, logs, metrics, fetch }, subGraphUrl)
+  const ignoreNameOwnershipValidation = await isNameOwnershipValidationIgnored(config)
+  const marketplaceSubGraph = ignoreNameOwnershipValidation
+    ? createDummyNameSubgraph()
+    : await createSubgraphComponent(
+        { config, logs, metrics, fetch },
+        await config.requireString('MARKETPLACE_SUBGRAPH_URL')
+      )
 
   const status = await createStatusComponent({ logs, fetch, config })
   const snsClient = await createSnsComponent({ config })
@@ -151,12 +157,17 @@ export async function initComponents(): Promise<AppComponents> {
     logs
   })
 
-  const nameOwnership = await createNameOwnership({
-    config,
-    ethereumProvider,
-    logs,
-    marketplaceSubGraph
-  })
+  const nameOwnership = ignoreNameOwnershipValidation
+    ? await createDummyNameOwnership()
+    : await createNameOwnership({ config, ethereumProvider, logs, marketplaceSubGraph })
+
+  if (ignoreNameOwnershipValidation) {
+    logs
+      .getLogger('components')
+      .warn(
+        'IGNORE_NAME_OWNERSHIP_VALIDATION=true: name ownership validation is disabled. This instance must remain private and non-production.'
+      )
+  }
 
   const namePermissionChecker: IWorldNamePermissionChecker = createNameChecker({
     logs,
@@ -255,12 +266,20 @@ export async function initComponents(): Promise<AppComponents> {
     worldsManager
   })
 
-  const migrationExecutor = createMigrationExecutor({ logs, database: database, nameOwnership, storage, worldsManager })
+  const migrationExecutor = createMigrationExecutor({
+    config,
+    logs,
+    database: database,
+    nameOwnership,
+    storage,
+    worldsManager
+  })
 
   const notificationService = await createNotificationsClientComponent({ config, fetch, logs })
 
   const updateOwnerJob = await createUpdateOwnerJob({
     blocking,
+    config,
     database,
     logs,
     nameOwnership
