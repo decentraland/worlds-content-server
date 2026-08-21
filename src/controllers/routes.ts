@@ -187,31 +187,22 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   // request spelling any of them differently is refused with a 400 rather than having its metadata
   // rewritten. Derived from the reads in this repo, not from what clients happen to send:
   //
-  //   signer       the scene gate above; `metadata.signer` in comms-adapter-handler
-  //   intent       `metadata.intent` in comms-adapter-handler
-  //   secret       `authMetadata.secret` in comms-adapter-handler and world-comms-handler
-  //   type         `authMetadata.type` in permissions-handlers, and `AccessInput.type`
-  //   wallets      `authMetadata.wallets` in permissions-handlers, and `AccessInput.wallets`
-  //   communities  `AccessInput.communities`, read via the `authMetadata as AccessInput` cast
-  //   nft          `AccessInput.nft`, read via that same cast
+  //   signer  the scene gate above; `metadata.signer` in comms-adapter-handler
+  //   intent  `metadata.intent` in comms-adapter-handler
+  //   secret  `authMetadata.secret` in comms-adapter-handler and world-comms-handler
   //
-  // The last four belong to routes the strict instance serves. They are listed anyway: the guard
-  // only checks keys that are actually delivered, so naming a field no handshake sends costs
-  // nothing, and it keeps the declaration correct if a route is ever moved onto this instance.
+  // Scoped to exactly the fields the three routes below read, so the list doubles as the statement
+  // of how far this temporary relaxation reaches. `type`, `wallets`, `communities` and `nft` are
+  // read by permissions handlers, which the strict instance serves; naming them here would cost
+  // nothing at runtime — the guard only inspects keys a request actually delivers — but it would
+  // describe a boundary wider than the one that exists, and moving a route onto this instance
+  // should be a deliberate edit rather than something already silently provided for.
   //
-  // Deliberately absent: `isGuest`, `origin`, `realmName`, `realm.serverName` and metadata `sceneId`
-  // are sent by the explorers but never read here, and an unread field cannot change an
-  // authorization decision. The scene comms route takes its `sceneId` from the URL path, not the
-  // metadata.
-  const explorerSignedFetchMiddleware = createSignedFetchMiddleware([
-    'signer',
-    'intent',
-    'secret',
-    'type',
-    'wallets',
-    'communities',
-    'nft'
-  ])
+  // Deliberately absent for the same reason: `isGuest`, `origin`, `realmName`, `realm.serverName`
+  // and metadata `sceneId` are sent by the explorers but never read here, and an unread field
+  // cannot change an authorization decision. The scene comms route takes its `sceneId` from the URL
+  // path, not the metadata.
+  const explorerSignedFetchMiddleware = createSignedFetchMiddleware(['signer', 'intent', 'secret'])
 
   const router = new Router<GlobalContext>()
   router.use(errorHandler)
