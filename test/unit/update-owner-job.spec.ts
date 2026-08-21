@@ -5,6 +5,8 @@ import { createMockLogs } from '../mocks/logs-mock'
 import { createMockBlockingComponent } from '../mocks/blocking-mock'
 import { IPgComponent } from '@dcl/pg-component'
 import { IBlockingComponent } from '../../src/adapters/blocking'
+import { createConfigComponent } from '@well-known-components/env-config-provider'
+import { IConfigComponent } from '@well-known-components/interfaces'
 
 describe('UpdateOwnerJob', () => {
   const badOwner = '0xbad0000000000000000000000000000000000001'
@@ -13,9 +15,11 @@ describe('UpdateOwnerJob', () => {
   let database: IPgComponent
   let blocking: jest.Mocked<IBlockingComponent>
   let logs: ReturnType<typeof createMockLogs>
+  let config: IConfigComponent
 
   beforeEach(() => {
     logs = createMockLogs()
+    config = createConfigComponent({})
     // Owners already match name ownership, so Step 1 performs no UPDATE and the only DB query
     // is the initial enumeration of worlds with deployed scenes.
     database = createDatabaseMock([
@@ -50,7 +54,7 @@ describe('UpdateOwnerJob', () => {
         )
       })
 
-      const job = await createUpdateOwnerJob({ blocking, database, logs, nameOwnership })
+      const job = await createUpdateOwnerJob({ blocking, config, database, logs, nameOwnership })
       await job.run()
     })
 
@@ -91,7 +95,7 @@ describe('UpdateOwnerJob', () => {
         )
       })
 
-      const job = await createUpdateOwnerJob({ blocking, database, logs, nameOwnership })
+      const job = await createUpdateOwnerJob({ blocking, config, database, logs, nameOwnership })
       await job.run()
     })
 

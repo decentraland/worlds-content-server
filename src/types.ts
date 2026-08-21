@@ -351,7 +351,7 @@ export type ValidatorComponents = Pick<
 
 export type MigratorComponents = Pick<
   AppComponents,
-  'logs' | 'database' | 'nameOwnership' | 'storage' | 'worldsManager'
+  'config' | 'logs' | 'database' | 'nameOwnership' | 'storage' | 'worldsManager'
 >
 
 export type Validation = (deployment: DeploymentToValidate) => ValidationResult | Promise<ValidationResult>
