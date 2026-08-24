@@ -13,9 +13,12 @@ export async function createLivekitClient({ config }: Pick<AppComponents, 'confi
   const host = await config.requireString('LIVEKIT_HOST')
   const apiKey = await config.requireString('LIVEKIT_API_KEY')
   const apiSecret = await config.requireString('LIVEKIT_API_SECRET')
+  const apiHost = await config.getString('LIVEKIT_API_HOST')
+
+  const endpoints = normalizeLivekitEndpoints(host, apiHost)
 
   const receiver = new WebhookReceiver(apiKey, apiSecret)
-  const roomService = new RoomServiceClient(`https://${host}`, apiKey, apiSecret)
+  const roomService = new RoomServiceClient(endpoints.apiHost, apiKey, apiSecret)
 
   return {
     async getRoom(roomId: string): Promise<Room | null> {
@@ -58,7 +61,7 @@ export async function createLivekitClient({ config }: Pick<AppComponents, 'confi
       })
       token.addGrant(grant)
       const jwt = await token.toJwt()
-      return `livekit:wss://${host}?access_token=${jwt}`
+      return `livekit:${endpoints.clientHost}?access_token=${jwt}`
     },
 
     receiveWebhookEvent: async (body: string, authorization: string): Promise<WebhookEvent> => {
@@ -69,4 +72,22 @@ export async function createLivekitClient({ config }: Pick<AppComponents, 'confi
       await roomService.removeParticipant(roomName, identity)
     }
   }
+}
+
+function normalizeLivekitEndpoints(
+  clientHost: string,
+  configuredApiHost?: string
+): {
+  clientHost: string
+  apiHost: string
+} {
+  if (!clientHost) {
+    return { clientHost, apiHost: configuredApiHost || clientHost }
+  }
+
+  const clientUrl = clientHost.includes('://') ? clientHost : `wss://${clientHost}`
+  const parsed = new URL(clientUrl)
+  const apiHost = configuredApiHost || `${parsed.protocol === 'ws:' ? 'http:' : 'https:'}//${parsed.host}`
+
+  return { clientHost: clientUrl, apiHost }
 }
