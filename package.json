@@ -51,7 +51,7 @@
   },
   "devDependencies": {
     "@dcl/eslint-config": "^2.2.1",
-    "@dcl/test-helpers": "^0.2.0",
+    "@dcl/test-helpers": "^0.3.2",
     "@redocly/cli": "^1.25.14",
     "@types/bcrypt": "^5.0.2",
     "@types/jest": "^29",

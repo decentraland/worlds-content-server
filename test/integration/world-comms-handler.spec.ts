@@ -1,5 +1,5 @@
 import { test } from '../components'
-import { getAuthHeaders, getIdentity, getLegacyAuthHeaders, Identity, signWith } from '../utils'
+import { getAuthHeaders, getAuthHeadersAt, getIdentity, getLegacyAuthHeaders, Identity, signWith } from '../utils'
 import { IAuthenticatedFetchComponent } from '../components/local-auth-fetch'
 import { IWorldsManager } from '../../src/types'
 import { AccessType } from '../../src/logic/access'
@@ -310,20 +310,15 @@ test('world comms handler', function ({ components, stubComponents }) {
         const path = `/worlds/${worldName}/comms`
         const r = await localFetch.fetch(path, {
           method: 'POST',
-          headers: getAuthHeaders(
-            'POST',
-            path,
-            EXPLORER_METADATA,
-            (payload) =>
-              Authenticator.signPayload(
-                {
-                  ephemeralIdentity: identity.ephemeralIdentity,
-                  expiration: new Date(),
-                  authChain: identity.authChain.authChain
-                },
-                payload
-              ),
-            Date.now() - 10 * 60 * 1000
+          headers: getAuthHeadersAt(Date.now() - 10 * 60 * 1000, 'POST', path, EXPLORER_METADATA, (payload) =>
+            Authenticator.signPayload(
+              {
+                ephemeralIdentity: identity.ephemeralIdentity,
+                expiration: new Date(),
+                authChain: identity.authChain.authChain
+              },
+              payload
+            )
           )
         })
 
