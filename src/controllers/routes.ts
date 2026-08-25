@@ -192,17 +192,55 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   //   secret  `authMetadata.secret` in comms-adapter-handler and world-comms-handler
   //
   // Scoped to exactly the fields the three routes below read, so the list doubles as the statement
-  // of how far this temporary relaxation reaches. `type`, `wallets`, `communities` and `nft` are
-  // read by permissions handlers, which the strict instance serves; naming them here would cost
-  // nothing at runtime — the guard only inspects keys a request actually delivers — but it would
-  // describe a boundary wider than the one that exists, and moving a route onto this instance
-  // should be a deliberate edit rather than something already silently provided for.
+  // of how far this temporary relaxation reaches. The permissions fields — `type`, `wallets`,
+  // `communities`, `nft`, `secret` — get their own instance below rather than being folded in here;
+  // naming them on this one would cost nothing at runtime, since the guard only inspects keys a
+  // request actually delivers, but it would describe a boundary wider than the one that exists, and
+  // moving a route between instances should be a deliberate edit.
   //
   // Deliberately absent for the same reason: `isGuest`, `origin`, `realmName`, `realm.serverName`
   // and metadata `sceneId` are sent by the explorers but never read here, and an unread field
   // cannot change an authorization decision. The scene comms route takes its `sceneId` from the URL
   // path, not the metadata.
   const explorerSignedFetchMiddleware = createSignedFetchMiddleware(['signer', 'intent', 'secret'])
+
+  // `POST /world/:world_name/permissions/:permission_name` only. creator-hub drives the world
+  // access dialogs through this route and still resolves decentraland-crypto-fetch 2.0.1, so it
+  // signs the folded payload. Everything it sends here carries uppercase — `{"type":"shared-secret",
+  // "secret":"…"}` for a password, camelCase wallet and community lists for an allow list — so every
+  // one of those calls 401s under 6.x. Setting a world password is the flow that breaks.
+  //
+  // It cannot be sequenced ahead of this deploy the way the builder and the CLI can: creator-hub is
+  // a shipped Electron desktop app, so old builds keep calling after the server updates. That is the
+  // same argument the explorer instance above exists for.
+  //
+  // Its other eight calls to this service send no metadata at all, so this is the only route that
+  // needs it — `PUT`/`DELETE` on the per-address permission routes stay strict.
+  //
+  // Keys read by `postPermissionsHandler`, plus the scene gate's:
+  //
+  //   signer                          the gate in `createSignedFetchMiddleware` above
+  //   type, wallets                   read directly for the deployment and streaming permissions
+  //   type, secret, wallets,          the whole metadata is cast to `AccessInput` for `access`
+  //     communities, nft
+  //
+  // What this cannot do, stated plainly: a key list binds key *spellings*. The fold puts property
+  // *values* outside the signature too, and no list can bind those. On this route that means a
+  // legacy-signed `secret` is malleable in transit — an attacker positioned to alter the request can
+  // change the password's casing. The bound is that they must already be able to read and rewrite a
+  // request the world's owner signed (`checkOwnership` gates on the recovered address), and the
+  // secret travels in cleartext in that same request, so they already know it: the reachable outcome
+  // is locking the owner out, not learning anything. Weighed against every creator-hub install being
+  // unable to set a world password, that is the better failure — but it is a real cost, and it is
+  // why this instance is scoped to one route and why the creator-hub bump is the actual fix.
+  const permissionsSignedFetchMiddleware = createSignedFetchMiddleware([
+    'signer',
+    'type',
+    'secret',
+    'wallets',
+    'communities',
+    'nft'
+  ])
 
   const router = new Router<GlobalContext>()
   router.use(errorHandler)
@@ -273,7 +311,11 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
 
   // Permissions endpoints
   router.get('/world/:world_name/permissions', getPermissionsHandler)
-  router.post('/world/:world_name/permissions/:permission_name', signedFetchMiddleware, postPermissionsHandler)
+  router.post(
+    '/world/:world_name/permissions/:permission_name',
+    permissionsSignedFetchMiddleware,
+    postPermissionsHandler
+  )
 
   // Address-specific permission endpoints
   // GET: Paginated parcels for a specific address

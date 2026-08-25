@@ -379,11 +379,23 @@ test('POST /world/:world_name/permissions/:permission_name', ({ components, stub
       )
     })
 
-    // The legacy fallback is scoped to the explorer comms handshakes. This route is builder and CLI
-    // traffic, whose callers can be released ahead of the service, so it stays on the current format
-    // only — the same request the comms routes now accept is still a 401 here.
-    it('should respond with 401 and an invalid signature error', async () => {
+    // creator-hub drives this route and ships as a desktop app, so it cannot be released ahead of
+    // the service the way the builder and the CLI can. `post-permissions-legacy-payload.spec.ts`
+    // covers what the fallback does and does not allow; this pins that the route is on it at all.
+    it('should respond with 204 rather than refuse the signature', async () => {
       const response = await localFetch.fetch(path, { method: 'POST', headers })
+
+      expect(response.status).toEqual(204)
+    })
+
+    // The fallback is scoped to this one route: the per-address permission routes serve builder and
+    // CLI traffic only, and the same folded payload is still a 401 there.
+    it('should still respond with 401 on the per-address permission route', async () => {
+      const addressPath = `/world/${worldName}/permissions/deployment/${identity.realAccount.address.toLowerCase()}`
+      const response = await localFetch.fetch(addressPath, {
+        method: 'PUT',
+        headers: getLegacyAuthHeaders('PUT', addressPath, BUILDER_METADATA, signWith(identity))
+      })
 
       expect(response.status).toEqual(401)
       expect(await response.json()).toMatchObject({ error: expect.stringMatching(/^Invalid signature:/) })
