@@ -3,6 +3,7 @@ import { getIdentity, getLegacyAuthHeaders, Identity, signWith } from '../../uti
 import { IAuthenticatedFetchComponent } from '../../components/local-auth-fetch'
 import { IWorldCreator, IWorldsManager } from '../../../src/types'
 import { AccessType } from '../../../src/logic/access'
+import { ISocialServiceComponent } from '../../../src/adapters/social-service'
 
 /**
  * Pins that creator-hub can still set world permissions.
@@ -18,6 +19,9 @@ import { AccessType } from '../../../src/logic/access'
  * `{ type, ...options }`.
  */
 const PASSWORD = 'MyPassWord123'
+
+/** Uppercase on purpose: what the CSV import form lets through unchanged. */
+const COMMUNITY_ID = 'B7B1E0D2-0000-4000-8000-000000000001'
 
 test('POST /world/:world_name/permissions/:permission_name with the pre-6.0.0 folded payload', ({
   components,
@@ -101,17 +105,27 @@ test('POST /world/:world_name/permissions/:permission_name with the pre-6.0.0 fo
       headers = getLegacyAuthHeaders(
         'POST',
         path,
-        { type: AccessType.AllowList, wallets: [], communities: ['B7B1E0D2-0000-4000-8000-000000000001'] },
+        { type: AccessType.AllowList, wallets: [], communities: [COMMUNITY_ID] },
         signWith(identity)
       )
+      ;(components.socialService as jest.Mocked<ISocialServiceComponent>).getMemberCommunities.mockResolvedValue({
+        communities: [{ id: COMMUNITY_ID }]
+      })
     })
 
-    it('should get past signed-fetch verification rather than be refused by it', async () => {
+    it('should respond with 204', async () => {
       const response = await localFetch.fetch(path, { method: 'POST', headers })
 
-      // What the handler then decides about an unknown community is a separate question; the point
-      // is that the request is no longer refused before reaching it.
-      expect(response.status).not.toEqual(401)
+      expect(response.status).toEqual(204)
+    })
+
+    it('should store the community id with its original casing', async () => {
+      // The point of accepting the older signature is that nothing is folded on the way in: the id
+      // the handler reads is the one the client sent, so membership is checked against that value.
+      await localFetch.fetch(path, { method: 'POST', headers })
+
+      const metadata = await worldsManager.getMetadataForWorld(worldName)
+      expect(metadata?.access).toMatchObject({ type: AccessType.AllowList, communities: [COMMUNITY_ID] })
     })
   })
 
