@@ -1,5 +1,5 @@
 import { test } from '../components'
-import { getAuthHeaders, getIdentity, getLegacyAuthHeaders, Identity, signWith } from '../utils'
+import { getAuthHeaders, getAuthHeadersAt, getIdentity, getLegacyAuthHeaders, Identity, signWith } from '../utils'
 import { IAuthenticatedFetchComponent } from '../components/local-auth-fetch'
 import { IWorldsManager } from '../../src/types'
 import { AccessType } from '../../src/logic/access'
@@ -247,6 +247,34 @@ test('world comms handler', function ({ components, stubComponents }) {
       }
     )
 
+    describe('and the signed-fetch metadata pairs a valid signer with a folded duplicate naming the kernel scene', () => {
+      let path: string
+      let metadata: Record<string, string>
+
+      beforeEach(() => {
+        path = `/worlds/${worldName}/comms`
+        // The exact key is present and canonical, with the hostile spelling sitting beside it. Up to
+        // 6.2.0 `rejectIfSigner` read the own property `signer`, found `dcl:explorer`, authorized on
+        // it and never looked at the duplicate -- so this request was served. 6.3.0's
+        // `hasFoldedVariant` makes any key case-folding to `signer` without being spelled exactly
+        // that a rejection, so the pair can no longer be split into the one the gate reads and the
+        // one it ignores.
+        metadata = { ...EXPLORER_METADATA, Signer: 'decentraland-kernel-scene' }
+      })
+
+      // Signed in the current format, so the declared-key guard never runs: `verify()` reaches
+      // `assertLegacyMetadataKeys` only after the strict check fails, and it does not fail here --
+      // the client chose the spelling before signing, so the delivered bytes are the signed bytes.
+      // The scene gate is the only thing inspecting this request's spelling, which is what makes
+      // this the shape the 6.3.0 guard closes rather than one the legacy path already refused.
+      it('should respond with 400 rather than authorize on the exactly-spelled key', async () => {
+        const r = await localFetch.fetch(path, { method: 'POST', identity, metadata })
+
+        expect(r.status).toEqual(400)
+        expect(await r.json()).toMatchObject({ error: expect.stringMatching(/^Invalid metadata content: /) })
+      })
+    })
+
     describe.each([
       ['a mixed-case spelling', 'Dcl:Explorer'],
       ['a padded spelling', ' dcl:explorer ']
@@ -310,20 +338,15 @@ test('world comms handler', function ({ components, stubComponents }) {
         const path = `/worlds/${worldName}/comms`
         const r = await localFetch.fetch(path, {
           method: 'POST',
-          headers: getAuthHeaders(
-            'POST',
-            path,
-            EXPLORER_METADATA,
-            (payload) =>
-              Authenticator.signPayload(
-                {
-                  ephemeralIdentity: identity.ephemeralIdentity,
-                  expiration: new Date(),
-                  authChain: identity.authChain.authChain
-                },
-                payload
-              ),
-            Date.now() - 10 * 60 * 1000
+          headers: getAuthHeadersAt(Date.now() - 10 * 60 * 1000, 'POST', path, EXPLORER_METADATA, (payload) =>
+            Authenticator.signPayload(
+              {
+                ephemeralIdentity: identity.ephemeralIdentity,
+                expiration: new Date(),
+                authChain: identity.authChain.authChain
+              },
+              payload
+            )
           )
         })
 
@@ -411,9 +434,8 @@ test('world comms handler', function ({ components, stubComponents }) {
 
       beforeEach(() => {
         path = `/worlds/${worldName}/comms`
-        // No lowercase `signer` at all, so `rejectIfSigner` reads the field as absent and the scene
-        // gate passes it. Folded, this metadata signs identically to the same object spelling the
-        // key `signer` — which is exactly the bypass the declared-key guard exists to close.
+        // No lowercase `signer` at all, so the scene gate would read the field as absent. Folded,
+        // this metadata signs identically to the same object spelling the key `signer`.
         const { signer: _omitted, ...withoutSigner } = EXPLORER_METADATA
         headers = getLegacyAuthHeaders(
           'POST',
@@ -423,12 +445,18 @@ test('world comms handler', function ({ components, stubComponents }) {
         )
       })
 
-      it('should respond with 400 and the declared-spelling error rather than run the handshake', async () => {
+      // Two guards refuse this and the earlier one answers. Since @dcl/crypto-middleware 6.3.0
+      // `rejectIfSigner` treats a key case-folding to `signer` as a rejection rather than an
+      // absence, and `metadataValidator` runs ahead of signature verification -- so the scene gate
+      // replies before `assertLegacyMetadataKeys` is consulted. The declared-key guard still
+      // refuses it a step later; what the gate adds is the current-format path, where the declared
+      // keys are never looked at. Both are 400s.
+      it('should respond with 400 from the scene gate rather than run the handshake', async () => {
         const r = await localFetch.fetch(path, { method: 'POST', headers })
 
         expect(r.status).toEqual(400)
         expect(await r.json()).toMatchObject({
-          error: expect.stringContaining('Invalid chain metadata: expected "signer", got "Signer"')
+          error: expect.stringContaining('Invalid metadata content')
         })
       })
     })

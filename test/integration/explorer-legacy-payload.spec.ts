@@ -97,8 +97,7 @@ test('explorer legacy signed payload', function ({ components, stubComponents })
 
         beforeEach(() => {
           // No lowercase `signer` at all, so the scene gate would read the field as absent. Folded,
-          // this metadata signs identically to the same object spelling the key `signer`, which is
-          // the bypass the declared-key guard closes.
+          // this metadata signs identically to the same object spelling the key `signer`.
           const { signer: _omitted, ...withoutSigner } = EXPLORER_METADATA
           headers = getLegacyAuthHeaders(
             'POST',
@@ -108,12 +107,18 @@ test('explorer legacy signed payload', function ({ components, stubComponents })
           )
         })
 
-        it('should respond with 400 and the declared-spelling error rather than run the handshake', async () => {
+        // Two guards refuse this and the earlier one answers. Since @dcl/crypto-middleware 6.3.0
+        // `rejectIfSigner` treats a key case-folding to `signer` as a rejection rather than an
+        // absence, and `metadataValidator` runs ahead of signature verification -- so the scene
+        // gate replies before `assertLegacyMetadataKeys` is consulted. The declared-key guard still
+        // refuses it a step later; what the gate adds is the current-format path, where the
+        // declared keys are never looked at. Both are 400s.
+        it('should respond with 400 from the scene gate rather than run the handshake', async () => {
           const r = await localFetch.fetch(path, { method: 'POST', headers })
 
           expect(r.status).toEqual(400)
           expect(await r.json()).toMatchObject({
-            error: expect.stringContaining('Invalid chain metadata: expected "signer", got "Signer"')
+            error: expect.stringContaining('Invalid metadata content')
           })
         })
       })

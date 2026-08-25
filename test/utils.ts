@@ -1,14 +1,17 @@
-import { createUnsafeIdentity } from '@dcl/crypto/dist/crypto'
-import { Authenticator, AuthIdentity, IdentityType } from '@dcl/crypto'
+import { Authenticator } from '@dcl/crypto'
 import { Readable } from 'stream'
 import { IContentStorageComponent } from '@dcl/catalyst-storage'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { AuthChain } from '@dcl/schemas'
 import { AUTH_CHAIN_HEADER_PREFIX, AUTH_METADATA_HEADER, AUTH_TIMESTAMP_HEADER } from '@dcl/crypto-middleware'
 import { IPgComponent } from '@dcl/pg-component'
+import { getAuthHeaders, getIdentity, type Identity } from '@dcl/test-helpers'
 import { IWorldsManager } from '../src/types'
 
-export type Identity = { authChain: AuthIdentity; realAccount: IdentityType; ephemeralIdentity: IdentityType }
+// The modern ADR-44 payload is deliberately not rebuilt here: `@dcl/test-helpers` owns it, so it
+// stays in step with `@dcl/crypto-middleware` instead of drifting in a hand-rolled copy per repo.
+export { getAuthHeaders, getIdentity }
+export type { Identity }
 
 export async function storeJson(storage: IContentStorageComponent, fileId: string, data: any) {
   const buffer = stringToUtf8Bytes(JSON.stringify(data))
@@ -40,47 +43,29 @@ export async function cleanup(storage: IContentStorageComponent, db: IPgComponen
   await db.query(`TRUNCATE worlds, world_scenes CASCADE`)
 }
 
-export async function getIdentity(ephemeralKeyTTLInMinutes = 10): Promise<Identity> {
-  const ephemeralIdentity = createUnsafeIdentity()
-  const realAccount = createUnsafeIdentity()
-
-  const authChain = await Authenticator.initializeAuthChain(
-    realAccount.address,
-    ephemeralIdentity,
-    ephemeralKeyTTLInMinutes,
-    async (message) => {
-      return Authenticator.createSignature(realAccount, message)
-    }
-  )
-
-  return { authChain, realAccount, ephemeralIdentity }
-}
-
-export function getAuthHeaders(
+/**
+ * Builds modern ADR-44 headers stamped with a caller-chosen `timestamp`, so rejection tests can sign
+ * a genuinely expired payload instead of merely tampering with an otherwise valid request.
+ *
+ * The shared helper always stamps `Date.now()` and exposes no timestamp parameter, so the clock is
+ * pinned around the call rather than the payload being rebuilt here — the format keeps living in
+ * exactly one place. Both the helper and `chainProvider` are synchronous, so nothing else observes
+ * the pinned clock, and `new Date()` (which the auth chain's expiration uses) is left alone.
+ */
+export function getAuthHeadersAt(
+  timestamp: number,
   method: string,
   pathname: string,
   metadata: Record<string, any>,
-  chainProvider: (payload: string) => AuthChain,
-  timestamp = Date.now()
+  chainProvider: (payload: string) => AuthChain
 ) {
-  const headers: Record<string, string> = {}
-  const metadataJSON = JSON.stringify(metadata)
-  // Matches `createPayload` in @dcl/crypto-middleware 6: the method, path and timestamp are
-  // lowercased, then the metadata JSON is joined verbatim. The whole-payload `.toLowerCase()` the
-  // pre-6 format applied left metadata casing outside the signature; signing the raw bytes binds it.
-  const payloadParts = [method.toLowerCase(), pathname.toLowerCase(), timestamp.toString(), metadataJSON]
-  const payloadToSign = payloadParts.join(':')
-
-  const chain = chainProvider(payloadToSign)
-
-  chain.forEach((link, index) => {
-    headers[`${AUTH_CHAIN_HEADER_PREFIX}${index}`] = JSON.stringify(link)
-  })
-
-  headers[AUTH_TIMESTAMP_HEADER] = timestamp.toString()
-  headers[AUTH_METADATA_HEADER] = metadataJSON
-
-  return headers
+  const realNow = Date.now
+  Date.now = () => timestamp
+  try {
+    return getAuthHeaders(method, pathname, metadata, chainProvider)
+  } finally {
+    Date.now = realNow
+  }
 }
 
 /**
@@ -89,6 +74,9 @@ export function getAuthHeaders(
  * the signature, and it is still the format every explorer client emits.
  *
  * Only the routes that opt in via `canonicalMetadataKeys` verify this; everywhere else it is a 401.
+ *
+ * `@dcl/test-helpers` has no equivalent by design — it only builds the current payload — so this one
+ * stays local. Importing the shared helper here would delete the coverage of that fallback path.
  */
 export function getLegacyAuthHeaders(
   method: string,
