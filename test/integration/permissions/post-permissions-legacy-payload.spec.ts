@@ -197,12 +197,18 @@ test('POST /world/:world_name/permissions/:permission_name with the pre-6.0.0 fo
       )
     })
 
-    it('should respond with 400 and the declared-spelling error', async () => {
+    // Two guards refuse this and the earlier one answers. Since @dcl/crypto-middleware 6.3.0
+    // `rejectIfSigner` treats a key case-folding to `signer` as a rejection rather than an absence,
+    // and `metadataValidator` runs ahead of signature verification -- so the scene gate replies
+    // before `assertLegacyMetadataKeys` is consulted. The declared-key guard still refuses it a
+    // step later; what the gate adds is the current-format path, where the declared keys are never
+    // looked at. Both are 400s.
+    it('should respond with 400 from the scene gate', async () => {
       const response = await localFetch.fetch(path, { method: 'POST', headers })
 
       expect(response.status).toEqual(400)
       expect(await response.json()).toMatchObject({
-        error: expect.stringContaining('Invalid chain metadata: expected "signer", got "Signer"')
+        error: expect.stringContaining('Invalid metadata content')
       })
     })
   })
