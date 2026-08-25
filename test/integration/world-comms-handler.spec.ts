@@ -1,5 +1,5 @@
 import { test } from '../components'
-import { getAuthHeaders, getIdentity, Identity } from '../utils'
+import { getAuthHeaders, getIdentity, getLegacyAuthHeaders, Identity, signWith } from '../utils'
 import { IAuthenticatedFetchComponent } from '../components/local-auth-fetch'
 import { IWorldsManager } from '../../src/types'
 import { AccessType } from '../../src/logic/access'
@@ -224,42 +224,67 @@ test('world comms handler', function ({ components, stubComponents }) {
       })
     })
 
-    describe('and the signed-fetch metadata has a signer spelled in mixed case', () => {
-      // `getAuthHeaders` lowercases the payload before signing, so this signature is byte-identical
-      // to the canonical-signer one above while the delivered header keeps its casing. Without the
-      // library's canonical-metadata guard the mixed-case spelling slips past the strict
-      // `!== 'decentraland-kernel-scene'` check in routes.ts and the scene request is served as a
-      // directly user-signed one.
-      it('should respond with 400 rather than let it past the scene gate', async () => {
+    describe.each([['Decentraland-Kernel-Scene'], ['DECENTRALAND-KERNEL-SCENE'], [' decentraland-kernel-scene ']])(
+      'and the signed-fetch metadata spells the kernel-scene signer as "%s"',
+      (signer) => {
+        // @dcl/crypto-middleware 6 signs the metadata bytes verbatim, so what the header carries is
+        // exactly what was signed and the request reaches the router with a valid signature. The
+        // library no longer rejects a non-canonical `signer` on its own; the scene gate in routes.ts
+        // normalizes the value before comparing, and that is what refuses the request here.
+        it('should respond with 400 rather than let it past the scene gate', async () => {
+          const r = await localFetch.fetch(`/worlds/${worldName}/comms`, {
+            method: 'POST',
+            identity,
+            metadata: {
+              ...EXPLORER_METADATA,
+              signer
+            }
+          })
+
+          expect(r.status).toEqual(400)
+          expect(await r.json()).toMatchObject({ error: expect.stringMatching(/^Invalid metadata content: /) })
+        })
+      }
+    )
+
+    describe.each([
+      ['a mixed-case spelling', 'Dcl:Explorer'],
+      ['a padded spelling', ' dcl:explorer ']
+    ])('and signed-fetch metadata has a non-canonical signer in %s', (_case, value) => {
+      // `rejectIfSigner` refuses a `signer` that is not already canonical, not merely one matching
+      // the sentinel. That is deliberate: the gate compares by equality, and a value it cannot
+      // compare meaningfully is refused rather than waved through. So a non-canonical `dcl:explorer`
+      // is rejected too, even though it is not the scene signer.
+      it('should respond with 400', async () => {
         const r = await localFetch.fetch(`/worlds/${worldName}/comms`, {
           method: 'POST',
           identity,
-          metadata: {
-            ...EXPLORER_METADATA,
-            signer: 'Decentraland-Kernel-Scene'
-          }
+          metadata: { ...EXPLORER_METADATA, signer: value }
         })
 
         expect(r.status).toEqual(400)
-        expect(await r.json()).toMatchObject({ error: expect.stringMatching(/^Invalid chain metadata: /) })
       })
     })
 
     describe.each([
-      ['signer', 'Dcl:Explorer'],
-      ['signer', ' dcl:explorer '],
-      ['intent', 'Dcl:Explorer:Comms-Handshake'],
-      ['intent', ' dcl:explorer:comms-handshake ']
-    ])('and signed-fetch metadata has a non-canonical %s', (field, value) => {
-      it('should respond with the middleware metadata-validation 400', async () => {
+      ['a mixed-case spelling', 'Dcl:Explorer:Comms-Handshake'],
+      ['a padded spelling', ' dcl:explorer:comms-handshake ']
+    ])('and signed-fetch metadata has a non-canonical intent in %s', (_case, value) => {
+      // `intent` is not gated on this route, so nothing refuses it. Up to 5.1.0 the library did,
+      // via a canonical guard it applied to every request; 6.x leaves that to the service, and this
+      // route has no reason to care. The value is still bound to the signature, so it cannot be
+      // re-spelled in flight — this is a request genuinely signed that way.
+      //
+      // Note the /comms adapter route DOES compare `intent`; if that check ever moves here it
+      // should use requireCanonicalField('intent', ...) rather than a bare equality.
+      it('should respond with 200', async () => {
         const r = await localFetch.fetch(`/worlds/${worldName}/comms`, {
           method: 'POST',
           identity,
-          metadata: { ...EXPLORER_METADATA, [field]: value }
+          metadata: { ...EXPLORER_METADATA, intent: value }
         })
 
-        expect(r.status).toEqual(400)
-        expect(await r.json()).toMatchObject({ error: expect.stringMatching(/^Invalid chain metadata: /) })
+        expect(r.status).toEqual(200)
       })
     })
 
@@ -355,6 +380,82 @@ test('world comms handler', function ({ components, stubComponents }) {
 
         expect(r.status).toEqual(401)
         expect(await r.json()).toMatchObject({ error: expect.stringMatching(/^Invalid signature:/) })
+      })
+    })
+
+    describe('and the auth chain signs the pre-6.0.0 folded payload', () => {
+      let path: string
+      let headers: Record<string, string>
+
+      beforeEach(() => {
+        path = `/worlds/${worldName}/comms`
+        headers = getLegacyAuthHeaders('POST', path, EXPLORER_METADATA, signWith(identity))
+      })
+
+      // `isGuest` alone makes folding the metadata a lossy operation, so the current-format check
+      // cannot verify this and falls through. The comms routes opt into the fallback because the
+      // three explorer clients still sign this way and cannot be released with the service.
+      it('should respond with 200 and the connection string', async () => {
+        const r = await localFetch.fetch(path, { method: 'POST', headers })
+
+        expect(r.status).toEqual(200)
+        expect(await r.json()).toEqual({
+          fixedAdapter: `ws-room:ws-room-service.decentraland.org/rooms/world-${worldName}`
+        })
+      })
+    })
+
+    describe('and the pre-6.0.0 payload delivers the scene signer under a re-cased key', () => {
+      let path: string
+      let headers: Record<string, string>
+
+      beforeEach(() => {
+        path = `/worlds/${worldName}/comms`
+        // No lowercase `signer` at all, so `rejectIfSigner` reads the field as absent and the scene
+        // gate passes it. Folded, this metadata signs identically to the same object spelling the
+        // key `signer` — which is exactly the bypass the declared-key guard exists to close.
+        const { signer: _omitted, ...withoutSigner } = EXPLORER_METADATA
+        headers = getLegacyAuthHeaders(
+          'POST',
+          path,
+          { ...withoutSigner, Signer: 'decentraland-kernel-scene' },
+          signWith(identity)
+        )
+      })
+
+      it('should respond with 400 and the declared-spelling error rather than run the handshake', async () => {
+        const r = await localFetch.fetch(path, { method: 'POST', headers })
+
+        expect(r.status).toEqual(400)
+        expect(await r.json()).toMatchObject({
+          error: expect.stringContaining('Invalid chain metadata: expected "signer", got "Signer"')
+        })
+      })
+    })
+
+    describe('and the pre-6.0.0 payload delivers a re-cased secret', () => {
+      let path: string
+      let headers: Record<string, string>
+
+      beforeEach(() => {
+        path = `/worlds/${worldName}/comms`
+        headers = getLegacyAuthHeaders(
+          'POST',
+          path,
+          { ...EXPLORER_METADATA, Secret: 'a-shared-secret' },
+          signWith(identity)
+        )
+      })
+
+      // `secret` is declared because both comms handlers authorize on it. A spelling the handler
+      // would read as absent is refused outright rather than folded into the canonical one.
+      it('should respond with 400 and the declared-spelling error', async () => {
+        const r = await localFetch.fetch(path, { method: 'POST', headers })
+
+        expect(r.status).toEqual(400)
+        expect(await r.json()).toMatchObject({
+          error: expect.stringContaining('Invalid chain metadata: expected "secret", got "Secret"')
+        })
       })
     })
 

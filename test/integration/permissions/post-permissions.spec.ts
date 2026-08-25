@@ -1,5 +1,5 @@
 import { test } from '../../components'
-import { getIdentity, Identity } from '../../utils'
+import { getIdentity, getLegacyAuthHeaders, Identity, signWith } from '../../utils'
 import { IAuthenticatedFetchComponent } from '../../components/local-auth-fetch'
 import { IWorldCreator, IWorldsManager } from '../../../src/types'
 import { IPermissionsComponent, PermissionType } from '../../../src/logic/permissions'
@@ -362,6 +362,43 @@ test('POST /world/:world_name/permissions/:permission_name', ({ components, stub
         error: 'Invalid Auth Chain',
         message: 'This endpoint requires a signed fetch request. See ADR-44.'
       })
+    })
+  })
+
+  describe('when the auth chain signs the pre-6.0.0 folded payload', () => {
+    let path: string
+    let headers: Record<string, string>
+
+    beforeEach(() => {
+      path = `/world/${worldName}/permissions/access`
+      headers = getLegacyAuthHeaders(
+        'POST',
+        path,
+        { ...BUILDER_METADATA, type: AccessType.Unrestricted },
+        signWith(identity)
+      )
+    })
+
+    // creator-hub drives this route and ships as a desktop app, so it cannot be released ahead of
+    // the service the way the builder and the CLI can. `post-permissions-legacy-payload.spec.ts`
+    // covers what the fallback does and does not allow; this pins that the route is on it at all.
+    it('should respond with 204 rather than refuse the signature', async () => {
+      const response = await localFetch.fetch(path, { method: 'POST', headers })
+
+      expect(response.status).toEqual(204)
+    })
+
+    // The fallback is scoped to this one route: the per-address permission routes serve builder and
+    // CLI traffic only, and the same folded payload is still a 401 there.
+    it('should still respond with 401 on the per-address permission route', async () => {
+      const addressPath = `/world/${worldName}/permissions/deployment/${identity.realAccount.address.toLowerCase()}`
+      const response = await localFetch.fetch(addressPath, {
+        method: 'PUT',
+        headers: getLegacyAuthHeaders('PUT', addressPath, BUILDER_METADATA, signWith(identity))
+      })
+
+      expect(response.status).toEqual(401)
+      expect(await response.json()).toMatchObject({ error: expect.stringMatching(/^Invalid signature:/) })
     })
   })
 })

@@ -65,8 +65,11 @@ export function getAuthHeaders(
 ) {
   const headers: Record<string, string> = {}
   const metadataJSON = JSON.stringify(metadata)
+  // Matches `createPayload` in @dcl/crypto-middleware 6: the method, path and timestamp are
+  // lowercased, then the metadata JSON is joined verbatim. The whole-payload `.toLowerCase()` the
+  // pre-6 format applied left metadata casing outside the signature; signing the raw bytes binds it.
   const payloadParts = [method.toLowerCase(), pathname.toLowerCase(), timestamp.toString(), metadataJSON]
-  const payloadToSign = payloadParts.join(':').toLowerCase()
+  const payloadToSign = payloadParts.join(':')
 
   const chain = chainProvider(payloadToSign)
 
@@ -78,6 +81,49 @@ export function getAuthHeaders(
   headers[AUTH_METADATA_HEADER] = metadataJSON
 
   return headers
+}
+
+/**
+ * Builds ADR-44 headers signing the **pre-6.0.0** payload: method, path, timestamp and metadata are
+ * joined and then folded as a whole. Folding the metadata bytes is what left their casing outside
+ * the signature, and it is still the format every explorer client emits.
+ *
+ * Only the routes that opt in via `canonicalMetadataKeys` verify this; everywhere else it is a 401.
+ */
+export function getLegacyAuthHeaders(
+  method: string,
+  pathname: string,
+  metadata: Record<string, any>,
+  chainProvider: (payload: string) => AuthChain,
+  timestamp = Date.now()
+) {
+  const headers: Record<string, string> = {}
+  const metadataJSON = JSON.stringify(metadata)
+  const payloadToSign = [method, pathname, timestamp.toString(), metadataJSON].join(':').toLowerCase()
+
+  const chain = chainProvider(payloadToSign)
+
+  chain.forEach((link, index) => {
+    headers[`${AUTH_CHAIN_HEADER_PREFIX}${index}`] = JSON.stringify(link)
+  })
+
+  headers[AUTH_TIMESTAMP_HEADER] = timestamp.toString()
+  headers[AUTH_METADATA_HEADER] = metadataJSON
+
+  return headers
+}
+
+/** Signs a payload with the ephemeral identity, as a `chainProvider` for the helpers above. */
+export function signWith(identity: Identity): (payload: string) => AuthChain {
+  return (payload: string) =>
+    Authenticator.signPayload(
+      {
+        ephemeralIdentity: identity.ephemeralIdentity,
+        expiration: new Date(),
+        authChain: identity.authChain.authChain
+      },
+      payload
+    )
 }
 
 export async function hasWorldSceneIncludingUndeployed(
