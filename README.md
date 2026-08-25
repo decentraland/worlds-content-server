@@ -183,6 +183,24 @@ docker run --name wcs -p 3000:3000 \
 
 For a deployment to be accepted by this server, the wallet deploying must own a DCL name. The scene must specify the name of the world in `scene.json`, and that DCL name must be owned by the wallet signing the deployment.
 
+#### Development-only name ownership bypass
+
+Private development and test fixtures can explicitly bypass the DCL/ENS name ownership check for scene deployments:
+
+```bash
+cp development.env.example .env
+yarn dev
+```
+
+The file is an opt-in overlay and is never loaded automatically.
+
+This variable is intentionally not included in `.env.default`. When enabled, the service does not query the Marketplace
+subgraph, accepts deployments under any valid world name, and stores the signing wallet as the world owner. Signature,
+scene, content, denylist, size, and parcel validations still apply.
+
+This is an insecure development-only mode: any wallet with a valid auth chain can deploy under any name. Never enable it
+on a public or production Worlds Content Server. An unset variable is always treated as `false`.
+
 For more details on deploying scenes, please check out [the documentation](https://docs.decentraland.org/creator/worlds/about/#publish-a-world).
 
 ### Deploying using the CLI tool

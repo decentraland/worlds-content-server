@@ -1,4 +1,5 @@
 import { AppComponents, ILimitsManager, MB_BigInt, Whitelist } from '../types'
+import { isNameOwnershipValidationIgnored } from '../logic/name-ownership-validation'
 
 const bigIntMax = (...args: bigint[]) => args.reduce((m, e) => (e > m ? e : m))
 
@@ -37,6 +38,12 @@ export async function createLimitsManagerComponent({
       return currentWhitelist[worldName]?.max_parcels || hardMaxParcels
     },
     async getMaxAllowedSizeInBytesFor(worldName: string, parcels?: string[]): Promise<bigint> {
+      if (await isNameOwnershipValidationIgnored(config)) {
+        // The fixture has no wallet/subgraph state. Keep the configured hard
+        // limit while the explicit bypass is enabled instead of trying to
+        // resolve ownership through an external service.
+        return BigInt(hardMaxSize) * MB_BigInt
+      }
       if (worldName.endsWith('.eth') && !worldName.endsWith('.dcl.eth')) {
         return BigInt(hardMaxSizeForEns) * MB_BigInt
       }

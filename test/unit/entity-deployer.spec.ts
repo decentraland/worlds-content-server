@@ -1,9 +1,12 @@
 import { Readable } from 'stream'
+import { Authenticator } from '@dcl/crypto'
 import { Entity, EntityType, Events, WorldSettingsChangedEvent } from '@dcl/schemas'
 import { generateLazyValidator } from '@dcl/schemas/dist/validation'
 import { createEntityDeployer, DEFAULT_STORAGE_UPLOAD_CONCURRENCY } from '../../src/adapters/entity-deployer'
 import { AppComponents, DeploymentFile, IEntityDeployer } from '../../src/types'
 import { createDeploymentProcessingMock } from '../mocks/deployment-processing-mock'
+import { createSceneDeployment } from './validations/shared'
+import { getIdentity } from '../utils'
 
 const unrestrictedReplacementAuthorization = { mode: 'unrestricted-owner' } as const
 
@@ -702,5 +705,37 @@ describe('entity deployer', () => {
         expect.objectContaining({ worldName: 'world.dcl.eth' })
       )
     })
+  })
+
+  it('uses the auth-chain owner when name ownership validation is ignored', async () => {
+    const identity = await getIdentity()
+    const deployment = await createSceneDeployment(identity.authChain)
+    const setup = createComponents(jest.fn().mockResolvedValue(undefined), 2)
+    ;(setup.components.config.getString as jest.Mock).mockImplementation(async (key: string) =>
+      key === 'IGNORE_NAME_OWNERSHIP_VALIDATION' ? 'true' : undefined
+    )
+    const deployer = createEntityDeployer(setup.components)
+
+    await deployer.deployEntity(
+      'https://worlds.example',
+      deployment.entity,
+      deployment.contentHashesInStorage,
+      deployment.files,
+      JSON.stringify(deployment.entity),
+      deployment.authChain,
+      0,
+      undefined,
+      undefined,
+      unrestrictedReplacementAuthorization
+    )
+
+    expect(setup.worldsDeployScene).toHaveBeenCalledWith(
+      'whatever.dcl.eth',
+      deployment.entity,
+      Authenticator.ownerAddress(deployment.authChain),
+      unrestrictedReplacementAuthorization,
+      expect.objectContaining({ authChain: deployment.authChain, size: 0 })
+    )
+    expect(setup.components.nameOwnership.findOwners).not.toHaveBeenCalled()
   })
 })
