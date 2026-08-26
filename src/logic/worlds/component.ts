@@ -2,6 +2,7 @@ import { Events, WorldUndeploymentEvent } from '@dcl/schemas'
 import { AppComponents, TWO_DAYS_IN_MS, WorldManifest } from '../../types'
 import { IWorldsComponent } from './types'
 import { buildWorldScenesUndeploymentEvent } from './world-scenes-undeployment-event'
+import { publishWorldEventWithRetry } from './publish-world-event'
 
 /**
  * Creates the Worlds component
@@ -191,7 +192,7 @@ export const createWorldsComponent = (
       }
     }
 
-    await snsClient.publishMessages([event])
+    await publishWorldEventWithRetry(snsClient, logger, event)
 
     await recheckBlockedOwner(blockedOwner)
   }
@@ -239,7 +240,7 @@ export const createWorldsComponent = (
           omittedFootprints
         })
       }
-      await snsClient.publishMessages([event])
+      await publishWorldEventWithRetry(snsClient, logger, event)
     }
 
     await recheckBlockedOwner(blockedOwner)
