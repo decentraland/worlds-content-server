@@ -1,9 +1,10 @@
 import { createConfigComponent } from '@well-known-components/env-config-provider'
 import { IFetchComponent } from '@dcl/core-commons'
-import { createCommsAdapterComponent } from '../../src/adapters/comms-adapter'
+import { createCommsAdapterComponent, presenceSourcedAdapter } from '../../src/adapters/comms-adapter'
 import { createLogComponent } from '@well-known-components/logger'
 import { createTestMetricsComponent } from '@dcl/metrics'
 import { ILoggerComponent } from '@well-known-components/interfaces'
+import { createMockCommsAdapterComponent } from '../mocks/comms-adapter-mock'
 import { createMockLivekitClient } from '../mocks/livekit-client-mock'
 import { createMockLogs } from '../mocks/logs-mock'
 import { metricDeclarations } from '../../src/metrics'
@@ -733,6 +734,16 @@ describe('comms-adapter', function () {
         expect(new Date(status.timestamp).toISOString()).toBe(realmsGolden.body.lastUpdated)
       })
 
+      it('should read Pulse once per TTL, not once per request', async () => {
+        // The wrapper's own cache is the *only* layer in front of the Pulse-sourced answer, and it
+        // mirrors the transport adapter's TTL so swapping the source does not change how often the
+        // upstream is polled.
+        await commsAdapter.status()
+        await commsAdapter.status()
+
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+      })
+
       it('should not invent a commit hash the transport does not publish', () => {
         // The livekit transport never sets `commitHash`, so neither may the Pulse-sourced answer:
         // the `/status` `comms` key set must not drift with the presence source.
@@ -938,6 +949,49 @@ describe('comms-adapter', function () {
           livekitUsers: 5,
           pulseUsers: 1
         })
+      })
+    })
+
+    describe('when PRESENCE_SOURCE is both and status is asked for twice', () => {
+      // `both` must not stack a second cache in front of the transport adapter's own 60 s cache:
+      // two layers in series let `/live-data` serve an answer up to 2xTTL old and make every shadow
+      // comparison pair a fresh Pulse read with a LiveKit answer up to a TTL stale, biasing the
+      // recorded divergence towards "LiveKit is behind" exactly while WP10 reads it. So every call
+      // reaches the transport adapter (whose cache is the only layer), while the *comparison* stays
+      // throttled to one Pulse read per TTL.
+      let transportStatus: jest.Mock
+
+      beforeEach(async () => {
+        transportStatus = jest.fn().mockResolvedValue({
+          adapterType: 'livekit',
+          statusUrl: 'https://livekit.dcl.org/',
+          rooms: 1,
+          users: 1,
+          details: [{ worldName: 'cozyfarm.dcl.eth', users: 1 }],
+          timestamp: Date.now()
+        })
+        const commsAdapter = presenceSourcedAdapter(
+          { fetch: { fetch: fetchMock } as unknown as IFetchComponent, logs, metrics },
+          { ...createMockCommsAdapterComponent(), status: transportStatus },
+          {
+            presenceSource: 'both',
+            pulseUrl: PULSE_URL,
+            adapterType: 'livekit',
+            statusUrl: 'https://livekit.dcl.org/',
+            publishesCommitHash: false
+          }
+        )
+
+        await commsAdapter.status()
+        await commsAdapter.status()
+      })
+
+      it('should ask the transport adapter every time instead of caching its answer again', () => {
+        expect(transportStatus).toHaveBeenCalledTimes(2)
+      })
+
+      it('should still read Pulse only once per TTL', () => {
+        expect(fetchMock).toHaveBeenCalledTimes(1)
       })
     })
 

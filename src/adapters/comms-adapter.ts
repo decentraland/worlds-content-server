@@ -257,7 +257,7 @@ function getWsRoomStatusUrl(fixedAdapter: string): string {
   return urlWithProtocol.replace(/rooms\/.*/, 'status')
 }
 
-type PresenceSourceOptions = {
+export type PresenceSourceOptions = {
   presenceSource: PresenceSource
   pulseUrl: string | undefined
   /** Kept verbatim from the transport: `adapterType`/`statusUrl` describe the transport, not the counter. */
@@ -280,7 +280,7 @@ type PresenceSourceOptions = {
  * With the default `PRESENCE_SOURCE=livekit` the transport adapter is returned untouched, so the
  * behaviour is identical to before this switch existed.
  */
-function presenceSourcedAdapter(
+export function presenceSourcedAdapter(
   { fetch, logs, metrics }: Pick<AppComponents, 'fetch' | 'logs' | 'metrics'>,
   transportAdapter: ICommsAdapter,
   { presenceSource, pulseUrl, adapterType, statusUrl, publishesCommitHash }: PresenceSourceOptions
@@ -384,33 +384,52 @@ function presenceSourcedAdapter(
     })
   }
 
+  /** Wall clock of the earliest next shadow comparison; `0` means "compare on the first call". */
+  let nextShadowComparisonAt = 0
+
+  /**
+   * `both` serves the transport adapter's own answer, and that adapter already caches for one TTL.
+   * Stacking a second cache in front of it would let `/live-data` serve an answer up to twice the
+   * TTL old, and would pair every shadow comparison with a LiveKit side up to a TTL stale — biasing
+   * the recorded divergence towards "LiveKit is behind" exactly while WP10 reads it. So the served
+   * answer passes straight through and only the *comparison* is throttled, which keeps Pulse to one
+   * read per TTL whatever the request rate.
+   */
   async function shadowedTransportStatus(): Promise<CommsStatus> {
-    const [livekitStatus, pulse] = await Promise.all([
-      // Typed as `CommsStatus`, but `cachingAdapter` hands back `undefined` when its very first
-      // poll fails with nothing stale to fall back on. Guarding here keeps a transport outage from
-      // turning into a comparison crash: the shadow is dropped, never the served answer.
-      transportAdapter.status() as Promise<CommsStatus | undefined>,
-      pulseStatus().catch((error: any) => {
+    // Typed as `CommsStatus`, but `cachingAdapter` hands back `undefined` when its very first poll
+    // fails with nothing stale to fall back on. Guarding here keeps a transport outage from turning
+    // into a comparison crash: the shadow is dropped, never the served answer.
+    const transportStatus = (await transportAdapter.status()) as CommsStatus | undefined
+
+    if (transportStatus && Date.now() >= nextShadowComparisonAt) {
+      nextShadowComparisonAt = Date.now() + STATUS_CACHE_TTL_MS
+
+      const pulse = await pulseStatus().catch((error: any) => {
         logger.warn(`Error retrieving the Pulse presence shadow: ${error.message}`)
         return undefined
       })
-    ])
 
-    if (livekitStatus && pulse) {
-      recordShadowDiff(livekitStatus, pulse)
+      if (pulse) {
+        recordShadowDiff(transportStatus, pulse)
+      }
     }
 
-    return livekitStatus as CommsStatus
+    return transportStatus ?? emptyStatus()
   }
 
-  // Mirrors the transport adapter's own cache so swapping the source does not change how often the
-  // service is polled — and, in `both`, keeps the shadow comparison to one per TTL.
+  if (presenceSource === 'both') {
+    return { ...transportAdapter, status: shadowedTransportStatus }
+  }
+
+  // Under `pulse` the Pulse read *is* the served answer, so it gets the same 60 s cache the
+  // transport adapter keeps for its own source: swapping the source must not change how often the
+  // upstream is polled. This is the only cache in front of the answer.
   const cache = new LRUCache<string, CommsStatus>({
     max: 1,
     ttl: STATUS_CACHE_TTL_MS,
     fetchMethod: async (_, staleValue): Promise<CommsStatus | undefined> => {
       try {
-        return presenceSource === 'both' ? await shadowedTransportStatus() : await pulseStatus()
+        return await pulseStatus()
       } catch (error: any) {
         logger.warn(`Error retrieving comms status: ${error.message}`)
         return staleValue
