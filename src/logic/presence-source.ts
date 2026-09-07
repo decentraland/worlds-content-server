@@ -173,5 +173,13 @@ export async function fetchPulsePeerRealm(
     throw error
   }
 
-  return body?.ok && body.peer?.realm ? body.peer.realm : undefined
+  const realm = body?.ok && body.peer?.realm ? body.peer.realm : undefined
+
+  // Defensive normalization, symmetrical with `worldStatusesFromRealms`: Pulse realm names are
+  // canonical lowercase by contract, and the LiveKit-fed path can only ever emit lowercase
+  // (`peers-registry.ts` lowercases every name it stores). Serving Pulse's spelling verbatim would
+  // let `/wallet/:wallet/connected-world` answer `CozyFarm.dcl.eth` where the sibling `/live-data`
+  // world list — and today's registry answer — say `cozyfarm.dcl.eth`, which is a miss for any
+  // consumer comparing the two or interpolating the value into a world URL.
+  return realm?.toLowerCase()
 }

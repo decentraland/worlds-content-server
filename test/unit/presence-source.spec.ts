@@ -126,6 +126,34 @@ describe('presence-source', () => {
     })
   })
 
+  // C4-connected-world / C4-live-data: `world` stays lowercase. The registry-fed path cannot emit
+  // anything else (`peers-registry.ts` lowercases every name it stores), so the Pulse-fed path
+  // normalizes too instead of letting the two sibling routes disagree on casing.
+  describe('when resolving the realm of a single peer', () => {
+    const peerId = '0x0000000000000000000000000000000000000003'
+    let fetchMock: jest.Mock
+    let fetch: IFetchComponent
+
+    beforeEach(() => {
+      fetchMock = jest.fn()
+      fetch = { fetch: fetchMock } as unknown as IFetchComponent
+    })
+
+    it('should lowercase a mixed-case realm rather than return it verbatim', async () => {
+      fetchMock.mockResolvedValue(
+        new Response(JSON.stringify({ ok: true, peer: { address: peerId, realm: 'CozyFarm.DCL.eth' } }))
+      )
+
+      await expect(fetchPulsePeerRealm(fetch, PULSE_URL, peerId)).resolves.toBe('cozyfarm.dcl.eth')
+    })
+
+    it('should leave an already canonical realm untouched', async () => {
+      fetchMock.mockResolvedValue(new Response(JSON.stringify(peerGolden.body)))
+
+      await expect(fetchPulsePeerRealm(fetch, PULSE_URL, peerId)).resolves.toBe('cozyfarm.dcl.eth')
+    })
+  })
+
   // The service's fetch component is built with no default timeout and @dcl/fetch-component only
   // arms its abort timer when one is passed, so without an explicit deadline a Pulse that accepts
   // the connection and then stalls hangs the caller for as long as the socket stays open.

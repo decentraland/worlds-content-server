@@ -138,6 +138,23 @@ describe('walletConnectedWorldHandler', () => {
       })
     })
 
+    // C4-connected-world: `world` stays lowercase. The registry-fed path can only ever answer
+    // lowercase (`peers-registry.ts` lowercases every name it stores), so a mixed-case realm on the
+    // wire must not make this route answer something `/live-data` — and today's registry answer —
+    // never could.
+    describe('and Pulse answers with a mixed-case realm', () => {
+      it('should answer with the world lowercased', async () => {
+        const address = peerGolden.body.peer!.address
+        fetchMock.mockResolvedValue(
+          pulseResponse({ ok: true, peer: { ...peerGolden.body.peer!, realm: 'CozyFarm.DCL.eth' } })
+        )
+
+        const response = await walletConnectedWorldHandler(buildContext(address))
+
+        expect(response).toEqual({ status: 200, body: { wallet: address, world: 'cozyfarm.dcl.eth' } })
+      })
+    })
+
     // Pulse ids are lowercase (the pack pins `0x…00AB` ingesting as `0x…00ab`) and the LiveKit-fed
     // registry path lowercases the id too, so the route is case-insensitive on the wallet today.
     // Forwarding an EIP-55 checksummed address verbatim would have 404'd a wallet that answers 200
