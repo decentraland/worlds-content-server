@@ -60,7 +60,8 @@ single source of online-player information. Only the *counters* move; access con
   The published response shapes are unchanged, and `comms.adapterType` keeps naming the transport,
   not the counter.
 - `PRESENCE_SOURCE=both`: serves the LiveKit answer and counts the divergence against Pulse in
-  `presence_shadow_diff{kind="live-data"}` (counts only, never addresses).
+  `presence_shadow_diff` — `kind="live-data"` counts the diverging worlds, `kind="live-data-users"`
+  sums `|livekit - pulse|` over them (counts only, never addresses).
 - LiveKit stays the source for anything that decides access: the `MAX_USERS_PER_WORLD` capacity
   check, participant kicks, access-change re-checks and the community-member-removed flow. Those
   paths carry an `iteration-2 exception` comment.

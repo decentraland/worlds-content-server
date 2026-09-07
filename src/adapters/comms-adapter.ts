@@ -9,6 +9,13 @@ const STATUS_CACHE_TTL_MS = 60 * 1000
 /** The `kind` label of `presence_shadow_diff` for the comparison behind `/live-data` and `/status`. */
 const SHADOW_DIFF_KIND = 'live-data'
 
+/**
+ * The `kind` label carrying the *size* of that divergence: the summed `|livekit - pulse|` over the
+ * worlds both sources report with different user counts. Without it a dashboard cannot tell one
+ * world off by 1 from one world off by 1000 — both are a single `live-data` increment.
+ */
+const SHADOW_DIFF_USERS_KIND = 'live-data-users'
+
 export async function createCommsAdapterComponent({
   config,
   fetch,
@@ -355,11 +362,14 @@ function presenceSourcedAdapter(
       }
     }
 
+    // Incremented even at 0: an absent Prometheus series is indistinguishable from "not deployed",
+    // and WP10 reads these series to decide the cutover.
     metrics.increment(
       'presence_shadow_diff',
       { kind: SHADOW_DIFF_KIND },
       onlyInLivekit + onlyInPulse + worldsWithUserDelta
     )
+    metrics.increment('presence_shadow_diff', { kind: SHADOW_DIFF_USERS_KIND }, totalUsersDelta)
 
     logger.info('Presence shadow comparison', {
       kind: SHADOW_DIFF_KIND,

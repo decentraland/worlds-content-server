@@ -919,6 +919,13 @@ describe('comms-adapter', function () {
         expect(incrementSpy).toHaveBeenCalledWith('presence_shadow_diff', { kind: 'live-data' }, 2)
       })
 
+      it('should count the size of the divergence under presence_shadow_diff{kind=live-data-users}', () => {
+        // Without this series WP10 cannot tell one world off by 1 from one world off by 1000 —
+        // both are a single `kind=live-data` increment. cozyfarm.dcl.eth is 2 on LiveKit and 1 on
+        // Pulse, so the magnitude is |2 - 1| = 1.
+        expect(incrementSpy).toHaveBeenCalledWith('presence_shadow_diff', { kind: 'live-data-users' }, 1)
+      })
+
       it('should log the divergence as counts only, never wallets', () => {
         expect(logger.info).toHaveBeenCalledWith('Presence shadow comparison', {
           kind: 'live-data',
@@ -931,6 +938,24 @@ describe('comms-adapter', function () {
           livekitUsers: 5,
           pulseUsers: 1
         })
+      })
+    })
+
+    describe('when PRESENCE_SOURCE is both and the two sources agree', () => {
+      it('should still create both shadow series with a zero increment', async () => {
+        // WP10 reads Prometheus: an absent series is indistinguishable from "not deployed", so the
+        // increment happens even when there is nothing to report. The default livekit mock and the
+        // golden describe the same world set (cozyfarm.dcl.eth with one peer).
+        const incrementSpy = jest.spyOn(metrics, 'increment')
+
+        try {
+          await (await buildLivekitBackedAdapter({ PRESENCE_SOURCE: 'both', PULSE_URL })).status()
+
+          expect(incrementSpy).toHaveBeenCalledWith('presence_shadow_diff', { kind: 'live-data' }, 0)
+          expect(incrementSpy).toHaveBeenCalledWith('presence_shadow_diff', { kind: 'live-data-users' }, 0)
+        } finally {
+          incrementSpy.mockRestore()
+        }
       })
     })
 

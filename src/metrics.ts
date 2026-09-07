@@ -88,7 +88,7 @@ export const metricDeclarations = {
     labelNames: ['stage', 'outcome']
   },
   presence_shadow_diff: {
-    help: 'Worlds whose presence answer differs between LiveKit and Pulse while PRESENCE_SOURCE=both (counts only, never addresses)',
+    help: 'Presence divergence between LiveKit and Pulse while PRESENCE_SOURCE=both, counts only and never addresses: kind="live-data" counts the diverging worlds, kind="live-data-users" sums |livekit - pulse| over them',
     type: IMetricsComponent.CounterType,
     labelNames: ['kind']
   }
