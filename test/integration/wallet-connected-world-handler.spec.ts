@@ -1,4 +1,5 @@
 import { test } from '../components'
+import { clearConnectedWorldCache } from '../../src/controllers/handlers/wallet-connected-world-handler'
 import { IAuthenticatedFetchComponent } from '../components/local-auth-fetch'
 import { loadHttpGolden, PulsePeerBody, PulsePeersBody } from '../fixtures/iteration-2/http-goldens'
 
@@ -103,9 +104,22 @@ test('WalletConnectedWorldHandler', function ({ components, stubComponents }) {
     }
 
     beforeEach(() => {
+      // The Pulse lookup is cached for a few seconds in module state; each case starts from empty.
+      clearConnectedWorldCache()
       const { config } = stubComponents
       config.getString.mockImplementation(async (name: string) => (name === 'PRESENCE_SOURCE' ? 'pulse' : undefined))
       config.requireString.mockImplementation(async (name: string) => (name === 'PULSE_URL' ? PULSE_URL : ''))
+    })
+
+    it('should ask Pulse once for two requests inside the cache window', async () => {
+      const wallet = peerGolden.body.peer!.address
+      stubComponents.fetch.fetch.mockImplementation(async () => new Response(JSON.stringify(peerGolden.body)))
+
+      await localFetch.fetch(`/wallet/${wallet}/connected-world`, { method: 'GET' })
+      const response = await localFetch.fetch(`/wallet/${wallet}/connected-world`, { method: 'GET' })
+
+      expect(response.status).toBe(200)
+      expect(stubComponents.fetch.fetch).toHaveBeenCalledTimes(1)
     })
 
     it('should answer 200 with the realm when the peer is in a world', async () => {

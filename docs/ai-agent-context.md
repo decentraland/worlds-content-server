@@ -55,8 +55,10 @@ single source of online-player information. Only the *counters* move; access con
   (fed by the LiveKit webhook).
 - `PRESENCE_SOURCE=pulse`: `commsAdapter.status()` — and with it `/live-data` and `/status`'s `comms`
   block — is built from `GET ${PULSE_URL}/realms`, filtered to realms whose name ends in `.dcl.eth`;
-  `/wallet/{wallet}/connected-world` answers from `GET ${PULSE_URL}/peers/{wallet}`. The published
-  response shapes are unchanged, and `comms.adapterType` keeps naming the transport, not the counter.
+  `/wallet/{wallet}/connected-world` answers from `GET ${PULSE_URL}/peers/{wallet}` — wallet
+  lowercased, answer cached in memory for 5 s per wallet, since the route is public and unthrottled.
+  The published response shapes are unchanged, and `comms.adapterType` keeps naming the transport,
+  not the counter.
 - `PRESENCE_SOURCE=both`: serves the LiveKit answer and counts the divergence against Pulse in
   `presence_shadow_diff{kind="live-data"}` (counts only, never addresses).
 - LiveKit stays the source for anything that decides access: the `MAX_USERS_PER_WORLD` capacity
