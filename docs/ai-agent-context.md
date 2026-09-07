@@ -63,8 +63,9 @@ single source of online-player information. Only the *counters* move; access con
   check, participant kicks, access-change re-checks and the community-member-removed flow. Those
   paths carry an `iteration-2 exception` comment.
 - `PUBLISH_PEER_WORLD_EVENTS` (default `true`) gates the `peer.<address>.world.join|leave` NATS
-  publish in the LiveKit webhook; the `peersRegistry` update is never gated. The publish is removed
-  once social-service-ea reads world presence from Pulse.
+  publish in the LiveKit webhook; the `peersRegistry` update is never gated. `false`, `0` and `no`
+  (trimmed, any casing) switch it off; anything else keeps publishing. The publish is removed once
+  social-service-ea reads world presence from Pulse.
 - `/wallet/{wallet}/connected-world` is deprecated in `docs/openapi.yaml`: Pulse's
   `GET /peers/{id}` replaces it once unity-explorer reads Pulse directly.
 

@@ -146,7 +146,7 @@ change is a no-op.
 | --- | --- | --- |
 | `PRESENCE_SOURCE` | `livekit` | `livekit` counts users from the LiveKit room listing. `pulse` reads `GET ${PULSE_URL}/realms` for `/live-data` and `/status` (`comms`), and `GET ${PULSE_URL}/peers/:id` for `/wallet/:wallet/connected-world`. `both` serves the LiveKit answer and counts the divergence against Pulse. Any other value falls back to `livekit`. |
 | `PULSE_URL` | _unset_ | Base URL of the Pulse service. Required when `PRESENCE_SOURCE` is `pulse` or `both`. |
-| `PUBLISH_PEER_WORLD_EVENTS` | `true` | Whether the LiveKit webhook publishes `peer.<address>.world.join\|leave` on NATS. Set to `false` once social-service-ea reads world presence from Pulse; the publish is then removed altogether. |
+| `PUBLISH_PEER_WORLD_EVENTS` | `true` | Whether the LiveKit webhook publishes `peer.<address>.world.join\|leave` on NATS. `false`, `0` and `no` (trimmed, any casing) switch it off; anything else — an absent value included — keeps publishing. Set it off once social-service-ea reads world presence from Pulse; the publish is then removed altogether. |
 
 Only the counters move. The `MAX_USERS_PER_WORLD` capacity check, the participant kicks and the
 access-change re-checks keep reading LiveKit, which is the authority on who is attached to a room.

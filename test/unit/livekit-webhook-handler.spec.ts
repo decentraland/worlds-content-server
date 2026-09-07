@@ -68,6 +68,51 @@ describe('livekitWebhookHandler', () => {
     })
   })
 
+  // A Helm value is quite easily `FALSE`, `0` or `false ` with a trailing space. The flag is read
+  // the same way `PRESENCE_SOURCE` is — trimmed and case-insensitive — so an operator flipping it
+  // at rollout step 8 cannot leave the publish running while social-service-ea is already on
+  // Pulse, which would deliver world join/leave twice.
+  describe.each(['false', 'FALSE', 'False', '0', 'no', ' false '])(
+    'when PUBLISH_PEER_WORLD_EVENTS is %p',
+    (configured) => {
+      beforeEach(() => {
+        config.getString.mockImplementation(async (name: string) =>
+          name === 'PUBLISH_PEER_WORLD_EVENTS' ? configured : undefined
+        )
+      })
+
+      it('should not publish the join event', async () => {
+        await livekitWebhookHandler(contextFor('participant_joined'))
+
+        expect(nats.publish).not.toHaveBeenCalled()
+      })
+
+      it('should still register the peer in the registry', async () => {
+        await livekitWebhookHandler(contextFor('participant_joined'))
+
+        expect(peersRegistry.onPeerConnected).toHaveBeenCalledWith(
+          '0x0000000000000000000000000000000000000003',
+          'cozyfarm.dcl.eth'
+        )
+      })
+    }
+  )
+
+  describe.each(['true', 'TRUE', ' true ', 'yes', '1', 'nonsense', ''])(
+    'when PUBLISH_PEER_WORLD_EVENTS is %p',
+    (configured) => {
+      it('should keep publishing, because only an explicit off value disables it', async () => {
+        config.getString.mockImplementation(async (name: string) =>
+          name === 'PUBLISH_PEER_WORLD_EVENTS' ? configured : undefined
+        )
+
+        await livekitWebhookHandler(contextFor('participant_joined'))
+
+        expect(nats.publish).toHaveBeenCalledWith('peer.0x0000000000000000000000000000000000000003.world.join')
+      })
+    }
+  )
+
   describe('when PUBLISH_PEER_WORLD_EVENTS is false', () => {
     beforeEach(() => {
       config.getString.mockImplementation(async (name: string) =>
