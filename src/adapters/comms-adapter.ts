@@ -395,14 +395,6 @@ export function presenceSourcedAdapter(
   let nextShadowComparisonAt = 0
 
   /**
-   * `both` serves the transport adapter's own answer, and that adapter already caches for one TTL.
-   * Stacking a second cache in front of it would let `/live-data` serve an answer up to twice the
-   * TTL old, and would pair every shadow comparison with a LiveKit side up to a TTL stale — biasing
-   * the recorded divergence towards "LiveKit is behind" exactly while WP10 reads it. So the served
-   * answer passes straight through and only the *comparison* is throttled, which keeps Pulse to one
-   * read per TTL whatever the request rate.
-   */
-  /**
    * Reads Pulse and records the divergence. Never awaited on a served request path — see
    * `shadowedTransportStatus` — so it owns its own error handling: nothing downstream is left to
    * catch its rejection.
@@ -418,6 +410,14 @@ export function presenceSourcedAdapter(
     }
   }
 
+  /**
+   * `both` serves the transport adapter's own answer, and that adapter already caches for one TTL.
+   * Stacking a second cache in front of it would let `/live-data` serve an answer up to twice the
+   * TTL old, and would pair every shadow comparison with a LiveKit side up to a TTL stale — biasing
+   * the recorded divergence towards "LiveKit is behind" exactly while WP10 reads it. So the served
+   * answer passes straight through and only the *comparison* is throttled, which keeps Pulse to one
+   * read per TTL whatever the request rate.
+   */
   async function shadowedTransportStatus(): Promise<CommsStatus> {
     // Typed as `CommsStatus`, but `cachingAdapter` hands back `undefined` when its very first poll
     // fails with nothing stale to fall back on. Guarding here keeps a transport outage from turning
