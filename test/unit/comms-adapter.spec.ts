@@ -2,8 +2,15 @@ import { createConfigComponent } from '@well-known-components/env-config-provide
 import { IFetchComponent } from '@dcl/core-commons'
 import { createCommsAdapterComponent } from '../../src/adapters/comms-adapter'
 import { createLogComponent } from '@well-known-components/logger'
+import { createTestMetricsComponent } from '@dcl/metrics'
+import { ILoggerComponent } from '@well-known-components/interfaces'
 import { createMockLivekitClient } from '../mocks/livekit-client-mock'
-import { CommsStatus, ICommsAdapter } from '../../src/types'
+import { createMockLogs } from '../mocks/logs-mock'
+import { metricDeclarations } from '../../src/metrics'
+import { CommsStatus, ICommsAdapter, LivekitClient } from '../../src/types'
+import { loadHttpGolden, PulseRealmsBody } from '../fixtures/iteration-2/http-goldens'
+
+const metrics = createTestMetricsComponent(metricDeclarations)
 
 describe('comms-adapter', function () {
   describe('ws-room', function () {
@@ -25,7 +32,8 @@ describe('comms-adapter', function () {
           config,
           fetch,
           logs,
-          livekitClient: createMockLivekitClient()
+          livekitClient: createMockLivekitClient(),
+          metrics
         })
       })
 
@@ -66,7 +74,8 @@ describe('comms-adapter', function () {
             config,
             fetch,
             logs,
-            livekitClient: createMockLivekitClient()
+            livekitClient: createMockLivekitClient(),
+            metrics
           })
           status = await commsAdapter.status()
         })
@@ -113,7 +122,8 @@ describe('comms-adapter', function () {
             config,
             fetch,
             logs,
-            livekitClient: createMockLivekitClient()
+            livekitClient: createMockLivekitClient(),
+            metrics
           })
           status = await commsAdapter.status()
         })
@@ -161,7 +171,8 @@ describe('comms-adapter', function () {
           config,
           fetch,
           logs,
-          livekitClient: createMockLivekitClient()
+          livekitClient: createMockLivekitClient(),
+          metrics
         })
       })
 
@@ -208,7 +219,8 @@ describe('comms-adapter', function () {
           config,
           fetch,
           logs,
-          livekitClient: createMockLivekitClient()
+          livekitClient: createMockLivekitClient(),
+          metrics
         })
       })
 
@@ -243,7 +255,8 @@ describe('comms-adapter', function () {
           config,
           fetch,
           logs,
-          livekitClient: createMockLivekitClient()
+          livekitClient: createMockLivekitClient(),
+          metrics
         })
       })
 
@@ -269,7 +282,8 @@ describe('comms-adapter', function () {
             config,
             fetch,
             logs,
-            livekitClient: createMockLivekitClient()
+            livekitClient: createMockLivekitClient(),
+            metrics
           })
         ).rejects.toThrow('Configuration: string COMMS_FIXED_ADAPTER is required')
       })
@@ -297,7 +311,7 @@ describe('comms-adapter', function () {
         livekitClient = createMockLivekitClient({
           createConnectionToken: jest.fn().mockResolvedValue('livekit:wss://livekit.dcl.org?access_token=token')
         })
-        commsAdapter = await createCommsAdapterComponent({ config, fetch, logs, livekitClient })
+        commsAdapter = await createCommsAdapterComponent({ config, fetch, logs, livekitClient, metrics })
       })
 
       it('should return a livekit connection string', async () => {
@@ -339,7 +353,7 @@ describe('comms-adapter', function () {
           const fetch: IFetchComponent = {
             fetch: async (_url: Request): Promise<Response> => new Response(undefined)
           }
-          const commsAdapter = await createCommsAdapterComponent({ config, fetch, logs, livekitClient })
+          const commsAdapter = await createCommsAdapterComponent({ config, fetch, logs, livekitClient, metrics })
           status = await commsAdapter.status()
         })
 
@@ -385,7 +399,7 @@ describe('comms-adapter', function () {
           const fetch: IFetchComponent = {
             fetch: async (_url: Request): Promise<Response> => new Response(undefined)
           }
-          const commsAdapter = await createCommsAdapterComponent({ config, fetch, logs, livekitClient })
+          const commsAdapter = await createCommsAdapterComponent({ config, fetch, logs, livekitClient, metrics })
           status = await commsAdapter.status()
         })
 
@@ -429,7 +443,7 @@ describe('comms-adapter', function () {
           const fetch: IFetchComponent = {
             fetch: async (_url: Request): Promise<Response> => new Response(undefined)
           }
-          const commsAdapter = await createCommsAdapterComponent({ config, fetch, logs, livekitClient })
+          const commsAdapter = await createCommsAdapterComponent({ config, fetch, logs, livekitClient, metrics })
           status = await commsAdapter.status()
         })
 
@@ -468,7 +482,7 @@ describe('comms-adapter', function () {
           const fetch: IFetchComponent = {
             fetch: async (_url: Request): Promise<Response> => new Response(undefined)
           }
-          const commsAdapter = await createCommsAdapterComponent({ config, fetch, logs, livekitClient })
+          const commsAdapter = await createCommsAdapterComponent({ config, fetch, logs, livekitClient, metrics })
           status = await commsAdapter.status()
         })
 
@@ -515,7 +529,7 @@ describe('comms-adapter', function () {
         const fetch: IFetchComponent = {
           fetch: async (_url: Request): Promise<Response> => new Response(undefined)
         }
-        commsAdapter = await createCommsAdapterComponent({ config, fetch, logs, livekitClient })
+        commsAdapter = await createCommsAdapterComponent({ config, fetch, logs, livekitClient, metrics })
       })
 
       it('should return the sum of participant counts', async () => {
@@ -552,7 +566,7 @@ describe('comms-adapter', function () {
         const fetch: IFetchComponent = {
           fetch: async (_url: Request): Promise<Response> => new Response(undefined)
         }
-        commsAdapter = await createCommsAdapterComponent({ config, fetch, logs, livekitClient })
+        commsAdapter = await createCommsAdapterComponent({ config, fetch, logs, livekitClient, metrics })
       })
 
       it('should delegate to livekitClient.removeParticipant', async () => {
@@ -578,7 +592,8 @@ describe('comms-adapter', function () {
             config,
             fetch,
             logs,
-            livekitClient: createMockLivekitClient()
+            livekitClient: createMockLivekitClient(),
+            metrics
           })
         ).rejects.toThrow('Configuration: string LIVEKIT_HOST is required')
       })
@@ -602,9 +617,282 @@ describe('comms-adapter', function () {
           config,
           fetch,
           logs,
-          livekitClient: createMockLivekitClient()
+          livekitClient: createMockLivekitClient(),
+          metrics
         })
       ).rejects.toThrow('Invalid comms adapter: other')
+    })
+  })
+
+  describe('presence source', function () {
+    const realmsGolden = loadHttpGolden<PulseRealmsBody>('realms')
+    const PULSE_URL = 'https://pulse.example.com'
+
+    let logs: jest.Mocked<ILoggerComponent>
+    let logger: jest.Mocked<ILoggerComponent.ILogger>
+    let livekitClient: LivekitClient
+    let fetchMock: jest.Mock
+
+    beforeEach(() => {
+      logs = createMockLogs()
+      logger = logs.getLogger('any') as unknown as jest.Mocked<ILoggerComponent.ILogger>
+      fetchMock = jest.fn().mockImplementation(async () => new Response(JSON.stringify(realmsGolden.body)))
+      livekitClient = createMockLivekitClient({
+        listRoomsWithParticipantCounts: jest
+          .fn()
+          .mockResolvedValue([{ name: 'world-cozyfarm.dcl.eth', numParticipants: 1 }])
+      })
+    })
+
+    async function buildLivekitBackedAdapter(overrides: Record<string, string>): Promise<ICommsAdapter> {
+      const config = await createConfigComponent({
+        COMMS_ADAPTER: 'livekit',
+        LIVEKIT_HOST: 'livekit.dcl.org',
+        LIVEKIT_API_KEY: 'key',
+        LIVEKIT_API_SECRET: 'secret',
+        COMMS_ROOM_PREFIX: 'world-',
+        SCENE_ROOM_PREFIX: 'world-scene-room-',
+        ...overrides
+      })
+      return createCommsAdapterComponent({
+        config,
+        fetch: { fetch: fetchMock } as unknown as IFetchComponent,
+        logs,
+        livekitClient,
+        metrics
+      })
+    }
+
+    describe('when PRESENCE_SOURCE is not configured', () => {
+      let status: CommsStatus
+
+      beforeEach(async () => {
+        status = await (await buildLivekitBackedAdapter({})).status()
+      })
+
+      it('should keep counting from the transport', () => {
+        expect(livekitClient.listRoomsWithParticipantCounts).toHaveBeenCalled()
+        expect(status.details).toEqual([{ worldName: 'cozyfarm.dcl.eth', users: 1 }])
+      })
+
+      it('should not call Pulse at all', () => {
+        expect(fetchMock).not.toHaveBeenCalled()
+      })
+    })
+
+    describe('when PRESENCE_SOURCE has an unknown value', () => {
+      it('should fall back to the transport counters', async () => {
+        await (await buildLivekitBackedAdapter({ PRESENCE_SOURCE: 'nonsense' })).status()
+
+        expect(livekitClient.listRoomsWithParticipantCounts).toHaveBeenCalled()
+        expect(fetchMock).not.toHaveBeenCalled()
+      })
+    })
+
+    describe('when PRESENCE_SOURCE is pulse but PULSE_URL is missing', () => {
+      it('should refuse to initialize', async () => {
+        await expect(buildLivekitBackedAdapter({ PRESENCE_SOURCE: 'pulse' })).rejects.toThrow(
+          'Configuration: string PULSE_URL is required'
+        )
+      })
+    })
+
+    describe('when PRESENCE_SOURCE is pulse', () => {
+      let commsAdapter: ICommsAdapter
+      let status: CommsStatus
+
+      beforeEach(async () => {
+        commsAdapter = await buildLivekitBackedAdapter({ PRESENCE_SOURCE: 'pulse', PULSE_URL })
+        status = await commsAdapter.status()
+      })
+
+      it('should read the world counts from the Pulse realms endpoint', () => {
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+        expect(fetchMock).toHaveBeenCalledWith(`${PULSE_URL}/realms`, expect.anything())
+      })
+
+      it('should not read the counters from LiveKit', () => {
+        expect(livekitClient.listRoomsWithParticipantCounts).not.toHaveBeenCalled()
+      })
+
+      it('should keep describing the transport in adapterType and statusUrl', () => {
+        expect(status.adapterType).toBe('livekit')
+        expect(status.statusUrl).toBe('https://livekit.dcl.org/')
+      })
+
+      it('should report only the realms that are worlds', () => {
+        expect(status.details).toEqual([{ worldName: 'cozyfarm.dcl.eth', users: 1 }])
+      })
+
+      it('should sum users and rooms over the world realms', () => {
+        expect(status.users).toBe(1)
+        expect(status.rooms).toBe(1)
+      })
+
+      it('should timestamp the answer with the Pulse lastUpdated', () => {
+        expect(new Date(status.timestamp).toISOString()).toBe(realmsGolden.body.lastUpdated)
+      })
+
+      it('should still resolve the capacity-check participant count from LiveKit', async () => {
+        await commsAdapter.getWorldRoomParticipantCount('cozyfarm.dcl.eth')
+
+        expect(livekitClient.listRoomsWithParticipantCounts).toHaveBeenCalled()
+      })
+    })
+
+    describe('when PRESENCE_SOURCE is pulse and Pulse is unreachable', () => {
+      it('should answer with an empty world list rather than failing', async () => {
+        fetchMock.mockRejectedValue(new Error('pulse is down'))
+
+        const status = await (await buildLivekitBackedAdapter({ PRESENCE_SOURCE: 'pulse', PULSE_URL })).status()
+
+        expect(status).toMatchObject({ adapterType: 'livekit', rooms: 0, users: 0, details: [] })
+      })
+    })
+
+    describe('when PRESENCE_SOURCE is pulse and the transport is ws-room', () => {
+      let status: CommsStatus
+
+      beforeEach(async () => {
+        const config = await createConfigComponent({
+          COMMS_ADAPTER: 'ws-room',
+          COMMS_FIXED_ADAPTER: 'ws-room:ws-room-service.decentraland.org/rooms/test-scene',
+          COMMS_ROOM_PREFIX: 'world-',
+          SCENE_ROOM_PREFIX: 'world-scene-room-',
+          PRESENCE_SOURCE: 'pulse',
+          PULSE_URL
+        })
+        const commsAdapter = await createCommsAdapterComponent({
+          config,
+          fetch: { fetch: fetchMock } as unknown as IFetchComponent,
+          logs,
+          livekitClient,
+          metrics
+        })
+        status = await commsAdapter.status()
+      })
+
+      it('should read the world counts from the Pulse realms endpoint', () => {
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+        expect(fetchMock).toHaveBeenCalledWith(`${PULSE_URL}/realms`, expect.anything())
+      })
+
+      it('should keep describing the transport in adapterType and statusUrl', () => {
+        expect(status.adapterType).toBe('ws-room')
+        expect(status.statusUrl).toBe('https://ws-room-service.decentraland.org/status')
+      })
+
+      it('should report the same world counts as the livekit transport', () => {
+        expect(status.details).toEqual([{ worldName: 'cozyfarm.dcl.eth', users: 1 }])
+      })
+    })
+
+    describe('when PRESENCE_SOURCE is both', () => {
+      let status: CommsStatus
+      let incrementSpy: jest.SpyInstance
+
+      beforeEach(async () => {
+        incrementSpy = jest.spyOn(metrics, 'increment')
+        livekitClient = createMockLivekitClient({
+          listRoomsWithParticipantCounts: jest.fn().mockResolvedValue([
+            { name: 'world-cozyfarm.dcl.eth', numParticipants: 2 },
+            { name: 'world-only-in-livekit.dcl.eth', numParticipants: 3 }
+          ])
+        })
+        status = await (await buildLivekitBackedAdapter({ PRESENCE_SOURCE: 'both', PULSE_URL })).status()
+      })
+
+      afterEach(() => {
+        incrementSpy.mockRestore()
+      })
+
+      it('should serve the LiveKit answer', () => {
+        expect(status.users).toBe(5)
+        expect(status.details).toEqual([
+          { worldName: 'cozyfarm.dcl.eth', users: 2 },
+          { worldName: 'only-in-livekit.dcl.eth', users: 3 }
+        ])
+      })
+
+      it('should also read Pulse', () => {
+        expect(fetchMock).toHaveBeenCalledWith(`${PULSE_URL}/realms`, expect.anything())
+      })
+
+      it('should count the divergence under presence_shadow_diff{kind=live-data}', () => {
+        // cozyfarm.dcl.eth: 2 users on LiveKit vs 1 on Pulse -> one world with a user delta.
+        // only-in-livekit.dcl.eth: absent from Pulse -> one world only on the LiveKit side.
+        expect(incrementSpy).toHaveBeenCalledWith('presence_shadow_diff', { kind: 'live-data' }, 2)
+      })
+
+      it('should log the divergence as counts only, never wallets', () => {
+        expect(logger.info).toHaveBeenCalledWith('Presence shadow comparison', {
+          kind: 'live-data',
+          onlyInLivekit: 1,
+          onlyInPulse: 0,
+          worldsWithUserDelta: 1,
+          totalUsersDelta: 1,
+          livekitWorlds: 2,
+          pulseWorlds: 1,
+          livekitUsers: 5,
+          pulseUsers: 1
+        })
+      })
+    })
+
+    describe('when PRESENCE_SOURCE is both and Pulse is unreachable', () => {
+      it('should still serve the LiveKit answer', async () => {
+        fetchMock.mockRejectedValue(new Error('pulse is down'))
+
+        const status = await (await buildLivekitBackedAdapter({ PRESENCE_SOURCE: 'both', PULSE_URL })).status()
+
+        expect(status.details).toEqual([{ worldName: 'cozyfarm.dcl.eth', users: 1 }])
+      })
+    })
+
+    describe('when PRESENCE_SOURCE is both and the transport is unreachable', () => {
+      let status: CommsStatus
+
+      beforeEach(async () => {
+        // The ws-room transport propagates its fetch failure, so the caching adapter has no answer
+        // and no stale value to fall back on; Pulse answers normally.
+        fetchMock.mockImplementation(async (url: string) => {
+          if (url.endsWith('/realms')) {
+            return new Response(JSON.stringify(realmsGolden.body))
+          }
+          throw new Error('ws-room is down')
+        })
+        const config = await createConfigComponent({
+          COMMS_ADAPTER: 'ws-room',
+          COMMS_FIXED_ADAPTER: 'ws-room:ws-room-service.decentraland.org/rooms/test-scene',
+          COMMS_ROOM_PREFIX: 'world-',
+          SCENE_ROOM_PREFIX: 'world-scene-room-',
+          PRESENCE_SOURCE: 'both',
+          PULSE_URL
+        })
+        const commsAdapter = await createCommsAdapterComponent({
+          config,
+          fetch: { fetch: fetchMock } as unknown as IFetchComponent,
+          logs,
+          livekitClient,
+          metrics
+        })
+        status = await commsAdapter.status()
+      })
+
+      it('should answer with an empty status rather than fail', () => {
+        expect(status).toMatchObject({ adapterType: 'ws-room', rooms: 0, users: 0, details: [] })
+      })
+
+      it('should skip the shadow comparison instead of logging a bogus one', () => {
+        expect(logger.info).not.toHaveBeenCalledWith('Presence shadow comparison', expect.anything())
+      })
+
+      it('should report the transport outage and nothing else', () => {
+        // Comparing against a missing transport answer used to throw, which the status cache then
+        // logged a second time as `Error retrieving comms status: Cannot read properties of
+        // undefined`. Only the transport's own failure should be reported.
+        expect(logger.warn.mock.calls.flat()).toEqual(['Error retrieving comms status: ws-room is down'])
+      })
     })
   })
 })
