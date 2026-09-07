@@ -34,7 +34,13 @@ export async function createCommsAdapterComponent({
       return presenceSourcedAdapter(
         { fetch, logs, metrics },
         cachingAdapter({ logs }, createWsRoomAdapter({ fetch }, worldRoomPrefix, sceneRoomPrefix, fixedAdapter)),
-        { presenceSource, pulseUrl, adapterType: 'ws-room', statusUrl: getWsRoomStatusUrl(fixedAdapter) }
+        {
+          presenceSource,
+          pulseUrl,
+          adapterType: 'ws-room',
+          statusUrl: getWsRoomStatusUrl(fixedAdapter),
+          publishesCommitHash: true
+        }
       )
     }
 
@@ -44,7 +50,13 @@ export async function createCommsAdapterComponent({
       return presenceSourcedAdapter(
         { fetch, logs, metrics },
         cachingAdapter({ logs }, createLiveKitAdapter({ logs }, worldRoomPrefix, sceneRoomPrefix, host, livekitClient)),
-        { presenceSource, pulseUrl, adapterType: 'livekit', statusUrl: getLivekitStatusUrl(host) }
+        {
+          presenceSource,
+          pulseUrl,
+          adapterType: 'livekit',
+          statusUrl: getLivekitStatusUrl(host),
+          publishesCommitHash: false
+        }
       )
     }
 
@@ -244,6 +256,8 @@ type PresenceSourceOptions = {
   /** Kept verbatim from the transport: `adapterType`/`statusUrl` describe the transport, not the counter. */
   adapterType: string
   statusUrl: string
+  /** Whether the transport publishes `CommsStatus.commitHash` — only ws-room does. */
+  publishesCommitHash: boolean
 }
 
 /**
@@ -262,7 +276,7 @@ type PresenceSourceOptions = {
 function presenceSourcedAdapter(
   { fetch, logs, metrics }: Pick<AppComponents, 'fetch' | 'logs' | 'metrics'>,
   transportAdapter: ICommsAdapter,
-  { presenceSource, pulseUrl, adapterType, statusUrl }: PresenceSourceOptions
+  { presenceSource, pulseUrl, adapterType, statusUrl, publishesCommitHash }: PresenceSourceOptions
 ): ICommsAdapter {
   if (presenceSource === 'livekit' || !pulseUrl) {
     return transportAdapter
@@ -270,16 +284,42 @@ function presenceSourcedAdapter(
 
   const logger = logs.getLogger('presence-sourced-comms-adapter')
 
+  // `commitHash` describes the transport, exactly like `adapterType`/`statusUrl`, and Pulse cannot
+  // supply it — so when the transport publishes one it is read from the transport (whose own status
+  // is cached for the same TTL) rather than dropped, keeping the `/status` `comms` key set
+  // identical under every presence source. Only needed while Pulse *is* the served answer: in
+  // `both` the served answer is the transport's own and already carries it.
+  const readTransportCommitHash = publishesCommitHash && presenceSource === 'pulse'
+
   function emptyStatus(): CommsStatus {
     return { adapterType, statusUrl, rooms: 0, users: 0, details: [], timestamp: Date.now() }
   }
 
+  /** A transport outage drops the commit hash, never the Pulse-sourced answer. */
+  async function transportCommitHash(): Promise<string | undefined> {
+    if (!readTransportCommitHash) {
+      return undefined
+    }
+
+    try {
+      return (await transportAdapter.status())?.commitHash
+    } catch (error: any) {
+      logger.warn(`Error retrieving the transport commit hash: ${error.message}`)
+      return undefined
+    }
+  }
+
   async function pulseStatus(): Promise<CommsStatus> {
-    const { worlds, lastUpdated } = await fetchPulseRealms(fetch, pulseUrl!, logger)
+    const [{ worlds, lastUpdated }, commitHash] = await Promise.all([
+      fetchPulseRealms(fetch, pulseUrl!, logger),
+      transportCommitHash()
+    ])
 
     return {
       adapterType,
       statusUrl,
+      // Spread, not assigned: a transport that publishes no commit hash must not gain the key.
+      ...(readTransportCommitHash ? { commitHash } : {}),
       rooms: worlds.length,
       users: worlds.reduce((carry, world) => carry + world.users, 0),
       details: worlds,

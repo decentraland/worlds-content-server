@@ -733,6 +733,12 @@ describe('comms-adapter', function () {
         expect(new Date(status.timestamp).toISOString()).toBe(realmsGolden.body.lastUpdated)
       })
 
+      it('should not invent a commit hash the transport does not publish', () => {
+        // The livekit transport never sets `commitHash`, so neither may the Pulse-sourced answer:
+        // the `/status` `comms` key set must not drift with the presence source.
+        expect('commitHash' in status).toBe(false)
+      })
+
       it('should still resolve the capacity-check participant count from LiveKit', async () => {
         await commsAdapter.getWorldRoomParticipantCount('cozyfarm.dcl.eth')
 
@@ -794,6 +800,13 @@ describe('comms-adapter', function () {
       let status: CommsStatus
 
       beforeEach(async () => {
+        // The ws-room transport is the only one that publishes `commitHash`, from its own /status
+        // payload, so the mock has to answer both endpoints.
+        fetchMock.mockImplementation(async (url: string) =>
+          url.endsWith('/realms')
+            ? new Response(JSON.stringify(realmsGolden.body))
+            : new Response(JSON.stringify({ commitHash: 'ws-room-commit', details: [] }))
+        )
         const config = await createConfigComponent({
           COMMS_ADAPTER: 'ws-room',
           COMMS_FIXED_ADAPTER: 'ws-room:ws-room-service.decentraland.org/rooms/test-scene',
@@ -813,7 +826,7 @@ describe('comms-adapter', function () {
       })
 
       it('should read the world counts from the Pulse realms endpoint', () => {
-        expect(fetchMock).toHaveBeenCalledTimes(1)
+        expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/realms'))).toHaveLength(1)
         expect(fetchMock).toHaveBeenCalledWith(`${PULSE_URL}/realms`, expect.anything())
       })
 
@@ -822,8 +835,50 @@ describe('comms-adapter', function () {
         expect(status.statusUrl).toBe('https://ws-room-service.decentraland.org/status')
       })
 
+      it('should keep publishing the commit hash the transport supplies', () => {
+        expect(status.commitHash).toBe('ws-room-commit')
+      })
+
       it('should report the same world counts as the livekit transport', () => {
         expect(status.details).toEqual([{ worldName: 'cozyfarm.dcl.eth', users: 1 }])
+      })
+    })
+
+    describe('when PRESENCE_SOURCE is pulse, the transport is ws-room and the transport is down', () => {
+      let status: CommsStatus
+
+      beforeEach(async () => {
+        fetchMock.mockImplementation(async (url: string) => {
+          if (url.endsWith('/realms')) {
+            return new Response(JSON.stringify(realmsGolden.body))
+          }
+          throw new Error('ws-room is down')
+        })
+        const config = await createConfigComponent({
+          COMMS_ADAPTER: 'ws-room',
+          COMMS_FIXED_ADAPTER: 'ws-room:ws-room-service.decentraland.org/rooms/test-scene',
+          COMMS_ROOM_PREFIX: 'world-',
+          SCENE_ROOM_PREFIX: 'world-scene-room-',
+          PRESENCE_SOURCE: 'pulse',
+          PULSE_URL
+        })
+        const commsAdapter = await createCommsAdapterComponent({
+          config,
+          fetch: { fetch: fetchMock } as unknown as IFetchComponent,
+          logs,
+          livekitClient,
+          metrics
+        })
+        status = await commsAdapter.status()
+      })
+
+      it('should still serve the Pulse counters', () => {
+        expect(status.details).toEqual([{ worldName: 'cozyfarm.dcl.eth', users: 1 }])
+        expect(status.users).toBe(1)
+      })
+
+      it('should drop the commit hash rather than the answer', () => {
+        expect(status.commitHash).toBeUndefined()
       })
     })
 
