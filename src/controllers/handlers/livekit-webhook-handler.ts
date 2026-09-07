@@ -15,11 +15,11 @@ function isValidEvent(event: string): event is ParticipantEvent {
 
 // TODO: refactor this to be like the one in Comms Gatekeeper (might be a good idea for a new component in core-components)
 export async function livekitWebhookHandler(
-  ctx: HandlerContextWithPath<'nats' | 'logs' | 'livekitClient' | 'peersRegistry', '/livekit-webhook'> &
+  ctx: HandlerContextWithPath<'config' | 'nats' | 'logs' | 'livekitClient' | 'peersRegistry', '/livekit-webhook'> &
     DecentralandSignatureContext<any>
 ): Promise<IHttpServerComponent.IResponse> {
   const {
-    components: { nats, logs, livekitClient, peersRegistry },
+    components: { config, nats, logs, livekitClient, peersRegistry },
     request
   } = ctx
 
@@ -57,10 +57,17 @@ export async function livekitWebhookHandler(
 
   const { identity } = participant
 
-  logger.debug(`Publishing event ${event} for participant ${identity} in room ${room.name}`)
+  // Iteration 2, rollout step 8: this publish — and with it the `nats` dependency — is deleted once
+  // social-service-ea reads world presence from Pulse. Absent configuration means `true`, so the
+  // default behaviour is exactly today's.
+  const publishPeerWorldEvents = (await config.getString('PUBLISH_PEER_WORLD_EVENTS')) !== 'false'
 
-  nats.publish(`peer.${identity}.world.${TOPIC_SUFFIX_BY_EVENT[event]}`)
+  if (publishPeerWorldEvents) {
+    logger.debug(`Publishing event ${event} for participant ${identity} in room ${room.name}`)
+    nats.publish(`peer.${identity}.world.${TOPIC_SUFFIX_BY_EVENT[event]}`)
+  }
 
+  // Unconditional: the registry is what kicks (participant-kicker) and access changes read.
   const peerRegistryHandler = peerRegistryHandlerByEvent[event]
   peerRegistryHandler(identity, room.name)
 
