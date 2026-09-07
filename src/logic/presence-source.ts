@@ -1,4 +1,4 @@
-import { IConfigComponent } from '@well-known-components/interfaces'
+import { IConfigComponent, ILoggerComponent } from '@well-known-components/interfaces'
 import { IFetchComponent } from '@dcl/core-commons'
 import { HTTPResponseError } from '../adapters/fetch'
 import { WorldStatus } from '../types'
@@ -53,10 +53,32 @@ export function isWorldRealm(realmName: string): boolean {
 }
 
 /** Maps the Pulse realm list onto the `WorldStatus` entries `/live-data` and `/status` publish. */
-export function worldStatusesFromRealms(realms: PulseRealm[]): WorldStatus[] {
-  return realms
-    .filter((realm) => isWorldRealm(realm.name))
-    .map((realm) => ({ worldName: realm.name, users: realm.peers }))
+export function worldStatusesFromRealms(
+  realms: PulseRealm[],
+  logger?: Pick<ILoggerComponent.ILogger, 'warn'>
+): WorldStatus[] {
+  const worldRealms = realms.filter((realm) => isWorldRealm(realm.name))
+
+  // C4 guarantees `worldName` stays lowercase. Pulse canonicalizes realm names at ingest, and the
+  // contract pack asks consumers to treat a non-lowercase value on the wire as a violation to log
+  // rather than a reason to drop the realm (`parcel_changes/07-invalid-mixed-case-realm`). So:
+  // normalize, and say so — `/live-data` consumers (places, the explorer world list) key on the
+  // lowercase name, and the LiveKit path can never emit anything else.
+  const nonCanonical = worldRealms.filter((realm) => realm.name !== realm.name.toLowerCase())
+  if (nonCanonical.length > 0 && logger) {
+    logger.warn('Pulse answered /realms with non-lowercase realm names; normalizing them', {
+      realms: nonCanonical.map((realm) => realm.name).join(',')
+    })
+  }
+
+  return (
+    worldRealms
+      .map((realm) => ({ worldName: realm.name.toLowerCase(), users: realm.peers }))
+      // Both transports drop empty rooms before building `details` (`comms-adapter.ts`), so the
+      // Pulse mapper has to as well: otherwise `/live-data` lists a draining world that the LiveKit
+      // answer for the same world set omits, breaking the parity WP5 accepts on.
+      .filter((world) => world.users > 0)
+  )
 }
 
 function pulseEndpoint(pulseUrl: string, path: string): string {
@@ -70,7 +92,8 @@ const JSON_REQUEST = {
 
 export async function fetchPulseRealms(
   fetch: IFetchComponent,
-  pulseUrl: string
+  pulseUrl: string,
+  logger?: Pick<ILoggerComponent.ILogger, 'warn'>
 ): Promise<{ worlds: WorldStatus[]; lastUpdated: number }> {
   const response = await fetch.fetch(pulseEndpoint(pulseUrl, '/realms'), JSON_REQUEST)
   const body = (await response.json()) as PulseRealms
@@ -78,7 +101,7 @@ export async function fetchPulseRealms(
   const lastUpdated = body?.lastUpdated ? Date.parse(body.lastUpdated) : Number.NaN
 
   return {
-    worlds: worldStatusesFromRealms(body?.realms ?? []),
+    worlds: worldStatusesFromRealms(body?.realms ?? [], logger),
     lastUpdated: Number.isNaN(lastUpdated) ? Date.now() : lastUpdated
   }
 }

@@ -275,7 +275,7 @@ function presenceSourcedAdapter(
   }
 
   async function pulseStatus(): Promise<CommsStatus> {
-    const { worlds, lastUpdated } = await fetchPulseRealms(fetch, pulseUrl!)
+    const { worlds, lastUpdated } = await fetchPulseRealms(fetch, pulseUrl!, logger)
 
     return {
       adapterType,

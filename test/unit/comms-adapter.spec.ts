@@ -740,6 +740,46 @@ describe('comms-adapter', function () {
       })
     })
 
+    // C4-live-data: `worldName` stays lowercase whatever Pulse puts on the wire, and a realm with
+    // no peers is dropped exactly like an empty LiveKit room, so the two sources answer the same
+    // world set.
+    describe('when PRESENCE_SOURCE is pulse and Pulse answers with a mixed-case and an empty realm', () => {
+      let status: CommsStatus
+
+      beforeEach(async () => {
+        fetchMock.mockImplementation(
+          async () =>
+            new Response(
+              JSON.stringify({
+                realms: [
+                  { name: 'main', peers: 4, clusters: 2 },
+                  { name: 'CozyFarm.dcl.eth', peers: 2, clusters: 1 },
+                  { name: 'draining.dcl.eth', peers: 0, clusters: 1 }
+                ],
+                lastUpdated: realmsGolden.body.lastUpdated
+              })
+            )
+        )
+        status = await (await buildLivekitBackedAdapter({ PRESENCE_SOURCE: 'pulse', PULSE_URL })).status()
+      })
+
+      it('should publish the world name lowercased', () => {
+        expect(status.details).toEqual([{ worldName: 'cozyfarm.dcl.eth', users: 2 }])
+      })
+
+      it('should count neither the empty world nor Genesis City', () => {
+        expect(status.rooms).toBe(1)
+        expect(status.users).toBe(2)
+      })
+
+      it('should log the casing contract violation', () => {
+        expect(logger.warn).toHaveBeenCalledWith(
+          'Pulse answered /realms with non-lowercase realm names; normalizing them',
+          { realms: 'CozyFarm.dcl.eth' }
+        )
+      })
+    })
+
     describe('when PRESENCE_SOURCE is pulse and Pulse is unreachable', () => {
       it('should answer with an empty world list rather than failing', async () => {
         fetchMock.mockRejectedValue(new Error('pulse is down'))
