@@ -82,6 +82,8 @@ export const createCommsComponent = async (
 
     await assertUserNotBannedFromScene(userAddress, worldName, sceneBaseParcel)
 
+    // iteration-2 exception: LiveKit is the correct source here. The capacity gate has to reflect
+    // the room the user is about to join, not the presence snapshot Pulse publishes.
     const participantCount = await commsAdapter.getWorldSceneRoomsParticipantCount(worldName)
     if (participantCount >= maxUsersPerWorld) {
       throw new WorldAtCapacityError(worldName)
@@ -99,6 +101,8 @@ export const createCommsComponent = async (
     await assertUserNotDenylisted(userAddress)
     await assertWorldAccess(userAddress, worldName, accessOptions)
 
+    // iteration-2 exception: LiveKit is the correct source here. The capacity gate has to reflect
+    // the room the user is about to join, not the presence snapshot Pulse publishes.
     const participantCount = await commsAdapter.getWorldRoomParticipantCount(worldName)
     if (participantCount >= maxUsersPerWorld) {
       throw new WorldAtCapacityError(worldName)

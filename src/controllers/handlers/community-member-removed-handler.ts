@@ -21,6 +21,9 @@ export interface ICommunityMemberRemovedHandler {
  * 1. Checks if the user is currently connected to any world (peersRegistry)
  * 2. For that world, re-validates the user's access (they might still have access via wallet or another community)
  * 3. Kicks the user if they no longer have access
+ *
+ * iteration-2 exception: LiveKit is the correct source here. The lookup feeds a kick, so it reads
+ * the LiveKit-fed `peersRegistry` rather than Pulse regardless of `PRESENCE_SOURCE`.
  */
 export function createCommunityMemberRemovedHandler({
   peersRegistry,
