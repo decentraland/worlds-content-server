@@ -25,7 +25,7 @@ jest.mock('../../src/adapters/fetch', () => {
   const actual = jest.requireActual('../../src/adapters/fetch')
   const { loadHttpGolden: loadGolden } = jest.requireActual('../fixtures/iteration-2/http-goldens')
   const realms = loadGolden('realms')
-  const spied = (globalThis as unknown as { __wp5PulseSpy?: PulseSpy })
+  const spied = globalThis as unknown as { __wp5PulseSpy?: PulseSpy }
 
   return {
     ...actual,
