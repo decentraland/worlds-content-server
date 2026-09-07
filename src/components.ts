@@ -105,7 +105,13 @@ export async function initComponents(): Promise<AppComponents> {
   const redis = await createRedisComponent(redisUrl, { logs })
 
   const livekitClient = await createLivekitClient({ config })
-  const commsAdapter: ICommsAdapter = await createCommsAdapterComponent({ config, fetch, logs, livekitClient })
+  const commsAdapter: ICommsAdapter = await createCommsAdapterComponent({
+    config,
+    fetch,
+    logs,
+    livekitClient,
+    metrics
+  })
 
   const rpcUrl = await config.requireString('RPC_URL')
   const ethereumProvider = createEthereumProvider({ fetch }, rpcUrl)

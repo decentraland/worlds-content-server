@@ -137,7 +137,12 @@ async function initComponents(): Promise<TestComponents> {
 
   const limitsManager = createMockLimitsManagerComponent()
 
-  const commsAdapter = createMockCommsAdapterComponent()
+  // Integration suites run against a mocked comms adapter. A suite that has to exercise the *real*
+  // `createCommsAdapterComponent` wiring from `src/components.ts` — the `PRESENCE_SOURCE` switch —
+  // sets `USE_REAL_COMMS_ADAPTER=true` before the runner builds its program, and then keeps the
+  // adapter `initComponents()` already built instead of replacing it.
+  const commsAdapter =
+    process.env.USE_REAL_COMMS_ADAPTER === 'true' ? components.commsAdapter : createMockCommsAdapterComponent()
 
   const nameOwnership = createMockedNameOwnership()
 

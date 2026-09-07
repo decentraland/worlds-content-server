@@ -136,6 +136,42 @@ cp .env.default .env
 
 See `.env.default` for available configuration options.
 
+#### Presence source
+
+The online-player counters this service publishes can be read either from LiveKit (the historical
+source) or from Pulse. All three keys default to today's behaviour, so a deploy with no configuration
+change is a no-op.
+
+| Key | Default | What it does |
+| --- | --- | --- |
+| `PRESENCE_SOURCE` | `livekit` | `livekit` counts users from the LiveKit room listing. `pulse` reads `GET ${PULSE_URL}/realms` for `/live-data` and `/status` (`comms`), and `GET ${PULSE_URL}/peers/:id` for `/wallet/:wallet/connected-world`. `both` serves the LiveKit answer and counts the divergence against Pulse. Any other value falls back to `livekit`. |
+| `PULSE_URL` | _unset_ | Base URL of the Pulse service. Required when `PRESENCE_SOURCE` is `pulse` or `both`. |
+| `PUBLISH_PEER_WORLD_EVENTS` | `true` | Whether the LiveKit webhook publishes `peer.<address>.world.join\|leave` on NATS. `false`, `0` and `no` (trimmed, any casing) switch it off; anything else — an absent value included — keeps publishing. Set it off once social-service-ea reads world presence from Pulse; the publish is then removed altogether. |
+
+Only the counters move. The `MAX_USERS_PER_WORLD` capacity check, the participant kicks and the
+access-change re-checks keep reading LiveKit, which is the authority on who is attached to a room.
+
+Under `PRESENCE_SOURCE=pulse` the wallet is lowercased before the `GET ${PULSE_URL}/peers/:id`
+lookup (Pulse stores addresses lowercased, and the LiveKit-fed registry path lowercases too, so the
+route stays case-insensitive), and the answer is cached in memory for 5 seconds per wallet so this
+public, unauthenticated route cannot fan one Pulse call out per request.
+
+Every Pulse read is bounded by a 5 second deadline (`PULSE_REQUEST_TIMEOUT_MS`, not configurable),
+so a Pulse that accepts the connection and then stalls degrades the answer instead of hanging the
+request: under `pulse` the affected route answers with empty counters or a 404, and under `both` the
+LiveKit answer is unaffected.
+
+While `PRESENCE_SOURCE=both`, every divergence between the two answers is counted in the
+`presence_shadow_diff` metric and logged as `Presence shadow comparison`. The comparison runs off
+the served request path — the LiveKit answer is returned first and Pulse is read in the background —
+so a Pulse incident cannot add latency to `/live-data` or `/status`. `kind="live-data"` counts the
+diverging worlds (symmetric difference of world names plus the worlds whose user counts differ) and
+`kind="live-data-users"` sums `|livekit - pulse|` per world — a world only one source reports counts
+as its whole population, so a total Pulse outage reads as a large magnitude and not as zero — which
+lets a dashboard tell one world off by 1 from one world off by 1000. Both series are incremented
+even when the sources agree, so the series exist before there is anything to report. Metric and log
+carry counts only — no wallet or address is ever recorded.
+
 ### Running the Service
 
 #### Setting up the environment

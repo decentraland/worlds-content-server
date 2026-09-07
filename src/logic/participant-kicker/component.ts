@@ -2,6 +2,11 @@ import { AppComponents } from '../../types'
 import { IParticipantKicker } from './types'
 import { DEFAULT_KICK_BATCH_SIZE } from './constants'
 
+/**
+ * iteration-2 exception: LiveKit is the correct source here. Kicks act on the live LiveKit rooms a
+ * peer holds, so both the room list (`peersRegistry`, fed by the LiveKit webhook) and the removal
+ * itself (`commsAdapter.removeParticipant`) stay on LiveKit regardless of `PRESENCE_SOURCE`.
+ */
 export async function createParticipantKicker(
   deps: Pick<AppComponents, 'peersRegistry' | 'commsAdapter' | 'logs' | 'config'>
 ): Promise<IParticipantKicker> {

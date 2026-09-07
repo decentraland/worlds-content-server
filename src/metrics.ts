@@ -86,6 +86,11 @@ export const metricDeclarations = {
     help: 'Deployment processing stage failures by outcome',
     type: IMetricsComponent.CounterType,
     labelNames: ['stage', 'outcome']
+  },
+  presence_shadow_diff: {
+    help: 'Presence divergence between LiveKit and Pulse while PRESENCE_SOURCE=both, counts only and never addresses: kind="live-data" counts the diverging worlds, kind="live-data-users" sums |livekit - pulse| per world, a world only one source reports counting as its whole population',
+    type: IMetricsComponent.CounterType,
+    labelNames: ['kind']
   }
 }
 
