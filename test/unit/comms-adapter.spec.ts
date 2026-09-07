@@ -10,6 +10,7 @@ import { createMockLogs } from '../mocks/logs-mock'
 import { metricDeclarations } from '../../src/metrics'
 import { CommsStatus, ICommsAdapter, LivekitClient } from '../../src/types'
 import { loadHttpGolden, PulseRealmsBody } from '../fixtures/iteration-2/http-goldens'
+import { PULSE_REQUEST_TIMEOUT_MS } from '../../src/logic/presence-source'
 
 const metrics = createTestMetricsComponent(metricDeclarations)
 
@@ -645,6 +646,43 @@ describe('comms-adapter', function () {
       })
     })
 
+    /**
+     * `both` fires the Pulse shadow comparison *off* the served request path, so a case that
+     * asserts on the comparison has to let that background work settle first. `setImmediate` drains
+     * the microtask queue and the pending I/O callbacks the mocked `Response.json()` needs; a few
+     * passes cover the whole fetch -> json -> record chain.
+     */
+    async function flushShadowComparison(): Promise<void> {
+      for (let pass = 0; pass < 5; pass += 1) {
+        await new Promise((resolve) => setImmediate(resolve))
+      }
+    }
+
+    function buildShadowingAdapter(transportStatus: jest.Mock): ICommsAdapter {
+      return presenceSourcedAdapter(
+        { fetch: { fetch: fetchMock } as unknown as IFetchComponent, logs, metrics },
+        { ...createMockCommsAdapterComponent(), status: transportStatus },
+        {
+          presenceSource: 'both',
+          pulseUrl: PULSE_URL,
+          adapterType: 'livekit',
+          statusUrl: 'https://livekit.dcl.org/',
+          publishesCommitHash: false
+        }
+      )
+    }
+
+    function livekitStatus(details: { worldName: string; users: number }[]): CommsStatus {
+      return {
+        adapterType: 'livekit',
+        statusUrl: 'https://livekit.dcl.org/',
+        rooms: details.length,
+        users: details.reduce((carry, detail) => carry + detail.users, 0),
+        details,
+        timestamp: Date.now()
+      }
+    }
+
     async function buildLivekitBackedAdapter(overrides: Record<string, string>): Promise<ICommsAdapter> {
       const config = await createConfigComponent({
         COMMS_ADAPTER: 'livekit',
@@ -906,6 +944,7 @@ describe('comms-adapter', function () {
           ])
         })
         status = await (await buildLivekitBackedAdapter({ PRESENCE_SOURCE: 'both', PULSE_URL })).status()
+        await flushShadowComparison()
       })
 
       afterEach(() => {
@@ -949,6 +988,49 @@ describe('comms-adapter', function () {
           livekitUsers: 5,
           pulseUsers: 1
         })
+      })
+    })
+
+    // WP5's dual-source window exists to serve the *LiveKit* answer while Pulse is compared against
+    // it, so the comparison must never be able to delay a public request: a Pulse that accepts the
+    // connection and then stalls (a wedged pod, a hung DB read) would otherwise turn one /live-data
+    // or /status request per TTL into a hang, on two routes that today never touch Pulse.
+    describe('when PRESENCE_SOURCE is both and Pulse stalls after accepting the connection', () => {
+      let servedStatus: CommsStatus
+
+      beforeEach(async () => {
+        jest.useFakeTimers()
+        fetchMock.mockImplementation(() => new Promise<Response>(() => undefined))
+
+        // No timer is advanced before this resolves, so it can only resolve if the served answer
+        // does not wait for the shadow read.
+        servedStatus = await buildShadowingAdapter(
+          jest.fn().mockResolvedValue(livekitStatus([{ worldName: 'cozyfarm.dcl.eth', users: 1 }]))
+        ).status()
+      })
+
+      afterEach(() => {
+        jest.useRealTimers()
+      })
+
+      it('should serve the transport answer without waiting for Pulse', () => {
+        expect(servedStatus.details).toEqual([{ worldName: 'cozyfarm.dcl.eth', users: 1 }])
+      })
+
+      it('should still have started the Pulse read', () => {
+        expect(fetchMock).toHaveBeenCalledWith(`${PULSE_URL}/realms`, expect.anything())
+      })
+
+      it('should not have reported anything while the read is still in flight', () => {
+        expect(logger.warn).not.toHaveBeenCalled()
+      })
+
+      it('should abandon the stalled shadow at the deadline and log it exactly once', async () => {
+        await jest.advanceTimersByTimeAsync(PULSE_REQUEST_TIMEOUT_MS)
+
+        expect(logger.warn.mock.calls.flat()).toEqual([
+          `Error retrieving the Pulse presence shadow: Pulse request timed out after ${PULSE_REQUEST_TIMEOUT_MS} ms`
+        ])
       })
     })
 
@@ -1004,6 +1086,7 @@ describe('comms-adapter', function () {
 
         try {
           await (await buildLivekitBackedAdapter({ PRESENCE_SOURCE: 'both', PULSE_URL })).status()
+          await flushShadowComparison()
 
           expect(incrementSpy).toHaveBeenCalledWith('presence_shadow_diff', { kind: 'live-data' }, 0)
           expect(incrementSpy).toHaveBeenCalledWith('presence_shadow_diff', { kind: 'live-data-users' }, 0)

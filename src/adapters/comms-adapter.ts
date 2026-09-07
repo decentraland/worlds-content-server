@@ -395,6 +395,22 @@ export function presenceSourcedAdapter(
    * answer passes straight through and only the *comparison* is throttled, which keeps Pulse to one
    * read per TTL whatever the request rate.
    */
+  /**
+   * Reads Pulse and records the divergence. Never awaited on a served request path — see
+   * `shadowedTransportStatus` — so it owns its own error handling: nothing downstream is left to
+   * catch its rejection.
+   */
+  async function compareWithPulse(transportStatus: CommsStatus): Promise<void> {
+    const pulse = await pulseStatus().catch((error: any) => {
+      logger.warn(`Error retrieving the Pulse presence shadow: ${error.message}`)
+      return undefined
+    })
+
+    if (pulse) {
+      recordShadowDiff(transportStatus, pulse)
+    }
+  }
+
   async function shadowedTransportStatus(): Promise<CommsStatus> {
     // Typed as `CommsStatus`, but `cachingAdapter` hands back `undefined` when its very first poll
     // fails with nothing stale to fall back on. Guarding here keeps a transport outage from turning
@@ -404,14 +420,12 @@ export function presenceSourcedAdapter(
     if (transportStatus && Date.now() >= nextShadowComparisonAt) {
       nextShadowComparisonAt = Date.now() + STATUS_CACHE_TTL_MS
 
-      const pulse = await pulseStatus().catch((error: any) => {
-        logger.warn(`Error retrieving the Pulse presence shadow: ${error.message}`)
-        return undefined
-      })
-
-      if (pulse) {
-        recordShadowDiff(transportStatus, pulse)
-      }
+      // Deliberately not awaited: `both` exists to serve the *transport's* answer, so the
+      // comparison must not be able to add latency to `/live-data` or `/status` — routes that
+      // today never touch Pulse. Awaiting it made one served request per TTL hang for as long as a
+      // stalled Pulse kept the socket open. It runs in the background instead, bounded by
+      // `PULSE_REQUEST_TIMEOUT_MS`, and logs its own failure.
+      void compareWithPulse(transportStatus)
     }
 
     return transportStatus ?? emptyStatus()
