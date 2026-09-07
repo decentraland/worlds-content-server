@@ -136,6 +136,25 @@ cp .env.default .env
 
 See `.env.default` for available configuration options.
 
+#### Presence source
+
+The online-player counters this service publishes can be read either from LiveKit (the historical
+source) or from Pulse. All three keys default to today's behaviour, so a deploy with no configuration
+change is a no-op.
+
+| Key | Default | What it does |
+| --- | --- | --- |
+| `PRESENCE_SOURCE` | `livekit` | `livekit` counts users from the LiveKit room listing. `pulse` reads `GET ${PULSE_URL}/realms` for `/live-data` and `/status` (`comms`), and `GET ${PULSE_URL}/peers/:id` for `/wallet/:wallet/connected-world`. `both` serves the LiveKit answer and counts the divergence against Pulse. Any other value falls back to `livekit`. |
+| `PULSE_URL` | _unset_ | Base URL of the Pulse service. Required when `PRESENCE_SOURCE` is `pulse` or `both`. |
+| `PUBLISH_PEER_WORLD_EVENTS` | `true` | Whether the LiveKit webhook publishes `peer.<address>.world.join\|leave` on NATS. Set to `false` once social-service-ea reads world presence from Pulse; the publish is then removed altogether. |
+
+Only the counters move. The `MAX_USERS_PER_WORLD` capacity check, the participant kicks and the
+access-change re-checks keep reading LiveKit, which is the authority on who is attached to a room.
+
+While `PRESENCE_SOURCE=both`, every divergence between the two answers is counted in the
+`presence_shadow_diff{kind="live-data"}` metric and logged as `Presence shadow comparison`. Both
+carry counts only — no wallet or address is ever recorded.
+
 ### Running the Service
 
 #### Setting up the environment

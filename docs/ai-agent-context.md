@@ -26,6 +26,7 @@
 - Storage: Local disk or AWS S3 (via @dcl/catalyst-storage)
 - Blockchain: DCL Names ownership validation (deployer must own name)
 - Communication: LiveKit (optional, for comms adapter configuration)
+- Presence: Pulse (optional, only when `PRESENCE_SOURCE` is `pulse` or `both` — see below)
 
 **Key Concepts:**
 
@@ -43,6 +44,29 @@ A World realm is fundamentally different from a Genesis City realm:
 - **LiveKit Gatekeeper for Worlds**: The Worlds Content Server acts as a LiveKit gatekeeper for World scenes. It controls who is allowed to access and connect to a World's comms room, governing which players can interact with each other inside that World. This is enforced via the World's ACL (`access` and `streaming` settings in the `worlds.permissions` JSON column). This is distinct from Genesis City, where comms-gatekeeper handles that role.
 - **Separate LiveKit Infrastructure**: At the infrastructure level, Worlds and Genesis City may use different LiveKit accounts or clusters. The comms infrastructure is not necessarily shared between them.
 - **Content is Always Public**: While comms access can be restricted by the World owner (controlling who can enter and interact), the scene content files itself are always publicly accessible. The Worlds Content Server is a public content server — anyone can fetch scene files by content hash regardless of comms access restrictions.
+
+**Presence Source:**
+
+Where the online-player counters come from is configurable, because Pulse is becoming the platform's
+single source of online-player information. Only the *counters* move; access control does not.
+
+- `PRESENCE_SOURCE=livekit` (default, today's behaviour): `commsAdapter.status()` counts users from
+  the LiveKit room listing, and `/wallet/{wallet}/connected-world` answers from `peersRegistry`
+  (fed by the LiveKit webhook).
+- `PRESENCE_SOURCE=pulse`: `commsAdapter.status()` — and with it `/live-data` and `/status`'s `comms`
+  block — is built from `GET ${PULSE_URL}/realms`, filtered to realms whose name ends in `.dcl.eth`;
+  `/wallet/{wallet}/connected-world` answers from `GET ${PULSE_URL}/peers/{wallet}`. The published
+  response shapes are unchanged, and `comms.adapterType` keeps naming the transport, not the counter.
+- `PRESENCE_SOURCE=both`: serves the LiveKit answer and counts the divergence against Pulse in
+  `presence_shadow_diff{kind="live-data"}` (counts only, never addresses).
+- LiveKit stays the source for anything that decides access: the `MAX_USERS_PER_WORLD` capacity
+  check, participant kicks, access-change re-checks and the community-member-removed flow. Those
+  paths carry an `iteration-2 exception` comment.
+- `PUBLISH_PEER_WORLD_EVENTS` (default `true`) gates the `peer.<address>.world.join|leave` NATS
+  publish in the LiveKit webhook; the `peersRegistry` update is never gated. The publish is removed
+  once social-service-ea reads world presence from Pulse.
+- `/wallet/{wallet}/connected-world` is deprecated in `docs/openapi.yaml`: Pulse's
+  `GET /peers/{id}` replaces it once unity-explorer reads Pulse directly.
 
 **Deployment Requirements:**
 

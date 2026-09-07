@@ -1279,7 +1279,14 @@ paths:
       tags:
         - Content Server
       summary: /wallet/{wallet}/connected-world
-      description: Retrieve the world that a wallet is currently connected to
+      deprecated: true
+      description: >-
+        Retrieve the world that a wallet is currently connected to.
+
+
+        **Deprecated.** Pulse's `GET /peers/{id}` replaces this route: a peer whose `realm` ends in
+        `.dcl.eth` is in that world. It is kept for one release while unity-explorer still calls it,
+        and removed once the explorer reads Pulse directly.
       operationId: worldsContentServer_getWalletConnectedWorld
       parameters:
         - name: wallet
