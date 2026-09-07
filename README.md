@@ -159,8 +159,9 @@ public, unauthenticated route cannot fan one Pulse call out per request.
 While `PRESENCE_SOURCE=both`, every divergence between the two answers is counted in the
 `presence_shadow_diff` metric and logged as `Presence shadow comparison`. `kind="live-data"` counts
 the diverging worlds (symmetric difference of world names plus the worlds whose user counts differ)
-and `kind="live-data-users"` sums `|livekit - pulse|` over those worlds, so a dashboard can tell one
-world off by 1 from one world off by 1000. Both series are incremented even when the sources agree,
+and `kind="live-data-users"` sums `|livekit - pulse|` per world — a world only one source reports
+counts as its whole population, so a total Pulse outage reads as a large magnitude and not as zero —
+which lets a dashboard tell one world off by 1 from one world off by 1000. Both series are incremented even when the sources agree,
 so the series exist before there is anything to report. Metric and log carry counts only — no
 wallet or address is ever recorded.
 

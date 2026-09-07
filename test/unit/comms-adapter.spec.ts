@@ -972,8 +972,9 @@ describe('comms-adapter', function () {
       it('should count the size of the divergence under presence_shadow_diff{kind=live-data-users}', () => {
         // Without this series WP10 cannot tell one world off by 1 from one world off by 1000 —
         // both are a single `kind=live-data` increment. cozyfarm.dcl.eth is 2 on LiveKit and 1 on
-        // Pulse, so the magnitude is |2 - 1| = 1.
-        expect(incrementSpy).toHaveBeenCalledWith('presence_shadow_diff', { kind: 'live-data-users' }, 1)
+        // Pulse (|2 - 1| = 1) and only-in-livekit.dcl.eth is 3 on LiveKit and absent from Pulse, so
+        // it diverges by its whole population (3): 4 in total.
+        expect(incrementSpy).toHaveBeenCalledWith('presence_shadow_diff', { kind: 'live-data-users' }, 4)
       })
 
       it('should log the divergence as counts only, never wallets', () => {
@@ -982,7 +983,7 @@ describe('comms-adapter', function () {
           onlyInLivekit: 1,
           onlyInPulse: 0,
           worldsWithUserDelta: 1,
-          totalUsersDelta: 1,
+          totalUsersDelta: 4,
           livekitWorlds: 2,
           pulseWorlds: 1,
           livekitUsers: 5,
@@ -1093,6 +1094,61 @@ describe('comms-adapter', function () {
         } finally {
           incrementSpy.mockRestore()
         }
+      })
+    })
+
+    // A world only one source reports diverges by its *whole* population. Counting only the
+    // both-sides-different branch made the magnitude series read 0 for the largest possible
+    // divergence: a total Pulse presence outage takes the "absent from Pulse" branch for every
+    // world, so WP10's magnitude dashboard would have reported no user divergence at all.
+    describe('when PRESENCE_SOURCE is both and a world is reported by only one source', () => {
+      let incrementSpy: jest.SpyInstance
+
+      beforeEach(() => {
+        incrementSpy = jest.spyOn(metrics, 'increment')
+      })
+
+      afterEach(() => {
+        incrementSpy.mockRestore()
+      })
+
+      it('should count the whole population of a world only Pulse reports', async () => {
+        fetchMock.mockImplementation(
+          async () =>
+            new Response(
+              JSON.stringify({
+                realms: [{ name: 'only-in-pulse.dcl.eth', peers: 7, clusters: 2 }],
+                lastUpdated: realmsGolden.body.lastUpdated
+              })
+            )
+        )
+
+        await buildShadowingAdapter(jest.fn().mockResolvedValue(livekitStatus([]))).status()
+        await flushShadowComparison()
+
+        expect(incrementSpy).toHaveBeenCalledWith('presence_shadow_diff', { kind: 'live-data' }, 1)
+        expect(incrementSpy).toHaveBeenCalledWith('presence_shadow_diff', { kind: 'live-data-users' }, 7)
+      })
+
+      it('should count every user LiveKit reports when Pulse lists no realms at all', async () => {
+        // The review's failure scenario: Pulse's realm ingest regresses and /realms stops listing
+        // .dcl.eth realms while LiveKit still reports worlds.
+        fetchMock.mockImplementation(
+          async () => new Response(JSON.stringify({ realms: [], lastUpdated: realmsGolden.body.lastUpdated }))
+        )
+
+        await buildShadowingAdapter(
+          jest.fn().mockResolvedValue(
+            livekitStatus([
+              { worldName: 'cozyfarm.dcl.eth', users: 2 },
+              { worldName: 'only-in-livekit.dcl.eth', users: 3 }
+            ])
+          )
+        ).status()
+        await flushShadowComparison()
+
+        expect(incrementSpy).toHaveBeenCalledWith('presence_shadow_diff', { kind: 'live-data' }, 2)
+        expect(incrementSpy).toHaveBeenCalledWith('presence_shadow_diff', { kind: 'live-data-users' }, 5)
       })
     })
 

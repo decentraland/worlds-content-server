@@ -61,7 +61,10 @@ single source of online-player information. Only the *counters* move; access con
   not the counter.
 - `PRESENCE_SOURCE=both`: serves the LiveKit answer and counts the divergence against Pulse in
   `presence_shadow_diff` — `kind="live-data"` counts the diverging worlds, `kind="live-data-users"`
-  sums `|livekit - pulse|` over them (counts only, never addresses).
+  sums `|livekit - pulse|` per world, a world only one source reports counting as its whole
+  population so a total Pulse outage cannot read as zero (counts only, never addresses). The
+  comparison runs off the served request path and every Pulse read is bounded by
+  `PULSE_REQUEST_TIMEOUT_MS` (5 s), so a stalled Pulse can never delay `/live-data` or `/status`.
 - LiveKit stays the source for anything that decides access: the `MAX_USERS_PER_WORLD` capacity
   check, participant kicks, access-change re-checks and the community-member-removed flow. Those
   paths carry an `iteration-2 exception` comment.

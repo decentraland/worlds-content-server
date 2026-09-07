@@ -10,9 +10,10 @@ const STATUS_CACHE_TTL_MS = 60 * 1000
 const SHADOW_DIFF_KIND = 'live-data'
 
 /**
- * The `kind` label carrying the *size* of that divergence: the summed `|livekit - pulse|` over the
- * worlds both sources report with different user counts. Without it a dashboard cannot tell one
- * world off by 1 from one world off by 1000 — both are a single `live-data` increment.
+ * The `kind` label carrying the *size* of that divergence: the summed `|livekit - pulse|` per world,
+ * counting a world only one source reports as diverging by its whole population. Without it a
+ * dashboard cannot tell one world off by 1 from one world off by 1000 — both are a single
+ * `live-data` increment.
  */
 const SHADOW_DIFF_USERS_KIND = 'live-data-users'
 
@@ -351,14 +352,20 @@ export function presenceSourcedAdapter(
       const pulseUsers = pulseWorlds.get(worldName)
       if (pulseUsers === undefined) {
         onlyInLivekit++
+        // A world only one source reports diverges by its *whole* population. Counting only the
+        // branch below would make this series read 0 for the largest possible divergence: during a
+        // total Pulse presence outage every world takes this branch, so the magnitude dashboard
+        // WP10 reads to decide the cutover would report no user divergence at all.
+        totalUsersDelta += users
       } else if (pulseUsers !== users) {
         worldsWithUserDelta++
         totalUsersDelta += Math.abs(pulseUsers - users)
       }
     }
-    for (const worldName of pulseWorlds.keys()) {
+    for (const [worldName, users] of pulseWorlds) {
       if (!livekitWorlds.has(worldName)) {
         onlyInPulse++
+        totalUsersDelta += users
       }
     }
 
