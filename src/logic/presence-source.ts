@@ -1,5 +1,5 @@
 import { IConfigComponent, ILoggerComponent } from '@well-known-components/interfaces'
-import { IFetchComponent } from '@dcl/core-commons'
+import { IFetchComponent, RequestOptions } from '@dcl/core-commons'
 import { HTTPResponseError } from '../adapters/fetch'
 import { WorldStatus } from '../types'
 
@@ -85,18 +85,58 @@ function pulseEndpoint(pulseUrl: string, path: string): string {
   return `${pulseUrl.replace(/\/+$/, '')}${path}`
 }
 
+/**
+ * Deadline for every Pulse read. `createFetchComponent()` (`src/adapters/fetch.ts`) is built with
+ * no default options and `@dcl/fetch-component` only arms its abort timer when a timeout is passed,
+ * so without this a Pulse that accepts the connection and then stalls (a wedged pod, a hung DB
+ * read) would hang the caller for as long as the socket stays open: under `PRESENCE_SOURCE=pulse`
+ * that is every cache-miss request to `/live-data`, `/status` and `/wallet/:wallet/connected-world`.
+ * 5 s sits well above Pulse's expected latency and well below the gateway timeouts in front of
+ * those public routes, so a Pulse incident degrades the answer instead of the request.
+ */
+export const PULSE_REQUEST_TIMEOUT_MS = 5_000
+
 const JSON_REQUEST = {
   method: 'GET',
   headers: { 'Content-Type': 'application/json' }
 } as const
+
+/**
+ * Runs one Pulse read under `PULSE_REQUEST_TIMEOUT_MS`.
+ *
+ * The `AbortController` is what actually cancels the exchange — it is handed to the fetch component
+ * as `abortController` (the knob `@dcl/fetch-component` puts on the request `signal`), so aborting
+ * it tears down the connection instead of leaking a socket, and it also errors the body stream, not
+ * just the headers. The race is what makes the *caller* give up on time: the deadline has to cover
+ * `response.json()` too, and a transport that ignores the signal must not be able to hang us.
+ */
+async function withPulseDeadline<T>(read: (init: RequestOptions) => Promise<T>): Promise<T> {
+  const abortController = new AbortController()
+  const timer = setTimeout(() => abortController.abort(), PULSE_REQUEST_TIMEOUT_MS)
+  const deadline = new Promise<never>((_, reject) => {
+    abortController.signal.addEventListener('abort', () =>
+      reject(new Error(`Pulse request timed out after ${PULSE_REQUEST_TIMEOUT_MS} ms`))
+    )
+  })
+
+  try {
+    return await Promise.race([read({ ...JSON_REQUEST, abortController, signal: abortController.signal }), deadline])
+  } finally {
+    // Cleared on every exit, so a read that answered in time cannot be aborted afterwards and the
+    // `deadline` promise stays pending-and-unrejected rather than becoming an unhandled rejection.
+    clearTimeout(timer)
+  }
+}
 
 export async function fetchPulseRealms(
   fetch: IFetchComponent,
   pulseUrl: string,
   logger?: Pick<ILoggerComponent.ILogger, 'warn'>
 ): Promise<{ worlds: WorldStatus[]; lastUpdated: number }> {
-  const response = await fetch.fetch(pulseEndpoint(pulseUrl, '/realms'), JSON_REQUEST)
-  const body = (await response.json()) as PulseRealms
+  const body = await withPulseDeadline(async (init) => {
+    const response = await fetch.fetch(pulseEndpoint(pulseUrl, '/realms'), init)
+    return (await response.json()) as PulseRealms
+  })
 
   const lastUpdated = body?.lastUpdated ? Date.parse(body.lastUpdated) : Number.NaN
 
@@ -120,21 +160,18 @@ export async function fetchPulsePeerRealm(
   pulseUrl: string,
   peerId: string
 ): Promise<string | undefined> {
-  let response: Response
+  let body: PulsePeerResponse | undefined
   try {
-    response = await fetch.fetch(pulseEndpoint(pulseUrl, `/peers/${encodeURIComponent(peerId)}`), JSON_REQUEST)
+    body = await withPulseDeadline(async (init) => {
+      const response = await fetch.fetch(pulseEndpoint(pulseUrl, `/peers/${encodeURIComponent(peerId)}`), init)
+      return response.status === 404 ? undefined : ((await response.json()) as PulsePeerResponse)
+    })
   } catch (error) {
     if (isPeerNotFound(error)) {
       return undefined
     }
     throw error
   }
-
-  if (response.status === 404) {
-    return undefined
-  }
-
-  const body = (await response.json()) as PulsePeerResponse
 
   return body?.ok && body.peer?.realm ? body.peer.realm : undefined
 }
