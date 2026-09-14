@@ -48,7 +48,7 @@ test('GET /live-data and /status over Pulse', function ({ components }) {
   }
 
   async function buildAdapter(fetch: IFetchComponent): Promise<ICommsAdapter> {
-    const { logs, metrics } = components
+    const { logs } = components
     const config = await createConfigComponent(baseConfig)
     return createCommsAdapterComponent({
       config,
@@ -59,8 +59,7 @@ test('GET /live-data and /status over Pulse', function ({ components }) {
         listRoomsWithParticipantCounts: jest
           .fn()
           .mockResolvedValue([{ name: 'world-cozyfarm.dcl.eth', numParticipants: 1 }])
-      }),
-      metrics
+      })
     })
   }
 

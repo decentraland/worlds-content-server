@@ -2,15 +2,11 @@ import { createConfigComponent } from '@well-known-components/env-config-provide
 import { IFetchComponent } from '@dcl/core-commons'
 import { createCommsAdapterComponent, STATUS_CACHE_TTL_MS } from '../../src/adapters/comms-adapter'
 import { createLogComponent } from '@well-known-components/logger'
-import { createTestMetricsComponent } from '@dcl/metrics'
 import { ILoggerComponent } from '@well-known-components/interfaces'
 import { createMockLivekitClient } from '../mocks/livekit-client-mock'
 import { createMockLogs } from '../mocks/logs-mock'
-import { metricDeclarations } from '../../src/metrics'
 import { CommsStatus, ICommsAdapter, LivekitClient } from '../../src/types'
 import { loadHttpGolden, PulseRealmsBody } from '../fixtures/iteration-2/http-goldens'
-
-const metrics = createTestMetricsComponent(metricDeclarations)
 
 describe('comms-adapter', function () {
   describe('ws-room', function () {
@@ -33,8 +29,7 @@ describe('comms-adapter', function () {
           config,
           fetch,
           logs,
-          livekitClient: createMockLivekitClient(),
-          metrics
+          livekitClient: createMockLivekitClient()
         })
       })
 
@@ -83,8 +78,7 @@ describe('comms-adapter', function () {
           config,
           fetch,
           logs,
-          livekitClient: createMockLivekitClient(),
-          metrics
+          livekitClient: createMockLivekitClient()
         })
       })
 
@@ -123,8 +117,7 @@ describe('comms-adapter', function () {
           config,
           fetch,
           logs,
-          livekitClient: createMockLivekitClient(),
-          metrics
+          livekitClient: createMockLivekitClient()
         })
       })
 
@@ -172,8 +165,7 @@ describe('comms-adapter', function () {
           config,
           fetch,
           logs,
-          livekitClient: createMockLivekitClient(),
-          metrics
+          livekitClient: createMockLivekitClient()
         })
       })
 
@@ -209,8 +201,7 @@ describe('comms-adapter', function () {
           config,
           fetch,
           logs,
-          livekitClient: createMockLivekitClient(),
-          metrics
+          livekitClient: createMockLivekitClient()
         })
       })
 
@@ -237,8 +228,7 @@ describe('comms-adapter', function () {
             config,
             fetch,
             logs,
-            livekitClient: createMockLivekitClient(),
-            metrics
+            livekitClient: createMockLivekitClient()
           })
         ).rejects.toThrow('Configuration: string COMMS_FIXED_ADAPTER is required')
       })
@@ -267,7 +257,7 @@ describe('comms-adapter', function () {
         livekitClient = createMockLivekitClient({
           createConnectionToken: jest.fn().mockResolvedValue('livekit:wss://livekit.dcl.org?access_token=token')
         })
-        commsAdapter = await createCommsAdapterComponent({ config, fetch, logs, livekitClient, metrics })
+        commsAdapter = await createCommsAdapterComponent({ config, fetch, logs, livekitClient })
       })
 
       it('should return a livekit connection string', async () => {
@@ -314,7 +304,7 @@ describe('comms-adapter', function () {
           const fetch: IFetchComponent = {
             fetch: async (_url: Request): Promise<Response> => new Response(undefined)
           }
-          commsAdapter = await createCommsAdapterComponent({ config, fetch, logs, livekitClient, metrics })
+          commsAdapter = await createCommsAdapterComponent({ config, fetch, logs, livekitClient })
         })
 
         it('should return the count with stripped prefixes', async () => {
@@ -355,7 +345,7 @@ describe('comms-adapter', function () {
           const fetch: IFetchComponent = {
             fetch: async (_url: Request): Promise<Response> => new Response(undefined)
           }
-          commsAdapter = await createCommsAdapterComponent({ config, fetch, logs, livekitClient, metrics })
+          commsAdapter = await createCommsAdapterComponent({ config, fetch, logs, livekitClient })
         })
 
         it('should exclude the scene room from the world room count', async () => {
@@ -385,7 +375,7 @@ describe('comms-adapter', function () {
           const fetch: IFetchComponent = {
             fetch: async (_url: Request): Promise<Response> => new Response(undefined)
           }
-          commsAdapter = await createCommsAdapterComponent({ config, fetch, logs, livekitClient, metrics })
+          commsAdapter = await createCommsAdapterComponent({ config, fetch, logs, livekitClient })
         })
 
         it('should return 0 rather than fail the capacity check', async () => {
@@ -425,7 +415,7 @@ describe('comms-adapter', function () {
         const fetch: IFetchComponent = {
           fetch: async (_url: Request): Promise<Response> => new Response(undefined)
         }
-        commsAdapter = await createCommsAdapterComponent({ config, fetch, logs, livekitClient, metrics })
+        commsAdapter = await createCommsAdapterComponent({ config, fetch, logs, livekitClient })
       })
 
       it('should return the sum of participant counts', async () => {
@@ -463,7 +453,7 @@ describe('comms-adapter', function () {
         const fetch: IFetchComponent = {
           fetch: async (_url: Request): Promise<Response> => new Response(undefined)
         }
-        commsAdapter = await createCommsAdapterComponent({ config, fetch, logs, livekitClient, metrics })
+        commsAdapter = await createCommsAdapterComponent({ config, fetch, logs, livekitClient })
       })
 
       it('should delegate to livekitClient.removeParticipant', async () => {
@@ -490,8 +480,7 @@ describe('comms-adapter', function () {
             config,
             fetch,
             logs,
-            livekitClient: createMockLivekitClient(),
-            metrics
+            livekitClient: createMockLivekitClient()
           })
         ).rejects.toThrow('Configuration: string LIVEKIT_HOST is required')
       })
@@ -516,8 +505,7 @@ describe('comms-adapter', function () {
           config,
           fetch,
           logs,
-          livekitClient: createMockLivekitClient(),
-          metrics
+          livekitClient: createMockLivekitClient()
         })
       ).rejects.toThrow('Invalid comms adapter: other')
     })
@@ -558,8 +546,7 @@ describe('comms-adapter', function () {
         config,
         fetch: { fetch: fetchMock } as unknown as IFetchComponent,
         logs,
-        livekitClient,
-        metrics
+        livekitClient
       })
     }
 
@@ -581,8 +568,7 @@ describe('comms-adapter', function () {
             config,
             fetch: { fetch: fetchMock } as unknown as IFetchComponent,
             logs,
-            livekitClient,
-            metrics
+            livekitClient
           })
         ).rejects.toThrow('Configuration: string PULSE_URL is required')
       })
@@ -722,8 +708,7 @@ describe('comms-adapter', function () {
           config,
           fetch: { fetch: fetchMock } as unknown as IFetchComponent,
           logs,
-          livekitClient,
-          metrics
+          livekitClient
         })
         status = await commsAdapter.status()
       })
@@ -768,8 +753,7 @@ describe('comms-adapter', function () {
           config,
           fetch: { fetch: fetchMock } as unknown as IFetchComponent,
           logs,
-          livekitClient,
-          metrics
+          livekitClient
         })
         status = await commsAdapter.status()
       })

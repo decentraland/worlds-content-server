@@ -11,7 +11,7 @@ export async function createCommsAdapterComponent({
   fetch,
   logs,
   livekitClient
-}: Pick<AppComponents, 'config' | 'fetch' | 'logs' | 'livekitClient' | 'metrics'>): Promise<ICommsAdapter> {
+}: Pick<AppComponents, 'config' | 'fetch' | 'logs' | 'livekitClient'>): Promise<ICommsAdapter> {
   const logger = logs.getLogger('comms-adapter')
 
   const worldRoomPrefix = await config.requireString('COMMS_ROOM_PREFIX')

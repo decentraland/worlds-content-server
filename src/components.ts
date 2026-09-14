@@ -106,8 +106,7 @@ export async function initComponents(): Promise<AppComponents> {
     config,
     fetch,
     logs,
-    livekitClient,
-    metrics
+    livekitClient
   })
 
   const rpcUrl = await config.requireString('RPC_URL')
