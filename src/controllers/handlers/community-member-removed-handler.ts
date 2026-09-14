@@ -23,7 +23,7 @@ export interface ICommunityMemberRemovedHandler {
  * 3. Kicks the user if they no longer have access
  *
  * iteration-2 exception: LiveKit is the correct source here. The lookup feeds a kick, so it reads
- * the LiveKit-fed `peersRegistry` rather than Pulse regardless of `PRESENCE_SOURCE`.
+ * the LiveKit-fed `peersRegistry` rather than Pulse.
  */
 export function createCommunityMemberRemovedHandler({
   peersRegistry,
