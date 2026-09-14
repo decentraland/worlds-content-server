@@ -173,7 +173,7 @@ too (it still reads the legacy subjects).
 
 #### Setting up the environment
 
-In order to successfully run this server, external dependencies such as databases, message brokers, and storage must be provided.
+In order to successfully run this server, external dependencies such as databases and storage must be provided.
 
 To do so, this repository provides you with a `docker-compose.yml` file for that purpose. In order to get the environment set up, run:
 
@@ -183,7 +183,6 @@ docker-compose up -d
 
 This will start:
 - PostgreSQL database on port `5450`
-- NATS message broker on port `4222`
 
 #### Running in development mode
 
