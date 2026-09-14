@@ -35,9 +35,11 @@ test('LivekitWebhookHandler', function ({ components, stubComponents }) {
   }
 
   // Iteration 2: Pulse is the platform's only presence source, so the `nats` component this webhook
-  // used to publish to no longer exists on the service at all.
+  // used to publish to no longer exists on the service at all. The test runner's `components` proxy
+  // throws rather than answering `undefined` for a component that was never registered, which is
+  // itself the assertion: there is nothing to tear down or leak a connection from.
   it('should not wire a nats component', () => {
-    expect((components as Record<string, unknown>).nats).toBeUndefined()
+    expect(() => (components as Record<string, unknown>).nats).toThrow('Component nats does not exist')
   })
 
   it('should return 400 when authorization header is missing', async () => {
