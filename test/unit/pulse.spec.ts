@@ -1,20 +1,19 @@
 import { IFetchComponent } from '@dcl/core-commons'
 import { ILoggerComponent } from '@well-known-components/interfaces'
 import {
+  assertAbsolutePulseUrl,
   fetchPulsePeerRealm,
   fetchPulseRealms,
-  getPresenceSource,
   isWorldRealm,
   PULSE_REQUEST_TIMEOUT_MS,
   worldStatusesFromRealms
-} from '../../src/logic/presence-source'
-import { createMockedConfig } from '../mocks/config-mock'
+} from '../../src/logic/pulse'
 import { createMockLogs } from '../mocks/logs-mock'
 import { loadHttpGolden, PulsePeerBody, PulseRealmsBody } from '../fixtures/iteration-2/http-goldens'
 
 const PULSE_URL = 'https://pulse.example.com'
 
-describe('presence-source', () => {
+describe('pulse', () => {
   const realmsGolden = loadHttpGolden<PulseRealmsBody>('realms')
   const peerGolden = loadHttpGolden<PulsePeerBody>('peers-single')
 
@@ -77,19 +76,30 @@ describe('presence-source', () => {
     })
   })
 
-  describe('when resolving the presence source', () => {
-    it.each([
-      [undefined, 'livekit'],
-      ['livekit', 'livekit'],
-      ['nonsense', 'livekit'],
-      ['pulse', 'pulse'],
-      ['  PULSE  ', 'pulse'],
-      ['Both', 'both']
-    ])('should resolve %p to %p', async (configured, expected) => {
-      const config = createMockedConfig()
-      config.getString.mockResolvedValue(configured)
+  // WP5-boot-requires-PULSE_URL: there is no fallback source left to degrade to, so a malformed
+  // value has to fail the boot rather than surface as a confusing fetch failure on the first request.
+  describe('when validating PULSE_URL', () => {
+    it('should accept an absolute http(s) URL', () => {
+      expect(assertAbsolutePulseUrl('https://pulse.decentraland.org')).toBe('https://pulse.decentraland.org')
+      expect(assertAbsolutePulseUrl('http://localhost:5000')).toBe('http://localhost:5000')
+    })
 
-      expect(await getPresenceSource(config)).toBe(expected)
+    it('should reject a value that is not a URL at all', () => {
+      expect(() => assertAbsolutePulseUrl('not-a-url')).toThrow(
+        'Configuration: string PULSE_URL must be an absolute http(s) URL, got "not-a-url"'
+      )
+    })
+
+    it('should reject a non-http(s) scheme', () => {
+      expect(() => assertAbsolutePulseUrl('ftp://pulse.example.com')).toThrow(
+        'Configuration: string PULSE_URL must be an absolute http(s) URL, got "ftp://pulse.example.com"'
+      )
+    })
+
+    it('should reject a relative path', () => {
+      expect(() => assertAbsolutePulseUrl('/pulse')).toThrow(
+        'Configuration: string PULSE_URL must be an absolute http(s) URL, got "/pulse"'
+      )
     })
   })
 

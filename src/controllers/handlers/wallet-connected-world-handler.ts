@@ -3,15 +3,13 @@ import { HandlerContextWithPath } from '../../types'
 import { IFetchComponent, IHttpServerComponent } from '@dcl/core-commons'
 import { NotFoundError } from '@dcl/http-commons'
 import { LRUCache } from 'lru-cache'
-import { fetchPulsePeerRealm, getPresenceSource, isWorldRealm } from '../../logic/presence-source'
+import { fetchPulsePeerRealm, isWorldRealm } from '../../logic/pulse'
 
 /**
- * This route is public, unauthenticated and unthrottled (`src/controllers/routes.ts`). On the
- * LiveKit source it answers from an in-memory `Map`, so a client polling it at N rps costs nothing;
- * on the Pulse source every request would otherwise be one more `GET /peers/:id` against the
- * service that is *becoming* the platform's single presence source. A very short TTL bounds that to
- * one call per wallet per window while staying live enough for the explorer, which only needs to
- * see a teleport within a few seconds.
+ * This route is public, unauthenticated and unthrottled (`src/controllers/routes.ts`), so without a
+ * cache every request would be one more `GET /peers/:id` against the service that is the platform's
+ * single presence source. A very short TTL bounds that to one call per wallet per window while
+ * staying live enough for the explorer, which only needs to see a teleport within a few seconds.
  */
 const PULSE_PEER_CACHE_TTL_MS = 5 * 1000
 
@@ -44,23 +42,22 @@ export function clearConnectedWorldCache(): void {
  * release while unity-explorer still calls it, and removed once the explorer reads Pulse directly.
  */
 export async function walletConnectedWorldHandler(
-  ctx: HandlerContextWithPath<'config' | 'fetch' | 'peersRegistry', '/wallet/:wallet/connected-world'> &
-    DecentralandSignatureContext<any>
+  ctx: HandlerContextWithPath<'config' | 'fetch', '/wallet/:wallet/connected-world'> & DecentralandSignatureContext<any>
 ): Promise<IHttpServerComponent.IResponse> {
   const {
-    components: { config, fetch, peersRegistry },
+    components: { config, fetch },
     params
   } = ctx
 
   const { wallet } = params
+  const pulseUrl = await config.requireString('PULSE_URL')
 
-  // `both` keeps serving the LiveKit-fed answer: the shadow comparison of the dual-source window is
-  // scoped to the `/live-data` counters, this route is only read by the explorer. The registry
-  // answer is never cached — it is already an in-memory `Map`, so caching would only add staleness.
-  const world =
-    (await getPresenceSource(config)) === 'pulse'
-      ? await getConnectedWorldFromPulse(fetch, await config.requireString('PULSE_URL'), wallet)
-      : peersRegistry.getPeerWorld(wallet)
+  let world: string | undefined
+  try {
+    world = await getConnectedWorldFromPulse(fetch, pulseUrl, wallet)
+  } catch (error: any) {
+    return { status: 503, body: { error: 'Service Unavailable', message: error.message } }
+  }
 
   if (!world) {
     throw new NotFoundError(`Wallet ${wallet} is not connected to any world`)
@@ -80,9 +77,9 @@ async function getConnectedWorldFromPulse(
   pulseUrl: string,
   wallet: string
 ): Promise<string | undefined> {
-  // Pulse stores addresses lowercased (the pack pins `0x…00AB` ingesting as `0x…00ab`) and the
-  // registry path lowercases the id too, so the route is case-insensitive on the wallet today. An
-  // EIP-55 checksummed address must not start 404ing just because the source swapped.
+  // Pulse stores addresses lowercased (the pack pins `0x…00AB` ingesting as `0x…00ab`), so the route
+  // is case-insensitive on the wallet: an EIP-55 checksummed address must not 404 just because it is
+  // not the spelling Pulse stores.
   const cached = await connectedWorldCache.fetch(wallet.toLowerCase(), { context: { fetch, pulseUrl } })
   return cached?.world
 }

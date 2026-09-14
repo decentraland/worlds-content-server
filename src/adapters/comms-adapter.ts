@@ -2,27 +2,15 @@ import { AppComponents, CommsStatus, ICommsAdapter, LivekitClient, WorldStatus }
 import { EthAddress } from '@dcl/schemas'
 import { TrackSource, VideoGrant } from 'livekit-server-sdk'
 import { LRUCache } from 'lru-cache'
-import { fetchPulseRealms, getPresenceSource, PresenceSource } from '../logic/presence-source'
+import { fetchPulseRealms, PulseUnavailableError, requirePulseUrl } from '../logic/pulse'
 
-const STATUS_CACHE_TTL_MS = 60 * 1000
-
-/** The `kind` label of `presence_shadow_diff` for the comparison behind `/live-data` and `/status`. */
-const SHADOW_DIFF_KIND = 'live-data'
-
-/**
- * The `kind` label carrying the *size* of that divergence: the summed `|livekit - pulse|` per world,
- * counting a world only one source reports as diverging by its whole population. Without it a
- * dashboard cannot tell one world off by 1 from one world off by 1000 — both are a single
- * `live-data` increment.
- */
-const SHADOW_DIFF_USERS_KIND = 'live-data-users'
+export const STATUS_CACHE_TTL_MS = 60 * 1000
 
 export async function createCommsAdapterComponent({
   config,
   fetch,
   logs,
-  livekitClient,
-  metrics
+  livekitClient
 }: Pick<AppComponents, 'config' | 'fetch' | 'logs' | 'livekitClient' | 'metrics'>): Promise<ICommsAdapter> {
   const logger = logs.getLogger('comms-adapter')
 
@@ -30,20 +18,19 @@ export async function createCommsAdapterComponent({
   const sceneRoomPrefix = await config.requireString('SCENE_ROOM_PREFIX')
   const adapterType = await config.requireString('COMMS_ADAPTER')
 
-  const presenceSource = await getPresenceSource(config)
-  // Only required once presence is (partly) read from Pulse, so the default source keeps the
-  // service bootable with no new configuration at all.
-  const pulseUrl = presenceSource === 'livekit' ? undefined : await config.requireString('PULSE_URL')
+  // Iteration 2: Pulse is the only source of online-player counters, so it is required at boot —
+  // there is no fallback left to degrade to. A malformed value fails here rather than surfacing as
+  // a confusing fetch failure the first time a request needs it.
+  const pulseUrl = await requirePulseUrl(config)
 
   switch (adapterType) {
     case 'ws-room': {
       const fixedAdapter = await config.requireString('COMMS_FIXED_ADAPTER')
       logger.info(`Using ws-room-service adapter with template baseUrl: ${fixedAdapter}`)
-      return presenceSourcedAdapter(
-        { fetch, logs, metrics },
+      return pulseSourcedAdapter(
+        { fetch, logs },
         cachingAdapter({ logs }, createWsRoomAdapter({ fetch }, worldRoomPrefix, sceneRoomPrefix, fixedAdapter)),
         {
-          presenceSource,
           pulseUrl,
           adapterType: 'ws-room',
           statusUrl: getWsRoomStatusUrl(fixedAdapter),
@@ -55,11 +42,10 @@ export async function createCommsAdapterComponent({
     case 'livekit': {
       const host = await config.requireString('LIVEKIT_HOST')
       logger.info(`Using livekit adapter with host: ${host}`)
-      return presenceSourcedAdapter(
-        { fetch, logs, metrics },
+      return pulseSourcedAdapter(
+        { fetch, logs },
         cachingAdapter({ logs }, createLiveKitAdapter({ logs }, worldRoomPrefix, sceneRoomPrefix, host, livekitClient)),
         {
-          presenceSource,
           pulseUrl,
           adapterType: 'livekit',
           statusUrl: getLivekitStatusUrl(host),
@@ -258,9 +244,8 @@ function getWsRoomStatusUrl(fixedAdapter: string): string {
   return urlWithProtocol.replace(/rooms\/.*/, 'status')
 }
 
-export type PresenceSourceOptions = {
-  presenceSource: PresenceSource
-  pulseUrl: string | undefined
+export type PulseSourcedAdapterOptions = {
+  pulseUrl: string
   /** Kept verbatim from the transport: `adapterType`/`statusUrl` describe the transport, not the counter. */
   adapterType: string
   statusUrl: string
@@ -270,42 +255,30 @@ export type PresenceSourceOptions = {
 
 /**
  * Iteration 2 (C4): re-sources `status()` — the counter behind `/live-data` and `/status.comms` —
- * from Pulse, leaving the published response shape untouched.
+ * from Pulse, leaving the published response shape untouched. There is no LiveKit fallback: Pulse
+ * is the only presence source.
  *
  * The wrapper deliberately sits *outside* the transport adapter and overrides nothing else.
  * `getWorldRoomParticipantCount` / `getWorldSceneRoomsParticipantCount` back the
- * `MAX_USERS_PER_WORLD` capacity check and `removeParticipant` backs the kicks; both keep reading
+ * `MAX_USERS_PER_WORLD` capacity check and `removeParticipant` backs the kicks; each keeps reading
  * LiveKit, which is the authority on who is attached to a room (iteration-2 exception: LiveKit is
  * the correct source there).
  *
- * With the default `PRESENCE_SOURCE=livekit` the transport adapter is returned untouched, so the
- * behaviour is identical to before this switch existed.
+ * Failure mode (C4-no-fallback): a failed Pulse read serves the last successful answer for one more
+ * cache TTL. Once that grace period elapses too, `status()` rejects with `PulseUnavailableError`
+ * instead of inventing a count — the caller (`live-data-handler.ts`, `status-handler.ts`) maps that
+ * to `503`, never to a LiveKit-derived number.
  */
-export function presenceSourcedAdapter(
-  { fetch, logs, metrics }: Pick<AppComponents, 'fetch' | 'logs' | 'metrics'>,
+export function pulseSourcedAdapter(
+  { fetch, logs }: Pick<AppComponents, 'fetch' | 'logs'>,
   transportAdapter: ICommsAdapter,
-  { presenceSource, pulseUrl, adapterType, statusUrl, publishesCommitHash }: PresenceSourceOptions
+  { pulseUrl, adapterType, statusUrl, publishesCommitHash }: PulseSourcedAdapterOptions
 ): ICommsAdapter {
-  if (presenceSource === 'livekit' || !pulseUrl) {
-    return transportAdapter
-  }
-
-  const logger = logs.getLogger('presence-sourced-comms-adapter')
-
-  // `commitHash` describes the transport, exactly like `adapterType`/`statusUrl`, and Pulse cannot
-  // supply it — so when the transport publishes one it is read from the transport (whose own status
-  // is cached for the same TTL) rather than dropped, keeping the `/status` `comms` key set
-  // identical under every presence source. Only needed while Pulse *is* the served answer: in
-  // `both` the served answer is the transport's own and already carries it.
-  const readTransportCommitHash = publishesCommitHash && presenceSource === 'pulse'
-
-  function emptyStatus(): CommsStatus {
-    return { adapterType, statusUrl, rooms: 0, users: 0, details: [], timestamp: Date.now() }
-  }
+  const logger = logs.getLogger('pulse-sourced-comms-adapter')
 
   /** A transport outage drops the commit hash, never the Pulse-sourced answer. */
   async function transportCommitHash(): Promise<string | undefined> {
-    if (!readTransportCommitHash) {
+    if (!publishesCommitHash) {
       return undefined
     }
 
@@ -319,7 +292,7 @@ export function presenceSourcedAdapter(
 
   async function pulseStatus(): Promise<CommsStatus> {
     const [{ worlds, lastUpdated }, commitHash] = await Promise.all([
-      fetchPulseRealms(fetch, pulseUrl!, logger),
+      fetchPulseRealms(fetch, pulseUrl, logger),
       transportCommitHash()
     ])
 
@@ -327,7 +300,7 @@ export function presenceSourcedAdapter(
       adapterType,
       statusUrl,
       // Spread, not assigned: a transport that publishes no commit hash must not gain the key.
-      ...(readTransportCommitHash ? { commitHash } : {}),
+      ...(publishesCommitHash ? { commitHash } : {}),
       rooms: worlds.length,
       users: worlds.reduce((carry, world) => carry + world.users, 0),
       details: worlds,
@@ -335,134 +308,50 @@ export function presenceSourcedAdapter(
     }
   }
 
-  /**
-   * Counts how far the two sources disagree. Counts only: world membership is aggregated per world
-   * and no wallet ever reaches the log or the metric.
-   */
-  function recordShadowDiff(livekitStatus: CommsStatus, pulse: CommsStatus): void {
-    const livekitWorlds = new Map((livekitStatus.details ?? []).map((d) => [d.worldName.toLowerCase(), d.users]))
-    const pulseWorlds = new Map((pulse.details ?? []).map((d) => [d.worldName.toLowerCase(), d.users]))
+  // Explicit state rather than a generic LRU cache: the grace period has to be measured from the
+  // last *successful* read, not reset every time a stale copy is handed out again, so `cachedAt`
+  // only ever advances on a successful `pulseStatus()`. `pendingRead` folds concurrent callers
+  // during a cache miss into the one Pulse read in flight, the same way the transport's own cache
+  // does.
+  let cachedStatus: CommsStatus | undefined
+  let cachedAt = 0
+  let pendingRead: Promise<CommsStatus> | undefined
 
-    let onlyInLivekit = 0
-    let onlyInPulse = 0
-    let worldsWithUserDelta = 0
-    let totalUsersDelta = 0
-
-    for (const [worldName, users] of livekitWorlds) {
-      const pulseUsers = pulseWorlds.get(worldName)
-      if (pulseUsers === undefined) {
-        onlyInLivekit++
-        // A world only one source reports diverges by its *whole* population. Counting only the
-        // branch below would make this series read 0 for the largest possible divergence: during a
-        // total Pulse presence outage every world takes this branch, so the magnitude dashboard
-        // WP10 reads to decide the cutover would report no user divergence at all.
-        totalUsersDelta += users
-      } else if (pulseUsers !== users) {
-        worldsWithUserDelta++
-        totalUsersDelta += Math.abs(pulseUsers - users)
-      }
-    }
-    for (const [worldName, users] of pulseWorlds) {
-      if (!livekitWorlds.has(worldName)) {
-        onlyInPulse++
-        totalUsersDelta += users
-      }
+  async function readThroughCache(): Promise<CommsStatus> {
+    const now = Date.now()
+    if (cachedStatus && now - cachedAt < STATUS_CACHE_TTL_MS) {
+      return cachedStatus
     }
 
-    // Incremented even at 0: an absent Prometheus series is indistinguishable from "not deployed",
-    // and WP10 reads these series to decide the cutover.
-    metrics.increment(
-      'presence_shadow_diff',
-      { kind: SHADOW_DIFF_KIND },
-      onlyInLivekit + onlyInPulse + worldsWithUserDelta
-    )
-    metrics.increment('presence_shadow_diff', { kind: SHADOW_DIFF_USERS_KIND }, totalUsersDelta)
+    if (!pendingRead) {
+      pendingRead = (async () => {
+        try {
+          const fresh = await pulseStatus()
+          cachedStatus = fresh
+          cachedAt = Date.now()
+          return fresh
+        } catch (error: any) {
+          logger.warn(`Error retrieving comms status: ${error.message}`)
 
-    logger.info('Presence shadow comparison', {
-      kind: SHADOW_DIFF_KIND,
-      onlyInLivekit,
-      onlyInPulse,
-      worldsWithUserDelta,
-      totalUsersDelta,
-      livekitWorlds: livekitWorlds.size,
-      pulseWorlds: pulseWorlds.size,
-      livekitUsers: livekitStatus.users,
-      pulseUsers: pulse.users
-    })
+          // One extra TTL of grace, measured from the last good read: still stale-serves the last
+          // successful answer, but never a LiveKit-derived one, and never indefinitely.
+          if (cachedStatus && Date.now() - cachedAt < STATUS_CACHE_TTL_MS * 2) {
+            return cachedStatus
+          }
+
+          throw new PulseUnavailableError('Pulse presence is unavailable')
+        } finally {
+          pendingRead = undefined
+        }
+      })()
+    }
+
+    return pendingRead
   }
-
-  /** Wall clock of the earliest next shadow comparison; `0` means "compare on the first call". */
-  let nextShadowComparisonAt = 0
-
-  /**
-   * Reads Pulse and records the divergence. Never awaited on a served request path — see
-   * `shadowedTransportStatus` — so it owns its own error handling: nothing downstream is left to
-   * catch its rejection.
-   */
-  async function compareWithPulse(transportStatus: CommsStatus): Promise<void> {
-    const pulse = await pulseStatus().catch((error: any) => {
-      logger.warn(`Error retrieving the Pulse presence shadow: ${error.message}`)
-      return undefined
-    })
-
-    if (pulse) {
-      recordShadowDiff(transportStatus, pulse)
-    }
-  }
-
-  /**
-   * `both` serves the transport adapter's own answer, and that adapter already caches for one TTL.
-   * Stacking a second cache in front of it would let `/live-data` serve an answer up to twice the
-   * TTL old, and would pair every shadow comparison with a LiveKit side up to a TTL stale — biasing
-   * the recorded divergence towards "LiveKit is behind" exactly while WP10 reads it. So the served
-   * answer passes straight through and only the *comparison* is throttled, which keeps Pulse to one
-   * read per TTL whatever the request rate.
-   */
-  async function shadowedTransportStatus(): Promise<CommsStatus> {
-    // Typed as `CommsStatus`, but `cachingAdapter` hands back `undefined` when its very first poll
-    // fails with nothing stale to fall back on. Guarding here keeps a transport outage from turning
-    // into a comparison crash: the shadow is dropped, never the served answer.
-    const transportStatus = (await transportAdapter.status()) as CommsStatus | undefined
-
-    if (transportStatus && Date.now() >= nextShadowComparisonAt) {
-      nextShadowComparisonAt = Date.now() + STATUS_CACHE_TTL_MS
-
-      // Deliberately not awaited: `both` exists to serve the *transport's* answer, so the
-      // comparison must not be able to add latency to `/live-data` or `/status` — routes that
-      // today never touch Pulse. Awaiting it made one served request per TTL hang for as long as a
-      // stalled Pulse kept the socket open. It runs in the background instead, bounded by
-      // `PULSE_REQUEST_TIMEOUT_MS`, and logs its own failure.
-      void compareWithPulse(transportStatus)
-    }
-
-    return transportStatus ?? emptyStatus()
-  }
-
-  if (presenceSource === 'both') {
-    return { ...transportAdapter, status: shadowedTransportStatus }
-  }
-
-  // Under `pulse` the Pulse read *is* the served answer, so it gets the same 60 s cache the
-  // transport adapter keeps for its own source: swapping the source must not change how often the
-  // upstream is polled. This is the only cache in front of the answer.
-  const cache = new LRUCache<string, CommsStatus>({
-    max: 1,
-    ttl: STATUS_CACHE_TTL_MS,
-    fetchMethod: async (_, staleValue): Promise<CommsStatus | undefined> => {
-      try {
-        return await pulseStatus()
-      } catch (error: any) {
-        logger.warn(`Error retrieving comms status: ${error.message}`)
-        return staleValue
-      }
-    }
-  })
 
   return {
     ...transportAdapter,
-    async status(): Promise<CommsStatus> {
-      return (await cache.fetch('presence_status')) ?? emptyStatus()
-    }
+    status: readThroughCache
   }
 }
 

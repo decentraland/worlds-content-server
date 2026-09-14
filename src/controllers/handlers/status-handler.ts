@@ -1,5 +1,6 @@
 import { CommsStatus, HandlerContextWithPath } from '../../types'
 import { IHttpServerComponent } from '@dcl/core-commons'
+import { PulseUnavailableError } from '../../logic/pulse'
 
 export type ContentStatus = {
   commitHash: string
@@ -19,7 +20,16 @@ export async function statusHandler(
   const commitHash = (await config.getString('COMMIT_HASH')) || 'unknown'
 
   const worldsCount = await worldsManager.getDeployedWorldCount()
-  const commsStatus = await commsAdapter.status()
+
+  let commsStatus: CommsStatus
+  try {
+    commsStatus = await commsAdapter.status()
+  } catch (error) {
+    if (error instanceof PulseUnavailableError) {
+      return { status: 503, body: { error: 'Service Unavailable', message: error.message } }
+    }
+    throw error
+  }
 
   const status: StatusResponse = {
     content: {

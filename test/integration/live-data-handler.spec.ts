@@ -29,11 +29,11 @@ test('GET /live-data', function ({ components }) {
 })
 
 /**
- * C4: the source of the counters swaps, the published shape does not. Both adapters below describe
- * the same world set — the golden `http/realms.json` on the Pulse side, the equivalent LiveKit room
- * listing on the other — so `/live-data` and `/status` must answer identically.
+ * C4: Pulse is the only presence source. The golden `http/realms.json` and the LiveKit room listing
+ * below describe the same world set (`cozyfarm.dcl.eth` with one user) just to keep the fixture
+ * realistic — `/live-data` and `/status` always read their counters from Pulse.
  */
-test('GET /live-data and /status over the Pulse presence source', function ({ components }) {
+test('GET /live-data and /status over Pulse', function ({ components }) {
   const realmsGolden = loadHttpGolden<PulseRealmsBody>('realms')
   const PULSE_URL = 'https://pulse.example.com'
 
@@ -43,15 +43,13 @@ test('GET /live-data and /status over the Pulse presence source', function ({ co
     LIVEKIT_API_KEY: 'key',
     LIVEKIT_API_SECRET: 'secret',
     COMMS_ROOM_PREFIX: 'world-',
-    SCENE_ROOM_PREFIX: 'world-scene-room-'
+    SCENE_ROOM_PREFIX: 'world-scene-room-',
+    PULSE_URL
   }
 
-  async function buildAdapter(overrides: Record<string, string>): Promise<ICommsAdapter> {
+  async function buildAdapter(fetch: IFetchComponent): Promise<ICommsAdapter> {
     const { logs, metrics } = components
-    const config = await createConfigComponent({ ...baseConfig, ...overrides })
-    const fetch: IFetchComponent = {
-      fetch: async (): Promise<Response> => new Response(JSON.stringify(realmsGolden.body))
-    }
+    const config = await createConfigComponent(baseConfig)
     return createCommsAdapterComponent({
       config,
       fetch,
@@ -66,13 +64,15 @@ test('GET /live-data and /status over the Pulse presence source', function ({ co
     })
   }
 
-  async function serveFrom(overrides: Record<string, string>): Promise<void> {
-    const adapter = await buildAdapter(overrides)
+  async function serveFromPulse(): Promise<void> {
+    const adapter = await buildAdapter({
+      fetch: async (): Promise<Response> => new Response(JSON.stringify(realmsGolden.body))
+    })
     jest.spyOn(components.commsAdapter, 'status').mockImplementation(() => adapter.status())
   }
 
   it('serves /live-data from Pulse with the contract payload', async () => {
-    await serveFrom({ PRESENCE_SOURCE: 'pulse', PULSE_URL })
+    await serveFromPulse()
 
     const r = await components.localFetch.fetch('/live-data')
 
@@ -86,19 +86,8 @@ test('GET /live-data and /status over the Pulse presence source', function ({ co
     })
   })
 
-  it('serves the same /live-data payload from Pulse as from LiveKit', async () => {
-    await serveFrom({})
-    const fromLivekit = await (await components.localFetch.fetch('/live-data')).json()
-
-    await serveFrom({ PRESENCE_SOURCE: 'pulse', PULSE_URL })
-    const fromPulse = await (await components.localFetch.fetch('/live-data')).json()
-
-    expect(fromPulse.data).toEqual(fromLivekit.data)
-    expect(Object.keys(fromPulse).sort()).toEqual(Object.keys(fromLivekit).sort())
-  })
-
   it('serves /status comms counters from Pulse without changing adapterType', async () => {
-    await serveFrom({ PRESENCE_SOURCE: 'pulse', PULSE_URL })
+    await serveFromPulse()
 
     const r = await components.localFetch.fetch('/status')
 
@@ -108,5 +97,20 @@ test('GET /live-data and /status over the Pulse presence source', function ({ co
       users: 1,
       rooms: 1
     })
+  })
+
+  // C4-no-fallback: a Pulse outage with nothing fresh enough to serve answers 503, never a
+  // LiveKit-derived count — even though the mocked transport below could answer one.
+  it('answers 503 from /live-data when Pulse has never answered successfully', async () => {
+    const adapter = await buildAdapter({
+      fetch: async (): Promise<Response> => {
+        throw new Error('pulse is down')
+      }
+    })
+    jest.spyOn(components.commsAdapter, 'status').mockImplementation(() => adapter.status())
+
+    const r = await components.localFetch.fetch('/live-data')
+
+    expect(r.status).toBe(503)
   })
 })
