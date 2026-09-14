@@ -832,5 +832,42 @@ describe('comms-adapter', function () {
         expect(livekitClient.listRoomsWithParticipantCounts).not.toHaveBeenCalled()
       })
     })
+
+    // C4-no-fallback / C4-live-data-shape: a 200 whose body is not `{ realms: [...] }` must be
+    // treated exactly like a Pulse outage -- the stale-then-503 machinery, never an invented "empty
+    // healthy" answer with a locally-generated `lastUpdated`.
+    describe('when Pulse answers 200 with a malformed body', () => {
+      it.each([
+        ['a gateway error envelope', { message: 'upstream connect error' }],
+        ['an empty object', {}],
+        ['a bare JSON string', 'not json']
+      ])('should reject rather than serving an empty world list (%s)', async (_name, malformedBody) => {
+        fetchMock.mockResolvedValue(new Response(JSON.stringify(malformedBody)))
+
+        const commsAdapter = await buildLivekitBackedAdapter({})
+
+        await expect(commsAdapter.status()).rejects.toThrow('Pulse presence is unavailable')
+        expect(livekitClient.listRoomsWithParticipantCounts).not.toHaveBeenCalled()
+      })
+
+      it('should serve the last successful answer for one more cache TTL, then reject, exactly like a genuine outage', async () => {
+        jest.useFakeTimers()
+        try {
+          const commsAdapter = await buildLivekitBackedAdapter({})
+          await commsAdapter.status()
+
+          fetchMock.mockResolvedValue(new Response(JSON.stringify({ message: 'upstream connect error' })))
+
+          await jest.advanceTimersByTimeAsync(STATUS_CACHE_TTL_MS + 1)
+          const stale = await commsAdapter.status()
+          expect(stale.details).toEqual([{ worldName: 'cozyfarm.dcl.eth', users: 1 }])
+
+          await jest.advanceTimersByTimeAsync(STATUS_CACHE_TTL_MS + 1)
+          await expect(commsAdapter.status()).rejects.toThrow('Pulse presence is unavailable')
+        } finally {
+          jest.useRealTimers()
+        }
+      })
+    })
   })
 })

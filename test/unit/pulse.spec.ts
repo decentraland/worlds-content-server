@@ -6,6 +6,7 @@ import {
   fetchPulseRealms,
   isWorldRealm,
   PULSE_REQUEST_TIMEOUT_MS,
+  PulseUnavailableError,
   worldStatusesFromRealms
 } from '../../src/logic/pulse'
 import { createMockLogs } from '../mocks/logs-mock'
@@ -100,6 +101,46 @@ describe('pulse', () => {
       expect(() => assertAbsolutePulseUrl('/pulse')).toThrow(
         'Configuration: string PULSE_URL must be an absolute http(s) URL, got "/pulse"'
       )
+    })
+  })
+
+  // C4-no-fallback: a 200 that is not the expected `{ realms: [...] }` shape (an ingress/gateway
+  // error envelope, an empty object, a bare JSON string) is a failed read, not "nobody is online" —
+  // returning `[]` with a locally invented `lastUpdated` would be indistinguishable from an empty
+  // platform and would never let the stale-then-503 machinery in `comms-adapter.ts` engage.
+  describe('when Pulse answers 200 with a malformed body', () => {
+    let fetchMock: jest.Mock
+    let fetch: IFetchComponent
+
+    beforeEach(() => {
+      fetchMock = jest.fn()
+      fetch = { fetch: fetchMock } as unknown as IFetchComponent
+    })
+
+    it('should reject a gateway error envelope rather than reading an empty world list', async () => {
+      fetchMock.mockResolvedValue(new Response(JSON.stringify({ message: 'upstream connect error' })))
+
+      await expect(fetchPulseRealms(fetch, PULSE_URL)).rejects.toThrow(PulseUnavailableError)
+    })
+
+    it('should reject an empty object', async () => {
+      fetchMock.mockResolvedValue(new Response(JSON.stringify({})))
+
+      await expect(fetchPulseRealms(fetch, PULSE_URL)).rejects.toThrow(PulseUnavailableError)
+    })
+
+    it('should reject a body that is valid JSON but not an object', async () => {
+      fetchMock.mockResolvedValue(new Response(JSON.stringify('not json')))
+
+      await expect(fetchPulseRealms(fetch, PULSE_URL)).rejects.toThrow(PulseUnavailableError)
+    })
+
+    it('should reject a realms value that is not an array', async () => {
+      fetchMock.mockResolvedValue(
+        new Response(JSON.stringify({ realms: {}, lastUpdated: realmsGolden.body.lastUpdated }))
+      )
+
+      await expect(fetchPulseRealms(fetch, PULSE_URL)).rejects.toThrow(PulseUnavailableError)
     })
   })
 

@@ -161,10 +161,18 @@ export async function fetchPulseRealms(
     return (await response.json()) as PulseRealms
   })
 
-  const lastUpdated = body?.lastUpdated ? Date.parse(body.lastUpdated) : Number.NaN
+  // A 200 whose body is not `{ realms: [...] }` (missing, non-array, or the response isn't even an
+  // object -- an ingress/gateway error envelope, an empty object, a bare JSON string) is a failed
+  // read, not "nobody is online": returning `[]` here would refresh the cache with an invented
+  // `lastUpdated` and the stale-then-503 grace period in `comms-adapter.ts` would never engage.
+  if (!Array.isArray(body?.realms)) {
+    throw new PulseUnavailableError('Pulse presence is unavailable')
+  }
+
+  const lastUpdated = body.lastUpdated ? Date.parse(body.lastUpdated) : Number.NaN
 
   return {
-    worlds: worldStatusesFromRealms(body?.realms ?? [], logger),
+    worlds: worldStatusesFromRealms(body.realms, logger),
     lastUpdated: Number.isNaN(lastUpdated) ? Date.now() : lastUpdated
   }
 }
