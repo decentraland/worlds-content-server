@@ -86,17 +86,24 @@ test('GET /live-data and /status over Pulse', function ({ components }) {
     })
   })
 
+  // `/status`'s `comms` block deliberately omits `details` (a pre-existing, WP5-unrelated choice:
+  // per-world detail is `/live-data`'s job) — `users`/`rooms` are exactly the aggregate of the same
+  // `CommsStatus.details` the comms-adapter unit suite pins directly
+  // (`test/unit/comms-adapter.spec.ts`'s "presence" describe), so the C4 shape is covered end to end
+  // across the two suites rather than by re-asserting `details` on a response that never carries it.
   it('serves /status comms counters from Pulse without changing adapterType', async () => {
     await serveFromPulse()
 
     const r = await components.localFetch.fetch('/status')
+    const body = await r.json()
 
     expect(r.status).toBe(200)
-    expect((await r.json()).comms).toMatchObject({
+    expect(body.comms).toMatchObject({
       adapterType: 'livekit',
       users: 1,
       rooms: 1
     })
+    expect(body.comms.details).toBeUndefined()
   })
 
   // C4-no-fallback: a Pulse outage with nothing fresh enough to serve answers 503, never a
@@ -112,5 +119,36 @@ test('GET /live-data and /status over Pulse', function ({ components }) {
     const r = await components.localFetch.fetch('/live-data')
 
     expect(r.status).toBe(503)
+  })
+
+  // Mirrors the /live-data case above: /status must map the same rejection to the same 503,
+  // never falling back to a LiveKit-derived count (review round 1, finding 4 — this route had no
+  // test at all).
+  it('answers 503 from /status when Pulse has never answered successfully', async () => {
+    const adapter = await buildAdapter({
+      fetch: async (): Promise<Response> => {
+        throw new Error('pulse is down')
+      }
+    })
+    jest.spyOn(components.commsAdapter, 'status').mockImplementation(() => adapter.status())
+
+    const r = await components.localFetch.fetch('/status')
+
+    expect(r.status).toBe(503)
+  })
+
+  // C4-no-fallback / C4-live-data-shape (M2): a 200 whose body is not `{ realms: [...] }` is a
+  // failed read, not "nobody is online" — both routes must answer 503, never an invented empty body.
+  it('answers 503 from /live-data and /status when Pulse answers 200 with a malformed body', async () => {
+    const adapter = await buildAdapter({
+      fetch: async (): Promise<Response> => new Response(JSON.stringify({ message: 'upstream connect error' }))
+    })
+    jest.spyOn(components.commsAdapter, 'status').mockImplementation(() => adapter.status())
+
+    const liveDataResponse = await components.localFetch.fetch('/live-data')
+    const statusResponse = await components.localFetch.fetch('/status')
+
+    expect(liveDataResponse.status).toBe(503)
+    expect(statusResponse.status).toBe(503)
   })
 })
