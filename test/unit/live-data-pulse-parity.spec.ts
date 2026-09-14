@@ -1,7 +1,8 @@
 import { getLiveDataHandler } from '../../src/controllers/handlers/live-data-handler'
-import { fetchPulseRealms } from '../../src/logic/pulse'
+import { pulseSourcedAdapter } from '../../src/adapters/comms-adapter'
 import { HandlerContextWithPath, ICommsAdapter } from '../../src/types'
 import { IFetchComponent } from '@dcl/core-commons'
+import { createMockLogs } from '../mocks/logs-mock'
 import { loadHttpGolden, PulseRealmsBody } from '../fixtures/iteration-2/http-goldens'
 
 /**
@@ -9,40 +10,48 @@ import { loadHttpGolden, PulseRealmsBody } from '../fixtures/iteration-2/http-go
  * by the plan — `{"data":{"totalUsers":N,"perWorld":[{"worldName":…,"users":…}]},"lastUpdated":"…"}`.
  * There is no `http/today/live-data.json` probe in the pack to diff against, so this fixture-to-shape
  * mapping is the only guard against the response drifting.
+ *
+ * This drives the *production* `pulseSourcedAdapter` (review round 1, finding 8) rather than a
+ * hand-rolled `status()` that re-implements the mapping: a hand-rolled stand-in would still pass
+ * here even if `pulseStatus()` drifted (dropped `details`, switched `timestamp` to `Date.now()`),
+ * since it would just be asserting its own arithmetic.
  */
 describe('live-data / Pulse realms fixture parity', () => {
   const realmsGolden = loadHttpGolden<PulseRealmsBody>('realms')
   const PULSE_URL = 'https://pulse.example.com'
 
-  function commsAdapterFromGolden(): ICommsAdapter {
+  /**
+   * `publishesCommitHash: false` below means `pulseSourcedAdapter` never calls
+   * `transportAdapter.status()` — this transport exists only to satisfy the parameter and must never
+   * be queried, so every method throws if it is.
+   */
+  const unreachableTransport: ICommsAdapter = {
+    status: async () => {
+      throw new Error('the transport must not be queried when publishesCommitHash is false')
+    },
+    getWorldRoomConnectionString: async () => '',
+    getSceneRoomConnectionString: async () => '',
+    getWorldRoomParticipantCount: async () => 0,
+    getWorldSceneRoomsParticipantCount: async () => 0,
+    removeParticipant: async () => undefined
+  }
+
+  function realCommsAdapterFromGolden(): ICommsAdapter {
     const fetch: IFetchComponent = {
       fetch: async () => new Response(JSON.stringify(realmsGolden.body))
     }
-    return {
-      async status() {
-        const { worlds, lastUpdated } = await fetchPulseRealms(fetch, PULSE_URL)
-        return {
-          adapterType: 'livekit',
-          statusUrl: 'https://livekit.dcl.org/',
-          rooms: worlds.length,
-          users: worlds.reduce((carry, world) => carry + world.users, 0),
-          details: worlds,
-          timestamp: lastUpdated
-        }
-      },
-      getWorldRoomConnectionString: async () => '',
-      getSceneRoomConnectionString: async () => '',
-      getWorldRoomParticipantCount: async () => 0,
-      getWorldSceneRoomsParticipantCount: async () => 0,
-      removeParticipant: async () => undefined
-    }
+    return pulseSourcedAdapter({ fetch, logs: createMockLogs() }, unreachableTransport, {
+      pulseUrl: PULSE_URL,
+      adapterType: 'livekit',
+      statusUrl: 'https://livekit.dcl.org/',
+      publishesCommitHash: false
+    })
   }
 
   it('produces exactly the C4 /live-data shape from the pack /realms golden', async () => {
-    const context = { components: { commsAdapter: commsAdapterFromGolden() } } as unknown as HandlerContextWithPath<
-      'commsAdapter',
-      '/live-data'
-    >
+    const context = {
+      components: { commsAdapter: realCommsAdapterFromGolden() }
+    } as unknown as HandlerContextWithPath<'commsAdapter', '/live-data'>
 
     const response = await getLiveDataHandler(context)
 
