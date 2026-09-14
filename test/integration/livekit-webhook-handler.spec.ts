@@ -34,6 +34,14 @@ test('LivekitWebhookHandler', function ({ components, stubComponents }) {
     })
   }
 
+  // Iteration 2: Pulse is the platform's only presence source, so the `nats` component this webhook
+  // used to publish to no longer exists on the service at all. The test runner's `components` proxy
+  // throws rather than answering `undefined` for a component that was never registered, which is
+  // itself the assertion: there is nothing to tear down or leak a connection from.
+  it('should not wire a nats component', () => {
+    expect(() => (components as Record<string, unknown>).nats).toThrow('Component nats does not exist')
+  })
+
   it('should return 400 when authorization header is missing', async () => {
     const r = await makeWebhookRequest({}, '')
 
@@ -116,11 +124,6 @@ test('LivekitWebhookHandler', function ({ components, stubComponents }) {
         response = await makeWebhookRequest(event)
       })
 
-      it('should publish join event to nats', async () => {
-        const { nats } = components
-        expect(nats.publish).toHaveBeenCalledWith('peer.test-user.world.join')
-      })
-
       it('should register peer in the registry', async () => {
         const { peersRegistry } = components
         expect(peersRegistry.onPeerConnected).toHaveBeenCalledWith('test-user', 'test-room.dcl.eth')
@@ -142,11 +145,6 @@ test('LivekitWebhookHandler', function ({ components, stubComponents }) {
 
       beforeEach(async () => {
         response = await makeWebhookRequest(event)
-      })
-
-      it('should publish leave event to nats when participant leaves', async () => {
-        const { nats } = components
-        expect(nats.publish).toHaveBeenCalledWith('peer.test-user.world.leave')
       })
 
       it('should unregister peer in the registry', async () => {

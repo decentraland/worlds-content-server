@@ -2943,7 +2943,7 @@
     "@well-known-components/interfaces" "^1.4.1"
     cross-fetch "^3.1.5"
 
-"@well-known-components/interfaces@^1.1.1", "@well-known-components/interfaces@^1.4.1", "@well-known-components/interfaces@^1.4.3", "@well-known-components/interfaces@^1.5.1", "@well-known-components/interfaces@^1.5.2":
+"@well-known-components/interfaces@^1.4.1", "@well-known-components/interfaces@^1.4.3", "@well-known-components/interfaces@^1.5.1", "@well-known-components/interfaces@^1.5.2":
   version "1.5.2"
   resolved "https://registry.npmjs.org/@well-known-components/interfaces/-/interfaces-1.5.2.tgz"
   integrity sha512-TzKQblOci2Azczk1DZ4JL5aJW7hwq7kHrFMO4lCRMmW51bA71BtiZlq0WP72Dln067xTSoHQAU4WHCFJlGYvEQ==
@@ -2956,23 +2956,6 @@
   version "3.1.3"
   resolved "https://registry.npmjs.org/@well-known-components/logger/-/logger-3.1.3.tgz"
   integrity sha512-tTjD27CdfU4SVe+kPfjRbPSqdrw0Crg+M31RNejinCuMEBtEGbhYLtB1M4gn+PSTy2Oi3cI3iOdeQ1xVhMSerQ==
-
-"@well-known-components/nats-component@^2.0.0":
-  version "2.0.0"
-  resolved "https://registry.npmjs.org/@well-known-components/nats-component/-/nats-component-2.0.0.tgz"
-  integrity sha512-czUnm7Hv2BzwsgAtzFg75BYf6sKj/R4AQqHyvMk4QHIUmjUys7FL0eJKbrM3RLLLGCwugCqVBj4kfYOWdpTiHg==
-  dependencies:
-    "@well-known-components/interfaces" "^1.1.1"
-    "@well-known-components/pushable-channel" "^1.0.0"
-    mitt "^3.0.0"
-    nats "^2.7.1"
-
-"@well-known-components/pushable-channel@^1.0.0":
-  version "1.0.3"
-  resolved "https://registry.npmjs.org/@well-known-components/pushable-channel/-/pushable-channel-1.0.3.tgz"
-  integrity sha512-8ibswJXQx7YfmUgzXp02xsIBTw6zrVXgNybV8asvEr1vE/0m/xmZi41+NwTcZmLCNRzsE/i+aRUzNO+oyq/g2g==
-  dependencies:
-    mitt "^3.0.0"
 
 abort-controller@^3.0.0:
   version "3.0.0"
@@ -5366,13 +5349,6 @@ napi-postinstall@^0.3.0:
   resolved "https://registry.npmjs.org/napi-postinstall/-/napi-postinstall-0.3.4.tgz"
   integrity sha512-PHI5f1O0EP5xJ9gQmFGMS6IZcrVvTjpXjz7Na41gTE7eE2hK11lg04CECCYEEjdc17EV4DO+fkGEtt7TpTaTiQ==
 
-nats@^2.7.1:
-  version "2.29.3"
-  resolved "https://registry.npmjs.org/nats/-/nats-2.29.3.tgz"
-  integrity sha512-tOQCRCwC74DgBTk4pWZ9V45sk4d7peoE2njVprMRCBXrhJ5q5cYM7i6W+Uvw2qUrcfOSnuisrX7bEx3b3Wx4QA==
-  dependencies:
-    nkeys.js "1.1.0"
-
 natural-compare@^1.4.0:
   version "1.4.0"
   resolved "https://registry.npmjs.org/natural-compare/-/natural-compare-1.4.0.tgz"
@@ -5382,13 +5358,6 @@ neo-async@^2.6.2:
   version "2.6.2"
   resolved "https://registry.npmjs.org/neo-async/-/neo-async-2.6.2.tgz"
   integrity sha512-Yd3UES5mWCSqR+qNT93S3UoYUkqAZ9lLg8a7g9rimsWmYGK8cVToA4/sF3RrshdyV3sAGMXVUmpMYOw+dLpOuw==
-
-nkeys.js@1.1.0:
-  version "1.1.0"
-  resolved "https://registry.npmjs.org/nkeys.js/-/nkeys.js-1.1.0.tgz"
-  integrity sha512-tB/a0shZL5UZWSwsoeyqfTszONTt4k2YS0tuQioMOD180+MbombYVgzDUYHlx+gejYK6rgf08n/2Df99WY0Sxg==
-  dependencies:
-    tweetnacl "1.0.3"
 
 node-addon-api@^8.3.0:
   version "8.8.0"
@@ -6627,11 +6596,6 @@ tslib@2.8.1, tslib@^2.4.0, tslib@^2.6.2:
   version "2.8.1"
   resolved "https://registry.npmjs.org/tslib/-/tslib-2.8.1.tgz"
   integrity sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w==
-
-tweetnacl@1.0.3:
-  version "1.0.3"
-  resolved "https://registry.npmjs.org/tweetnacl/-/tweetnacl-1.0.3.tgz"
-  integrity sha512-6rt+RN7aOi1nGMyC4Xa5DdYiukl2UWCbcJft7YhxReBGQD7OAM8Pbxw6YMo4r2diNEA8FEmu32YOn9rhaiE5yw==
 
 type-check@^0.4.0, type-check@~0.4.0:
   version "0.4.0"

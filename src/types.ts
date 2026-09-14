@@ -19,7 +19,6 @@ import { MigrationExecutor } from './adapters/migration-executor'
 import { IPgComponent } from '@dcl/pg-component'
 import { AuthIdentity } from '@dcl/crypto'
 import { IFetchComponent } from '@dcl/core-commons'
-import { INatsComponent } from '@well-known-components/nats-component/dist/types'
 import type { Room, VideoGrant, WebhookEvent } from 'livekit-server-sdk'
 import { IPublisherComponent } from '@dcl/sns-component'
 import { ISettingsComponent } from './logic/settings'
@@ -650,7 +649,6 @@ export type BaseComponents = {
   marketplaceSubGraph: ISubgraphComponent
   metrics: IMetricsComponent<keyof typeof metricDeclarations>
   migrationExecutor: MigrationExecutor
-  nats: INatsComponent
   nameDenyListChecker: INameDenyListChecker
   nameOwnership: INameOwnership
   namePermissionChecker: IWorldNamePermissionChecker

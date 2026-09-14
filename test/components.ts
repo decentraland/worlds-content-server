@@ -36,7 +36,6 @@ import { createMockedNameOwnership } from './mocks/name-ownership-mock'
 import { createMockUpdateOwnerJob } from './mocks/update-owner-job-mock'
 import { createSnsClientMock } from './mocks/sns-client-mock'
 import { createDotEnvConfigComponent } from '@well-known-components/env-config-provider'
-import { createMockNatsComponent } from './mocks/nats-mock'
 import { createMockPeersRegistry } from './mocks/peers-registry-mock'
 import { IPublisherComponent } from '@dcl/sns-component'
 import { createAuthenticatedLocalFetchComponent } from './components/local-auth-fetch'
@@ -88,6 +87,13 @@ export const test = createRunner<TestComponents>({
 })
 
 async function initComponents(): Promise<TestComponents> {
+  // `originalInitComponents()` runs the real `src/components.ts` boot, which now requires `PULSE_URL`
+  // unconditionally (iteration 2). `.env.default` keeps it commented out on purpose — a placeholder
+  // there would defeat the boot-time `requireString` check for real deployments — so the test
+  // environment supplies one here instead. A suite that specifically exercises "boot fails without
+  // PULSE_URL" builds its own config directly (`createCommsAdapterComponent`), bypassing this.
+  process.env.PULSE_URL = process.env.PULSE_URL ?? 'https://pulse.example.com'
+
   const components = await originalInitComponents()
 
   const { logs, database } = components
@@ -137,7 +143,12 @@ async function initComponents(): Promise<TestComponents> {
 
   const limitsManager = createMockLimitsManagerComponent()
 
-  const commsAdapter = createMockCommsAdapterComponent()
+  // Integration suites run against a mocked comms adapter. A suite that has to exercise the *real*
+  // `createCommsAdapterComponent` wiring from `src/components.ts` sets `USE_REAL_COMMS_ADAPTER=true`
+  // before the runner builds its program, and then keeps the adapter `initComponents()` already
+  // built instead of replacing it.
+  const commsAdapter =
+    process.env.USE_REAL_COMMS_ADAPTER === 'true' ? components.commsAdapter : createMockCommsAdapterComponent()
 
   const nameOwnership = createMockedNameOwnership()
 
@@ -288,7 +299,6 @@ async function initComponents(): Promise<TestComponents> {
     permissions,
     nameOwnership,
     namePermissionChecker,
-    nats: createMockNatsComponent(),
     permissionsManager,
     peersRegistry,
     queueConsumer,

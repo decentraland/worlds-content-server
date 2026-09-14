@@ -2,6 +2,9 @@ import { AppComponents, CommsStatus, ICommsAdapter, LivekitClient, WorldStatus }
 import { EthAddress } from '@dcl/schemas'
 import { TrackSource, VideoGrant } from 'livekit-server-sdk'
 import { LRUCache } from 'lru-cache'
+import { fetchPulseRealms, PulseUnavailableError, requirePulseUrl } from '../logic/pulse'
+
+export const STATUS_CACHE_TTL_MS = 60 * 1000
 
 export async function createCommsAdapterComponent({
   config,
@@ -14,19 +17,42 @@ export async function createCommsAdapterComponent({
   const worldRoomPrefix = await config.requireString('COMMS_ROOM_PREFIX')
   const sceneRoomPrefix = await config.requireString('SCENE_ROOM_PREFIX')
   const adapterType = await config.requireString('COMMS_ADAPTER')
+
+  // Iteration 2: Pulse is the only source of online-player counters, so it is required at boot —
+  // there is no fallback left to degrade to. A malformed value fails here rather than surfacing as
+  // a confusing fetch failure the first time a request needs it.
+  const pulseUrl = await requirePulseUrl(config)
+
   switch (adapterType) {
-    case 'ws-room':
+    case 'ws-room': {
       const fixedAdapter = await config.requireString('COMMS_FIXED_ADAPTER')
       logger.info(`Using ws-room-service adapter with template baseUrl: ${fixedAdapter}`)
-      return cachingAdapter({ logs }, createWsRoomAdapter({ fetch }, worldRoomPrefix, sceneRoomPrefix, fixedAdapter))
+      return pulseSourcedAdapter(
+        { fetch, logs },
+        cachingAdapter({ logs }, createWsRoomAdapter({ fetch }, worldRoomPrefix, sceneRoomPrefix, fixedAdapter)),
+        {
+          pulseUrl,
+          adapterType: 'ws-room',
+          statusUrl: getWsRoomStatusUrl(fixedAdapter),
+          publishesCommitHash: true
+        }
+      )
+    }
 
-    case 'livekit':
+    case 'livekit': {
       const host = await config.requireString('LIVEKIT_HOST')
       logger.info(`Using livekit adapter with host: ${host}`)
-      return cachingAdapter(
-        { logs },
-        createLiveKitAdapter({ logs }, worldRoomPrefix, sceneRoomPrefix, host, livekitClient)
+      return pulseSourcedAdapter(
+        { fetch, logs },
+        cachingAdapter({ logs }, createLiveKitAdapter({ logs }, worldRoomPrefix, sceneRoomPrefix, host, livekitClient)),
+        {
+          pulseUrl,
+          adapterType: 'livekit',
+          statusUrl: getLivekitStatusUrl(host),
+          publishesCommitHash: false
+        }
       )
+    }
 
     default:
       throw Error(`Invalid comms adapter: ${adapterType}`)
@@ -41,10 +67,7 @@ function createWsRoomAdapter(
 ): ICommsAdapter {
   const adapter: ICommsAdapter = {
     async status(): Promise<CommsStatus> {
-      const url = fixedAdapter.substring(fixedAdapter.indexOf(':') + 1)
-      const urlWithProtocol =
-        !url.startsWith('ws:') && !url.startsWith('wss:') ? 'https://' + url : url.replace(/ws\[s]?:/, 'https')
-      const statusUrl = urlWithProtocol.replace(/rooms\/.*/, 'status')
+      const statusUrl = getWsRoomStatusUrl(fixedAdapter)
 
       return await fetch
         .fetch(statusUrl, {
@@ -94,10 +117,7 @@ function createWsRoomAdapter(
       return detail?.users ?? 0
     },
     async getWorldSceneRoomsParticipantCount(worldName: string): Promise<number> {
-      const url = fixedAdapter.substring(fixedAdapter.indexOf(':') + 1)
-      const urlWithProtocol =
-        !url.startsWith('ws:') && !url.startsWith('wss:') ? 'https://' + url : url.replace(/ws\[s]?:/, 'https')
-      const statusUrl = urlWithProtocol.replace(/rooms\/.*/, 'status')
+      const statusUrl = getWsRoomStatusUrl(fixedAdapter)
       const res = await fetch
         .fetch(statusUrl, {
           method: 'GET',
@@ -215,6 +235,142 @@ function getLivekitStatusUrl(host: string): string {
   const parsed = new URL(clientUrl)
   const protocol = parsed.protocol === 'ws:' ? 'http:' : 'https:'
   return `${protocol}//${parsed.host}/`
+}
+
+function getWsRoomStatusUrl(fixedAdapter: string): string {
+  const url = fixedAdapter.substring(fixedAdapter.indexOf(':') + 1)
+  const urlWithProtocol =
+    !url.startsWith('ws:') && !url.startsWith('wss:') ? 'https://' + url : url.replace(/ws\[s]?:/, 'https')
+  return urlWithProtocol.replace(/rooms\/.*/, 'status')
+}
+
+export type PulseSourcedAdapterOptions = {
+  pulseUrl: string
+  /** Kept verbatim from the transport: `adapterType`/`statusUrl` describe the transport, not the counter. */
+  adapterType: string
+  statusUrl: string
+  /** Whether the transport publishes `CommsStatus.commitHash` — only ws-room does. */
+  publishesCommitHash: boolean
+}
+
+/**
+ * Iteration 2 (C4): re-sources `status()` — the counter behind `/live-data` and `/status.comms` —
+ * from Pulse, leaving the published response shape untouched. There is no LiveKit fallback: Pulse
+ * is the only presence source.
+ *
+ * The wrapper deliberately sits *outside* the transport adapter and overrides nothing else.
+ * `getWorldRoomParticipantCount` / `getWorldSceneRoomsParticipantCount` back the
+ * `MAX_USERS_PER_WORLD` capacity check and `removeParticipant` backs the kicks; each keeps reading
+ * LiveKit, which is the authority on who is attached to a room (iteration-2 exception: LiveKit is
+ * the correct source there).
+ *
+ * Failure mode (C4-no-fallback): a failed Pulse read serves the last successful answer for one more
+ * cache TTL. Once that grace period elapses too, `status()` rejects with `PulseUnavailableError`
+ * instead of inventing a count — the caller (`live-data-handler.ts`, `status-handler.ts`) maps that
+ * to `503`, never to a LiveKit-derived number.
+ */
+export function pulseSourcedAdapter(
+  { fetch, logs }: Pick<AppComponents, 'fetch' | 'logs'>,
+  transportAdapter: ICommsAdapter,
+  { pulseUrl, adapterType, statusUrl, publishesCommitHash }: PulseSourcedAdapterOptions
+): ICommsAdapter {
+  const logger = logs.getLogger('pulse-sourced-comms-adapter')
+
+  /** A transport outage drops the commit hash, never the Pulse-sourced answer. */
+  async function transportCommitHash(): Promise<string | undefined> {
+    if (!publishesCommitHash) {
+      return undefined
+    }
+
+    try {
+      return (await transportAdapter.status())?.commitHash
+    } catch (error: any) {
+      logger.warn(`Error retrieving the transport commit hash: ${error.message}`)
+      return undefined
+    }
+  }
+
+  async function pulseStatus(): Promise<CommsStatus> {
+    const [{ worlds, lastUpdated }, commitHash] = await Promise.all([
+      fetchPulseRealms(fetch, pulseUrl, logger),
+      transportCommitHash()
+    ])
+
+    return {
+      adapterType,
+      statusUrl,
+      // Spread, not assigned: a transport that publishes no commit hash must not gain the key.
+      ...(publishesCommitHash ? { commitHash } : {}),
+      rooms: worlds.length,
+      users: worlds.reduce((carry, world) => carry + world.users, 0),
+      details: worlds,
+      timestamp: lastUpdated
+    }
+  }
+
+  // Explicit state rather than a generic LRU cache: the grace period has to be measured from the
+  // last *successful* read, not reset every time a stale copy is handed out again, so `cachedAt`
+  // only ever advances on a successful `pulseStatus()`. `pendingRead` folds concurrent callers
+  // during a cache miss into the one Pulse read in flight, the same way the transport's own cache
+  // does. `lastAttemptAt` is the outage throttle: it advances on *every* attempt (success or
+  // failure), independently of `cachedAt`, so a Pulse outage that fails fast cannot turn every
+  // request on these public, unthrottled routes into its own upstream call.
+  let cachedStatus: CommsStatus | undefined
+  let cachedAt = 0
+  let lastAttemptAt = 0
+  let pendingRead: Promise<CommsStatus> | undefined
+
+  async function readThroughCache(): Promise<CommsStatus> {
+    const now = Date.now()
+    if (cachedStatus && now - cachedAt < STATUS_CACHE_TTL_MS) {
+      return cachedStatus
+    }
+
+    if (pendingRead) {
+      return pendingRead
+    }
+
+    // Outage throttle: once a read has been attempted, no new Pulse read starts until a full cache
+    // TTL has passed since that attempt, however many requests arrive in between -- `pendingRead`
+    // above only folds callers that are truly concurrent with an in-flight read, which does nothing
+    // once Pulse starts failing fast. This deliberately never touches `cachedAt`, so the 2xTTL
+    // staleness cap below is unaffected.
+    if (now - lastAttemptAt < STATUS_CACHE_TTL_MS) {
+      if (cachedStatus && now - cachedAt < STATUS_CACHE_TTL_MS * 2) {
+        return cachedStatus
+      }
+      throw new PulseUnavailableError('Pulse presence is unavailable')
+    }
+
+    lastAttemptAt = now
+    pendingRead = (async () => {
+      try {
+        const fresh = await pulseStatus()
+        cachedStatus = fresh
+        cachedAt = Date.now()
+        return fresh
+      } catch (error: any) {
+        logger.warn(`Error retrieving comms status: ${error.message}`)
+
+        // One extra TTL of grace, measured from the last good read: still stale-serves the last
+        // successful answer, but never a LiveKit-derived one, and never indefinitely.
+        if (cachedStatus && Date.now() - cachedAt < STATUS_CACHE_TTL_MS * 2) {
+          return cachedStatus
+        }
+
+        throw new PulseUnavailableError('Pulse presence is unavailable')
+      } finally {
+        pendingRead = undefined
+      }
+    })()
+
+    return pendingRead
+  }
+
+  return {
+    ...transportAdapter,
+    status: readThroughCache
+  }
 }
 
 function cachingAdapter({ logs }: Pick<AppComponents, 'logs'>, wrappedAdapter: ICommsAdapter): ICommsAdapter {

@@ -50,7 +50,7 @@ This server interacts with DCL Names (ENS) for ownership validation, LiveKit for
 - **[LiveKit](https://livekit.io/)**: Optional communications adapter for multi-user experiences
 - **[AWS SNS](https://aws.amazon.com/sns/)**: Publishes deployment notifications
 - **PostgreSQL**: Database for world metadata, permissions, and blocked wallets
-- **NATS**: Message broker for internal event handling
+- **[Pulse](https://github.com/decentraland/Pulse)**: Source of the online-player counters behind `/live-data`, `/status` and `/wallet/:wallet/connected-world`
 - **AWS S3** (optional): Cloud storage backend via `@dcl/catalyst-storage`
 - **Local Disk Storage** (default): File system storage via `@dcl/catalyst-storage`
 
@@ -136,11 +136,44 @@ cp .env.default .env
 
 See `.env.default` for available configuration options.
 
+#### Presence
+
+Pulse is the platform's only source of online-player information. There is no configurable presence
+source and no LiveKit fallback.
+
+| Key | Default | What it does |
+| --- | --- | --- |
+| `PULSE_URL` | _unset, required_ | Base URL of the Pulse service. `commsAdapter.status()` — and with it `/live-data` and `/status` (`comms`) — is built from `GET ${PULSE_URL}/realms`; `/wallet/:wallet/connected-world` answers from `GET ${PULSE_URL}/peers/:id`. Required at boot: the process refuses to start without it, so `.env.default` keeps it commented out rather than carrying a placeholder that would silently satisfy the check. |
+
+Only the counters move. The `MAX_USERS_PER_WORLD` capacity check, the participant kicks and the
+access-change re-checks keep reading LiveKit, which is the authority on who is attached to a room.
+
+The wallet is lowercased before the `GET ${PULSE_URL}/peers/:id` lookup (Pulse stores addresses
+lowercased, so the route stays case-insensitive), and the answer is cached in memory for 5 seconds
+per wallet so this public, unauthenticated route cannot fan one Pulse call out per request.
+
+Every Pulse read is bounded by a 5 second deadline (`PULSE_REQUEST_TIMEOUT_MS`, not configurable), so
+a Pulse that accepts the connection and then stalls degrades the answer instead of hanging the
+request. On `/live-data` and `/status`, a failed Pulse read serves the last successful answer for one
+more cache TTL (60 s); once that grace period elapses too, the route answers `503` — never a
+LiveKit-derived count. On `/wallet/:wallet/connected-world`, a Pulse read that is not a "peer not
+found" 404 also answers `503`.
+
+The LiveKit webhook (`/livekit-webhook`) no longer publishes `peer.<address>.world.join|leave` on
+NATS — social-service-ea reads world presence from Pulse's `engine.parcel_changes` feed instead — so
+this service no longer depends on NATS at all.
+
+**Deploy order and rollback.** Deploy this service after social-service-ea's Pulse-only build (its
+`peer.*.world.*` subscriber is gone, so this service publishing it would be a no-op) and after Pulse
+is publishing presence in the target environment. Rollback is the previous image: it resumes
+publishing `peer.*.world.*`, which is harmless once social-service-ea is back on the previous image
+too (it still reads the legacy subjects).
+
 ### Running the Service
 
 #### Setting up the environment
 
-In order to successfully run this server, external dependencies such as databases, message brokers, and storage must be provided.
+In order to successfully run this server, external dependencies such as databases and storage must be provided.
 
 To do so, this repository provides you with a `docker-compose.yml` file for that purpose. In order to get the environment set up, run:
 
@@ -150,7 +183,6 @@ docker-compose up -d
 
 This will start:
 - PostgreSQL database on port `5450`
-- NATS message broker on port `4222`
 
 #### Running in development mode
 

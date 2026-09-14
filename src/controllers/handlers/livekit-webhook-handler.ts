@@ -4,22 +4,17 @@ import { IHttpServerComponent } from '@dcl/core-commons'
 import { InvalidRequestError } from '@dcl/http-commons'
 import { ParticipantEvent, WebhookEventName } from '../../adapters/livekit-client'
 
-const TOPIC_SUFFIX_BY_EVENT = {
-  [WebhookEventName.ParticipantJoined]: 'join',
-  [WebhookEventName.ParticipantLeft]: 'leave'
-}
-
 function isValidEvent(event: string): event is ParticipantEvent {
   return Object.values(WebhookEventName).includes(event as WebhookEventName)
 }
 
 // TODO: refactor this to be like the one in Comms Gatekeeper (might be a good idea for a new component in core-components)
 export async function livekitWebhookHandler(
-  ctx: HandlerContextWithPath<'nats' | 'logs' | 'livekitClient' | 'peersRegistry', '/livekit-webhook'> &
+  ctx: HandlerContextWithPath<'logs' | 'livekitClient' | 'peersRegistry', '/livekit-webhook'> &
     DecentralandSignatureContext<any>
 ): Promise<IHttpServerComponent.IResponse> {
   const {
-    components: { nats, logs, livekitClient, peersRegistry },
+    components: { logs, livekitClient, peersRegistry },
     request
   } = ctx
 
@@ -57,10 +52,10 @@ export async function livekitWebhookHandler(
 
   const { identity } = participant
 
-  logger.debug(`Publishing event ${event} for participant ${identity} in room ${room.name}`)
-
-  nats.publish(`peer.${identity}.world.${TOPIC_SUFFIX_BY_EVENT[event]}`)
-
+  // Iteration 2: Pulse is the platform's only presence source, so this webhook no longer publishes a
+  // world join/leave event for the participant on NATS — social-service-ea now reads world presence
+  // from Pulse's `engine.parcel_changes` feed instead. The registry update stays unconditional: it is
+  // what kicks (participant-kicker) and access changes read.
   const peerRegistryHandler = peerRegistryHandlerByEvent[event]
   peerRegistryHandler(identity, room.name)
 

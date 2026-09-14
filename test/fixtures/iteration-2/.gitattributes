@@ -1,0 +1,4 @@
+# The iteration-2 contract fixtures are byte-pinned: their sha256 must keep matching the
+# `manifest.json` of `archipelago-workers/docs/contracts/iteration-2/`. Checking them out with
+# platform line endings would change those bytes, so they are never eol-converted.
+* -text

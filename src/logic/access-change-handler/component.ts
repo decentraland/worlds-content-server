@@ -94,6 +94,11 @@ function createKickWithoutAccessReaction({
   }
 }
 
+/**
+ * iteration-2 exception: LiveKit is the correct source here. Deciding who to kick out of a world
+ * needs the set of peers currently attached to its LiveKit rooms (`peersRegistry`), not the presence
+ * snapshot Pulse publishes, so this path stays on LiveKit regardless of Pulse.
+ */
 export function createAccessChangeHandler({
   peersRegistry,
   participantKicker,
