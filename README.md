@@ -50,7 +50,7 @@ This server interacts with DCL Names (ENS) for ownership validation, LiveKit for
 - **[LiveKit](https://livekit.io/)**: Optional communications adapter for multi-user experiences
 - **[AWS SNS](https://aws.amazon.com/sns/)**: Publishes deployment notifications
 - **PostgreSQL**: Database for world metadata, permissions, and blocked wallets
-- **NATS**: Message broker for internal event handling
+- **[Pulse](https://github.com/decentraland/Pulse)**: Source of the online-player counters behind `/live-data`, `/status` and `/wallet/:wallet/connected-world`
 - **AWS S3** (optional): Cloud storage backend via `@dcl/catalyst-storage`
 - **Local Disk Storage** (default): File system storage via `@dcl/catalyst-storage`
 
@@ -136,41 +136,38 @@ cp .env.default .env
 
 See `.env.default` for available configuration options.
 
-#### Presence source
+#### Presence
 
-The online-player counters this service publishes can be read either from LiveKit (the historical
-source) or from Pulse. All three keys default to today's behaviour, so a deploy with no configuration
-change is a no-op.
+Pulse is the platform's only source of online-player information. There is no configurable presence
+source and no LiveKit fallback.
 
 | Key | Default | What it does |
 | --- | --- | --- |
-| `PRESENCE_SOURCE` | `livekit` | `livekit` counts users from the LiveKit room listing. `pulse` reads `GET ${PULSE_URL}/realms` for `/live-data` and `/status` (`comms`), and `GET ${PULSE_URL}/peers/:id` for `/wallet/:wallet/connected-world`. `both` serves the LiveKit answer and counts the divergence against Pulse. Any other value falls back to `livekit`. |
-| `PULSE_URL` | _unset_ | Base URL of the Pulse service. Required when `PRESENCE_SOURCE` is `pulse` or `both`. |
-| `PUBLISH_PEER_WORLD_EVENTS` | `true` | Whether the LiveKit webhook publishes `peer.<address>.world.join\|leave` on NATS. `false`, `0` and `no` (trimmed, any casing) switch it off; anything else — an absent value included — keeps publishing. Set it off once social-service-ea reads world presence from Pulse; the publish is then removed altogether. |
+| `PULSE_URL` | _unset, required_ | Base URL of the Pulse service. `commsAdapter.status()` — and with it `/live-data` and `/status` (`comms`) — is built from `GET ${PULSE_URL}/realms`; `/wallet/:wallet/connected-world` answers from `GET ${PULSE_URL}/peers/:id`. Required at boot: the process refuses to start without it, so `.env.default` keeps it commented out rather than carrying a placeholder that would silently satisfy the check. |
 
 Only the counters move. The `MAX_USERS_PER_WORLD` capacity check, the participant kicks and the
 access-change re-checks keep reading LiveKit, which is the authority on who is attached to a room.
 
-Under `PRESENCE_SOURCE=pulse` the wallet is lowercased before the `GET ${PULSE_URL}/peers/:id`
-lookup (Pulse stores addresses lowercased, and the LiveKit-fed registry path lowercases too, so the
-route stays case-insensitive), and the answer is cached in memory for 5 seconds per wallet so this
-public, unauthenticated route cannot fan one Pulse call out per request.
+The wallet is lowercased before the `GET ${PULSE_URL}/peers/:id` lookup (Pulse stores addresses
+lowercased, so the route stays case-insensitive), and the answer is cached in memory for 5 seconds
+per wallet so this public, unauthenticated route cannot fan one Pulse call out per request.
 
-Every Pulse read is bounded by a 5 second deadline (`PULSE_REQUEST_TIMEOUT_MS`, not configurable),
-so a Pulse that accepts the connection and then stalls degrades the answer instead of hanging the
-request: under `pulse` the affected route answers with empty counters or a 404, and under `both` the
-LiveKit answer is unaffected.
+Every Pulse read is bounded by a 5 second deadline (`PULSE_REQUEST_TIMEOUT_MS`, not configurable), so
+a Pulse that accepts the connection and then stalls degrades the answer instead of hanging the
+request. On `/live-data` and `/status`, a failed Pulse read serves the last successful answer for one
+more cache TTL (60 s); once that grace period elapses too, the route answers `503` — never a
+LiveKit-derived count. On `/wallet/:wallet/connected-world`, a Pulse read that is not a "peer not
+found" 404 also answers `503`.
 
-While `PRESENCE_SOURCE=both`, every divergence between the two answers is counted in the
-`presence_shadow_diff` metric and logged as `Presence shadow comparison`. The comparison runs off
-the served request path — the LiveKit answer is returned first and Pulse is read in the background —
-so a Pulse incident cannot add latency to `/live-data` or `/status`. `kind="live-data"` counts the
-diverging worlds (symmetric difference of world names plus the worlds whose user counts differ) and
-`kind="live-data-users"` sums `|livekit - pulse|` per world — a world only one source reports counts
-as its whole population, so a total Pulse outage reads as a large magnitude and not as zero — which
-lets a dashboard tell one world off by 1 from one world off by 1000. Both series are incremented
-even when the sources agree, so the series exist before there is anything to report. Metric and log
-carry counts only — no wallet or address is ever recorded.
+The LiveKit webhook (`/livekit-webhook`) no longer publishes `peer.<address>.world.join|leave` on
+NATS — social-service-ea reads world presence from Pulse's `engine.parcel_changes` feed instead — so
+this service no longer depends on NATS at all.
+
+**Deploy order and rollback.** Deploy this service after social-service-ea's Pulse-only build (its
+`peer.*.world.*` subscriber is gone, so this service publishing it would be a no-op) and after Pulse
+is publishing presence in the target environment. Rollback is the previous image: it resumes
+publishing `peer.*.world.*`, which is harmless once social-service-ea is back on the previous image
+too (it still reads the legacy subjects).
 
 ### Running the Service
 

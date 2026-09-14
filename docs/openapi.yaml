@@ -1281,12 +1281,14 @@ paths:
       summary: /wallet/{wallet}/connected-world
       deprecated: true
       description: >-
-        Retrieve the world that a wallet is currently connected to.
+        Retrieve the world that a wallet is currently connected to. Answers from Pulse
+        (`GET ${PULSE_URL}/peers/{wallet}`): a peer whose `realm` ends in `.dcl.eth` is in that world,
+        answering `404` otherwise or when Pulse does not know the peer. A Pulse failure other than
+        "peer not found" answers `503`.
 
 
-        **Deprecated.** Pulse's `GET /peers/{id}` replaces this route: a peer whose `realm` ends in
-        `.dcl.eth` is in that world. It is kept for one release while unity-explorer still calls it,
-        and removed once the explorer reads Pulse directly.
+        **Deprecated.** Kept for one release while unity-explorer still calls it, and removed once
+        the explorer reads Pulse directly.
       operationId: worldsContentServer_getWalletConnectedWorld
       parameters:
         - name: wallet
@@ -1308,6 +1310,18 @@ paths:
                     type: string
                     description: Name of the connected world
                     nullable: true
+        '404':
+          description: The wallet is not connected to any world
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Pulse is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /wallet/contribute:
     get:
@@ -1344,7 +1358,11 @@ paths:
       tags:
         - Content Server
       summary: /status
-      description: Retrieve the current status of the content server and communication services
+      description: >-
+        Retrieve the current status of the content server and communication services. The `comms`
+        block's online-player counters are sourced from Pulse (`GET ${PULSE_URL}/realms`);
+        `comms.adapterType` still names the LiveKit/ws-room transport, not the counter source. A
+        Pulse outage with nothing fresh enough to serve answers `503`.
       operationId: worldsContentServer_getStatus
       responses:
         '200':
@@ -1353,6 +1371,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/StatusResponse'
+        '503':
+          description: Pulse is unavailable and no cached answer is fresh enough to serve
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /index:
     get:
@@ -1385,7 +1409,11 @@ paths:
       tags:
         - Content Server
       summary: /live-data
-      description: Retrieve live data about active worlds and users (from comms adapter status).
+      description: >-
+        Retrieve live data about active worlds and users, sourced from Pulse
+        (`GET ${PULSE_URL}/realms`, filtered to realms whose name ends in `.dcl.eth`). A failed Pulse
+        read serves the last successful answer for one more cache TTL; once that grace period elapses
+        too, this route answers `503` rather than falling back to a LiveKit-derived count.
       operationId: worldsContentServer_getLiveData
       responses:
         '200':
@@ -1410,6 +1438,12 @@ paths:
                     type: string
                     format: date-time
                     description: ISO 8601 timestamp of status snapshot
+        '503':
+          description: Pulse is unavailable and no cached answer is fresh enough to serve
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /worlds/{worldName}/comms:
     post:

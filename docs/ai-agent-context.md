@@ -26,7 +26,7 @@
 - Storage: Local disk or AWS S3 (via @dcl/catalyst-storage)
 - Blockchain: DCL Names ownership validation (deployer must own name)
 - Communication: LiveKit (optional, for comms adapter configuration)
-- Presence: Pulse (optional, only when `PRESENCE_SOURCE` is `pulse` or `both` — see below)
+- Presence: Pulse (required — the platform's only source of online-player information, see below)
 
 **Key Concepts:**
 
@@ -45,35 +45,36 @@ A World realm is fundamentally different from a Genesis City realm:
 - **Separate LiveKit Infrastructure**: At the infrastructure level, Worlds and Genesis City may use different LiveKit accounts or clusters. The comms infrastructure is not necessarily shared between them.
 - **Content is Always Public**: While comms access can be restricted by the World owner (controlling who can enter and interact), the scene content files itself are always publicly accessible. The Worlds Content Server is a public content server — anyone can fetch scene files by content hash regardless of comms access restrictions.
 
-**Presence Source:**
+**Presence:**
 
-Where the online-player counters come from is configurable, because Pulse is becoming the platform's
-single source of online-player information. Only the *counters* move; access control does not.
+Pulse is the platform's only source of online-player information. There is no configurable presence
+source and no LiveKit fallback. Only the *counters* move; access control does not.
 
-- `PRESENCE_SOURCE=livekit` (default, today's behaviour): `commsAdapter.status()` counts users from
-  the LiveKit room listing, and `/wallet/{wallet}/connected-world` answers from `peersRegistry`
-  (fed by the LiveKit webhook).
-- `PRESENCE_SOURCE=pulse`: `commsAdapter.status()` — and with it `/live-data` and `/status`'s `comms`
-  block — is built from `GET ${PULSE_URL}/realms`, filtered to realms whose name ends in `.dcl.eth`;
-  `/wallet/{wallet}/connected-world` answers from `GET ${PULSE_URL}/peers/{wallet}` — wallet
-  lowercased, answer cached in memory for 5 s per wallet, since the route is public and unthrottled.
-  The published response shapes are unchanged, and `comms.adapterType` keeps naming the transport,
-  not the counter.
-- `PRESENCE_SOURCE=both`: serves the LiveKit answer and counts the divergence against Pulse in
-  `presence_shadow_diff` — `kind="live-data"` counts the diverging worlds, `kind="live-data-users"`
-  sums `|livekit - pulse|` per world, a world only one source reports counting as its whole
-  population so a total Pulse outage cannot read as zero (counts only, never addresses). The
-  comparison runs off the served request path and every Pulse read is bounded by
-  `PULSE_REQUEST_TIMEOUT_MS` (5 s), so a stalled Pulse can never delay `/live-data` or `/status`.
+- `commsAdapter.status()` — and with it `/live-data` and `/status`'s `comms` block — is built from
+  `GET ${PULSE_URL}/realms`, filtered to realms whose name ends in `.dcl.eth`; `/wallet/{wallet}/
+  connected-world` answers from `GET ${PULSE_URL}/peers/{wallet}` — wallet lowercased, answer cached
+  in memory for 5 s per wallet, since the route is public and unthrottled. The published response
+  shapes are unchanged, and `comms.adapterType` keeps naming the transport, not the counter.
+- `PULSE_URL` is required at boot (`requireString`, validated as an absolute http(s) URL); the
+  process refuses to start without it. `.env.default` keeps the key commented out, since a
+  placeholder value would silently satisfy `requireString`.
+- **No fallback.** Every Pulse read is bounded by `PULSE_REQUEST_TIMEOUT_MS` (5 s). A failed read on
+  `/live-data` / `/status` serves the last successful answer for one more cache TTL (60 s); once that
+  grace period elapses too, the route answers `503` — never a LiveKit-derived count.
+  `/wallet/{wallet}/connected-world` answers `503` for any Pulse failure other than "peer not found".
 - LiveKit stays the source for anything that decides access: the `MAX_USERS_PER_WORLD` capacity
   check, participant kicks, access-change re-checks and the community-member-removed flow. Those
   paths carry an `iteration-2 exception` comment.
-- `PUBLISH_PEER_WORLD_EVENTS` (default `true`) gates the `peer.<address>.world.join|leave` NATS
-  publish in the LiveKit webhook; the `peersRegistry` update is never gated. `false`, `0` and `no`
-  (trimmed, any casing) switch it off; anything else keeps publishing. The publish is removed once
-  social-service-ea reads world presence from Pulse.
+- The LiveKit webhook no longer publishes `peer.<address>.world.join|leave` on NATS —
+  social-service-ea reads world presence from Pulse's `engine.parcel_changes` feed instead — so the
+  `nats` component and `NATS_URL` are gone from this service entirely. The `peersRegistry` update
+  (kicks and access changes read it) is unconditional.
 - `/wallet/{wallet}/connected-world` is deprecated in `docs/openapi.yaml`: Pulse's
   `GET /peers/{id}` replaces it once unity-explorer reads Pulse directly.
+- **Deploy order / rollback.** Deploy after social-service-ea's Pulse-only build (its
+  `peer.*.world.*` subscriber is gone) and after Pulse is publishing presence in the environment.
+  Rollback is the previous image; it resumes publishing `peer.*.world.*`, harmless once
+  social-service-ea is also rolled back.
 
 **Deployment Requirements:**
 
