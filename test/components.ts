@@ -36,7 +36,6 @@ import { createMockedNameOwnership } from './mocks/name-ownership-mock'
 import { createMockUpdateOwnerJob } from './mocks/update-owner-job-mock'
 import { createSnsClientMock } from './mocks/sns-client-mock'
 import { createDotEnvConfigComponent } from '@well-known-components/env-config-provider'
-import { createMockNatsComponent } from './mocks/nats-mock'
 import { createMockPeersRegistry } from './mocks/peers-registry-mock'
 import { IPublisherComponent } from '@dcl/sns-component'
 import { createAuthenticatedLocalFetchComponent } from './components/local-auth-fetch'
@@ -300,7 +299,6 @@ async function initComponents(): Promise<TestComponents> {
     permissions,
     nameOwnership,
     namePermissionChecker,
-    nats: createMockNatsComponent(),
     permissionsManager,
     peersRegistry,
     queueConsumer,

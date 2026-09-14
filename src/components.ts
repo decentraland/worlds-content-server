@@ -39,7 +39,6 @@ import { createSnsComponent } from '@dcl/sns-component'
 import { createAwsConfig } from './adapters/aws-config'
 import { S3Client } from '@aws-sdk/client-s3'
 import { createNotificationsClientComponent } from './adapters/notifications-service'
-import { createNatsComponent } from '@well-known-components/nats-component'
 import { createSchemaValidatorComponent } from '@dcl/schema-validator-component'
 import { createLivekitClient } from './adapters/livekit-client'
 import { createPeersRegistry } from './adapters/peers-registry'
@@ -98,8 +97,6 @@ export async function initComponents(): Promise<AppComponents> {
   const metrics = await createMetricsComponent(metricDeclarations, { config })
   await instrumentHttpServerWithPromClientRegistry({ metrics, server, config, registry: metrics.registry! })
   const deploymentProcessing = await createDeploymentProcessingComponent({ config, logs, metrics })
-
-  const nats = await createNatsComponent({ config, logs })
 
   const redisUrl = await config.requireString('REDIS_HOST')
   const redis = await createRedisComponent(redisUrl, { logs })
@@ -362,7 +359,6 @@ export async function initComponents(): Promise<AppComponents> {
     nameDenyListChecker,
     nameOwnership,
     namePermissionChecker,
-    nats,
     notificationService,
     participantKicker,
     peersRegistry,

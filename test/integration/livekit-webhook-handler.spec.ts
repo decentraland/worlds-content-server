@@ -34,6 +34,12 @@ test('LivekitWebhookHandler', function ({ components, stubComponents }) {
     })
   }
 
+  // Iteration 2: Pulse is the platform's only presence source, so the `nats` component this webhook
+  // used to publish to no longer exists on the service at all.
+  it('should not wire a nats component', () => {
+    expect((components as Record<string, unknown>).nats).toBeUndefined()
+  })
+
   it('should return 400 when authorization header is missing', async () => {
     const r = await makeWebhookRequest({}, '')
 
@@ -116,11 +122,6 @@ test('LivekitWebhookHandler', function ({ components, stubComponents }) {
         response = await makeWebhookRequest(event)
       })
 
-      it('should publish join event to nats', async () => {
-        const { nats } = components
-        expect(nats.publish).toHaveBeenCalledWith('peer.test-user.world.join')
-      })
-
       it('should register peer in the registry', async () => {
         const { peersRegistry } = components
         expect(peersRegistry.onPeerConnected).toHaveBeenCalledWith('test-user', 'test-room.dcl.eth')
@@ -144,47 +145,9 @@ test('LivekitWebhookHandler', function ({ components, stubComponents }) {
         response = await makeWebhookRequest(event)
       })
 
-      it('should publish leave event to nats when participant leaves', async () => {
-        const { nats } = components
-        expect(nats.publish).toHaveBeenCalledWith('peer.test-user.world.leave')
-      })
-
       it('should unregister peer in the registry', async () => {
         const { peersRegistry } = components
         expect(peersRegistry.onPeerDisconnected).toHaveBeenCalledWith('test-user', 'test-room.dcl.eth')
-      })
-
-      it('should return 200', async () => {
-        expect(response.status).toBe(200)
-      })
-    })
-
-    // WP5-webhook-publish-gated: the publish is staged for removal behind a flag that defaults to
-    // today's behaviour; the peers registry update is never gated (kicks and access changes need it).
-    describe('and PUBLISH_PEER_WORLD_EVENTS is false', function () {
-      const event = {
-        event: 'participant_joined',
-        room: { name: 'test-room.dcl.eth' },
-        participant: { identity: 'test-user' }
-      }
-      let response: Awaited<ReturnType<typeof makeWebhookRequest>>
-
-      beforeEach(async () => {
-        const { config } = stubComponents
-        config.getString.mockImplementation(async (name: string) =>
-          name === 'PUBLISH_PEER_WORLD_EVENTS' ? 'false' : undefined
-        )
-        response = await makeWebhookRequest(event)
-      })
-
-      it('should not publish anything to nats', async () => {
-        const { nats } = components
-        expect(nats.publish).not.toHaveBeenCalled()
-      })
-
-      it('should still register peer in the registry', async () => {
-        const { peersRegistry } = components
-        expect(peersRegistry.onPeerConnected).toHaveBeenCalledWith('test-user', 'test-room.dcl.eth')
       })
 
       it('should return 200', async () => {
