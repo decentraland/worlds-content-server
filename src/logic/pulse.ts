@@ -56,6 +56,15 @@ export class PulseUnavailableError extends Error {
  * failure the first time a request needs Pulse.
  */
 export function assertAbsolutePulseUrl(pulseUrl: string): string {
+  // `new URL()` silently strips leading/trailing whitespace (including newlines) before parsing, so
+  // a trailing-space typo (the classic YAML-quoting mistake) would otherwise sail through this
+  // check, boot the process clean, and then fail every Pulse read forever: `pulseEndpoint` only
+  // trims trailing slashes, so the space survives into the request URL. Checked first, against the
+  // raw value, so this catches the case regardless of what `new URL()` does with it.
+  if (pulseUrl !== pulseUrl.trim()) {
+    throw new Error(`Configuration: string PULSE_URL must be an absolute http(s) URL, got "${pulseUrl}"`)
+  }
+
   let parsed: URL
   try {
     parsed = new URL(pulseUrl)

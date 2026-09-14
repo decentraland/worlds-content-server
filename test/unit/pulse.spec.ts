@@ -102,6 +102,28 @@ describe('pulse', () => {
         'Configuration: string PULSE_URL must be an absolute http(s) URL, got "/pulse"'
       )
     })
+
+    // `new URL()` silently strips leading/trailing whitespace before parsing, so without an
+    // explicit trim check a trailing-space typo (the classic YAML-quoting mistake) passes this
+    // validator, the process boots clean, and `pulseEndpoint`'s trailing-slash-only trim leaves the
+    // space in place -- every subsequent Pulse read then fails with "Invalid URL", forever.
+    it('should reject a value with trailing whitespace', () => {
+      expect(() => assertAbsolutePulseUrl('https://pulse.example.com ')).toThrow(
+        'Configuration: string PULSE_URL must be an absolute http(s) URL, got "https://pulse.example.com "'
+      )
+    })
+
+    it('should reject a value with leading whitespace', () => {
+      expect(() => assertAbsolutePulseUrl(' https://pulse.example.com')).toThrow(
+        'Configuration: string PULSE_URL must be an absolute http(s) URL, got " https://pulse.example.com"'
+      )
+    })
+
+    it('should reject a value with a trailing newline', () => {
+      expect(() => assertAbsolutePulseUrl('https://pulse.example.com\n')).toThrow(
+        'Configuration: string PULSE_URL must be an absolute http(s) URL, got "https://pulse.example.com\n"'
+      )
+    })
   })
 
   // C4-no-fallback: a 200 that is not the expected `{ realms: [...] }` shape (an ingress/gateway
