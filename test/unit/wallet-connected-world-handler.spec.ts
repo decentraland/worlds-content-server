@@ -174,16 +174,43 @@ describe('walletConnectedWorldHandler', () => {
 
   // C4-no-fallback: a Pulse failure that is not a "peer not found" 404 answers 503, never a
   // LiveKit-derived guess (there is no LiveKit-fed answer left to fall back to).
+  //
+  // The 503 body must never echo the raw upstream error text: this route is public, unauthenticated
+  // and unthrottled, and the raw message (`src/adapters/fetch.ts`'s `HTTPResponseError`) names the
+  // internal PULSE_URL host/port/path. The fixed message matches the one `comms-adapter.ts` throws.
   describe('and Pulse fails', () => {
-    it('should answer 503 instead of pretending the wallet is offline', async () => {
-      fetchMock.mockRejectedValue(new Error('pulse is down'))
+    it('should answer 503 with a fixed message, never the raw upstream error text', async () => {
+      fetchMock.mockRejectedValue(
+        new Error(
+          'HTTP Error Response: 500 Internal Server Error for URL https://pulse.internal.example.com/peers/0xtest'
+        )
+      )
 
       const response = await walletConnectedWorldHandler(buildContext('0xtest'))
 
       expect(response).toEqual({
         status: 503,
-        body: { error: 'Service Unavailable', message: 'pulse is down' }
+        body: { error: 'Service Unavailable', message: 'Pulse presence is unavailable' }
       })
+    })
+  })
+
+  // Secondary defect this guards against: a blanket `catch (error: any)` would also convert a
+  // genuine programming error (a bug in `getConnectedWorldFromPulse`, not a Pulse failure) into
+  // "503 Service Unavailable", sending an on-call engineer to the wrong service. Only
+  // `PulseUnavailableError` may become a 503; anything else must propagate to the framework's
+  // generic error handler (a 500 with no message), exactly as it did before this branch existed.
+  describe('and a bug throws inside the handler, unrelated to Pulse', () => {
+    it('should not convert a TypeError into a 503', async () => {
+      // No `wallet` param at all: `getConnectedWorldFromPulse` calls `wallet.toLowerCase()` before
+      // ever touching Pulse, so this TypeError is not a Pulse failure of any kind.
+      const context = {
+        components: { config, fetch: { fetch: fetchMock } },
+        params: {}
+      } as unknown as HandlerContext
+
+      await expect(walletConnectedWorldHandler(context)).rejects.toThrow(TypeError)
+      expect(fetchMock).not.toHaveBeenCalled()
     })
   })
 })

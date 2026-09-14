@@ -3,7 +3,7 @@ import { HandlerContextWithPath } from '../../types'
 import { IFetchComponent, IHttpServerComponent } from '@dcl/core-commons'
 import { NotFoundError } from '@dcl/http-commons'
 import { LRUCache } from 'lru-cache'
-import { fetchPulsePeerRealm, isWorldRealm } from '../../logic/pulse'
+import { fetchPulsePeerRealm, isWorldRealm, PulseUnavailableError } from '../../logic/pulse'
 
 /**
  * This route is public, unauthenticated and unthrottled (`src/controllers/routes.ts`), so without a
@@ -55,8 +55,14 @@ export async function walletConnectedWorldHandler(
   let world: string | undefined
   try {
     world = await getConnectedWorldFromPulse(fetch, pulseUrl, wallet)
-  } catch (error: any) {
-    return { status: 503, body: { error: 'Service Unavailable', message: error.message } }
+  } catch (error) {
+    // Only a classified "Pulse cannot answer" failure becomes a 503; anything else (a bug in this
+    // handler or in the cache, not a Pulse outage) must propagate to the framework's generic error
+    // handler exactly as it did before this branch — never a false "Service Unavailable".
+    if (error instanceof PulseUnavailableError) {
+      return { status: 503, body: { error: 'Service Unavailable', message: error.message } }
+    }
+    throw error
   }
 
   if (!world) {
@@ -79,7 +85,17 @@ async function getConnectedWorldFromPulse(
 ): Promise<string | undefined> {
   // Pulse stores addresses lowercased (the pack pins `0x…00AB` ingesting as `0x…00ab`), so the route
   // is case-insensitive on the wallet: an EIP-55 checksummed address must not 404 just because it is
-  // not the spelling Pulse stores.
-  const cached = await connectedWorldCache.fetch(wallet.toLowerCase(), { context: { fetch, pulseUrl } })
-  return cached?.world
+  // not the spelling Pulse stores. Done outside the try below: a bug here (e.g. a missing `wallet`
+  // param) is not a Pulse failure and must not be reported as one.
+  const normalizedWallet = wallet.toLowerCase()
+
+  try {
+    const cached = await connectedWorldCache.fetch(normalizedWallet, { context: { fetch, pulseUrl } })
+    return cached?.world
+  } catch (error) {
+    // Never propagate the raw failure: it may carry PULSE_URL (`src/adapters/fetch.ts`'s
+    // `HTTPResponseError` names the full request URL), and this backs a public, unauthenticated
+    // route. `PulseUnavailableError`'s fixed message is what the caller is allowed to answer with.
+    throw new PulseUnavailableError('Pulse presence is unavailable')
+  }
 }
