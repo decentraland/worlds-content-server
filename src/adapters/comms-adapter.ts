@@ -312,9 +312,12 @@ export function pulseSourcedAdapter(
   // last *successful* read, not reset every time a stale copy is handed out again, so `cachedAt`
   // only ever advances on a successful `pulseStatus()`. `pendingRead` folds concurrent callers
   // during a cache miss into the one Pulse read in flight, the same way the transport's own cache
-  // does.
+  // does. `lastAttemptAt` is the outage throttle: it advances on *every* attempt (success or
+  // failure), independently of `cachedAt`, so a Pulse outage that fails fast cannot turn every
+  // request on these public, unthrottled routes into its own upstream call.
   let cachedStatus: CommsStatus | undefined
   let cachedAt = 0
+  let lastAttemptAt = 0
   let pendingRead: Promise<CommsStatus> | undefined
 
   async function readThroughCache(): Promise<CommsStatus> {
@@ -323,28 +326,43 @@ export function pulseSourcedAdapter(
       return cachedStatus
     }
 
-    if (!pendingRead) {
-      pendingRead = (async () => {
-        try {
-          const fresh = await pulseStatus()
-          cachedStatus = fresh
-          cachedAt = Date.now()
-          return fresh
-        } catch (error: any) {
-          logger.warn(`Error retrieving comms status: ${error.message}`)
-
-          // One extra TTL of grace, measured from the last good read: still stale-serves the last
-          // successful answer, but never a LiveKit-derived one, and never indefinitely.
-          if (cachedStatus && Date.now() - cachedAt < STATUS_CACHE_TTL_MS * 2) {
-            return cachedStatus
-          }
-
-          throw new PulseUnavailableError('Pulse presence is unavailable')
-        } finally {
-          pendingRead = undefined
-        }
-      })()
+    if (pendingRead) {
+      return pendingRead
     }
+
+    // Outage throttle: once a read has been attempted, no new Pulse read starts until a full cache
+    // TTL has passed since that attempt, however many requests arrive in between -- `pendingRead`
+    // above only folds callers that are truly concurrent with an in-flight read, which does nothing
+    // once Pulse starts failing fast. This deliberately never touches `cachedAt`, so the 2xTTL
+    // staleness cap below is unaffected.
+    if (now - lastAttemptAt < STATUS_CACHE_TTL_MS) {
+      if (cachedStatus && now - cachedAt < STATUS_CACHE_TTL_MS * 2) {
+        return cachedStatus
+      }
+      throw new PulseUnavailableError('Pulse presence is unavailable')
+    }
+
+    lastAttemptAt = now
+    pendingRead = (async () => {
+      try {
+        const fresh = await pulseStatus()
+        cachedStatus = fresh
+        cachedAt = Date.now()
+        return fresh
+      } catch (error: any) {
+        logger.warn(`Error retrieving comms status: ${error.message}`)
+
+        // One extra TTL of grace, measured from the last good read: still stale-serves the last
+        // successful answer, but never a LiveKit-derived one, and never indefinitely.
+        if (cachedStatus && Date.now() - cachedAt < STATUS_CACHE_TTL_MS * 2) {
+          return cachedStatus
+        }
+
+        throw new PulseUnavailableError('Pulse presence is unavailable')
+      } finally {
+        pendingRead = undefined
+      }
+    })()
 
     return pendingRead
   }

@@ -831,6 +831,22 @@ describe('comms-adapter', function () {
         await expect(commsAdapter.status()).rejects.toThrow('Pulse presence is unavailable')
         expect(livekitClient.listRoomsWithParticipantCounts).not.toHaveBeenCalled()
       })
+
+      // `cachedAt` deliberately only advances on a success (it is what caps total staleness at
+      // ~2xTTL), but that means every cache miss during an outage used to start its own fresh Pulse
+      // read: Pulse fails fast, so `pendingRead` only folds truly concurrent callers, and the outbound
+      // rate against a service that is already down tracked the inbound rate of two public,
+      // unthrottled routes. At most one read may be *started* per cache TTL.
+      it('should throttle upstream reads to at most one per cache TTL', async () => {
+        fetchMock.mockRejectedValue(new Error('pulse is down'))
+        const commsAdapter = await buildLivekitBackedAdapter({})
+
+        for (let i = 0; i < 10; i++) {
+          await commsAdapter.status().catch(() => undefined)
+        }
+
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+      })
     })
 
     // C4-no-fallback / C4-live-data-shape: a 200 whose body is not `{ realms: [...] }` must be
