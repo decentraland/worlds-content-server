@@ -127,7 +127,9 @@ export type SceneDeploymentData = {
   signal?: AbortSignal
 }
 
-export type SceneReplacementAuthorization = { mode: 'unrestricted-owner' } | { mode: 'scoped'; entityIds: string[] }
+export type SceneReplacementAuthorization =
+  | { mode: 'unrestricted-owner' }
+  | { mode: 'scoped'; entityIds: string[]; canManageSettings: boolean }
 
 export type WorldRuntimeMetadata = {
   entityIds: string[]

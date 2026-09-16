@@ -304,7 +304,7 @@ describe('deployEntity', () => {
           storage: { fileInfo: jest.fn() },
           validator: {
             validateBeforeStorage: jest.fn(async (deployment: DeploymentToValidate) => {
-              deployment.sceneReplacementAuthorization = { mode: 'scoped', entityIds: [] }
+              deployment.sceneReplacementAuthorization = { mode: 'scoped', entityIds: [], canManageSettings: false }
               return { errors: [], ok: () => true }
             }),
             validateAfterStorage: jest.fn().mockResolvedValue({ errors: [], ok: () => true })

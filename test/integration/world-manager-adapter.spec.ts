@@ -1,4 +1,5 @@
 import { test } from '../components'
+import { Entity } from '@dcl/schemas'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { hashV1 } from '@dcl/hashing'
 import { bufferToStream } from '@dcl/catalyst-storage'
@@ -68,6 +69,99 @@ test('WorldManagerAdapter', function ({ components }) {
     })
   })
 
+  describe('when replacing the only scene of a world so its settings would sync', () => {
+    let worldName: string
+    let created: Awaited<ReturnType<typeof components.worldCreator.createWorldWithScene>>
+    let replacement: Entity
+
+    beforeEach(async () => {
+      const { worldCreator } = components
+      worldName = worldCreator.randomWorldName()
+      created = await worldCreator.createWorldWithScene({
+        worldName,
+        metadata: {
+          main: 'abc.txt',
+          scene: { base: '20,24', parcels: ['20,24'] },
+          worldConfiguration: { name: worldName },
+          display: { title: 'Owner Title' }
+        }
+      })
+      replacement = {
+        ...created.entity,
+        id: `${created.entity.id}-replacement`,
+        metadata: { ...created.entity.metadata, display: { title: 'Replacement Title' } }
+      }
+    })
+
+    describe('and a parcel-scoped collaborator that may not manage settings deploys the replacement', () => {
+      let metadataUpdated: boolean
+
+      beforeEach(async () => {
+        const { worldsManager } = components
+        const result = await worldsManager.deployScene(
+          worldName,
+          replacement,
+          created.owner.authChain[0].payload,
+          { mode: 'scoped', entityIds: [created.entityId], canManageSettings: false },
+          { authChain: created.owner.authChain, size: 1, deadlineAt: Date.now() + 30_000 }
+        )
+        metadataUpdated = result.metadataUpdated
+      })
+
+      it('should leave the world settings untouched', async () => {
+        const settings = await components.worldsManager.getWorldSettings(worldName)
+        expect(settings?.title).toBe('Owner Title')
+      })
+
+      it('should report that no metadata was updated', () => {
+        expect(metadataUpdated).toBe(false)
+      })
+    })
+
+    describe('and a world-wide deployer that may manage settings deploys the replacement', () => {
+      let metadataUpdated: boolean
+
+      beforeEach(async () => {
+        const { worldsManager } = components
+        const result = await worldsManager.deployScene(
+          worldName,
+          replacement,
+          created.owner.authChain[0].payload,
+          { mode: 'scoped', entityIds: [created.entityId], canManageSettings: true },
+          { authChain: created.owner.authChain, size: 1, deadlineAt: Date.now() + 30_000 }
+        )
+        metadataUpdated = result.metadataUpdated
+      })
+
+      it('should sync the world settings from the replacement scene', async () => {
+        const settings = await components.worldsManager.getWorldSettings(worldName)
+        expect(settings?.title).toBe('Replacement Title')
+      })
+
+      it('should report that metadata was updated', () => {
+        expect(metadataUpdated).toBe(true)
+      })
+    })
+
+    describe('and the name owner deploys the replacement', () => {
+      beforeEach(async () => {
+        const { worldsManager } = components
+        await worldsManager.deployScene(
+          worldName,
+          replacement,
+          created.owner.authChain[0].payload,
+          { mode: 'unrestricted-owner' },
+          { authChain: created.owner.authChain, size: 1, deadlineAt: Date.now() + 30_000 }
+        )
+      })
+
+      it('should sync the world settings from the replacement scene', async () => {
+        const settings = await components.worldsManager.getWorldSettings(worldName)
+        expect(settings?.title).toBe('Replacement Title')
+      })
+    })
+  })
+
   describe('when the authorized replacement snapshot is stale', () => {
     let caughtError: unknown
     let deployedEntityIds: string[]
@@ -84,7 +178,7 @@ test('WorldManagerAdapter', function ({ components }) {
           created.worldName,
           replacement,
           created.owner.authChain[0].payload,
-          { mode: 'scoped', entityIds: [] },
+          { mode: 'scoped', entityIds: [], canManageSettings: false },
           { authChain: created.owner.authChain, size: 123 }
         )
         .catch((error) => error)
@@ -2595,7 +2689,7 @@ test('WorldManagerAdapter', function ({ components }) {
             replacementEntity,
             created.owner.authChain[0].payload,
             // Authorizes an entity id that is not the deployed one, so the conflict probe throws
-            { mode: 'scoped', entityIds: ['bafkreiunauthorized'] },
+            { mode: 'scoped', entityIds: ['bafkreiunauthorized'], canManageSettings: false },
             { authChain: created.owner.authChain, size: 100 }
           )
         } catch (error) {
