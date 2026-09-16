@@ -536,6 +536,60 @@ describe('scene validations', function () {
         expect(result.ok()).toBeFalsy()
       })
     })
+
+    describe('and the wallet is a world-wide deployer of the name it does not own', () => {
+      beforeEach(async () => {
+        deployment = await createSceneDeployment(identity.authChain, {
+          type: EntityType.SCENE,
+          pointers: ['0,0'],
+          timestamp: Date.now(),
+          metadata: {
+            main: 'abc.txt',
+            scene: { base: '0,0', parcels: ['0,0'] },
+            worldConfiguration: { name: 'different.dcl.eth' }
+          },
+          files: []
+        })
+
+        permissions.hasPermissionForParcels.mockResolvedValue(true)
+        permissions.hasWorldWidePermission.mockResolvedValue(true)
+      })
+
+      it('should authorize a scoped replacement that may manage world settings', async () => {
+        const result = await validateDeploymentPermission(deployment)
+        expect({ authorization: deployment.sceneReplacementAuthorization, valid: result.ok() }).toEqual({
+          authorization: { mode: 'scoped', entityIds: [], canManageSettings: true },
+          valid: true
+        })
+      })
+    })
+
+    describe('and the wallet is a parcel-scoped collaborator of the name it does not own', () => {
+      beforeEach(async () => {
+        deployment = await createSceneDeployment(identity.authChain, {
+          type: EntityType.SCENE,
+          pointers: ['0,0'],
+          timestamp: Date.now(),
+          metadata: {
+            main: 'abc.txt',
+            scene: { base: '0,0', parcels: ['0,0'] },
+            worldConfiguration: { name: 'different.dcl.eth' }
+          },
+          files: []
+        })
+
+        permissions.hasPermissionForParcels.mockResolvedValue(true)
+        permissions.hasWorldWidePermission.mockResolvedValue(false)
+      })
+
+      it('should authorize a scoped replacement that may not manage world settings', async () => {
+        const result = await validateDeploymentPermission(deployment)
+        expect({ authorization: deployment.sceneReplacementAuthorization, valid: result.ok() }).toEqual({
+          authorization: { mode: 'scoped', entityIds: [], canManageSettings: false },
+          valid: true
+        })
+      })
+    })
   })
 
   describe('when validating the scene dimensions', () => {

@@ -490,6 +490,10 @@ export async function createWorldsManagerComponent({
       ...definedSetting('thumbnailHash', thumbnailHash)
     }
 
+    const maySyncSettings =
+      replacementAuthorization.mode === 'unrestricted-owner' || replacementAuthorization.canManageSettings
+    const insertPatch: WorldSettingsPatch = maySyncSettings ? scenePatch : {}
+
     let metadataUpdated = false
 
     await withDeploymentTransaction(deployment?.signal, async (query) => {
@@ -514,14 +518,14 @@ export async function createWorldsManagerComponent({
           ${owner.toLowerCase()},
           ${JSON.stringify(defaultAccess())}::jsonb,
           ${spawnCoordinates},
-          ${scenePatch.title ?? null},
-          ${scenePatch.description ?? null},
-          ${scenePatch.contentRating ?? null},
-          ${scenePatch.skyboxTime ?? null},
-          ${scenePatch.categories ?? null}::text[],
-          ${scenePatch.singlePlayer ?? null},
-          ${scenePatch.showInPlaces ?? null},
-          ${scenePatch.thumbnailHash ?? null},
+          ${insertPatch.title ?? null},
+          ${insertPatch.description ?? null},
+          ${insertPatch.contentRating ?? null},
+          ${insertPatch.skyboxTime ?? null},
+          ${insertPatch.categories ?? null}::text[],
+          ${insertPatch.singlePlayer ?? null},
+          ${insertPatch.showInPlaces ?? null},
+          ${insertPatch.thumbnailHash ?? null},
           ${new Date()},
           ${new Date()}
         )
@@ -546,7 +550,7 @@ export async function createWorldsManagerComponent({
           FROM world_scenes
           WHERE world_name = ${worldName.toLowerCase()} AND status = 'DEPLOYED'
         `)
-        const shouldUpdate = statsResult.rows[0]?.should_update ?? false
+        const shouldUpdate = maySyncSettings && (statsResult.rows[0]?.should_update ?? false)
 
         const assignments = shouldUpdate ? buildSettingsAssignments(scenePatch, new Date()) : null
         const changed = shouldUpdate ? buildSettingsChangedPredicate(scenePatch) : null
@@ -565,7 +569,7 @@ export async function createWorldsManagerComponent({
           metadataUpdated = refreshResult.rows.length > 0
         }
       } else {
-        metadataUpdated = true
+        metadataUpdated = maySyncSettings
       }
 
       if (replacementAuthorization.mode === 'unrestricted-owner') {

@@ -118,7 +118,8 @@ export function createValidateBannedNames(
 /**
  * Authorizes the deployment: the signer must either own the world name or hold deployment
  * permission for every parcel being deployed and every parcel of each existing scene that the
- * deployment would replace.
+ * deployment would replace. Records `canManageSettings` (world-wide deployers and name owners
+ * only) so the deploy path applies the same world-settings rule as PUT /settings.
  */
 export function createValidateDeploymentPermission(
   components: Pick<
@@ -165,9 +166,15 @@ export function createValidateDeploymentPermission(
       parcelsRequiringPermission
     )
     if (allowed) {
+      const canManageSettings = await components.permissions.hasWorldWidePermission(
+        worldSpecifiedName,
+        'deployment',
+        signer
+      )
       deployment.sceneReplacementAuthorization = {
         mode: 'scoped',
-        entityIds: overlappingScenes.map((scene) => scene.entityId)
+        entityIds: overlappingScenes.map((scene) => scene.entityId),
+        canManageSettings
       }
       return OK
     }
