@@ -65,6 +65,7 @@ import {
 import { Events } from '@dcl/schemas'
 import { createRedisComponent } from '@dcl/redis-component'
 import { createRateLimiterComponent } from './logic/rate-limiter'
+import { createHttpRateLimiterComponent } from './logic/http-rate-limiter'
 import { createDenyListComponent } from './logic/denylist'
 import { createBansComponent } from './adapters/bans-adapter'
 import { createEvictionJob } from './adapters/eviction-job'
@@ -328,6 +329,7 @@ export async function initComponents(): Promise<AppComponents> {
     queueConsumer.addMessageHandler(Events.Type.COMMUNITY, subType, communityMemberRemovedHandler.handle)
   }
   const rateLimiter = await createRateLimiterComponent({ config, logs, redis })
+  const httpRateLimiter = await createHttpRateLimiterComponent({ config, logs, metrics })
 
   return {
     access,
@@ -364,6 +366,7 @@ export async function initComponents(): Promise<AppComponents> {
     permissionsManager,
     queueConsumer,
     rateLimiter,
+    httpRateLimiter,
     redis,
     schemaValidator,
     search,
