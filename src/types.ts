@@ -5,6 +5,7 @@ import type {
   IMetricsComponent
 } from '@well-known-components/interfaces'
 import type { IHttpServerComponent } from '@dcl/core-commons'
+import type { IRateLimiterComponent as IHttpRateLimiterComponent } from '@dcl/rate-limiter-component'
 import { PaginatedParameters } from '@dcl/schemas'
 import { metricDeclarations } from './metrics'
 import { FileInfo, IContentStorageComponent } from '@dcl/catalyst-storage'
@@ -678,6 +679,8 @@ export type BaseComponents = {
   comms: ICommsComponent
   denyList: IDenyListComponent
   rateLimiter: IRateLimiterComponent
+  /** HTTP rate limiting (see `logic/http-rate-limiter`); `rateLimiter` above guards comms joins. */
+  httpRateLimiter: IHttpRateLimiterComponent<GlobalContext>
   redis: ICacheStorageComponent
   bans: IBansComponent
   worlds: IWorldsComponent

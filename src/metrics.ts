@@ -4,12 +4,14 @@ import { getDefaultHttpMetrics } from '@dcl/http-server'
 import { validateMetricsDeclaration } from '@dcl/metrics'
 import { metricDeclarations as theGraphMetricDeclarations } from '@dcl/thegraph-component'
 import { metricDeclarations as pgMetricDeclarations } from '@dcl/pg-component'
+import { metricDeclarations as rateLimiterMetricDeclarations } from '@dcl/rate-limiter-component'
 
 export const metricDeclarations = {
   ...getDefaultHttpMetrics(),
   ...logMetricDeclarations,
   ...theGraphMetricDeclarations,
   ...pgMetricDeclarations,
+  ...rateLimiterMetricDeclarations,
   world_deployments_counter: {
     help: 'Count world deployments',
     type: IMetricsComponent.CounterType,

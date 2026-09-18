@@ -1,4 +1,5 @@
 import { Router } from '@dcl/http-server'
+import { createPostEntitiesRateLimitMiddlewares } from '../logic/http-rate-limiter'
 import {
   createInFlightUploadBudget,
   InFlightUploadBudget,
@@ -141,7 +142,7 @@ export async function createMultipartUploadGuard(
 }
 
 export async function setupRouter(globalContext: GlobalContext): Promise<Router<GlobalContext>> {
-  const { fetch, schemaValidator, config } = globalContext.components
+  const { fetch, schemaValidator, config, httpRateLimiter } = globalContext.components
 
   /**
    * Builds a signed-fetch middleware.
@@ -254,8 +255,15 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   router.get('/world/:world_name/about', worldAboutHandler)
 
   // Post world scene(s)
+  const postEntitiesRateLimitMiddlewares = await createPostEntitiesRateLimitMiddlewares({
+    config,
+    rateLimiter: httpRateLimiter
+  })
   router.post(
     '/entities',
+    // Both limiters stay ahead of the multipart parser, which buffers the whole upload: counting
+    // after it would let a throttled client spend the memory anyway.
+    ...postEntitiesRateLimitMiddlewares,
     multipartParserWrapper(deployEntity, {
       inFlightUploadBudget,
       uploadTimeoutMs,
