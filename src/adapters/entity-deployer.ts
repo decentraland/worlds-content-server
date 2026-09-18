@@ -1,10 +1,20 @@
-import { AppComponents, DeploymentFile, DeploymentResult, IEntityDeployer } from '../types'
+import {
+  AppComponents,
+  DeploymentFile,
+  DeploymentResult,
+  IEntityDeployer,
+  MissingSceneReplacementAuthorizationError,
+  SceneReplacementAuthorization
+} from '../types'
 import { AuthLink, Entity, EntityType, Events, WorldDeploymentEvent } from '@dcl/schemas'
-import { bufferToStream } from '@dcl/catalyst-storage/dist/content-item'
+import { bufferToStream } from '@dcl/catalyst-storage'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { InvalidRequestError } from '@dcl/http-commons'
 import { mapWithConcurrency, raceWithSignal } from '../logic/concurrency'
 import { buildSceneDeploymentMessage } from '../logic/utils'
+import { buildWorldSettingsChangedEvent } from '../logic/worlds/world-settings-changed-event'
+import { Authenticator } from '@dcl/crypto'
+import { isNameOwnershipValidationIgnored } from '../logic/name-ownership-validation'
 
 type PostDeploymentHook = (
   baseUrl: string,
@@ -12,7 +22,8 @@ type PostDeploymentHook = (
   authChain: AuthLink[],
   deploymentSize: number,
   signal?: AbortSignal,
-  deadlineAt?: number
+  deadlineAt?: number,
+  sceneReplacementAuthorization?: SceneReplacementAuthorization
 ) => Promise<DeploymentResult>
 
 /** Maximum number of independent content-addressed objects uploaded concurrently. */
@@ -54,7 +65,8 @@ export function createEntityDeployer(
     authChain: AuthLink[],
     deploymentSize: number,
     signal?: AbortSignal,
-    deadlineAt?: number
+    deadlineAt?: number,
+    sceneReplacementAuthorization?: SceneReplacementAuthorization
   ): Promise<DeploymentResult> {
     // Fast-fail BEFORE writing anything to storage if a newer scene already holds these parcels. This is
     // non-authoritative (deployScene re-checks atomically under a lock), but it keeps a rejected older
@@ -78,11 +90,16 @@ export function createEntityDeployer(
         deploymentProcessing.storageConcurrency,
         async ([hash]) => {
           await deploymentProcessing.trackWorker('storage', () =>
-            storage.storeStream(hash, files.get(hash)!.getStream(signal))
+            storage.storeStream(hash, files.get(hash)!.getStream(signal), signal)
           )
           allContentHashesInStorage.set(hash, true)
         },
-        { signal }
+        // On abort every active upload is cancelled through the same signal and every source
+        // stream is destroyed by its own listener, so waiting for them adds no file safety. Not
+        // waiting keeps the request (and its stage gauges and upload lease) from being tied to a
+        // transport that ignores cancellation; such stragglers stay observed inside
+        // mapWithConcurrency.
+        { signal, waitForActiveOnAbort: false }
       )
 
       signal?.throwIfAborted()
@@ -95,7 +112,7 @@ export function createEntityDeployer(
         2,
         ([id, content]) =>
           deploymentProcessing.trackWorker('storage', () =>
-            storage.storeStream(id, bufferToStream(stringToUtf8Bytes(content)))
+            storage.storeStream(id, bufferToStream(stringToUtf8Bytes(content)), signal)
           ),
         { signal, waitForActiveOnAbort: false }
       )
@@ -103,7 +120,7 @@ export function createEntityDeployer(
 
     signal?.throwIfAborted()
     return await deploymentProcessing.trackStage('persistence', 1, () =>
-      postDeployment(baseUrl, entity, authChain, deploymentSize, signal, deadlineAt)
+      postDeployment(baseUrl, entity, authChain, deploymentSize, signal, deadlineAt, sceneReplacementAuthorization)
     )
   }
 
@@ -117,10 +134,11 @@ export function createEntityDeployer(
     authChain: AuthLink[],
     deploymentSize: number,
     signal?: AbortSignal,
-    deadlineAt?: number
+    deadlineAt?: number,
+    sceneReplacementAuthorization?: SceneReplacementAuthorization
   ): Promise<DeploymentResult> {
     const hookForType = postDeploymentHooks[entity.type] || noPostDeploymentHook
-    return hookForType(baseUrl, entity, authChain, deploymentSize, signal, deadlineAt)
+    return hookForType(baseUrl, entity, authChain, deploymentSize, signal, deadlineAt, sceneReplacementAuthorization)
   }
 
   async function noPostDeploymentHook(
@@ -129,7 +147,8 @@ export function createEntityDeployer(
     _authChain: AuthLink[],
     _deploymentSize: number,
     _signal?: AbortSignal,
-    _deadlineAt?: number
+    _deadlineAt?: number,
+    _sceneReplacementAuthorization?: SceneReplacementAuthorization
   ): Promise<DeploymentResult> {
     return { message: 'No post deployment hook for this entity type' }
   }
@@ -140,7 +159,8 @@ export function createEntityDeployer(
     authChain: AuthLink[],
     deploymentSize: number,
     signal?: AbortSignal,
-    deadlineAt?: number
+    deadlineAt?: number,
+    sceneReplacementAuthorization?: SceneReplacementAuthorization
   ) {
     const { config, metrics, snsClient } = components
 
@@ -149,21 +169,32 @@ export function createEntityDeployer(
     const parcels = entity.metadata?.scene?.parcels || []
     logger.debug(`Deployment for scene "${entity.id}" under world name "${worldName}" at parcels ${parcels.join(', ')}`)
 
-    const owner = (await raceWithSignal(components.nameOwnership.findOwners([worldName]), signal)).get(worldName)
+    const owner = (await isNameOwnershipValidationIgnored(config))
+      ? Authenticator.ownerAddress(authChain)
+      : (await raceWithSignal(components.nameOwnership.findOwners([worldName]), signal)).get(worldName)
 
     if (!owner) {
       throw new Error(
         `Cannot deploy scene "${entity.id}" to world "${worldName}": owner address could not be resolved.`
       )
     }
+    if (!sceneReplacementAuthorization) {
+      throw new MissingSceneReplacementAuthorizationError(entity.id)
+    }
 
     signal?.throwIfAborted()
-    await worldsManager.deployScene(worldName, entity, owner, {
-      authChain,
-      size: deploymentSize,
-      ...(deadlineAt === undefined ? {} : { deadlineAt }),
-      ...(signal === undefined ? {} : { signal })
-    })
+    const { metadataUpdated } = await worldsManager.deployScene(
+      worldName,
+      entity,
+      owner,
+      sceneReplacementAuthorization,
+      {
+        authChain,
+        size: deploymentSize,
+        ...(deadlineAt === undefined ? {} : { deadlineAt }),
+        ...(signal === undefined ? {} : { signal })
+      }
+    )
 
     const kind = worldName.endsWith('dcl.eth') ? 'dcl-name' : 'ens-name'
     metrics.increment('world_deployments_counter', { kind })
@@ -173,44 +204,75 @@ export function createEntityDeployer(
     // promise remains observed if cancellation lets the response finish first.
     const publishDeployment = async (): Promise<void> => {
       const snsArn = await config.getString('AWS_SNS_ARN')
-      if (snsArn) {
-        const deploymentToSqs: WorldDeploymentEvent = {
-          entity: {
-            entityId: entity.id,
-            authChain
-          },
-          contentServerUrls: [baseUrl],
-          type: Events.Type.WORLD,
-          subType: Events.SubType.Worlds.DEPLOYMENT,
-          key: entity.id,
-          timestamp: Date.now()
-        }
-        const isMultiplayer = !!entity.metadata?.multiplayerId
-        const receipt = await snsClient.publishMessage(deploymentToSqs, {
-          isMultiplayer: { DataType: 'String', StringValue: isMultiplayer ? 'true' : 'false' },
-          priority: { DataType: 'String', StringValue: '1' }
-        })
-        logger.info('notification sent', {
-          MessageId: `${receipt.MessageId}`,
-          SequenceNumber: `${receipt.SequenceNumber}`,
-          isMultiplayer: isMultiplayer ? 'true' : 'false'
-        })
+      if (!snsArn) return
+
+      const deploymentToSqs: WorldDeploymentEvent = {
+        entity: {
+          entityId: entity.id,
+          authChain
+        },
+        contentServerUrls: [baseUrl],
+        type: Events.Type.WORLD,
+        subType: Events.SubType.Worlds.DEPLOYMENT,
+        key: entity.id,
+        timestamp: Date.now()
       }
+      const isMultiplayer = !!entity.metadata?.multiplayerId
+      const receipt = await snsClient.publishMessage(deploymentToSqs, {
+        isMultiplayer: { DataType: 'String', StringValue: isMultiplayer ? 'true' : 'false' },
+        priority: { DataType: 'String', StringValue: '1' }
+      })
+      logger.info('notification sent', {
+        MessageId: `${receipt.MessageId}`,
+        SequenceNumber: `${receipt.SequenceNumber}`,
+        isMultiplayer: isMultiplayer ? 'true' : 'false'
+      })
     }
+
+    // Published independently of the deployment event: the settings refresh is already committed, so
+    // an SNS failure on either notification must not suppress the other.
+    const publishSettingsChanged = async (): Promise<void> => {
+      if (!metadataUpdated) return
+
+      const snsArn = await config.getString('AWS_SNS_ARN')
+      if (!snsArn) return
+
+      const settings = await worldsManager.getWorldSettings(worldName)
+      if (!settings) {
+        logger.warn('world settings unavailable after a committed metadata refresh; event skipped', {
+          worldName,
+          entityId: entity.id
+        })
+        return
+      }
+
+      const receipt = await snsClient.publishMessage(
+        buildWorldSettingsChangedEvent(worldName, baseUrl, settings, Date.now())
+      )
+      logger.info('world settings changed notification sent after deploy', {
+        worldName,
+        MessageId: `${receipt.MessageId}`,
+        SequenceNumber: `${receipt.SequenceNumber}`
+      })
+    }
+
     // Run independent hooks concurrently so a slow quota service cannot delay notification delivery.
     const postCommitTasks = Promise.allSettled([
       components.blocking.unblockIfUnderQuota(owner),
-      publishDeployment()
+      publishDeployment(),
+      publishSettingsChanged()
     ]).then((results) => {
-      for (const result of results) {
+      const taskNames = ['unblockIfUnderQuota', 'publishDeployment', 'publishSettingsChanged']
+      results.forEach((result, index) => {
         if (result.status === 'rejected') {
           logger.error('Post-deployment work failed after the scene was committed', {
+            task: taskNames[index],
             error: result.reason instanceof Error ? result.reason.message : String(result.reason),
             entityId: entity.id,
             worldName
           })
         }
-      }
+      })
     })
 
     try {

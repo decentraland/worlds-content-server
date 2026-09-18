@@ -1,7 +1,7 @@
 import { IHttpServerComponent } from '@dcl/core-commons'
 import { InvalidRequestError, NotAuthorizedError, getPaginationParams } from '@dcl/http-commons'
 import { DecentralandSignatureContext } from '@dcl/crypto-middleware'
-import { EthAddress } from '@dcl/schemas'
+import { EthAddress, IPFSv2 } from '@dcl/schemas'
 import { HandlerContextWithPath } from '../../types'
 import type { GetWorldScenesRequestBody } from '../schemas/scenes-query-schemas'
 import type { GetWorldScenesFilters } from '../../types'
@@ -51,14 +51,20 @@ export async function getScenesHandler(
 
   // Extract authorized_deployer filter
   const deployer = ctx.url.searchParams.get('authorized_deployer') ?? undefined
+  const entityId = ctx.url.searchParams.get('entity_id')
 
   // Validate authorized_deployer is a valid Ethereum address if provided
   if (deployer && !EthAddress.validate(deployer)) {
     throw new InvalidRequestError(`Invalid authorized_deployer address: ${deployer}. Must be a valid Ethereum address.`)
   }
 
+  if (entityId !== null && !IPFSv2.validate(entityId)) {
+    throw new InvalidRequestError(`Invalid entity_id: ${entityId}. Must be a valid IPFS CIDv1.`)
+  }
+
   const filters: GetWorldScenesFilters = {
     worldName: world_name,
+    ...(entityId !== null && { entityId }),
     ...(coordinates.length > 0 && { coordinates }),
     ...(boundingBox && { boundingBox }),
     ...(deployer && { authorized_deployer: deployer })
@@ -92,6 +98,7 @@ export async function undeploySceneHandler(
 
   // Check if user owns the name
   const hasNamePermission = await ctx.components.namePermissionChecker.checkPermission(signer, world_name)
+  let authorizedEntityIds: string[] | undefined
 
   if (!hasNamePermission) {
     // Undeploying a parcel removes every scene overlapping it, so authorize the wallet
@@ -103,6 +110,7 @@ export async function undeploySceneHandler(
     })
     const affectedParcels = Array.from(new Set(scenes.flatMap((scene) => scene.parcels)))
     const parcelsToAuthorize = affectedParcels.length > 0 ? affectedParcels : [coordinate]
+    authorizedEntityIds = Array.from(new Set(scenes.map((scene) => scene.entityId)))
 
     const hasDeploymentPermission = await ctx.components.permissions.hasPermissionForParcels(
       world_name,
@@ -116,7 +124,7 @@ export async function undeploySceneHandler(
     }
   }
 
-  await ctx.components.worlds.undeployWorldScenes(world_name, [coordinate])
+  await ctx.components.worlds.undeployWorldScenes(world_name, [coordinate], authorizedEntityIds)
 
   return {
     status: 200,

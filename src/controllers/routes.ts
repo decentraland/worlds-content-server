@@ -17,7 +17,7 @@ import { commsAdapterHandler } from './handlers/comms-adapter-handler'
 import { activeEntitiesHandler } from './handlers/active-entities'
 import { getIndexHandler } from './handlers/index-handler'
 import { getLiveDataHandler } from './handlers/live-data-handler'
-import { wellKnownComponents } from '@dcl/crypto-middleware'
+import { rejectIfSigner, wellKnownComponents } from '@dcl/crypto-middleware'
 import {
   deletePermissionsAccessCommunityHandler,
   deletePermissionsAddressHandler,
@@ -143,15 +143,104 @@ export async function createMultipartUploadGuard(
 export async function setupRouter(globalContext: GlobalContext): Promise<Router<GlobalContext>> {
   const { fetch, schemaValidator, config } = globalContext.components
 
-  const signedFetchMiddleware = wellKnownComponents({
-    fetcher: fetch,
-    optional: false,
-    metadataValidator: (metadata: Record<string, any>): boolean => metadata.signer !== 'decentraland-kernel-scene',
-    onError: (err: any) => ({
-      error: err.message,
-      message: 'This endpoint requires a signed fetch request. See ADR-44.'
+  /**
+   * Builds a signed-fetch middleware.
+   *
+   * @param canonicalMetadataKeys When present, opts the routes using this instance into accepting
+   *   the pre-6.0.0 signed payload as a fallback. Absent — the default — means current format only.
+   */
+  const createSignedFetchMiddleware = (canonicalMetadataKeys?: string[]) =>
+    wellKnownComponents({
+      fetcher: fetch,
+      optional: false,
+      // Scene-originated requests are refused here: the explorer stamps `decentraland-kernel-scene`
+      // as the signer for them, and none of the routes below may be driven by scene code.
+      //
+      // The predicate refuses a `signer` that is not already canonical rather than folding it before
+      // comparing, so a re-spelled or padded value cannot read as "not a scene" and slip past. The
+      // value reaching handlers is still exactly what the client signed — nothing is rewritten.
+      //
+      // It also runs before signature verification, so it guards the legacy fallback below as well
+      // as the current-format path.
+      metadataValidator: rejectIfSigner('decentraland-kernel-scene'),
+      canonicalMetadataKeys,
+      onError: (err: any) => ({
+        error: err.message,
+        message: 'This endpoint requires a signed fetch request. See ADR-44.'
+      })
     })
-  })
+
+  // Strict: current signed-payload format only. Everything the builder, the CLI and the admin
+  // tooling drive stays here — those callers ship with the format they sign and can be sequenced
+  // ahead of a deploy, so they get no fallback.
+  const signedFetchMiddleware = createSignedFetchMiddleware()
+
+  // Explorer comms handshakes only. The unity, godot and bevy clients each still sign the pre-6.0.0
+  // folded payload and each send camelCase metadata, so every one of their handshakes 401s under
+  // 6.x. They are three separate client releases and cannot be deployed atomically with this
+  // service, so there is no deploy order that avoids breaking them; this accepts the old payload
+  // for the duration of that window. Remove it — and this second instance — once the clients ship.
+  //
+  // The legacy payload folds the metadata, so its casing is outside the signature and a delivered
+  // `{"Signer":…}` would share a valid signature with `{"signer":…}` while reading as absent to the
+  // scene gate above. Listing the keys this service authorizes on is what closes that: a legacy
+  // request spelling any of them differently is refused with a 400 rather than having its metadata
+  // rewritten. Derived from the reads in this repo, not from what clients happen to send:
+  //
+  //   signer  the scene gate above; `metadata.signer` in comms-adapter-handler
+  //   intent  `metadata.intent` in comms-adapter-handler
+  //   secret  `authMetadata.secret` in comms-adapter-handler and world-comms-handler
+  //
+  // Scoped to exactly the fields the three routes below read, so the list doubles as the statement
+  // of how far this temporary relaxation reaches. The permissions fields — `type`, `wallets`,
+  // `communities`, `nft`, `secret` — get their own instance below rather than being folded in here;
+  // naming them on this one would cost nothing at runtime, since the guard only inspects keys a
+  // request actually delivers, but it would describe a boundary wider than the one that exists, and
+  // moving a route between instances should be a deliberate edit.
+  //
+  // Deliberately absent for the same reason: `isGuest`, `origin`, `realmName`, `realm.serverName`
+  // and metadata `sceneId` are sent by the explorers but never read here, and an unread field
+  // cannot change an authorization decision. The scene comms route takes its `sceneId` from the URL
+  // path, not the metadata.
+  const explorerSignedFetchMiddleware = createSignedFetchMiddleware(['signer', 'intent', 'secret'])
+
+  // `POST /world/:world_name/permissions/:permission_name` only. creator-hub drives the world
+  // access dialogs through this route and still resolves decentraland-crypto-fetch 2.0.1, so it
+  // signs the folded payload. Everything it sends here carries uppercase — `{"type":"shared-secret",
+  // "secret":"…"}` for a password, camelCase wallet and community lists for an allow list — so every
+  // one of those calls 401s under 6.x. Setting a world password is the flow that breaks.
+  //
+  // It cannot be sequenced ahead of this deploy the way the builder and the CLI can: creator-hub is
+  // a shipped Electron desktop app, so old builds keep calling after the server updates. That is the
+  // same argument the explorer instance above exists for.
+  //
+  // Its other eight calls to this service send no metadata at all, so this is the only route that
+  // needs it — `PUT`/`DELETE` on the per-address permission routes stay strict.
+  //
+  // Keys read by `postPermissionsHandler`, plus the scene gate's:
+  //
+  //   signer                          the gate in `createSignedFetchMiddleware` above
+  //   type, wallets                   read directly for the deployment and streaming permissions
+  //   type, secret, wallets,          the whole metadata is cast to `AccessInput` for `access`
+  //     communities, nft
+  //
+  // What this cannot do, stated plainly: a key list binds key *spellings*. The fold puts property
+  // *values* outside the signature too, and no list can bind those. On this route that means a
+  // legacy-signed `secret` is malleable in transit — an attacker positioned to alter the request can
+  // change the password's casing. The bound is that they must already be able to read and rewrite a
+  // request the world's owner signed (`checkOwnership` gates on the recovered address), and the
+  // secret travels in cleartext in that same request, so they already know it: the reachable outcome
+  // is locking the owner out, not learning anything. Weighed against every creator-hub install being
+  // unable to set a world password, that is the better failure — but it is a real cost, and it is
+  // why this instance is scoped to one route and why the creator-hub bump is the actual fix.
+  const permissionsSignedFetchMiddleware = createSignedFetchMiddleware([
+    'signer',
+    'type',
+    'secret',
+    'wallets',
+    'communities',
+    'nft'
+  ])
 
   const router = new Router<GlobalContext>()
   router.use(errorHandler)
@@ -222,7 +311,11 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
 
   // Permissions endpoints
   router.get('/world/:world_name/permissions', getPermissionsHandler)
-  router.post('/world/:world_name/permissions/:permission_name', signedFetchMiddleware, postPermissionsHandler)
+  router.post(
+    '/world/:world_name/permissions/:permission_name',
+    permissionsSignedFetchMiddleware,
+    postPermissionsHandler
+  )
 
   // Address-specific permission endpoints
   // GET: Paginated parcels for a specific address
@@ -289,11 +382,12 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
 
   router.post('/livekit-webhook', livekitWebhookHandler)
 
-  // Comms endpoints
-  router.post('/worlds/:worldName/comms', signedFetchMiddleware, worldCommsHandler)
-  router.post('/worlds/:worldName/scenes/:sceneId/comms', signedFetchMiddleware, worldCommsHandler)
+  // Comms endpoints. These three are the explorer handshakes, and the only routes that accept the
+  // legacy signed payload — see `explorerSignedFetchMiddleware` above.
+  router.post('/worlds/:worldName/comms', explorerSignedFetchMiddleware, worldCommsHandler)
+  router.post('/worlds/:worldName/scenes/:sceneId/comms', explorerSignedFetchMiddleware, worldCommsHandler)
 
-  router.post('/get-comms-adapter/:roomId', signedFetchMiddleware, commsAdapterHandler)
+  router.post('/get-comms-adapter/:roomId', explorerSignedFetchMiddleware, commsAdapterHandler)
 
   // administrative endpoints
   const secret = await config.requireString('AUTH_SECRET')

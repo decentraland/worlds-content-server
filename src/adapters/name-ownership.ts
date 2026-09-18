@@ -13,6 +13,7 @@ import { l1Contracts, L1Network, registrarAbi } from '@dcl/catalyst-contracts'
 import namehash from '@ensdomains/eth-ens-namehash'
 import { keccak_256 as keccak256 } from '@noble/hashes/sha3'
 import { LRUCache } from 'lru-cache'
+import { ISubgraphComponent } from '@dcl/thegraph-component'
 
 type NamesResponse = {
   nfts: { name: string; owner: { id: string } }[]
@@ -71,6 +72,20 @@ export async function createDummyNameOwnership(): Promise<INameOwnership> {
   }
   return {
     findOwners
+  }
+}
+
+/**
+ * No-op subgraph used only when name ownership validation is explicitly
+ * disabled for a development/test instance. Keeping this component local
+ * prevents startup and background jobs from accidentally reaching a
+ * production Marketplace subgraph.
+ */
+export function createDummyNameSubgraph(): ISubgraphComponent {
+  return {
+    query<T>(): Promise<T> {
+      return Promise.resolve({} as T)
+    }
   }
 }
 

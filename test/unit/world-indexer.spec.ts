@@ -61,11 +61,14 @@ describe('when indexing worlds', function () {
     }
 
     beforeEach(async () => {
-      await worldsManager.deployScene('world-name.dcl.eth', entity1, '0x1234567890123456789012345678901234567890')
+      await worldsManager.deployScene('world-name.dcl.eth', entity1, '0x1234567890123456789012345678901234567890', {
+        mode: 'unrestricted-owner'
+      })
       await worldsManager.deployScene(
         'another-world-name.dcl.eth',
         entity2,
-        '0x1234567890123456789012345678901234567891'
+        '0x1234567890123456789012345678901234567891',
+        { mode: 'unrestricted-owner' }
       )
     })
 
@@ -140,9 +143,13 @@ describe('when indexing worlds', function () {
     beforeEach(async () => {
       jest.useFakeTimers()
       jest.setSystemTime(new Date('2026-01-01T00:00:00Z'))
-      await worldsManager.deployScene('multi.dcl.eth', sceneA, '0x1234567890123456789012345678901234567890')
+      await worldsManager.deployScene('multi.dcl.eth', sceneA, '0x1234567890123456789012345678901234567890', {
+        mode: 'unrestricted-owner'
+      })
       jest.setSystemTime(new Date('2026-01-02T00:00:00Z'))
-      await worldsManager.deployScene('multi.dcl.eth', sceneB, '0x1234567890123456789012345678901234567890')
+      await worldsManager.deployScene('multi.dcl.eth', sceneB, '0x1234567890123456789012345678901234567890', {
+        mode: 'unrestricted-owner'
+      })
       jest.useRealTimers()
     })
 
@@ -178,7 +185,12 @@ describe('when indexing worlds', function () {
           scene: { base: '20,24', parcels: ['20,24'] }
         }
       }
-      await worldsManager.deployScene('world-with-scene.dcl.eth', entity, '0x1234567890123456789012345678901234567890')
+      await worldsManager.deployScene(
+        'world-with-scene.dcl.eth',
+        entity,
+        '0x1234567890123456789012345678901234567890',
+        { mode: 'unrestricted-owner' }
+      )
     })
 
     it('should only include worlds that have scenes in the index', async () => {

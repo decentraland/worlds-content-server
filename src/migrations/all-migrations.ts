@@ -23,8 +23,9 @@ import { migration as migration_0021 } from './0021_migrate_permissions_to_world
 import { migration as migration_0022 } from './0022_normalize_permission_parcels'
 import { migration as migration_0023 } from './0023_add_scene_deployment_status'
 import { migration as migration_0024 } from './0024_denormalize_world_scene_stats'
-import { migration as migration_0025 } from './0025_create_pending_scenes_table'
-import { migration as migration_0026 } from './0026_add_world_scenes_updated_at_index'
+import { migration as migration_0025 } from './0025_add_world_settings_version'
+import { migration as migration_0026 } from './0026_create_pending_scenes_table'
+import { migration as migration_0027 } from './0027_add_world_scenes_updated_at_index'
 
 export const allMigrations: Migration[] = [
   migration_0001,
@@ -52,5 +53,6 @@ export const allMigrations: Migration[] = [
   migration_0023,
   migration_0024,
   migration_0025,
-  migration_0026
+  migration_0026,
+  migration_0027
 ]

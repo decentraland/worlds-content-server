@@ -126,4 +126,26 @@ describe('limits manager', function () {
       expect(worldsManager.getDeployedSceneSizeForParcels).toHaveBeenCalledWith('whatever.dcl.eth', ['1,0'])
     })
   })
+
+  it('uses the hard size limit when name ownership validation is explicitly ignored', async () => {
+    config = createConfigComponent({
+      MAX_PARCELS: '4',
+      MAX_SIZE: '200',
+      ENS_MAX_SIZE: '36',
+      ALLOW_SDK6: 'false',
+      IGNORE_NAME_OWNERSHIP_VALIDATION: 'true'
+    })
+    limitsManager = await createLimitsManagerComponent({
+      config,
+      nameOwnership,
+      walletStats,
+      whitelist,
+      worldsManager
+    })
+
+    nameOwnership.findOwners.mockResolvedValue(new Map())
+
+    await expect(limitsManager.getMaxAllowedSizeInBytesFor('any-name.dcl.eth')).resolves.toBe(200n * MB_BigInt)
+    expect(nameOwnership.findOwners).not.toHaveBeenCalled()
+  })
 })

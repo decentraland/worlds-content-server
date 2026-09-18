@@ -1,9 +1,10 @@
 import { DeploymentFile, DeploymentToValidate, Validation, ValidationResult, ValidatorComponents } from '../../types'
-import { Entity, Scene } from '@dcl/schemas'
+import { Entity, Scene, SceneParcels } from '@dcl/schemas'
 import { createValidationResult, OK } from './utils'
 import { ICoordinatesComponent } from '../coordinates'
 import { ContentMapping } from '@dcl/schemas/dist/misc/content-mapping'
 import { FileInfo } from '@dcl/catalyst-storage'
+import { isNameOwnershipValidationIgnored } from '../name-ownership-validation'
 
 /** Default cap on content files per deployment, used when MAX_FILE_COUNT is unset. */
 export const DEFAULT_MAX_FILE_COUNT = 10000
@@ -38,13 +39,28 @@ export const validateSceneEntity: Validation = async (deployment: DeploymentToVa
  * Ensures the entity pointers and `scene.parcels` reference the same set of parcels, so a
  * deployment can't be authorized/sized against one set while it is placed on another.
  */
-export function createValidateScenePointers(components: Pick<ValidatorComponents, 'coordinates'>) {
+export function createValidateScenePointers(_components: Pick<ValidatorComponents, 'coordinates'>) {
   return async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
-    const pointers = new Set(components.coordinates.canonicalizeParcels(deployment.entity.pointers))
-    const sceneParcels = new Set(
-      components.coordinates.canonicalizeParcels(deployment.entity.metadata?.scene?.parcels || [])
-    )
+    const declaredPointers = deployment.entity.pointers
+    const scene = deployment.entity.metadata?.scene
+    if (!SceneParcels.validate(scene)) {
+      if (SceneParcels.validate.errors?.some((error) => error.keyword === 'contains')) {
+        return createValidationResult([
+          `The scene base parcel [${scene?.base ?? ''}] must be included in the scene parcels [${scene?.parcels?.join(', ') ?? ''}].`
+        ])
+      }
+      return createValidationResult(['Scene pointers and parcels must be unique canonical parcel coordinates.'])
+    }
 
+    if (
+      declaredPointers.length === 0 ||
+      !SceneParcels.validate({ base: declaredPointers[0], parcels: declaredPointers })
+    ) {
+      return createValidationResult(['Scene pointers and parcels must be unique canonical parcel coordinates.'])
+    }
+
+    const pointers = new Set(declaredPointers)
+    const sceneParcels = new Set(scene.parcels)
     const sameParcels = pointers.size === sceneParcels.size && [...pointers].every((parcel) => sceneParcels.has(parcel))
     if (!sameParcels) {
       return createValidationResult([
@@ -101,29 +117,58 @@ export function createValidateBannedNames(
 
 /**
  * Authorizes the deployment: the signer must either own the world name or hold deployment
- * permission for every parcel being deployed.
+ * permission for every parcel being deployed and every parcel of each existing scene that the
+ * deployment would replace.
  */
 export function createValidateDeploymentPermission(
-  components: Pick<ValidatorComponents, 'coordinates' | 'namePermissionChecker' | 'permissions' | 'worldsManager'>
+  components: Pick<
+    ValidatorComponents,
+    'config' | 'coordinates' | 'namePermissionChecker' | 'permissions' | 'worldsManager'
+  >
 ) {
   return async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
     const worldSpecifiedName = deployment.entity.metadata.worldConfiguration.name
     const signer = deployment.authChain[0].payload
     const parcels = getDeploymentParcels(deployment, components.coordinates)
 
-    // The signer owns the name
-    if (await components.namePermissionChecker.checkPermission(signer, worldSpecifiedName)) {
+    if (await isNameOwnershipValidationIgnored(components.config)) {
+      // This is deliberately an explicit development/test-only bypass. The
+      // auth chain, signatures, scene validation and technical limits still
+      // run, but the signer is not required to own the world name.
+      deployment.sceneReplacementAuthorization = { mode: 'unrestricted-owner' }
       return OK
     }
 
-    // ...or has world-wide or parcel-specific deployment permission for those parcels
+    // Check the address owns the name
+    if (await components.namePermissionChecker.checkPermission(signer, worldSpecifiedName)) {
+      deployment.sceneReplacementAuthorization = { mode: 'unrestricted-owner' }
+      return OK
+    }
+
+    const { scenes: overlappingScenes } = await components.worldsManager.getWorldScenes({
+      worldName: worldSpecifiedName,
+      coordinates: parcels
+    })
+    const parcelsRequiringPermission = Array.from(
+      new Set([
+        ...parcels,
+        ...overlappingScenes.flatMap((scene) => components.coordinates.canonicalizeParcels(scene.parcels))
+      ])
+    )
+
+    // ...or has permission for the new scene and the complete footprint of every deployed scene
+    // it would replace.
     const allowed = await components.permissions.hasPermissionForParcels(
       worldSpecifiedName,
       'deployment',
       signer,
-      parcels
+      parcelsRequiringPermission
     )
     if (allowed) {
+      deployment.sceneReplacementAuthorization = {
+        mode: 'scoped',
+        entityIds: overlappingScenes.map((scene) => scene.entityId)
+      }
       return OK
     }
 

@@ -16,7 +16,7 @@ import {
 } from '../../src/logic/deployment-processing'
 import { hashV1 } from '@dcl/hashing'
 import { Authenticator } from '@dcl/crypto'
-import { DeploymentToValidate } from '../../src/types'
+import { DeploymentToValidate, SceneReplacementConflictError } from '../../src/types'
 
 type DeployContext = Parameters<typeof deployEntity>[0]
 
@@ -252,6 +252,7 @@ describe('deployEntity', () => {
       )
       expectedEntityHash = await hashV1(entityBuffer)
       const validateBeforeStorage = jest.fn(async (deployment: DeploymentToValidate) => {
+        deployment.sceneReplacementAuthorization = { mode: 'unrestricted-owner' }
         rmSync(entityFile.filepath)
         entityHash = await deployment.files.get(entityId).getHash()
         return { errors: [], ok: () => true }
@@ -390,7 +391,10 @@ describe('deployEntity', () => {
           },
           storage: { fileInfo: jest.fn().mockResolvedValue(undefined) },
           validator: {
-            validateBeforeStorage: jest.fn().mockResolvedValue({ errors: [], ok: () => true }),
+            validateBeforeStorage: jest.fn(async (deployment: DeploymentToValidate) => {
+              deployment.sceneReplacementAuthorization = { mode: 'unrestricted-owner' }
+              return { errors: [], ok: () => true }
+            }),
             validateAfterStorage: jest.fn().mockResolvedValue({ errors: [], ok: () => true })
           },
           worldsManager: { getWorldScenes }
@@ -434,7 +438,10 @@ describe('deployEntity', () => {
           },
           storage: { fileInfo: jest.fn().mockResolvedValue(undefined) },
           validator: {
-            validateBeforeStorage: jest.fn().mockResolvedValue({ errors: [], ok: () => true }),
+            validateBeforeStorage: jest.fn(async (deployment: DeploymentToValidate) => {
+              deployment.sceneReplacementAuthorization = { mode: 'unrestricted-owner' }
+              return { errors: [], ok: () => true }
+            }),
             validateAfterStorage: jest.fn().mockResolvedValue({ errors: [], ok: () => true })
           },
           worldsManager: { getWorldScenes: jest.fn().mockResolvedValue({ scenes: [], total: 0 }) }
@@ -450,6 +457,57 @@ describe('deployEntity', () => {
 
     it('should propagate the original unique-violation error', () => {
       expect((caughtError as { code?: string }).code).toBe('23505')
+    })
+  })
+
+  describe('when the authorized replacement snapshot changes before persistence', () => {
+    let response: Awaited<ReturnType<typeof deployEntity>>
+
+    beforeEach(async () => {
+      const entity = {
+        type: 'scene',
+        pointers: ['0,0'],
+        timestamp: Date.now(),
+        content: [],
+        metadata: { worldConfiguration: { name: 'world.dcl.eth' }, scene: { base: '0,0', parcels: ['0,0'] } }
+      }
+      const baseContext = createContext(entityId, {
+        [entityId]: makeFile(Buffer.from(JSON.stringify(entity)))
+      })
+      const context = {
+        ...baseContext,
+        components: {
+          ...baseContext.components,
+          config: { getString: jest.fn().mockResolvedValue(undefined) },
+          entityDeployer: {
+            deployEntity: jest.fn().mockRejectedValue(new SceneReplacementConflictError('world.dcl.eth'))
+          },
+          storage: { fileInfo: jest.fn() },
+          validator: {
+            validateBeforeStorage: jest.fn(async (deployment: DeploymentToValidate) => {
+              deployment.sceneReplacementAuthorization = { mode: 'scoped', entityIds: [] }
+              return { errors: [], ok: () => true }
+            }),
+            validateAfterStorage: jest.fn().mockResolvedValue({ errors: [], ok: () => true })
+          }
+        }
+      } as unknown as DeployContext
+
+      response = await deployEntity(context)
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should return a conflict response so the client can retry authorization', () => {
+      expect(response).toEqual({
+        status: 409,
+        body: {
+          error: 'Conflict',
+          message: 'Scene replacement authorization changed while deploying to world "world.dcl.eth". Please retry.'
+        }
+      })
     })
   })
 

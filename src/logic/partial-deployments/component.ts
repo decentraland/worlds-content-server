@@ -1,5 +1,11 @@
 import { InvalidRequestError } from '@dcl/http-commons'
-import { AppComponents, DeploymentFile } from '../../types'
+import { EntityType } from '@dcl/schemas'
+import {
+  AppComponents,
+  DeploymentFile,
+  DeploymentToValidate,
+  MissingSceneReplacementAuthorizationError
+} from '../../types'
 import { mapWithConcurrency } from '../concurrency'
 import { buildSceneDeploymentMessage } from '../utils'
 import { calculateDeploymentSizeFromFileInfos } from '../validations/scene'
@@ -204,7 +210,10 @@ export async function createPartialDeploymentsComponent(
       // sequential storage read per non-batch file, and a file reclaimed by GC mid-validation would
       // surface as a terminal 400 instead of the retriable incomplete the re-check below produces.
       signal?.throwIfAborted()
-      const fullValidation = await validator.validate({
+      // Held in a variable because the deployment-permission validation records the scene-replacement
+      // authorization on this object, and deployScene needs it to know which overlapping scenes this
+      // signer may replace.
+      const deployment: DeploymentToValidate = {
         entity,
         files,
         authChain,
@@ -212,9 +221,13 @@ export async function createPartialDeploymentsComponent(
         contentFileInfos: presentInfos,
         pendingCreatedAt: pendingRow.createdAt,
         signal
-      })
+      }
+      const fullValidation = await validator.validate(deployment)
       if (!fullValidation.ok()) {
         throw new InvalidRequestError(`Deployment failed: ${fullValidation.errors.join(', ')}`)
+      }
+      if (entity.type === EntityType.SCENE && !deployment.sceneReplacementAuthorization) {
+        throw new MissingSceneReplacementAuthorizationError(entity.id)
       }
 
       // No pre-write newer-deployment re-check here: deployScene enforces deployment ordering atomically
@@ -249,7 +262,8 @@ export async function createPartialDeploymentsComponent(
         authChain,
         deploymentSize,
         signal,
-        deadlineAt
+        deadlineAt,
+        deployment.sceneReplacementAuthorization
       )
       // The deploy has committed: from here on the response must be success. A failed pending-row delete
       // only leaves a row the eviction job will expire, so it must not surface as an error.

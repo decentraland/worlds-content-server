@@ -2,6 +2,7 @@ import { AppComponents, IRunnable } from '../types'
 import SQL from 'sql-template-strings'
 import { CronJob } from 'cron'
 import { errorMessage } from '../logic/utils'
+import { isNameOwnershipValidationIgnored } from '../logic/name-ownership-validation'
 
 type WorldData = {
   name: string
@@ -10,12 +11,19 @@ type WorldData = {
 }
 
 export async function createUpdateOwnerJob(
-  components: Pick<AppComponents, 'blocking' | 'database' | 'logs' | 'nameOwnership'>
+  components: Pick<AppComponents, 'blocking' | 'config' | 'database' | 'logs' | 'nameOwnership'>
 ): Promise<IRunnable<void>> {
-  const { blocking, database, logs, nameOwnership } = components
+  const { blocking, config, database, logs, nameOwnership } = components
   const logger = logs.getLogger('update-owner-job')
 
   async function run() {
+    if (await isNameOwnershipValidationIgnored(config)) {
+      logger.warn(
+        'Skipping update-owner job because IGNORE_NAME_OWNERSHIP_VALIDATION=true. External ownership reconciliation is disabled for this instance.'
+      )
+      return
+    }
+
     const startDate = new Date()
 
     // Get worlds with at least one scene deployed, aggregating total size from world_scenes

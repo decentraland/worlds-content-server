@@ -2,7 +2,7 @@ import { AuthChain, AuthLinkType, Entity, EntityType } from '@dcl/schemas'
 import { createPartialDeploymentsComponent } from '../../src/logic/partial-deployments'
 import { createCoordinatesComponent } from '../../src/logic/coordinates'
 import { DeploymentProcessingAbortedError } from '../../src/logic/deployment-processing'
-import { DeploymentFile } from '../../src/types'
+import { DeploymentFile, DeploymentToValidate } from '../../src/types'
 import { PendingScene } from '../../src/adapters/pending-scenes-manager'
 
 type PartialDeploymentsComponents = Parameters<typeof createPartialDeploymentsComponent>[0]
@@ -83,7 +83,12 @@ describe('partial deployments component', () => {
     storeStream = jest.fn().mockResolvedValue(undefined)
     upsert = jest.fn().mockResolvedValue(pendingRow)
     validateStaging = jest.fn().mockResolvedValue({ ok: () => true, errors: [] })
-    validate = jest.fn().mockResolvedValue({ ok: () => true, errors: [] })
+    // Mirrors the real deployment-permission validation, which records the scene-replacement
+    // authorization on the deployment it validates; finalize forwards it to the deployer.
+    validate = jest.fn(async (deployment: DeploymentToValidate) => {
+      deployment.sceneReplacementAuthorization = { mode: 'unrestricted-owner' }
+      return { ok: () => true, errors: [] }
+    })
     deployEntity = jest.fn().mockResolvedValue({ message: 'deployed' })
 
     components = {

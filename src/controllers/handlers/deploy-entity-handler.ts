@@ -1,10 +1,16 @@
-import { Entity } from '@dcl/schemas'
+import { Entity, EntityType } from '@dcl/schemas'
 import { Authenticator } from '@dcl/crypto'
 import { IHttpServerComponent } from '@dcl/core-commons'
 import { bufferToStream } from '@dcl/catalyst-storage'
 import { hashV1 } from '@dcl/hashing'
 import { FormDataContext, toDeploymentFile } from '../../logic/multipart'
-import { DeploymentFile, HandlerContextWithPath } from '../../types'
+import {
+  DeploymentFile,
+  DeploymentToValidate,
+  HandlerContextWithPath,
+  MissingSceneReplacementAuthorizationError,
+  SceneReplacementConflictError
+} from '../../types'
 import { extractAuthChain } from '../../logic/extract-auth-chain'
 import { buildSceneDeploymentMessage } from '../../logic/utils'
 import { InvalidRequestError } from '@dcl/http-commons'
@@ -227,7 +233,7 @@ async function deployEntityWithSignal(
   // of any pending upload that happens to exist for this entity.
   const pending = await ctx.components.pendingScenesManager.getByEntityId(entityId)
 
-  const deployment = {
+  const deployment: DeploymentToValidate = {
     entity,
     files: uploadedFiles,
     authChain,
@@ -264,6 +270,11 @@ async function deployEntityWithSignal(
     throw new InvalidRequestError(`Deployment failed: ${validationResult.errors.join(', ')}`)
   }
 
+  if (entity.type === EntityType.SCENE && !deployment.sceneReplacementAuthorization) {
+    throw new MissingSceneReplacementAuthorizationError(entity.id)
+  }
+
+  // Store the entity
   const baseUrl = (await ctx.components.config.getString('HTTP_BASE_URL')) || `https://${ctx.url.host}`
   const deploymentSize = calculateDeploymentSizeFromFileInfos(entity, uploadedFiles, contentFileInfos)
   signal.throwIfAborted()
@@ -278,7 +289,8 @@ async function deployEntityWithSignal(
       authChain,
       deploymentSize,
       signal,
-      deadlineAt
+      deadlineAt,
+      deployment.sceneReplacementAuthorization
     )
   } catch (error) {
     // This same entity is already DEPLOYED — a concurrent duplicate (most commonly a client retry of a
@@ -377,6 +389,15 @@ export async function deployEntity(ctx: DeployEntityContext): Promise<IHttpServe
         body: {
           error: 'Request Timeout',
           message: timeoutError.message
+        }
+      }
+    }
+    if (error instanceof SceneReplacementConflictError) {
+      return {
+        status: 409,
+        body: {
+          error: 'Conflict',
+          message: error.message
         }
       }
     }

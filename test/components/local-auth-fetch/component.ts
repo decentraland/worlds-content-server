@@ -68,7 +68,11 @@ export async function createAuthenticatedLocalFetchComponent(
       // If identity is provided, add auth headers
       if (identity) {
         const authMetadata = metadata || {}
-        const authHeaders = getAuthHeaders(method, path, authMetadata, (payload) =>
+        // The middleware verifies against the router pathname, not whatever relative or absolute
+        // URL spelling a caller used. Derive that same pathname here so ADR-44 signatures remain
+        // valid when the test server is mounted under a prefix or a request includes a query.
+        const pathname = new URL(path, 'http://local.test').pathname
+        const authHeaders = getAuthHeaders(method, pathname, authMetadata, (payload) =>
           Authenticator.signPayload(
             {
               ephemeralIdentity: identity.ephemeralIdentity,

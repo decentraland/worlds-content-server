@@ -156,7 +156,7 @@ function createLiveKitAdapter(
 
         return {
           adapterType: 'livekit',
-          statusUrl: `https://${host}/`,
+          statusUrl: getLivekitStatusUrl(host),
           rooms: roomsWithUsers.length,
           users: roomsWithUsers.reduce((carry, value) => carry + value.users, 0),
           details: roomsWithUsers,
@@ -166,7 +166,7 @@ function createLiveKitAdapter(
         logger.error(`Error retrieving comms status: ${(error as Error).message}`)
         return {
           adapterType: 'livekit',
-          statusUrl: `https://${host}/`,
+          statusUrl: getLivekitStatusUrl(host),
           rooms: 0,
           users: 0,
           details: [],
@@ -208,6 +208,13 @@ function createLiveKitAdapter(
       await livekitClient.removeParticipant(roomName, identity)
     }
   }
+}
+
+function getLivekitStatusUrl(host: string): string {
+  const clientUrl = host.includes('://') ? host : `wss://${host}`
+  const parsed = new URL(clientUrl)
+  const protocol = parsed.protocol === 'ws:' ? 'http:' : 'https:'
+  return `${protocol}//${parsed.host}/`
 }
 
 function cachingAdapter({ logs }: Pick<AppComponents, 'logs'>, wrappedAdapter: ICommsAdapter): ICommsAdapter {

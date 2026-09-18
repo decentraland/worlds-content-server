@@ -24,7 +24,9 @@ import { createEntityDeployer } from '../src/adapters/entity-deployer'
 import { createMockNameDenyListChecker } from './mocks/name-deny-list-checker-mock'
 import { createWorldCreator } from './mocks/world-creator'
 import { createWorldsManagerComponent } from '../src/adapters/worlds-manager'
+import { createWorldSettingsPolicyComponent } from '../src/logic/world-settings-policy'
 import { createCoordinatesComponent } from '../src/logic/coordinates'
+import { createThumbnailsComponent } from '../src/logic/thumbnails'
 import { createPermissionsManagerComponent } from '../src/adapters/permissions-manager'
 import { createPermissionsComponent } from '../src/logic/permissions'
 import { createAccessComponent } from '../src/logic/access'
@@ -145,13 +147,19 @@ async function initComponents(): Promise<TestComponents> {
 
   const search = await createSearchComponent({ database, logs })
 
+  const settingsPolicy = createWorldSettingsPolicyComponent()
+
+  const thumbnails = await createThumbnailsComponent({ logs, storage })
+
   const worldsManager = await createWorldsManagerComponent({
+    settingsPolicy,
     coordinates,
     logs,
     database,
     nameDenyListChecker,
     search,
-    storage
+    storage,
+    thumbnails
   })
 
   const worldsIndexer = await createWorldsIndexerComponent({ worldsManager })
@@ -253,7 +261,7 @@ async function initComponents(): Promise<TestComponents> {
     worldsManager
   })
 
-  const worlds = createWorldsComponent({ blocking, worldsManager, snsClient })
+  const worlds = createWorldsComponent({ blocking, coordinates, logs, worldsManager, snsClient })
 
   const evictionJob = { start: jest.fn(), stop: jest.fn() }
 
@@ -283,6 +291,7 @@ async function initComponents(): Promise<TestComponents> {
     comms,
     config,
     commsAdapter,
+    settingsPolicy,
     coordinates,
     deploymentProcessing: components.deploymentProcessing,
     denyList,
@@ -310,6 +319,7 @@ async function initComponents(): Promise<TestComponents> {
     socialService,
     status,
     storage,
+    thumbnails,
     updateOwnerJob,
     validator,
     walletStats,

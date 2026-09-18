@@ -24,6 +24,7 @@ import type { Room, VideoGrant, WebhookEvent } from 'livekit-server-sdk'
 import { IPublisherComponent } from '@dcl/sns-component'
 import { ISettingsComponent } from './logic/settings'
 import { ISchemaValidatorComponent } from '@dcl/schema-validator-component'
+import { IWorldSettingsPolicyComponent } from './logic/world-settings-policy'
 import { ICoordinatesComponent } from './logic/coordinates'
 // Type-only imports so the central types module can reference these component interfaces (for
 // AppComponents below) without a runtime import cycle through their component.ts factories.
@@ -49,6 +50,7 @@ import { IQueueConsumerComponent } from '@dcl/queue-consumer-component'
 import { ICacheStorageComponent } from '@dcl/core-commons'
 import { IDenyListComponent } from './logic/denylist/types'
 import { IBansComponent } from './adapters/bans-adapter'
+import { IThumbnailsComponent } from './logic/thumbnails'
 
 export type GlobalContext = {
   components: BaseComponents
@@ -94,6 +96,8 @@ export type DeploymentToValidate = {
   contentFileInfos?: Map<string, FileInfo | undefined>
   /** Cancels request-scoped processing after disconnect or the configured processing deadline. */
   signal?: AbortSignal
+  /** Replacement authority established during deployment authorization. */
+  sceneReplacementAuthorization?: SceneReplacementAuthorization
 }
 
 export type DeploymentProcessingStage = 'total' | 'authorization' | 'metadata' | 'hash' | 'storage' | 'persistence'
@@ -133,6 +137,8 @@ export type SceneDeploymentData = {
   signal?: AbortSignal
 }
 
+export type SceneReplacementAuthorization = { mode: 'unrestricted-owner' } | { mode: 'scoped'; entityIds: string[] }
+
 export type WorldRuntimeMetadata = {
   entityIds: string[]
   name: string
@@ -156,6 +162,14 @@ export type WorldSettings = {
   singlePlayer?: boolean
   showInPlaces?: boolean
   thumbnailHash?: string
+  /** Current access type; read-only, mirrors derive world visibility from it. */
+  accessType?: string
+  /**
+   * Monotonic per-world version, incremented under the worlds row lock on every settings change.
+   * Consumers mirroring settings compare it to reject out-of-order updates. Read-only: it is
+   * ignored when passed to `updateWorldSettings`.
+   */
+  settingsVersion?: number
 }
 
 export type WorldSettingsInput = {
@@ -186,6 +200,14 @@ export type WorldScene = {
   status: SceneDeploymentStatus
   createdAt: Date
   updatedAt: Date
+}
+
+export type UndeployedWorldScene = Pick<WorldScene, 'entityId' | 'parcels'> & {
+  declaredBase: string | null
+}
+
+export type SceneUndeploymentResult = {
+  scenes: UndeployedWorldScene[]
 }
 
 export type BoundingBox = {
@@ -352,7 +374,7 @@ export type ValidatorComponents = Pick<
 
 export type MigratorComponents = Pick<
   AppComponents,
-  'logs' | 'database' | 'nameOwnership' | 'storage' | 'worldsManager'
+  'config' | 'logs' | 'database' | 'nameOwnership' | 'storage' | 'worldsManager'
 >
 
 export type Validation = (deployment: DeploymentToValidate) => ValidationResult | Promise<ValidationResult>
@@ -457,6 +479,20 @@ export class NoDeployedScenesError extends Error {
   }
 }
 
+export class SceneReplacementConflictError extends Error {
+  constructor(worldName: string) {
+    super(`Scene replacement authorization changed while deploying to world "${worldName}". Please retry.`)
+    this.name = 'SceneReplacementConflictError'
+  }
+}
+
+export class MissingSceneReplacementAuthorizationError extends Error {
+  constructor(entityId: string) {
+    super(`Cannot deploy scene "${entityId}": replacement authorization is missing.`)
+    this.name = 'MissingSceneReplacementAuthorizationError'
+  }
+}
+
 export type AccessModificationResult = {
   previousAccess: AccessSetting
   updatedAccess: AccessSetting
@@ -477,8 +513,15 @@ export type IWorldsManager = {
    */
   hasNewerDeployedScene(worldName: string, scene: Entity): Promise<boolean>
   /** Persists a scene and its already-calculated deployment metadata. */
-  deployScene(worldName: string, scene: Entity, owner: EthAddress, deployment?: SceneDeploymentData): Promise<void>
-  undeployScene(worldName: string, parcels: string[]): Promise<void>
+  deployScene(
+    worldName: string,
+    scene: Entity,
+    owner: EthAddress,
+    replacementAuthorization: SceneReplacementAuthorization,
+    deployment?: SceneDeploymentData
+  ): Promise<{ metadataUpdated: boolean }>
+  /** Atomically undeploys matching scenes and returns the rows actually changed. */
+  undeployScene(worldName: string, parcels: string[], authorizedEntityIds?: string[]): Promise<SceneUndeploymentResult>
   storeAccess(worldName: string, access: AccessSetting): Promise<void>
   modifyAccessAtomically(
     worldName: string,
@@ -573,7 +616,8 @@ export type IEntityDeployer = {
     authChain: AuthLink[],
     deploymentSize: number,
     signal?: AbortSignal,
-    deadlineAt?: number
+    deadlineAt?: number,
+    sceneReplacementAuthorization?: SceneReplacementAuthorization
   ): Promise<DeploymentResult>
 }
 
@@ -581,8 +625,8 @@ export type AwsConfig = {
   region: string
   credentials?: { accessKeyId: string; secretAccessKey: string }
   endpoint?: string
-  forcePathStyle?: boolean // for SDK v3
-  s3ForcePathStyle?: boolean // for SDK v2
+  /** Required for path-style S3-compatible endpoints (LocalStack/MinIO). */
+  forcePathStyle?: boolean
 }
 
 export type CreateConnectionTokenOptions = {
@@ -625,6 +669,7 @@ export type BaseComponents = {
   blocking: IBlockingComponent
   commsAdapter: ICommsAdapter
   config: IConfigComponent
+  settingsPolicy: IWorldSettingsPolicyComponent
   coordinates: ICoordinatesComponent
   database: IPgComponent
   deploymentProcessing: IDeploymentProcessingComponent
@@ -656,6 +701,7 @@ export type BaseComponents = {
   socialService: ISocialServiceComponent
   status: IStatusComponent
   storage: IContentStorageComponent
+  thumbnails: IThumbnailsComponent
   updateOwnerJob: IRunnable<void>
   validator: Validator
   walletStats: IWalletStats
@@ -739,6 +785,8 @@ export type WorldRecord = {
   single_player: boolean | null
   show_in_places: boolean | null
   thumbnail_hash: string | null
+  /** BIGINT: node-postgres returns it as a string. */
+  settings_version: string
   created_at: Date
   updated_at: Date
   blocked_since: Date | null

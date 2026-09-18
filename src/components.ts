@@ -13,7 +13,8 @@ import { metricDeclarations } from './metrics'
 import {
   createFolderBasedFileSystemContentStorage,
   createFsComponent,
-  createS3BasedFileSystemContentStorage
+  createS3BasedFileSystemContentStorage,
+  IContentStorageComponent
 } from '@dcl/catalyst-storage'
 import { createStatusComponent } from './adapters/status'
 import { createLimitsManagerComponent } from './adapters/limits-manager'
@@ -29,7 +30,7 @@ import { createMigrationExecutor } from './adapters/migration-executor'
 import { createNameDenyListChecker } from './adapters/name-deny-list-checker'
 import { createDatabaseComponent } from './adapters/database-component'
 import { createPermissionsManagerComponent } from './adapters/permissions-manager'
-import { createNameOwnership } from './adapters/name-ownership'
+import { createDummyNameOwnership, createDummyNameSubgraph, createNameOwnership } from './adapters/name-ownership'
 import { createEthereumProvider } from './adapters/rpc-provider'
 import { createNameChecker } from './adapters/dcl-name-checker'
 import { createWalletStatsComponent } from './adapters/wallet-stats'
@@ -38,14 +39,16 @@ import { createBlockingComponent } from './adapters/blocking'
 import { createUpdateOwnerJob } from './adapters/update-owner-job'
 import { createSnsComponent } from '@dcl/sns-component'
 import { createAwsConfig } from './adapters/aws-config'
-import { S3 } from 'aws-sdk'
+import { S3Client } from '@aws-sdk/client-s3'
 import { createNotificationsClientComponent } from './adapters/notifications-service'
 import { createNatsComponent } from '@well-known-components/nats-component'
 import { createSchemaValidatorComponent } from '@dcl/schema-validator-component'
 import { createLivekitClient } from './adapters/livekit-client'
 import { createPeersRegistry } from './adapters/peers-registry'
 import { createSettingsComponent } from './logic/settings'
+import { createWorldSettingsPolicyComponent } from './logic/world-settings-policy'
 import { createCoordinatesComponent } from './logic/coordinates'
+import { createThumbnailsComponent } from './logic/thumbnails'
 import { createPermissionsComponent } from './logic/permissions'
 import { createAccessComponent } from './logic/access'
 import { createAccessCheckerComponent } from './logic/access-checker'
@@ -68,6 +71,7 @@ import { createDenyListComponent } from './logic/denylist'
 import { createBansComponent } from './adapters/bans-adapter'
 import { createEvictionJob } from './adapters/eviction-job'
 import { createDeploymentProcessingComponent } from './logic/deployment-processing'
+import { isNameOwnershipValidationIgnored } from './logic/name-ownership-validation'
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
@@ -113,14 +117,38 @@ export async function initComponents(): Promise<AppComponents> {
   const bucket = await config.getString('BUCKET')
   const fs = createFsComponent()
 
-  const storage = bucket
-    ? await createS3BasedFileSystemContentStorage({ logs }, new S3(awsConfig), {
-        Bucket: bucket
-      })
-    : await createFolderBasedFileSystemContentStorage({ fs, logs }, storageFolder)
+  let storage: IContentStorageComponent
+  if (bucket) {
+    // Explicit socket limits so a wedged S3 connection cannot hold a storage call open
+    // indefinitely: the SDK's Node handler defaults both the connection and request
+    // timeouts to 0 (no limit), and an exceeded requestTimeout only logs a warning
+    // unless throwOnRequestTimeout turns it into an error.
+    const s3Client = new S3Client({
+      ...awsConfig,
+      requestHandler: { connectionTimeout: 10_000, requestTimeout: 120_000, throwOnRequestTimeout: true },
+      maxAttempts: 3
+    })
+    const s3Storage = await createS3BasedFileSystemContentStorage({ logs }, s3Client, { Bucket: bucket })
+    storage = {
+      ...s3Storage,
+      // The injected client is caller-owned: release its socket pool on shutdown, after the
+      // storage component itself has stopped using it.
+      async stop() {
+        await s3Storage.stop?.()
+        s3Client.destroy()
+      }
+    }
+  } else {
+    storage = await createFolderBasedFileSystemContentStorage({ fs, logs }, storageFolder)
+  }
 
-  const subGraphUrl = await config.requireString('MARKETPLACE_SUBGRAPH_URL')
-  const marketplaceSubGraph = await createSubgraphComponent({ config, logs, metrics, fetch }, subGraphUrl)
+  const ignoreNameOwnershipValidation = await isNameOwnershipValidationIgnored(config)
+  const marketplaceSubGraph = ignoreNameOwnershipValidation
+    ? createDummyNameSubgraph()
+    : await createSubgraphComponent(
+        { config, logs, metrics, fetch },
+        await config.requireString('MARKETPLACE_SUBGRAPH_URL')
+      )
 
   const status = await createStatusComponent({ logs, fetch, config })
   const snsClient = await createSnsComponent({ config })
@@ -131,12 +159,17 @@ export async function initComponents(): Promise<AppComponents> {
     logs
   })
 
-  const nameOwnership = await createNameOwnership({
-    config,
-    ethereumProvider,
-    logs,
-    marketplaceSubGraph
-  })
+  const nameOwnership = ignoreNameOwnershipValidation
+    ? await createDummyNameOwnership()
+    : await createNameOwnership({ config, ethereumProvider, logs, marketplaceSubGraph })
+
+  if (ignoreNameOwnershipValidation) {
+    logs
+      .getLogger('components')
+      .warn(
+        'IGNORE_NAME_OWNERSHIP_VALIDATION=true: name ownership validation is disabled. This instance must remain private and non-production.'
+      )
+  }
 
   const namePermissionChecker: IWorldNamePermissionChecker = createNameChecker({
     logs,
@@ -147,10 +180,16 @@ export async function initComponents(): Promise<AppComponents> {
 
   const coordinates = createCoordinatesComponent()
 
+  const settingsPolicy = createWorldSettingsPolicyComponent()
+
+  const thumbnails = await createThumbnailsComponent({ logs, storage })
+
   const search = await createSearchComponent({ database, logs })
 
   const worldsManager = await createWorldsManagerComponent({
+    settingsPolicy,
     coordinates,
+    thumbnails,
     logs,
     database,
     nameDenyListChecker,
@@ -243,12 +282,20 @@ export async function initComponents(): Promise<AppComponents> {
     worldsManager
   })
 
-  const migrationExecutor = createMigrationExecutor({ logs, database: database, nameOwnership, storage, worldsManager })
+  const migrationExecutor = createMigrationExecutor({
+    config,
+    logs,
+    database: database,
+    nameOwnership,
+    storage,
+    worldsManager
+  })
 
   const notificationService = await createNotificationsClientComponent({ config, fetch, logs })
 
   const updateOwnerJob = await createUpdateOwnerJob({
     blocking,
+    config,
     database,
     logs,
     nameOwnership
@@ -265,7 +312,7 @@ export async function initComponents(): Promise<AppComponents> {
   })
   const schemaValidator = createSchemaValidatorComponent()
 
-  const worlds = createWorldsComponent({ blocking, snsClient, worldsManager })
+  const worlds = createWorldsComponent({ blocking, coordinates, logs, snsClient, worldsManager })
 
   const evictionJob = await createEvictionJob({ config, logs, worlds, pendingScenesManager })
 
@@ -306,6 +353,7 @@ export async function initComponents(): Promise<AppComponents> {
     comms,
     commsAdapter,
     config,
+    settingsPolicy,
     coordinates,
     database,
     deploymentProcessing,
@@ -344,6 +392,7 @@ export async function initComponents(): Promise<AppComponents> {
     status,
     statusChecks,
     storage,
+    thumbnails,
     updateOwnerJob,
     validator,
     walletStats,

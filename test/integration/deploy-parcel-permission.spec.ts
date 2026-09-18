@@ -169,6 +169,86 @@ test('DeployEntity POST /entities - parcel-scoped deployment permission boundary
       })
     })
 
+    describe('and the granted parcel overlaps an existing multi-parcel scene', () => {
+      let entityId: string
+      let existingEntityId: string
+      let files: Map<string, Uint8Array>
+      const existingSceneParcels = [grantedParcel, '1,0']
+
+      beforeEach(async () => {
+        const { worldCreator } = components
+        const existing = await worldCreator.createWorldWithScene({
+          worldName,
+          owner: owner.authChain,
+          metadata: {
+            main: 'abc.txt',
+            scene: {
+              base: grantedParcel,
+              parcels: existingSceneParcels
+            },
+            worldConfiguration: {
+              name: worldName
+            }
+          }
+        })
+        existingEntityId = existing.entityId
+
+        const result = await DeploymentBuilder.buildEntity({
+          type: EntityType.SCENE as any,
+          pointers: [grantedParcel],
+          files: new Map([['abc.txt', stringToUtf8Bytes(makeid(100))]]),
+          metadata: {
+            main: 'abc.txt',
+            scene: {
+              base: grantedParcel,
+              parcels: [grantedParcel]
+            },
+            worldConfiguration: {
+              name: worldName
+            }
+          }
+        })
+        entityId = result.entityId
+        files = result.files
+      })
+
+      it('should reject replacing the scene without permission for its complete footprint', async () => {
+        const authChain = Authenticator.signPayload(grantee.authChain, entityId)
+
+        await expect(() => contentClient.deploy({ files, entityId, authChain })).rejects.toThrow(
+          `Your wallet has no permission to publish this scene because it does not have permission to deploy under \\"${worldName}\\". Check scene.json to select a name that either you own or you were given permission to deploy.`
+        )
+      })
+
+      it('should leave the existing multi-parcel scene deployed', async () => {
+        const { worldsManager } = components
+        const authChain = Authenticator.signPayload(grantee.authChain, entityId)
+
+        await contentClient.deploy({ files, entityId, authChain }).catch(() => undefined)
+        const { scenes } = await worldsManager.getWorldScenes({ worldName })
+
+        expect(scenes.map((scene) => scene.entityId)).toEqual([existingEntityId])
+      })
+
+      describe('and they are granted permission for the remaining scene footprint', () => {
+        let deployedEntityIds: string[]
+
+        beforeEach(async () => {
+          const { permissions, worldsManager } = components
+          await permissions.addParcelsToPermission(worldName, 'deployment', grantee.realAccount.address, ['1,0'])
+          const authChain = Authenticator.signPayload(grantee.authChain, entityId)
+
+          await contentClient.deploy({ files, entityId, authChain })
+          const { scenes } = await worldsManager.getWorldScenes({ worldName })
+          deployedEntityIds = scenes.map((scene) => scene.entityId)
+        })
+
+        it('should replace the existing scene using the scoped authorization snapshot', () => {
+          expect(deployedEntityIds).toEqual([entityId])
+        })
+      })
+    })
+
     describe('and they deploy a scene whose pointers and scene.parcels reference different parcels', () => {
       let entityId: string
       let fileHash: string

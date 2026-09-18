@@ -1,5 +1,5 @@
 import { Migration, MigratorComponents } from '../types'
-import { streamToBuffer } from '@dcl/catalyst-storage/dist/content-item'
+import { streamToBuffer } from '@dcl/catalyst-storage'
 import SQL from 'sql-template-strings'
 import { migrateConfiguration } from '../logic/world-runtime-metadata-utils'
 

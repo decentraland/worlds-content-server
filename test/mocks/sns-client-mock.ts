@@ -10,9 +10,8 @@ export function createSnsClientMock(): IPublisherComponent {
 
   const publishMessages = jest.fn()
   publishMessages.mockImplementation(() => ({
-    Successful: [{ Id: 'mocked-id', MessageId: 'mocked-message-id', SequenceNumber: '1' }],
-    Failed: [],
-    $metadata: {}
+    successfulMessageIds: ['mocked-message-id'],
+    failedEvents: []
   }))
 
   return {
