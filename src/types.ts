@@ -1,3 +1,4 @@
+import type { IContentLocks } from './adapters/content-locks/types'
 import type {
   IBaseComponent,
   IConfigComponent,
@@ -519,7 +520,7 @@ export type IWorldsManager = {
     owner: EthAddress,
     replacementAuthorization: SceneReplacementAuthorization,
     deployment?: SceneDeploymentData
-  ): Promise<{ metadataUpdated: boolean }>
+  ): Promise<{ metadataUpdated: boolean; creationTimestamp?: number }>
   /** Atomically undeploys matching scenes and returns the rows actually changed. */
   undeployScene(worldName: string, parcels: string[], authorizedEntityIds?: string[]): Promise<SceneUndeploymentResult>
   storeAccess(worldName: string, access: AccessSetting): Promise<void>
@@ -603,6 +604,7 @@ export type IWorldsIndexer = {
 }
 
 export type DeploymentResult = {
+  creationTimestamp?: number
   message: string
 }
 
@@ -671,6 +673,7 @@ export type BaseComponents = {
   config: IConfigComponent
   settingsPolicy: IWorldSettingsPolicyComponent
   coordinates: ICoordinatesComponent
+  contentLocks: IContentLocks
   database: IPgComponent
   deploymentProcessing: IDeploymentProcessingComponent
   entityDeployer: IEntityDeployer

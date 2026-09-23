@@ -475,7 +475,7 @@ export async function createWorldsManagerComponent({
     owner: EthAddress,
     replacementAuthorization: SceneReplacementAuthorization,
     deployment?: SceneDeploymentData
-  ): Promise<{ metadataUpdated: boolean }> {
+  ): Promise<{ metadataUpdated: boolean; creationTimestamp?: number }> {
     // Canonicalize so the stored parcels, the overlap-based replacement here, the undeploy
     // authorization, and the size credit-back all compare parcels by value (e.g. "00,00" ==
     // "0,0"). Otherwise a non-canonical scene.parcels could dodge replacement / over-credit.
@@ -533,6 +533,7 @@ export async function createWorldsManagerComponent({
     }
 
     let metadataUpdated = false
+    const creationTimestamp = Date.now()
 
     await withDeploymentTransaction(deployment?.signal, async (query) => {
       // Serialize concurrent deploys to the same world so the "reject if a newer scene already holds
@@ -708,6 +709,16 @@ export async function createWorldsManagerComponent({
         )
       `)
 
+      // The completion receipt and publication commit together. It survives pending cleanup,
+      // scene replacement and client disconnects, and cannot falsely acknowledge a rolled-back deploy.
+      await query(SQL`
+        INSERT INTO completed_scene_uploads (entity_id, deployer, world_name, parcels, completed_at)
+        SELECT entity_id, deployer, entity->'metadata'->'worldConfiguration'->>'name', parcels, ${new Date(creationTimestamp)}
+        FROM pending_scenes WHERE entity_id = ${scene.id}
+        ON CONFLICT (entity_id) DO NOTHING
+      `)
+      await query(SQL`DELETE FROM pending_scenes WHERE entity_id = ${scene.id}`)
+
       // Update denormalized scene stats
       await query(buildRecalculateWorldSceneStatsQuery(worldName.toLowerCase()))
 
@@ -719,7 +730,7 @@ export async function createWorldsManagerComponent({
       }
     })
 
-    return { metadataUpdated }
+    return { metadataUpdated, creationTimestamp }
   }
 
   async function storeAccess(worldName: string, access: AccessSetting): Promise<void> {

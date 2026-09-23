@@ -41,7 +41,7 @@ export async function cleanup(storage: IContentStorageComponent, db: IPgComponen
   await storage.delete(files)
 
   // `pending_scenes` has no FK to `worlds`, so the CASCADE above never reaches it — truncate explicitly.
-  await db.query(`TRUNCATE worlds, world_scenes, pending_scenes CASCADE`)
+  await db.query(`TRUNCATE worlds, world_scenes, pending_scenes, completed_scene_uploads, partial_upload_rates CASCADE`)
 }
 
 /**

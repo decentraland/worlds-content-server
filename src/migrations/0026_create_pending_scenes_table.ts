@@ -18,11 +18,12 @@ export const migration: Migration = {
         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
       );
-      CREATE INDEX IF NOT EXISTS pending_scenes_world_name_idx ON pending_scenes(world_name);
-      CREATE INDEX IF NOT EXISTS pending_scenes_parcels_idx ON pending_scenes USING GIN(parcels);
+      -- Backs expiry sweeps and the live-upload snapshot (WHERE created_at </>= $).
       CREATE INDEX IF NOT EXISTS pending_scenes_created_at_idx ON pending_scenes(created_at);
-      -- Backs the per-deployer concurrent-pending cap check (WHERE deployer = $ AND created_at >= $).
+      -- Backs the per-deployer upload count cap (WHERE deployer = $).
       CREATE INDEX IF NOT EXISTS pending_scenes_deployer_created_at_idx ON pending_scenes(deployer, created_at);
+      -- No index on world_name or parcels on purpose: uploads are keyed by entity id and never
+      -- looked up or replaced by overlap, so those would only add write cost to every staging insert.
     `)
   }
 }

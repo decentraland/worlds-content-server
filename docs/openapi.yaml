@@ -329,12 +329,27 @@ paths:
         storage) only while a still-live pending upload for this entity exists AND the request is
         signed by the same address that started it; otherwise — including a resume after the pending
         upload expired, or a request signed by a different authorized deployer — the entity file must
-        be re-sent (a request omitting it is rejected with `400`). Each request stores the files it
+        be re-sent (a request omitting it is rejected with `400`, except for a retained successful
+        completion). An expired upload cannot be revived by resending its old manifest. Each request stores the files it
         carries; the scene only goes live once every referenced file is present. A request that still
         leaves files missing returns `202` with the list of outstanding hashes; the request that
-        completes the set runs full validation, deploys, and returns `200`. At most one in-flight
-        partial deployment is kept per set of parcels (a newer one replaces it), and staged content
-        expires if the upload is not completed in time.
+        completes the set runs full validation, deploys, and returns `200`. Uploads are identified by
+        entity ID and may overlap parcels; starting one does not remove another. Publication follows
+        entity timestamp ordering (entity ID breaks ties), so an older upload cannot replace a newer
+        deployed scene. Parallel requests for the same entity are processed serially by the server.
+
+        Successful completion is recorded atomically with publication. The original signer can replay
+        a completed partial request without the manifest and receive the same `200` body and timestamp
+        for `COMPLETED_UPLOAD_TTL` (default 24 hours), even after that scene is replaced or undeployed.
+        This acknowledges the original publication; it does not publish the scene again. Authentication
+        must still be valid. Expired, uncompleted uploads require a new entity with a fresh timestamp.
+
+        Upload count, aggregate reserved bytes, and accepted byte rate are limited per deployer; an
+        additional byte budget applies server-wide. Reservations precede storage writes and abandoned
+        bytes remain charged until cleanup succeeds. Exceeding a budget returns `400`; clients should
+        stop sending batches until capacity is available (byte-rate windows reset after one minute).
+        The `missing` list is authoritative for subsequent batches; send the requested files even if
+        a separate availability check reports them as stored by another upload.
       operationId: worldsContentServer_deployEntity
       requestBody:
         required: true

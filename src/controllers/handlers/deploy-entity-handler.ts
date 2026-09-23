@@ -1,4 +1,4 @@
-import { Entity, EntityType } from '@dcl/schemas'
+import { AuthChain, Entity, EntityType } from '@dcl/schemas'
 import { Authenticator } from '@dcl/crypto'
 import { IHttpServerComponent } from '@dcl/core-commons'
 import { bufferToStream } from '@dcl/catalyst-storage'
@@ -16,7 +16,8 @@ import { buildSceneDeploymentMessage } from '../../logic/utils'
 import { InvalidRequestError } from '@dcl/http-commons'
 import { FileInfo, IContentStorageComponent } from '@dcl/catalyst-storage'
 import { calculateDeploymentSizeFromFileInfos } from '../../logic/validations/scene'
-import { mapWithConcurrency } from '../../logic/concurrency'
+import { Readable } from 'stream'
+import { mapWithConcurrency, raceWithSignal } from '../../logic/concurrency'
 import {
   DEFAULT_CONTENT_FILE_INFO_CONCURRENCY,
   DeploymentProcessingAbortedError,
@@ -29,6 +30,7 @@ export const MAX_ENTITY_FILE_SIZE_IN_BYTES = 5 * 1024 * 1024
 
 type DeployEntityContext = FormDataContext &
   HandlerContextWithPath<
+    | 'contentLocks'
     | 'config'
     | 'deploymentProcessing'
     | 'entityDeployer'
@@ -53,7 +55,7 @@ function isUniqueViolation(error: unknown): boolean {
 // memory. This is important on a partial-resume request, where the entity is read back from storage and
 // its size is NOT covered by the multipart in-flight-bytes budget (the resume body is tiny), so without
 // a cap many concurrent resumes could each buffer a large stored entity and exhaust memory.
-const MAX_ENTITY_FILE_SIZE_BYTES = 10 * 1024 * 1024 // 10 MB
+const MAX_ENTITY_FILE_SIZE_BYTES = MAX_ENTITY_FILE_SIZE_IN_BYTES // 10 MB
 
 export function requireString(val: string | null | undefined): string {
   if (typeof val !== 'string') throw new InvalidRequestError('A string was expected')
@@ -71,10 +73,14 @@ function parseEntityJson(raw: string) {
 // Buffers a stream but aborts as soon as it exceeds maxBytes. The storage metadata size can be null
 // (unknown), so the size cap must be enforced while reading — buffering first and checking after would
 // hold the whole blob in memory exactly in the case the cap exists for.
-async function streamToBufferCapped(stream: AsyncIterable<Buffer | string>, maxBytes: number): Promise<Buffer> {
+async function streamToBufferCapped(
+  stream: AsyncIterable<Buffer | string>,
+  maxBytes: number,
+  signal?: AbortSignal
+): Promise<Buffer> {
   const chunks: Buffer[] = []
   let total = 0
-  for await (const chunk of stream) {
+  for await (const chunk of Readable.from(stream, { signal })) {
     const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
     total += buf.length
     if (total > maxBytes) {
@@ -125,6 +131,22 @@ async function deployEntityWithSignal(
   // A `partial=true` field marks a staging request of a multi-request (partial) deployment: content may
   // be uploaded across several requests and the world only becomes live once all of it is present.
   const isPartial = ctx.formData.fields.partial?.value[0] === 'true'
+  if (isPartial) {
+    if (!AuthChain.validate(authChain)) throw new InvalidRequestError('Invalid auth chain.')
+    const signature = await Authenticator.validateSignature(entityId, authChain, null, Date.now())
+    if (!signature.ok) throw new InvalidRequestError(`Invalid auth chain: ${signature.message}`)
+    const completed = await ctx.components.pendingScenesManager.getCompleted(entityId, authChain[0].payload, signal)
+    if (completed) {
+      const baseUrl = (await ctx.components.config.getString('HTTP_BASE_URL')) || `https://${ctx.url.host}`
+      return {
+        status: 200,
+        body: {
+          creationTimestamp: completed.creationTimestamp,
+          message: buildSceneDeploymentMessage(baseUrl, completed.worldName, completed.parcels)
+        }
+      }
+    }
+  }
 
   // Resolve the entity file. It must be uploaded on the first request; a later partial (resume) request
   // may omit it, in which case it is read back from storage where the first request stored it.
@@ -147,13 +169,17 @@ async function deployEntityWithSignal(
     if (!signatureResult.ok) {
       throw new InvalidRequestError(`Invalid auth chain: ${signatureResult.message}`)
     }
-    const pendingForResume = await ctx.components.pendingScenesManager.getByEntityId(entityId)
+    const pendingForResume = await ctx.components.pendingScenesManager.getByEntityId(entityId, signal)
     if (pendingForResume && pendingForResume.deployer === authChain[0].payload.toLowerCase()) {
-      const stored = await ctx.components.storage.retrieve(entityId)
+      const stored = await raceWithSignal(ctx.components.storage.retrieve(entityId), signal)
       if (stored) {
         // streamToBufferCapped aborts past the cap while reading, so storage reporting size as null (the
         // metadata is not trustworthy for enforcement) can't let an oversized blob through.
-        const buf = await streamToBufferCapped(await stored.asStream(), MAX_ENTITY_FILE_SIZE_BYTES)
+        const buf = await streamToBufferCapped(
+          await raceWithSignal(stored.asStream(), signal),
+          MAX_ENTITY_FILE_SIZE_BYTES,
+          signal
+        )
         entityFile = {
           size: buf.length,
           getStream: () => bufferToStream(buf),
@@ -221,7 +247,7 @@ async function deployEntityWithSignal(
       return {
         status: 200,
         body: {
-          creationTimestamp: Date.now(),
+          creationTimestamp: result.creationTimestamp,
           ...result.result
         }
       }
@@ -231,7 +257,7 @@ async function deployEntityWithSignal(
 
   // Vanilla (single-request) deployment — behaves exactly as before, plus TTL anchoring on and cleanup
   // of any pending upload that happens to exist for this entity.
-  const pending = await ctx.components.pendingScenesManager.getByEntityId(entityId)
+  const pending = await ctx.components.pendingScenesManager.getByEntityId(entityId, signal)
 
   const deployment: DeploymentToValidate = {
     entity,
@@ -349,7 +375,11 @@ export async function deployEntity(ctx: DeployEntityContext): Promise<IHttpServe
   const abortContext = ctx.components.deploymentProcessing.createAbortContext(ctx.request?.signal)
   try {
     return await ctx.components.deploymentProcessing.trackStage('total', Object.keys(ctx.formData.files).length, () =>
-      deployEntityWithSignal(ctx, abortContext.signal, abortContext.deadlineAt)
+      ctx.components.contentLocks.withRead(
+        (signal) => deployEntityWithSignal(ctx, signal ?? abortContext.signal, abortContext.deadlineAt),
+        abortContext.signal,
+        ctx.formData.fields.entityId?.value[0]
+      )
     )
   } catch (error) {
     const abortedError =

@@ -1,3 +1,4 @@
+import { createContentLocks } from './adapters/content-locks/component'
 import { createDotEnvConfigComponent } from '@well-known-components/env-config-provider'
 import {
   createServerComponent,
@@ -177,6 +178,7 @@ export async function initComponents(): Promise<AppComponents> {
   })
 
   const database = await createDatabaseComponent({ config, logs, metrics })
+  const contentLocks = await createContentLocks({ config, logs, metrics })
 
   const coordinates = createCoordinatesComponent()
 
@@ -268,7 +270,14 @@ export async function initComponents(): Promise<AppComponents> {
     worldsManager
   })
 
-  const pendingScenesManager = await createPendingScenesManager({ config, database, logs })
+  const pendingScenesManager = await createPendingScenesManager({
+    config,
+    database,
+    logs,
+    metrics,
+    storage,
+    contentLocks
+  })
 
   const partialDeployments = await createPartialDeploymentsComponent({
     config,
@@ -277,6 +286,8 @@ export async function initComponents(): Promise<AppComponents> {
     limitsManager,
     logs,
     pendingScenesManager,
+    deploymentProcessing,
+    metrics,
     storage,
     validator,
     worldsManager
@@ -346,6 +357,7 @@ export async function initComponents(): Promise<AppComponents> {
   const rateLimiter = await createRateLimiterComponent({ config, logs, redis })
 
   return {
+    contentLocks,
     access,
     accessChangeHandler,
     accessChecker,

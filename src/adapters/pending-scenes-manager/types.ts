@@ -1,11 +1,6 @@
 import { Entity } from '@dcl/schemas'
+import { IBaseComponent } from '@well-known-components/interfaces'
 
-/**
- * A partial (multi-request) deployment being staged. Content is uploaded across several requests and
- * the entity only becomes a live world_scenes row once every referenced file is present. Stored in a
- * standalone `pending_scenes` table (no FK to `worlds`, so a half-uploaded world never leaks into
- * listings). The authoritative entity *bytes* live in content storage under the entity id.
- */
 export type PendingScene = {
   entityId: string
   worldName: string
@@ -13,6 +8,7 @@ export type PendingScene = {
   deployer: string
   createdAt: Date
   updatedAt: Date
+  initialized: boolean
 }
 
 export type UpsertPendingScene = {
@@ -23,29 +19,40 @@ export type UpsertPendingScene = {
   deployer: string
 }
 
-export type IPendingScenesManager = {
-  /** Returns the pending scene for an entity id, treating rows past the TTL as absent. */
-  getByEntityId(entityId: string): Promise<PendingScene | undefined>
-  /**
-   * Records/refreshes a pending scene, replacing any non-expired pending scene of the same world whose
-   * parcels overlap (enforces "at most one pending upload per world+parcel"), but only when the incoming
-   * scene is newer (deployment ordering) than the overlapping ones — a strictly-newer overlapping upload
-   * causes a rejection instead. On conflict of the same entity id it only bumps updated_at so created_at
-   * (the TTL anchor) stays stable across resumes.
-   *
-   * The per-deployer concurrent-pending cap (`limit.maxPendingPerDeployer`) is enforced inside the same
-   * transaction under a per-deployer lock, and only when the upsert would create a NEW row — a resume of
-   * an existing upload is always allowed through, so lowering the cap can never wedge in-flight uploads.
-   * @throws InvalidRequestError if a strictly-newer overlapping pending upload is already in progress,
-   *   or if creating this new pending upload would put the deployer over the per-deployer cap.
-   */
-  upsert(input: UpsertPendingScene, limit: { maxPendingPerDeployer: number }): Promise<PendingScene>
+export type FileReceipt = { hash: string; size: number; stored: boolean }
+export type CompletedUpload = { worldName: string; parcels: string[]; creationTimestamp: number }
+
+export interface IPendingScenesManager extends IBaseComponent {
+  /** Retrieves a live upload without renewing its fixed expiration. */
+  getByEntityId(entityId: string, signal?: AbortSignal): Promise<PendingScene | undefined>
+  /** Creates an independent entity upload under the account count cap; requires the shared content lock. */
+  upsert(
+    input: UpsertPendingScene,
+    limit: { maxPendingPerDeployer: number },
+    signal?: AbortSignal
+  ): Promise<PendingScene>
+  /** Reserves bytes before writes, including concurrent account/global budgets and incoming byte rate. */
+  reserve(
+    entityId: string,
+    receipts: FileReceipt[],
+    maxSceneBytes: bigint,
+    incomingBytes: number,
+    signal?: AbortSignal
+  ): Promise<void>
+  /** Records successful writes; initialized means the initial stored-content inventory is complete. */
+  recordStored(entityId: string, hashes: string[], initialized: boolean, signal?: AbortSignal): Promise<void>
+  /** Returns successfully stored file sizes, never treating reservations as completed writes. */
+  getProgress(entityId: string, signal?: AbortSignal): Promise<Map<string, number>>
+  /** Forgets receipts invalidated by a final storage verification. Reservations remain charged. */
+  markMissing(entityId: string, hashes: string[], signal?: AbortSignal): Promise<void>
+  /** Returns a stable completion receipt only for the authenticated original deployer. */
+  getCompleted(entityId: string, deployer: string, signal?: AbortSignal): Promise<CompletedUpload | undefined>
+  /** Removes staging state only after successful publication (normal publication does this atomically). */
   deleteByEntityId(entityId: string): Promise<void>
-  /** Deletes pending scenes older than the configured PENDING_DEPLOYMENT_TTL. Returns the number removed. */
+  /** Reclaims expired content under the exclusive lock before releasing its byte accounting. */
   deleteExpired(): Promise<number>
-  /**
-   * Returns the storage keys referenced by every non-expired pending scene: each entity id, its
-   * `.auth` blob, and its content-file hashes. Used by garbage collection to protect in-flight uploads.
-   */
+  /** Returns non-expired staging references for compatibility with existing callers. */
   getActivePendingKeys(): Promise<Set<string>>
+  /** The fixed pending upload lifetime used by GC. */
+  readonly ttlMs: number
 }

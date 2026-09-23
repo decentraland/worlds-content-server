@@ -1,3 +1,4 @@
+import { partialDeploymentContract } from '../contracts/partial-deployment'
 import { test } from '../components'
 import { DeploymentBuilder } from 'dcl-catalyst-client'
 import { AuthChain, EntityType } from '@dcl/schemas'
@@ -101,6 +102,45 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
       MessageId: 'mocked-message-id',
       SequenceNumber: 'mocked-sequence-number',
       $metadata: {}
+    })
+  })
+
+  partialDeploymentContract(() => ({
+    entityId,
+    contentHashes,
+    send: (keys) => post(buildForm(keys, Authenticator.signPayload(identity.authChain, entityId)))
+  }))
+
+  describe('when recording progress over several batches', () => {
+    let metadataSpy: jest.SpyInstance
+    let authChain: AuthChain
+    let initialChecks: number
+    let middleChecks: number
+    let finalChecks: number
+
+    beforeEach(async () => {
+      authChain = Authenticator.signPayload(identity.authChain, entityId)
+      metadataSpy = jest.spyOn(components.storage, 'fileInfo')
+      await post(buildForm([entityId], authChain))
+      initialChecks = metadataSpy.mock.calls.length
+      metadataSpy.mockClear()
+      await post(buildForm([contentHashes[0]], authChain))
+      middleChecks = metadataSpy.mock.calls.length
+      metadataSpy.mockClear()
+      await post(buildForm(contentHashes.slice(1), authChain))
+      finalChecks = metadataSpy.mock.calls.length
+    })
+
+    afterEach(() => {
+      metadataSpy.mockRestore()
+    })
+
+    it('should inventory once, skip metadata for intermediate batches, and verify once at completion', () => {
+      expect({ initialChecks, middleChecks, finalChecks }).toEqual({
+        initialChecks: contentHashes.length,
+        middleChecks: 0,
+        finalChecks: contentHashes.length
+      })
     })
   })
 
@@ -606,15 +646,15 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
         replaceResponse = await post(makeForm(newer.entityId, newer.files, [newer.entityId], newerAuth))
       })
 
-      it('should accept it and replace the older pending upload', async () => {
+      it('should accept it without replacing the older pending upload', async () => {
         expect(replaceResponse.status).toBe(202)
-        expect(await countPending()).toBe(1)
+        expect(await countPending()).toBe(2)
       })
 
-      it('should leave the newer upload as the pending one', async () => {
+      it('should keep both independent pending uploads', async () => {
         const { database } = components
         const result = await database.query<{ entity_id: string }>('SELECT entity_id FROM pending_scenes')
-        expect(result.rows.map((r) => r.entity_id)).toEqual([newer.entityId])
+        expect(result.rows.map((r) => r.entity_id).sort()).toEqual([older.entityId, newer.entityId].sort())
       })
     })
 
@@ -626,14 +666,14 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
         rejectResponse = await post(makeForm(older.entityId, older.files, [older.entityId], olderAuth))
       })
 
-      it('should reject the older upload with 400', () => {
-        expect(rejectResponse.status).toBe(400)
+      it('should accept the older upload without publishing it', () => {
+        expect(rejectResponse.status).toBe(202)
       })
 
-      it('should keep the newer upload as the sole pending one', async () => {
+      it('should keep both uploads regardless of timestamp order', async () => {
         const { database } = components
         const result = await database.query<{ entity_id: string }>('SELECT entity_id FROM pending_scenes')
-        expect(result.rows.map((r) => r.entity_id)).toEqual([newer.entityId])
+        expect(result.rows.map((r) => r.entity_id).sort()).toEqual([older.entityId, newer.entityId].sort())
       })
     })
   })
@@ -673,7 +713,7 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
     })
   })
 
-  describe('when a deployer at the cap replaces one of their own pending uploads with a newer one', () => {
+  describe('when a deployer at the cap starts another upload on overlapping parcels', () => {
     // Test config sets MAX_PENDING_DEPLOYMENTS_PER_DEPLOYER=3.
     let replaceResponse: Awaited<ReturnType<typeof post>>
 
@@ -686,15 +726,14 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
         const auth = Authenticator.signPayload(identity.authChain, scene.entityId)
         await post(makeForm(scene.entityId, scene.files, [scene.entityId], auth))
       }
-      // A newer upload overlapping the first one replaces it — the deployer's row count stays at 3, so
-      // the cap must NOT reject it (the decision is the net change, not a stale "is this new?" flag).
+      // Overlapping uploads are independent and must each consume an admission slot.
       const replacement = await buildScene(['20,24'], now + 1000)
       const replAuth = Authenticator.signPayload(identity.authChain, replacement.entityId)
       replaceResponse = await post(makeForm(replacement.entityId, replacement.files, [replacement.entityId], replAuth))
     })
 
-    it('should accept the replacement with 202 rather than rejecting it as over-cap', () => {
-      expect(replaceResponse.status).toBe(202)
+    it('should reject the additional upload even though its parcels overlap', () => {
+      expect(replaceResponse.status).toBe(400)
     })
 
     it('should keep the deployer at the cap (net count unchanged)', async () => {

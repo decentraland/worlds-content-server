@@ -22,17 +22,43 @@ referenced file is present. Intentionally has **no** foreign key to `worlds` —
 not create a `worlds` row (which would leak into listings and world-validity checks) before it goes live.
 The authoritative entity bytes live in content storage under the entity id; the `entity` JSONB here is a
 copy used by garbage collection. Columns: `entity_id` (PK), `world_name`, `parcels` (TEXT[]), `entity`
-(JSONB), `deployer`, `created_at`/`updated_at` (TIMESTAMPTZ). At most one non-expired pending scene may
-exist per world + overlapping parcels; rows expire after `PENDING_DEPLOYMENT_TTL` (default 24h) and are
-removed by the daily eviction job. `created_at` anchors the deployment-TTL check for staged uploads.
+(JSONB), `deployer`, `created_at`/`updated_at` (TIMESTAMPTZ), `initialized` (BOOLEAN), and
+`reserved_bytes` (BIGINT). Uploads may overlap parcels and never replace another pending row.
+`created_at` anchors freshness and the fixed `PENDING_DEPLOYMENT_TTL` (default 24h). Expired rows stay
+charged until the eviction job or GC reclaims their objects, then removes their accounting.
+
+### Table: `pending_scene_files`
+
+Primary key `(entity_id, hash)`, with a cascading FK to `pending_scenes`. `size` is the reserved byte
+count; `stored` distinguishes successful writes/verified reused content from reservations. Reserves
+are atomic under a database admission lock. The pending-row `reserved_bytes` caches the sum so global
+admission scans session totals instead of every content receipt. Failed writes remain conservatively
+charged; retrying a hash does not reserve its storage twice. Incoming bytes, including retries, are
+also counted in `partial_upload_rates` (`deployer` PK, `window_started`, `bytes`).
+
+### Table: `completed_scene_uploads`
+
+Primary key `entity_id`; columns `deployer`, `world_name`, `parcels`, `completed_at`. Publication writes
+this receipt and removes pending state in the same transaction as the scene. The original signer gets
+a stable completion response even after replacement or undeployment. Receipts expire independently
+under `COMPLETED_UPLOAD_TTL` and do not retain content or consume staging slots.
+
+### Content protection
+
+Upload processing takes a shared PostgreSQL advisory lock through publication; GC and expired upload
+cleanup take its exclusive counterpart for each physical delete batch. A separate WKC pool prevents
+lock waiters from exhausting application query connections. Reference checks combine deployed scenes,
+world thumbnails and live pending manifests in one SQL snapshot under that lock. Per-entity advisory
+locks serialize batches and competing standard/partial completion attempts for the same entity.
 
 #### Indexes
 
 - **Primary Key**: `entity_id`
-- **Index**: `pending_scenes_world_name_idx` on `world_name`
-- **GIN Index**: `pending_scenes_parcels_idx` on `parcels` (overlap queries)
 - **Index**: `pending_scenes_created_at_idx` on `created_at` (TTL expiry and GC protection set)
-- **Index**: `pending_scenes_deployer_created_at_idx` on `(deployer, created_at)` (per-deployer concurrent-pending cap)
+- **Index**: `pending_scenes_deployer_created_at_idx` on `(deployer, created_at)` (per-deployer upload count cap)
+
+Deliberately unindexed: `world_name` and `parcels`. Uploads are addressed by entity id and never
+looked up or replaced by overlap, so an index on either would only add write cost per staging insert.
 
 ---
 

@@ -23,6 +23,8 @@ export type StageDeploymentInput = {
 export type StageDeploymentResult = {
   /** Whether this request completed the content set and the scene was deployed. */
   complete: boolean
+  /** Original commit timestamp, stable across completion retries. */
+  creationTimestamp?: number
   /** Content hashes still missing (present when `complete` is false). */
   missing?: string[]
   /** The deployment result (present when `complete` is true). */

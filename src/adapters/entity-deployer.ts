@@ -94,12 +94,9 @@ export function createEntityDeployer(
           )
           allContentHashesInStorage.set(hash, true)
         },
-        // On abort every active upload is cancelled through the same signal and every source
-        // stream is destroyed by its own listener, so waiting for them adds no file safety. Not
-        // waiting keeps the request (and its stage gauges and upload lease) from being tied to a
-        // transport that ignores cancellation; such stragglers stay observed inside
-        // mapWithConcurrency.
-        { signal, waitForActiveOnAbort: false }
+        // Keep the shared content/GC protection until every writer settles. Releasing it while
+        // an aborted transport can still write would allow an unaccounted object after cleanup.
+        { signal, waitForActiveOnAbort: true }
       )
 
       signal?.throwIfAborted()
@@ -114,7 +111,7 @@ export function createEntityDeployer(
           deploymentProcessing.trackWorker('storage', () =>
             storage.storeStream(id, bufferToStream(stringToUtf8Bytes(content)), signal)
           ),
-        { signal, waitForActiveOnAbort: false }
+        { signal, waitForActiveOnAbort: true }
       )
     })
 
@@ -183,7 +180,7 @@ export function createEntityDeployer(
     }
 
     signal?.throwIfAborted()
-    const { metadataUpdated } = await worldsManager.deployScene(
+    const { metadataUpdated, creationTimestamp } = await worldsManager.deployScene(
       worldName,
       entity,
       owner,
@@ -284,6 +281,7 @@ export function createEntityDeployer(
     }
 
     return {
+      ...(creationTimestamp === undefined ? {} : { creationTimestamp }),
       message: buildSceneDeploymentMessage(baseUrl, worldName, parcels)
     }
   }

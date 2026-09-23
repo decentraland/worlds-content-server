@@ -67,12 +67,17 @@ describe('deployEntity', () => {
   function createContext(id: string, files: Record<string, ReturnType<typeof makeFile>>): DeployContext {
     return {
       components: {
+        contentLocks: {
+          withRead: async (operation: (signal: AbortSignal) => Promise<unknown>, signal: AbortSignal) =>
+            operation(signal)
+        },
         deploymentProcessing: createDeploymentProcessingMock(),
         // Default no-op pending-scenes manager: the vanilla deploy path looks up (and cleans up) any
         // pending partial upload for the entity. Returning no pending row keeps these tests exercising
         // the plain single-request path; tests that need a pending row override this.
         pendingScenesManager: {
           getByEntityId: jest.fn().mockResolvedValue(undefined),
+          getCompleted: jest.fn().mockResolvedValue(undefined),
           deleteByEntityId: jest.fn().mockResolvedValue(undefined)
         },
         logs: {
@@ -82,8 +87,8 @@ describe('deployEntity', () => {
       formData: {
         fields: {
           entityId: makeField(id),
-          'authChain[0][payload]': makeField('0xpayload'),
-          'authChain[0][signature]': makeField('0xsignature'),
+          'authChain[0][payload]': makeField('0x0000000000000000000000000000000000000001'),
+          'authChain[0][signature]': makeField(''),
           'authChain[0][type]': makeField('SIGNER')
         },
         files
@@ -136,7 +141,11 @@ describe('deployEntity', () => {
         ...baseContext,
         components: {
           ...baseContext.components,
-          pendingScenesManager: { getByEntityId, deleteByEntityId: jest.fn() },
+          pendingScenesManager: {
+            getByEntityId,
+            getCompleted: jest.fn().mockResolvedValue(undefined),
+            deleteByEntityId: jest.fn()
+          },
           storage: { retrieve }
         }
       } as unknown as DeployContext
@@ -189,7 +198,9 @@ describe('deployEntity', () => {
     describe('and the pending upload belongs to the signer', () => {
       beforeEach(async () => {
         // createContext signs with payload '0xpayload'; the pending row stores deployers lowercased.
-        getByEntityId = jest.fn().mockResolvedValue({ deployer: '0xpayload', createdAt: new Date() })
+        getByEntityId = jest
+          .fn()
+          .mockResolvedValue({ deployer: '0x0000000000000000000000000000000000000001', createdAt: new Date() })
         caughtError = await deployEntity(createResumeContext()).catch((error) => error)
       })
 
@@ -265,10 +276,15 @@ describe('deployEntity', () => {
           config: {
             getString: jest.fn().mockResolvedValue('https://configured.example')
           },
+          contentLocks: {
+            withRead: async (operation: (signal: AbortSignal) => Promise<unknown>, signal: AbortSignal) =>
+              operation(signal)
+          },
           deploymentProcessing: createDeploymentProcessingMock({ fileInfoConcurrency: 2 }),
           entityDeployer: { deployEntity: entityDeployerDeploy },
           pendingScenesManager: {
             getByEntityId: jest.fn().mockResolvedValue(undefined),
+            getCompleted: jest.fn().mockResolvedValue(undefined),
             deleteByEntityId: jest.fn().mockResolvedValue(undefined)
           },
           storage: { fileInfo },
@@ -337,6 +353,10 @@ describe('deployEntity', () => {
         ...baseContext,
         components: {
           ...baseContext.components,
+          contentLocks: {
+            withRead: async (operation: (signal: AbortSignal) => Promise<unknown>, signal: AbortSignal) =>
+              operation(signal)
+          },
           config: { getString: jest.fn().mockResolvedValue(undefined) },
           entityDeployer: { deployEntity: entityDeployerDeploy },
           storage: { fileInfo: jest.fn().mockResolvedValue(undefined) },
@@ -385,6 +405,10 @@ describe('deployEntity', () => {
         ...baseContext,
         components: {
           ...baseContext.components,
+          contentLocks: {
+            withRead: async (operation: (signal: AbortSignal) => Promise<unknown>, signal: AbortSignal) =>
+              operation(signal)
+          },
           config: { getString: jest.fn().mockResolvedValue(undefined) },
           entityDeployer: {
             deployEntity: jest.fn().mockRejectedValue(Object.assign(new Error('duplicate key'), { code: '23505' }))
@@ -432,6 +456,10 @@ describe('deployEntity', () => {
         ...baseContext,
         components: {
           ...baseContext.components,
+          contentLocks: {
+            withRead: async (operation: (signal: AbortSignal) => Promise<unknown>, signal: AbortSignal) =>
+              operation(signal)
+          },
           config: { getString: jest.fn().mockResolvedValue(undefined) },
           entityDeployer: {
             deployEntity: jest.fn().mockRejectedValue(Object.assign(new Error('duplicate key'), { code: '23505' }))
@@ -478,6 +506,10 @@ describe('deployEntity', () => {
         ...baseContext,
         components: {
           ...baseContext.components,
+          contentLocks: {
+            withRead: async (operation: (signal: AbortSignal) => Promise<unknown>, signal: AbortSignal) =>
+              operation(signal)
+          },
           config: { getString: jest.fn().mockResolvedValue(undefined) },
           entityDeployer: {
             deployEntity: jest.fn().mockRejectedValue(new SceneReplacementConflictError('world.dcl.eth'))

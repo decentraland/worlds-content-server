@@ -84,8 +84,10 @@ export function createAfterStorageValidateFns(components: ValidatorComponents): 
 // request; the full-deploy path inlines the equivalent list in `createBeforeStorageValidateFns`.
 function commonValidations(components: ValidatorComponents): Validation[] {
   return [
-    validateEntityId,
     validateBaseEntity,
+    validateSupportedEntityType,
+    validateIfTypeMatches(EntityType.SCENE, createValidateFileCount(components)),
+    validateEntityId,
     validateAuthChain,
     validateSigner,
     validateSignature,
@@ -197,7 +199,7 @@ export const createValidator = (components: ValidatorComponents): Validator => {
       deployment: DeploymentToValidate,
       options?: { skipPermissionCheck?: boolean }
     ): Promise<ValidationResult> {
-      return runValidations(createStagingValidateFns(components, options), deployment)
+      return runValidations(createStagingValidateFns(components, options), deployment, true)
     }
   }
 }

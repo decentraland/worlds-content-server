@@ -26,9 +26,15 @@ describe('EvictionJob', () => {
     pendingScenesManager = {
       getByEntityId: jest.fn(),
       upsert: jest.fn(),
+      reserve: jest.fn(),
+      recordStored: jest.fn(),
+      getProgress: jest.fn().mockResolvedValue(new Map()),
+      markMissing: jest.fn(),
+      getCompleted: jest.fn(),
       deleteByEntityId: jest.fn(),
       deleteExpired: jest.fn().mockResolvedValue(0),
-      getActivePendingKeys: jest.fn().mockResolvedValue(new Set())
+      getActivePendingKeys: jest.fn().mockResolvedValue(new Set()),
+      ttlMs: 86400000
     }
     logs = {
       getLogger: () => ({

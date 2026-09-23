@@ -231,7 +231,14 @@ async function initComponents(): Promise<TestComponents> {
     worldsManager
   })
 
-  const pendingScenesManager = await createPendingScenesManager({ config, database, logs })
+  const pendingScenesManager = await createPendingScenesManager({
+    config,
+    database,
+    logs,
+    metrics,
+    storage,
+    contentLocks: components.contentLocks
+  })
 
   const partialDeployments = await createPartialDeploymentsComponent({
     config,
@@ -240,6 +247,8 @@ async function initComponents(): Promise<TestComponents> {
     limitsManager,
     logs,
     pendingScenesManager,
+    deploymentProcessing: components.deploymentProcessing,
+    metrics,
     storage,
     validator,
     worldsManager

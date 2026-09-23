@@ -1,210 +1,164 @@
-import { AuthChain, AuthLinkType, Entity, EntityType } from '@dcl/schemas'
+import { AuthLinkType, EntityType } from '@dcl/schemas'
 import { createPartialDeploymentsComponent } from '../../src/logic/partial-deployments'
 import { createCoordinatesComponent } from '../../src/logic/coordinates'
-import { DeploymentProcessingAbortedError } from '../../src/logic/deployment-processing'
-import { DeploymentFile, DeploymentToValidate } from '../../src/types'
-import { PendingScene } from '../../src/adapters/pending-scenes-manager'
+import { createDeploymentProcessingMock } from '../mocks/deployment-processing-mock'
+import { DeploymentToValidate } from '../../src/types'
+import { StageDeploymentInput } from '../../src/logic/partial-deployments/types'
 
-type PartialDeploymentsComponents = Parameters<typeof createPartialDeploymentsComponent>[0]
+type Components = Parameters<typeof createPartialDeploymentsComponent>[0]
 
-describe('partial deployments component', () => {
-  let entityId: string
-  let uploadedHash: string
-  let siblingHash: string
-  let entity: Entity
-  let authChain: AuthChain
-  let uploadedFile: DeploymentFile
-  let files: Map<string, DeploymentFile>
-  let pendingRow: PendingScene
-  let fileInfoMultiple: jest.Mock
-  let existMultiple: jest.Mock
+describe('when staging a partial deployment', () => {
+  let components: Components
+  let input: StageDeploymentInput
+  let fileInfo: jest.Mock
+  let getProgress: jest.Mock
+  let getPending: jest.Mock
+  let reserve: jest.Mock
   let storeStream: jest.Mock
-  let upsert: jest.Mock
   let validateStaging: jest.Mock
   let validate: jest.Mock
   let deployEntity: jest.Mock
-  let components: PartialDeploymentsComponents
+  let stage: Awaited<ReturnType<typeof createPartialDeploymentsComponent>>['stage']
 
-  beforeEach(() => {
-    entityId = 'bafkreientity'
-    uploadedHash = 'bafkreiuploaded'
-    siblingHash = 'bafkreisibling'
-    entity = {
-      version: 'v3',
-      id: entityId,
-      type: EntityType.SCENE,
-      timestamp: Date.now(),
-      pointers: ['0,0'],
-      content: [
-        { file: 'uploaded.bin', hash: uploadedHash },
-        { file: 'sibling.bin', hash: siblingHash }
-      ],
-      metadata: { worldConfiguration: { name: 'world.dcl.eth' }, scene: { base: '0,0', parcels: ['0,0'] } }
+  beforeEach(async () => {
+    input = {
+      baseUrl: 'https://worlds.example',
+      entityRaw: '{}',
+      entity: {
+        version: 'v3',
+        id: 'entity',
+        type: EntityType.SCENE,
+        timestamp: Date.now(),
+        pointers: ['0,0'],
+        content: [
+          { file: 'a', hash: 'a' },
+          { file: 'b', hash: 'b' }
+        ],
+        metadata: { worldConfiguration: { name: 'world.dcl.eth' }, scene: { base: '0,0', parcels: ['0,0'] } }
+      },
+      authChain: [{ type: AuthLinkType.SIGNER, payload: 'deployer', signature: '' }],
+      files: new Map([['a', { size: 300, getStream: jest.fn(), getHash: jest.fn(), asBuffer: jest.fn() }]])
     }
-    authChain = [{ type: AuthLinkType.SIGNER, payload: '0xdeployer', signature: '' }]
-    uploadedFile = {
-      size: 300,
-      getStream: jest.fn(),
-      getHash: jest.fn().mockResolvedValue(uploadedHash),
-      asBuffer: jest.fn().mockResolvedValue(Buffer.from('x'))
-    }
-    files = new Map([[uploadedHash, uploadedFile]])
-    pendingRow = {
-      entityId,
-      worldName: 'world.dcl.eth',
-      parcels: ['0,0'],
-      deployer: '0xdeployer',
-      createdAt: new Date(),
-      updatedAt: new Date()
-    }
-
-    // Start-of-request snapshot: nothing stored yet. Completeness check: a sibling request stored
-    // siblingHash (500 bytes) in the meantime and this request stored uploadedHash (300 bytes).
-    fileInfoMultiple = jest
-      .fn()
-      .mockResolvedValueOnce(
-        new Map([
-          [uploadedHash, undefined],
-          [siblingHash, undefined]
-        ])
-      )
-      .mockResolvedValueOnce(
-        new Map([
-          [uploadedHash, { size: 300 }],
-          [siblingHash, { size: 500 }]
-        ])
-      )
-    existMultiple = jest.fn().mockResolvedValue(
-      new Map([
-        [uploadedHash, true],
-        [siblingHash, true]
-      ])
-    )
+    fileInfo = jest.fn().mockResolvedValue(undefined)
+    getProgress = jest.fn().mockResolvedValue(new Map([['a', 300]]))
+    getPending = jest.fn().mockResolvedValue(undefined)
+    reserve = jest.fn().mockResolvedValue(undefined)
     storeStream = jest.fn().mockResolvedValue(undefined)
-    upsert = jest.fn().mockResolvedValue(pendingRow)
     validateStaging = jest.fn().mockResolvedValue({ ok: () => true, errors: [] })
-    // Mirrors the real deployment-permission validation, which records the scene-replacement
-    // authorization on the deployment it validates; finalize forwards it to the deployer.
     validate = jest.fn(async (deployment: DeploymentToValidate) => {
       deployment.sceneReplacementAuthorization = { mode: 'unrestricted-owner' }
       return { ok: () => true, errors: [] }
     })
-    deployEntity = jest.fn().mockResolvedValue({ message: 'deployed' })
-
+    deployEntity = jest.fn().mockResolvedValue({ message: 'deployed', creationTimestamp: 123 })
     components = {
       config: { getNumber: jest.fn().mockResolvedValue(undefined) },
       coordinates: createCoordinatesComponent(),
+      deploymentProcessing: createDeploymentProcessingMock(),
       entityDeployer: { deployEntity },
-      limitsManager: { getMaxAllowedSizeInBytesFor: jest.fn().mockResolvedValue(10_000n) },
-      logs: {
-        getLogger: jest.fn().mockReturnValue({ debug: jest.fn(), error: jest.fn(), info: jest.fn(), warn: jest.fn() })
-      },
+      limitsManager: { getMaxAllowedSizeInBytesFor: jest.fn().mockResolvedValue(10000n) },
+      logs: { getLogger: jest.fn() },
+      metrics: { increment: jest.fn() },
       pendingScenesManager: {
-        getByEntityId: jest.fn().mockResolvedValue(undefined),
-        upsert,
-        deleteByEntityId: jest.fn().mockResolvedValue(undefined)
+        getByEntityId: getPending,
+        upsert: jest.fn().mockResolvedValue({ createdAt: new Date() }),
+        reserve,
+        recordStored: jest.fn(),
+        getProgress,
+        markMissing: jest.fn(),
+        getCompleted: jest.fn().mockResolvedValue({ creationTimestamp: 123 })
       },
-      storage: { fileInfoMultiple, existMultiple, storeStream },
+      storage: { fileInfo, storeStream },
       validator: { validateStaging, validate },
-      worldsManager: { hasNewerDeployedScene: jest.fn().mockResolvedValue(false), getWorldScenes: jest.fn() }
-    } as unknown as PartialDeploymentsComponents
+      worldsManager: { hasNewerDeployedScene: jest.fn().mockResolvedValue(false) }
+    } as unknown as Components
+    ;({ stage } = await createPartialDeploymentsComponent(components))
   })
 
   afterEach(() => {
     jest.resetAllMocks()
   })
 
-  describe('when a finalizing request completes a content set partly stored by sibling requests', () => {
-    let deployedSize: number
-    let complete: boolean
-
-    beforeEach(async () => {
-      const partialDeployments = await createPartialDeploymentsComponent(components)
-      const result = await partialDeployments.stage({
-        baseUrl: 'https://worlds.example',
-        entity,
-        entityRaw: JSON.stringify(entity),
-        authChain,
-        files
+  describe('and validation rejects the manifest', () => {
+    beforeEach(() => {
+      validateStaging.mockResolvedValueOnce({ ok: () => false, errors: ['invalid manifest'] })
+    })
+    it('should reject before looking up storage or reserving bytes', async () => {
+      await expect(stage(input)).rejects.toThrow('invalid manifest')
+      expect({ metadata: fileInfo.mock.calls.length, reservations: reserve.mock.calls.length }).toEqual({
+        metadata: 0,
+        reservations: 0
       })
-      complete = result.complete
-      deployedSize = deployEntity.mock.calls[0][6]
     })
+  })
 
-    it('should persist the size from fresh completeness metadata instead of the start-of-request snapshot', () => {
-      // The request-local budget estimate would count the sibling-stored file as 0 (absent from the
-      // start snapshot) and persist 300; the fresh metadata yields the true 800.
-      expect({ complete, deployedSize }).toEqual({ complete: true, deployedSize: 800 })
+  describe('and a resumed batch is still incomplete', () => {
+    beforeEach(() => {
+      getPending.mockResolvedValueOnce({ createdAt: new Date(), deployer: 'deployer', initialized: true })
     })
+    it('should report missing hashes without querying storage metadata', async () => {
+      expect(await stage(input)).toEqual({ complete: false, missing: ['b'] })
+      expect(fileInfo).not.toHaveBeenCalled()
+    })
+  })
 
-    it('should hand the full validation the fresh metadata snapshot', () => {
-      expect(validate.mock.calls[0][0].contentFileInfos).toEqual(
+  describe('and the staging budget is exhausted', () => {
+    beforeEach(() => {
+      reserve.mockRejectedValueOnce(new Error('budget exceeded'))
+    })
+    it('should reject before any storage write', async () => {
+      await expect(stage(input)).rejects.toThrow('budget exceeded')
+      expect(storeStream).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('and a resumed batch completes the manifest', () => {
+    beforeEach(() => {
+      getPending.mockResolvedValueOnce({ createdAt: new Date(), deployer: 'deployer', initialized: true })
+      getProgress.mockResolvedValueOnce(
         new Map([
-          [uploadedHash, { size: 300 }],
-          [siblingHash, { size: 500 }]
+          ['a', 300],
+          ['b', 500]
         ])
       )
+      fileInfo.mockImplementation(async (hash) => ({ size: hash === 'a' ? 300 : 500 }))
+      input.signal = new AbortController().signal
+      input.deadlineAt = Date.now() + 60000
     })
-  })
-
-  describe('when the staging request carries an abort signal and a deadline', () => {
-    let signal: AbortSignal
-    let deadlineAt: number
-
-    beforeEach(async () => {
-      signal = new AbortController().signal
-      deadlineAt = Date.now() + 60_000
-      const partialDeployments = await createPartialDeploymentsComponent(components)
-      await partialDeployments.stage({
-        baseUrl: 'https://worlds.example',
-        entity,
-        entityRaw: JSON.stringify(entity),
-        authChain,
-        files,
-        signal,
-        deadlineAt
+    it('should persist verified total size and preserve the completion timestamp', async () => {
+      expect(await stage(input)).toEqual({
+        complete: true,
+        result: { message: 'deployed', creationTimestamp: 123 },
+        creationTimestamp: 123
+      })
+      expect(deployEntity.mock.calls[0].slice(6, 9)).toEqual([800, input.signal, input.deadlineAt])
+    })
+    it('should perform only one final metadata pass', async () => {
+      await stage(input)
+      expect(fileInfo.mock.calls.map(([hash]) => hash)).toEqual(['a', 'b'])
+    })
+    it('should pass the request signal into storage writes', async () => {
+      await stage(input)
+      expect(storeStream.mock.calls[0][2]).toBe(input.signal)
+    })
+    describe('and storage has lost a previously acknowledged file', () => {
+      beforeEach(() => {
+        fileInfo.mockResolvedValueOnce(undefined)
+      })
+      it('should invalidate its receipt and request that file again', async () => {
+        expect(await stage(input)).toEqual({ complete: false, missing: ['a'] })
+        expect(components.pendingScenesManager.markMissing).toHaveBeenCalledWith('entity', ['a'], input.signal)
+        expect(deployEntity).not.toHaveBeenCalled()
       })
     })
-
-    it('should thread the signal into the staging validation and both signal and deadline into the finalize deploy', () => {
-      expect({
-        stagingSignal: validateStaging.mock.calls[0][0].signal,
-        deploySignal: deployEntity.mock.calls[0][7],
-        deployDeadlineAt: deployEntity.mock.calls[0][8]
-      }).toEqual({ stagingSignal: signal, deploySignal: signal, deployDeadlineAt: deadlineAt })
-    })
   })
 
-  describe('when the staging request arrives with an already-aborted signal', () => {
-    let abortReason: DeploymentProcessingAbortedError
-    let caughtError: unknown
-
-    beforeEach(async () => {
-      // The typed reason the deployment-processing abort context installs in production, so the
-      // rethrown error is the one the handler classifies as a 499.
-      abortReason = new DeploymentProcessingAbortedError(new DOMException('Client disconnected.', 'AbortError'))
-      const controller = new AbortController()
-      controller.abort(abortReason)
-      const partialDeployments = await createPartialDeploymentsComponent(components)
-      caughtError = await partialDeployments
-        .stage({
-          baseUrl: 'https://worlds.example',
-          entity,
-          entityRaw: JSON.stringify(entity),
-          authChain,
-          files,
-          signal: controller.signal
-        })
-        .catch((error) => error)
+  describe('and the request is already cancelled', () => {
+    beforeEach(() => {
+      input.signal = AbortSignal.abort(new Error('cancelled'))
     })
-
-    it('should reject with the abort reason without writing any state', () => {
-      expect({
-        caughtError,
-        pendingUpserts: upsert.mock.calls.length,
-        stores: storeStream.mock.calls.length,
-        deployments: deployEntity.mock.calls.length
-      }).toEqual({ caughtError: abortReason, pendingUpserts: 0, stores: 0, deployments: 0 })
+    it('should reject without looking up pending state', async () => {
+      await expect(stage(input)).rejects.toThrow('cancelled')
+      expect(getPending).not.toHaveBeenCalled()
     })
   })
 })

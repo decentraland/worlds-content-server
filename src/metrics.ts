@@ -10,6 +10,23 @@ export const metricDeclarations = {
   ...logMetricDeclarations,
   ...theGraphMetricDeclarations,
   ...pgMetricDeclarations,
+  partial_upload_metadata_checks: {
+    help: 'Content metadata checks performed by partial uploads',
+    type: IMetricsComponent.CounterType
+  },
+  partial_upload_batches: {
+    help: 'Accepted partial upload batches',
+    type: IMetricsComponent.CounterType,
+    labelNames: ['outcome']
+  },
+  partial_upload_reserved_bytes: {
+    help: 'Staging bytes reserved, including expired uploads awaiting cleanup',
+    type: IMetricsComponent.GaugeType
+  },
+  partial_upload_cleanup_backlog_bytes: {
+    help: 'Expired staging bytes awaiting successful cleanup',
+    type: IMetricsComponent.GaugeType
+  },
   world_deployments_counter: {
     help: 'Count world deployments',
     type: IMetricsComponent.CounterType,
