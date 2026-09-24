@@ -1,6 +1,7 @@
 import { START_COMPONENT, STOP_COMPONENT } from '@well-known-components/interfaces'
 import { test } from '../components'
 import { createContentLocks } from '../../src/adapters/content-locks/component'
+import { ContentLockTimeoutError } from '../../src/adapters/content-locks/errors'
 import { IContentLocks } from '../../src/adapters/content-locks/types'
 
 test('when requests wait for a busy entity lock', ({ components }) => {
@@ -141,6 +142,53 @@ test('when several writers queue behind an upload holding the shared lock', ({ c
     expect({ lockWaiters, writers: await writers }).toEqual({
       lockWaiters: 1,
       writers: ['writer 1', 'writer 2', 'writer 3']
+    })
+  })
+})
+
+test('when a writer waits behind an upload that keeps the shared lock past the bounded wait', ({ components }) => {
+  let locks: IContentLocks
+  let upload: Promise<string>
+  let writerError: unknown
+  let laterUpload: string
+
+  beforeEach(async () => {
+    locks = await createContentLocks(
+      {
+        config: {
+          ...components.config,
+          getNumber: async (key: string) => (key === 'CONTENT_LOCK_CONNECTIONS' ? 3 : components.config.getNumber(key))
+        },
+        logs: components.logs,
+        metrics: components.metrics
+      },
+      { writerLockTimeoutMs: 200, writerMaxWaitMs: 1_000 }
+    )
+    await locks[START_COMPONENT]?.({} as any)
+    let releaseUpload!: () => void
+    const held = new Promise<void>((resolve) => (releaseUpload = resolve))
+    upload = locks.withRead(async () => {
+      await held
+      return 'upload'
+    })
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    writerError = await locks.withWrite(async () => 'writer').catch((e) => e)
+    laterUpload = await Promise.race([
+      locks.withRead(async () => 'later upload'),
+      new Promise<string>((resolve) => setTimeout(() => resolve('blocked'), 3000))
+    ])
+    releaseUpload()
+  })
+
+  afterEach(async () => {
+    await Promise.allSettled([upload])
+    await locks[STOP_COMPONENT]?.()
+  })
+
+  it('should fail the writer with the typed busy error and leave the gate open to later uploads', () => {
+    expect({ writerError, laterUpload }).toEqual({
+      writerError: new ContentLockTimeoutError(),
+      laterUpload: 'later upload'
     })
   })
 })

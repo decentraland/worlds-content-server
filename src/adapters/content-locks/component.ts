@@ -4,11 +4,16 @@ import SQL from 'sql-template-strings'
 import { AppComponents } from '../../types'
 import { getPositiveInteger, raceWithSignal } from '../../logic/concurrency'
 import { UploadClient } from '../upload-transaction'
-import { IContentLocks } from './types'
+import { ContentLockTimeoutError } from './errors'
+import { ContentLocksOptions, IContentLocks } from './types'
 
 // Backoff while GC or another request holds a lock; the request's own deadline bounds the wait.
 const ENTITY_LOCK_RETRY_MIN_MS = 25
 const ENTITY_LOCK_RETRY_MAX_MS = 500
+// How long one writer attempt queues for the gate, and pauses after failing, so uploads get turns.
+const WRITER_LOCK_TIMEOUT_MS = 10_000
+const WRITER_MAX_WAIT_MS = 60_000
+const LOCK_NOT_AVAILABLE = '55P03'
 
 function isPoolTimeout(error: unknown): boolean {
   return error instanceof Error && error.message.includes('timeout exceeded when trying to connect')
@@ -34,19 +39,22 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
  * deletion takes it exclusively, one writer per process at a time. Never release a held lock until its
  * storage operations settle.
  * @param components Configuration, logging and metrics for the dedicated lock pool.
+ * @param options Writer lock bounds and pool connection timeout.
  * @returns Lifecycle-managed content locks shared by all instances using this database.
  */
 export async function createContentLocks(
   components: Pick<AppComponents, 'config' | 'logs' | 'metrics'>,
-  options: { connectionTimeoutMs?: number } = {}
+  options: ContentLocksOptions = {}
 ): Promise<IContentLocks> {
+  const writerLockTimeoutMs = options.writerLockTimeoutMs ?? WRITER_LOCK_TIMEOUT_MS
+  const writerMaxWaitMs = options.writerMaxWaitMs ?? WRITER_MAX_WAIT_MS
   const max = await getPositiveInteger(components.config, 'CONTENT_LOCK_CONNECTIONS', 16)
   const pg = await createPgComponent(components, {
     pool: { max, connectionTimeoutMillis: options.connectionTimeoutMs ?? 10_000 }
   })
 
-  // One attempt. Only GC blocks on the exclusive gate; uploads report a GC batch or a busy entity back
-  // instead of waiting, so they never hold a pool connection while waiting.
+  // One attempt. Only GC queues on the exclusive gate, bounded by lock_timeout; uploads report a GC batch
+  // or a busy entity back instead of waiting, so they never hold a pool connection while waiting.
   async function attempt<T>(
     exclusive: boolean,
     operation: (signal?: AbortSignal) => Promise<T>,
@@ -78,10 +86,18 @@ export async function createContentLocks(
     try {
       if (signal?.aborted) abort()
       if (exclusive) {
-        await raceWithSignal(
-          client.query(SQL`SELECT pg_advisory_lock(hashtextextended('worlds-content-gc', 0))`),
-          controller.signal
-        )
+        await client.query(`SET lock_timeout = ${Math.ceil(writerLockTimeoutMs)}`)
+        try {
+          await raceWithSignal(
+            client.query(SQL`SELECT pg_advisory_lock(hashtextextended('worlds-content-gc', 0))`),
+            controller.signal
+          )
+        } catch (error) {
+          if ((error as { code?: string }).code === LOCK_NOT_AVAILABLE) {
+            return { acquired: false }
+          }
+          throw error
+        }
       } else {
         const gate = await raceWithSignal(
           client.query<{ acquired: boolean }>(
@@ -116,6 +132,7 @@ export async function createContentLocks(
       if (!failed) {
         try {
           await client.query('SELECT pg_advisory_unlock_all()')
+          if (exclusive) await client.query('RESET lock_timeout')
         } catch {
           failed = true
         }
@@ -131,12 +148,16 @@ export async function createContentLocks(
     signal?: AbortSignal,
     entityId?: string
   ): Promise<T> {
+    const writerDeadline = Date.now() + writerMaxWaitMs
     for (let delayMs = ENTITY_LOCK_RETRY_MIN_MS; ; delayMs = Math.min(delayMs * 2, ENTITY_LOCK_RETRY_MAX_MS)) {
       const result = await attempt(exclusive, operation, signal, entityId)
       if (result.acquired) {
         return result.value
       }
-      await sleep(delayMs, signal)
+      if (exclusive && Date.now() + writerLockTimeoutMs > writerDeadline) {
+        throw new ContentLockTimeoutError()
+      }
+      await sleep(exclusive ? writerLockTimeoutMs : delayMs, signal)
     }
   }
 
