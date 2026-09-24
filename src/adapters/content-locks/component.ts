@@ -10,6 +10,10 @@ import { IContentLocks } from './types'
 const ENTITY_LOCK_RETRY_MIN_MS = 25
 const ENTITY_LOCK_RETRY_MAX_MS = 500
 
+function isPoolTimeout(error: unknown): boolean {
+  return error instanceof Error && error.message.includes('timeout exceeded when trying to connect')
+}
+
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   signal?.throwIfAborted()
   return new Promise((resolve, reject) => {
@@ -27,15 +31,19 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 
 /**
  * Creates a distributed storage/GC gate on a separate WKC connection pool. Uploads share the gate;
- * deletion takes it exclusively. Never release a held lock until its storage operations settle.
+ * deletion takes it exclusively, one writer per process at a time. Never release a held lock until its
+ * storage operations settle.
  * @param components Configuration, logging and metrics for the dedicated lock pool.
  * @returns Lifecycle-managed content locks shared by all instances using this database.
  */
 export async function createContentLocks(
-  components: Pick<AppComponents, 'config' | 'logs' | 'metrics'>
+  components: Pick<AppComponents, 'config' | 'logs' | 'metrics'>,
+  options: { connectionTimeoutMs?: number } = {}
 ): Promise<IContentLocks> {
   const max = await getPositiveInteger(components.config, 'CONTENT_LOCK_CONNECTIONS', 16)
-  const pg = await createPgComponent(components, { pool: { max, connectionTimeoutMillis: 10_000 } })
+  const pg = await createPgComponent(components, {
+    pool: { max, connectionTimeoutMillis: options.connectionTimeoutMs ?? 10_000 }
+  })
 
   // One attempt. Only GC blocks on the exclusive gate; uploads report a GC batch or a busy entity back
   // instead of waiting, so they never hold a pool connection while waiting.
@@ -47,13 +55,20 @@ export async function createContentLocks(
   ): Promise<{ acquired: false } | { acquired: true; value: T }> {
     signal?.throwIfAborted()
     const acquisition: Promise<UploadClient> = pg.getPool().connect()
-    const client = await raceWithSignal(acquisition, signal).catch((error: unknown) => {
+    let client: UploadClient
+    try {
+      client = await raceWithSignal(acquisition, signal)
+    } catch (error) {
       void acquisition.then(
         (lateClient) => lateClient.release(),
         () => undefined
       )
+      // A saturated pool is busy like a held lock: retried until the request's own deadline.
+      if (isPoolTimeout(error)) {
+        return { acquired: false }
+      }
       throw error
-    })
+    }
     const controller = new AbortController()
     const abort = (): void => controller.abort(signal?.reason)
     const connectionError = (error: Error): void => controller.abort(error)
@@ -125,10 +140,19 @@ export async function createContentLocks(
     }
   }
 
+  // Writers are rare (GC and expired-upload cleanup). Queuing them in-process keeps a waiting writer from
+  // holding more than one connection while it waits behind in-flight uploads.
+  let writers: Promise<unknown> = Promise.resolve()
+  function withWrite<T>(operation: () => Promise<T>): Promise<T> {
+    const turn = writers.then(() => run(true, operation))
+    writers = turn.catch(() => undefined)
+    return turn
+  }
+
   return {
     [START_COMPONENT]: () => pg.start(),
     [STOP_COMPONENT]: () => pg.stop(),
     withRead: (operation, signal, entityId) => run(false, operation, signal, entityId),
-    withWrite: (operation) => run(true, operation)
+    withWrite
   }
 }
