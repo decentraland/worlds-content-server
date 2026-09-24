@@ -425,6 +425,44 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
     })
   })
 
+  describe('when another authorized signer sends a batch with the entity file for a live upload', () => {
+    let response: Awaited<ReturnType<typeof post>>
+    let reservedBefore: string
+    let reservedAfter: string
+
+    async function reservedBytes(): Promise<string> {
+      const { database } = components
+      const result = await database.query<{ reserved_bytes: string }>(
+        `SELECT reserved_bytes FROM pending_scenes WHERE entity_id = '${entityId}'`
+      )
+      return result.rows[0].reserved_bytes
+    }
+
+    beforeEach(async () => {
+      await post(buildForm([entityId], Authenticator.signPayload(identity.authChain, entityId)))
+      reservedBefore = await reservedBytes()
+      const other = await getIdentity()
+      const { namePermissionChecker } = stubComponents
+      namePermissionChecker.checkPermission.mockResolvedValue(true)
+      response = await post(
+        buildForm([entityId, contentHashes[0]], Authenticator.signPayload(other.authChain, entityId))
+      )
+      reservedAfter = await reservedBytes()
+    })
+
+    it('should reject it without charging the upload owner', async () => {
+      expect({
+        status: response.status,
+        body: await response.json(),
+        unchanged: reservedAfter === reservedBefore
+      }).toEqual({
+        status: 400,
+        body: expect.objectContaining({ message: 'This upload was started by another account.' }),
+        unchanged: true
+      })
+    })
+  })
+
   describe('when the first partial request omits the entity file', () => {
     let response: Awaited<ReturnType<typeof post>>
 

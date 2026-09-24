@@ -71,6 +71,10 @@ export async function createPendingScenesManager(
           if (existing.rows[0].created_at.getTime() < Date.now() - ttlMs) {
             throw new InvalidRequestError('This upload expired. Create a new entity with a fresh timestamp.')
           }
+          // Reservations are charged to the upload's creator, so nobody else may add batches to it.
+          if (existing.rows[0].deployer !== deployer) {
+            throw new InvalidRequestError('This upload was started by another account.')
+          }
           return toPendingScene(existing.rows[0])
         }
         const count = await query<{ count: string }>(
