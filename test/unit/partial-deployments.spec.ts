@@ -18,6 +18,10 @@ describe('when staging a partial deployment', () => {
   let validateStaging: jest.Mock
   let validate: jest.Mock
   let deployEntity: jest.Mock
+  let upsert: jest.Mock
+  let getWorldScenes: jest.Mock
+  let getCompleted: jest.Mock
+  let deleteByEntityId: jest.Mock
   let stage: Awaited<ReturnType<typeof createPartialDeploymentsComponent>>['stage']
 
   beforeEach(async () => {
@@ -50,6 +54,10 @@ describe('when staging a partial deployment', () => {
       return { ok: () => true, errors: [] }
     })
     deployEntity = jest.fn().mockResolvedValue({ message: 'deployed', creationTimestamp: 123 })
+    upsert = jest.fn().mockResolvedValue({ createdAt: new Date() })
+    getWorldScenes = jest.fn().mockResolvedValue({ scenes: [], total: 0 })
+    getCompleted = jest.fn().mockResolvedValue({ creationTimestamp: 123 })
+    deleteByEntityId = jest.fn().mockResolvedValue(undefined)
     components = {
       config: { getNumber: jest.fn().mockResolvedValue(undefined) },
       coordinates: createCoordinatesComponent(),
@@ -60,16 +68,17 @@ describe('when staging a partial deployment', () => {
       metrics: { increment: jest.fn() },
       pendingScenesManager: {
         getByEntityId: getPending,
-        upsert: jest.fn().mockResolvedValue({ createdAt: new Date() }),
+        upsert,
         reserve,
         recordStored: jest.fn(),
         getProgress,
         markMissing: jest.fn(),
-        getCompleted: jest.fn().mockResolvedValue({ creationTimestamp: 123 })
+        getCompleted,
+        deleteByEntityId
       },
       storage: { fileInfo, storeStream },
       validator: { validateStaging, validate },
-      worldsManager: { hasNewerDeployedScene: jest.fn().mockResolvedValue(false) }
+      worldsManager: { hasNewerDeployedScene: jest.fn().mockResolvedValue(false), getWorldScenes }
     } as unknown as Components
     ;({ stage } = await createPartialDeploymentsComponent(components))
   })
@@ -159,6 +168,94 @@ describe('when staging a partial deployment', () => {
     it('should reject without looking up pending state', async () => {
       await expect(stage(input)).rejects.toThrow('cancelled')
       expect(getPending).not.toHaveBeenCalled()
+    })
+  })
+  describe('and a resume batch omits the manifest', () => {
+    let validatedFiles: string[]
+
+    beforeEach(async () => {
+      getPending.mockResolvedValueOnce({ createdAt: new Date(), deployer: 'deployer', initialized: true })
+      input.manifest = { size: 40, getStream: jest.fn(), getHash: jest.fn(), asBuffer: jest.fn() }
+      await stage(input)
+      validatedFiles = Array.from((validateStaging.mock.calls[0][0] as DeploymentToValidate).files.keys())
+    })
+
+    it('should validate the manifest but only charge and store the uploaded files', () => {
+      expect({
+        validatedFiles,
+        incomingBytes: reserve.mock.calls[0][3],
+        stored: storeStream.mock.calls.map(([hash]) => hash)
+      }).toEqual({ validatedFiles: ['a', 'entity'], incomingBytes: 300, stored: ['a'] })
+    })
+  })
+
+  describe('and the entity is already deployed', () => {
+    let error: unknown
+
+    beforeEach(async () => {
+      getWorldScenes.mockResolvedValueOnce({ scenes: [{ entityId: 'entity' }], total: 1 })
+      error = await stage(input).catch((e) => e)
+    })
+
+    it('should reject it before creating an upload or reserving bytes', () => {
+      expect({
+        message: (error as Error).message,
+        uploads: upsert.mock.calls.length,
+        reservations: reserve.mock.calls.length
+      }).toEqual({ message: 'Deployment failed: this entity is already deployed.', uploads: 0, reservations: 0 })
+    })
+  })
+
+  describe('and publication collides with a concurrent publication of the same entity', () => {
+    beforeEach(() => {
+      getPending.mockResolvedValueOnce({ createdAt: new Date(), deployer: 'deployer', initialized: true })
+      getProgress.mockResolvedValueOnce(
+        new Map([
+          ['a', 300],
+          ['b', 500]
+        ])
+      )
+      fileInfo.mockImplementation(async (hash) => ({ size: hash === 'a' ? 300 : 500 }))
+      deployEntity.mockRejectedValueOnce(Object.assign(new Error('duplicate key'), { code: '23505' }))
+      getWorldScenes
+        .mockResolvedValueOnce({ scenes: [], total: 0 })
+        .mockResolvedValueOnce({ scenes: [{ entityId: 'entity' }], total: 1 })
+    })
+
+    describe('and the completion receipt belongs to this signer', () => {
+      let result: Awaited<ReturnType<typeof stage>>
+
+      beforeEach(async () => {
+        getCompleted.mockResolvedValueOnce({ creationTimestamp: 456, worldName: 'world.dcl.eth', parcels: ['0,0'] })
+        result = await stage(input)
+      })
+
+      it('should drop this request staging state and answer with the original completion', () => {
+        expect({ result, cleaned: deleteByEntityId.mock.calls }).toEqual({
+          result: {
+            complete: true,
+            creationTimestamp: 456,
+            result: { message: expect.stringContaining('world.dcl.eth') }
+          },
+          cleaned: [['entity']]
+        })
+      })
+    })
+
+    describe('and there is no completion receipt for this signer', () => {
+      let error: unknown
+
+      beforeEach(async () => {
+        getCompleted.mockResolvedValueOnce(undefined)
+        error = await stage(input).catch((e) => e)
+      })
+
+      it('should drop this request staging state and reject it as already deployed', () => {
+        expect({ message: (error as Error).message, cleaned: deleteByEntityId.mock.calls }).toEqual({
+          message: 'Deployment failed: this entity is already deployed.',
+          cleaned: [['entity']]
+        })
+      })
     })
   })
 })

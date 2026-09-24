@@ -377,6 +377,54 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
     })
   })
 
+  describe('when the completing batch is sent twice concurrently', () => {
+    let statuses: number[]
+    let timestamps: number[]
+
+    beforeEach(async () => {
+      const authChain = Authenticator.signPayload(identity.authChain, entityId)
+      await post(buildForm([entityId, contentHashes[0]], authChain))
+      const responses = await Promise.all([
+        post(buildForm([contentHashes[1]], authChain)),
+        post(buildForm([contentHashes[1]], authChain))
+      ])
+      statuses = responses.map((response) => response.status)
+      timestamps = await Promise.all(responses.map(async (response) => (await response.json()).creationTimestamp))
+    })
+
+    it('should answer both with the same completion and leave no staging state', async () => {
+      expect({
+        statuses,
+        sameTimestamp: timestamps[0] === timestamps[1],
+        pending: await countPending(),
+        deployed: await countDeployedScenes()
+      }).toEqual({ statuses: [200, 200], sameTimestamp: true, pending: 0, deployed: 1 })
+    })
+  })
+
+  describe('when another authorized signer stages an already deployed entity', () => {
+    let response: Awaited<ReturnType<typeof post>>
+
+    beforeEach(async () => {
+      const authChain = Authenticator.signPayload(identity.authChain, entityId)
+      await post(buildForm([entityId, ...contentHashes], authChain))
+      const other = await getIdentity()
+      const { namePermissionChecker } = stubComponents
+      namePermissionChecker.checkPermission.mockResolvedValue(true)
+      response = await post(
+        buildForm([entityId, contentHashes[0]], Authenticator.signPayload(other.authChain, entityId))
+      )
+    })
+
+    it('should reject it without leaving a reservation behind', async () => {
+      expect({ status: response.status, body: await response.json(), pending: await countPending() }).toEqual({
+        status: 400,
+        body: expect.objectContaining({ message: 'Deployment failed: this entity is already deployed.' }),
+        pending: 0
+      })
+    })
+  })
+
   describe('when the first partial request omits the entity file', () => {
     let response: Awaited<ReturnType<typeof post>>
 

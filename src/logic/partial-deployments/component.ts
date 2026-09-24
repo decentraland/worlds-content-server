@@ -1,10 +1,17 @@
 import { InvalidRequestError } from '@dcl/http-commons'
+import { buildSceneDeploymentMessage } from '../utils'
 import { FileInfo } from '@dcl/catalyst-storage'
 import { AppComponents, DeploymentToValidate, MissingSceneReplacementAuthorizationError } from '../../types'
 import { getPositiveInteger, mapWithConcurrency, raceWithSignal } from '../concurrency'
 import { calculateDeploymentSizeFromFileInfos } from '../validations/scene'
 import { FileReceipt } from '../../adapters/pending-scenes-manager/types'
 import { IPartialDeploymentsComponent, StageDeploymentInput, StageDeploymentResult } from './types'
+
+const ALREADY_DEPLOYED = 'Deployment failed: this entity is already deployed.'
+
+function isUniqueViolation(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && (error as { code?: string }).code === '23505'
+}
 
 /**
  * Stages authenticated, entity-keyed upload batches. The HTTP handler holds the shared content lock
@@ -57,12 +64,14 @@ export async function createPartialDeploymentsComponent(
   }
 
   async function stage(input: StageDeploymentInput): Promise<StageDeploymentResult> {
-    const { baseUrl, entity, entityRaw, authChain, files, signal, deadlineAt } = input
+    const { baseUrl, entity, entityRaw, authChain, files, manifest, signal, deadlineAt } = input
     signal?.throwIfAborted()
+    // Validation and publication see the manifest; accounting and storage only see uploaded files.
+    const deploymentFiles = manifest ? new Map([...files, [entity.id, manifest]]) : files
     const pending = await pendingScenesManager.getByEntityId(entity.id, signal)
     const validation: DeploymentToValidate = {
       entity,
-      files,
+      files: deploymentFiles,
       authChain,
       contentHashesInStorage: new Map(),
       pendingCreatedAt: pending?.createdAt,
@@ -79,6 +88,11 @@ export async function createPartialDeploymentsComponent(
     const contentHashes = Array.from(new Set((entity.content ?? []).map((content) => content.hash)))
     const worldName = entity.metadata.worldConfiguration.name.toLowerCase()
     const parcels = Array.from(new Set(coordinates.canonicalizeParcels(entity.pointers)))
+    // A deployed entity is never staged again: its original signer already got the completion receipt,
+    // and anyone else would only leave a reservation behind before failing at publication.
+    if (await isDeployed(worldName, entity.id, signal)) {
+      throw new InvalidRequestError(ALREADY_DEPLOYED)
+    }
     if (!pending && (await raceWithSignal(worldsManager.hasNewerDeployedScene(worldName, entity), signal))) {
       throw new InvalidRequestError(
         'Deployment failed: a newer scene is already deployed on one or more of these parcels.'
@@ -135,7 +149,7 @@ export async function createPartialDeploymentsComponent(
     const present = new Map(contentHashes.map((hash) => [hash, true]))
     const deployment: DeploymentToValidate = {
       entity,
-      files,
+      files: deploymentFiles,
       authChain,
       contentHashesInStorage: present,
       contentFileInfos: presentInfos,
@@ -146,20 +160,43 @@ export async function createPartialDeploymentsComponent(
     if (!fullValidation.ok()) throw new InvalidRequestError(`Deployment failed: ${fullValidation.errors.join(', ')}`)
     if (!deployment.sceneReplacementAuthorization) throw new MissingSceneReplacementAuthorizationError(entity.id)
 
-    const result = await entityDeployer.deployEntity(
-      baseUrl,
-      entity,
-      present,
-      files,
-      entityRaw,
-      authChain,
-      calculateDeploymentSizeFromFileInfos(entity, files, presentInfos),
-      signal,
-      deadlineAt,
-      deployment.sceneReplacementAuthorization
-    )
+    let result: Awaited<ReturnType<typeof entityDeployer.deployEntity>>
+    try {
+      result = await entityDeployer.deployEntity(
+        baseUrl,
+        entity,
+        present,
+        deploymentFiles,
+        entityRaw,
+        authChain,
+        calculateDeploymentSizeFromFileInfos(entity, deploymentFiles, presentInfos),
+        signal,
+        deadlineAt,
+        deployment.sceneReplacementAuthorization
+      )
+    } catch (error) {
+      if (!isUniqueViolation(error) || !(await isDeployed(worldName, entity.id).catch(() => false))) {
+        throw error
+      }
+      // Published concurrently: drop this request's staging state and answer like a completion retry.
+      await pendingScenesManager.deleteByEntityId(entity.id).catch(() => undefined)
+      const completed = await pendingScenesManager.getCompleted(entity.id, authChain[0].payload, signal)
+      if (!completed) {
+        throw new InvalidRequestError(ALREADY_DEPLOYED)
+      }
+      return {
+        complete: true,
+        creationTimestamp: completed.creationTimestamp,
+        result: { message: buildSceneDeploymentMessage(baseUrl, completed.worldName, completed.parcels) }
+      }
+    }
     // Publication returns the same timestamp it atomically persists with the completion receipt.
     return { complete: true, result, creationTimestamp: result.creationTimestamp }
+  }
+
+  async function isDeployed(worldName: string, entityId: string, signal?: AbortSignal): Promise<boolean> {
+    const { scenes } = await raceWithSignal(worldsManager.getWorldScenes({ worldName, entityId }, { limit: 1 }), signal)
+    return scenes.length > 0
   }
 
   return { stage }

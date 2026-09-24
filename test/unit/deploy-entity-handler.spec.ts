@@ -128,6 +128,38 @@ describe('deployEntity', () => {
     })
   })
 
+  describe('when a partial request is not validly signed', () => {
+    let validateSignatureSpy: jest.SpyInstance
+    let withRead: jest.Mock
+    let caughtError: unknown
+
+    beforeEach(async () => {
+      validateSignatureSpy = jest
+        .spyOn(Authenticator, 'validateSignature')
+        .mockResolvedValue({ ok: false, message: 'bad signature' })
+      withRead = jest.fn()
+      const baseContext = createContext(entityId, { [entityId]: makeFile(Buffer.from('{}')) })
+      baseContext.formData.fields.partial = makeField('true')
+      const context = {
+        ...baseContext,
+        components: { ...baseContext.components, contentLocks: { withRead } }
+      } as unknown as DeployContext
+      caughtError = await deployEntity(context).catch((error) => error)
+    })
+
+    afterEach(() => {
+      validateSignatureSpy.mockRestore()
+      jest.resetAllMocks()
+    })
+
+    it('should reject it without taking any content lock', () => {
+      expect({ caughtError, locks: withRead.mock.calls.length }).toEqual({
+        caughtError: new InvalidRequestError('Invalid auth chain: bad signature'),
+        locks: 0
+      })
+    })
+  })
+
   describe('when a partial resume request omits the entity file', () => {
     let validateSignatureSpy: jest.SpyInstance
     let getByEntityId: jest.Mock

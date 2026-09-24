@@ -9,7 +9,10 @@ export type StageDeploymentInput = {
   entity: Entity
   entityRaw: string
   authChain: AuthChain
+  /** Files uploaded in this request; only these are charged, stored and recorded. */
   files: Map<string, DeploymentFile>
+  /** The entity file read back from storage when this request didn't upload it. Validated, never charged. */
+  manifest?: DeploymentFile
   /**
    * Request-scoped cancellation (client disconnect or the deployment-processing deadline). Bounds this
    * staging request's validation, hashing, file storing, and — when it finalizes — the deploy itself.
