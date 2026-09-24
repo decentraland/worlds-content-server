@@ -102,17 +102,34 @@ export async function createPendingScenesManager(
     incomingBytes: number,
     signal?: AbortSignal
   ): Promise<void> {
+    const owner = await raceWithSignal(
+      database.query<{ deployer: string }>(SQL`SELECT deployer FROM pending_scenes WHERE entity_id = ${entityId}`),
+      signal
+    )
+    if (!owner.rows[0]) throw new InvalidRequestError('Upload no longer exists; resend its manifest.')
+    const deployer = owner.rows[0].deployer
+    // Committed on its own, before admission: the batch was received and processed even if it is then
+    // rejected, so repeating rejected batches can't escape the rate limit.
+    const rate = await raceWithSignal(
+      database.query<{ bytes: string }>(SQL`
+      INSERT INTO partial_upload_rates (deployer, window_started, bytes) VALUES (${deployer}, now(), ${incomingBytes})
+      ON CONFLICT (deployer) DO UPDATE SET
+        bytes = CASE WHEN partial_upload_rates.window_started < now() - interval '1 minute'
+          THEN EXCLUDED.bytes ELSE partial_upload_rates.bytes + EXCLUDED.bytes END,
+        window_started = CASE WHEN partial_upload_rates.window_started < now() - interval '1 minute'
+          THEN now() ELSE partial_upload_rates.window_started END
+      RETURNING bytes`),
+      signal
+    )
+    if (BigInt(rate.rows[0].bytes) > BigInt(bytesPerMinute)) {
+      throw new InvalidRequestError('Partial upload byte rate exceeded. Retry after one minute.')
+    }
     await withUploadTransaction(
       database,
       async (query) => {
         // One short global admission critical section makes both aggregate budgets atomic. No storage
         // or external validation occurs under this lock. Expired reservations stay counted until cleanup.
         await query(SQL`SELECT pg_advisory_xact_lock(hashtextextended('partial-upload-budget', 0))`)
-        const owner = await query<{ deployer: string }>(
-          SQL`SELECT deployer FROM pending_scenes WHERE entity_id = ${entityId}`
-        )
-        if (!owner.rows[0]) throw new InvalidRequestError('Upload no longer exists; resend its manifest.')
-        const deployer = owner.rows[0].deployer
         if (receipts.length) {
           await query(SQL`INSERT INTO pending_scene_files (entity_id, hash, size, stored)
           SELECT ${entityId}, r.hash, r.size, r.stored
@@ -136,21 +153,15 @@ export async function createPendingScenesManager(
         if (BigInt(total.account) > accountBytes || BigInt(total.total) > globalBytes) {
           throw new InvalidRequestError('Partial upload storage budget exceeded. Complete uploads or wait for cleanup.')
         }
-        const rate = await query<{ bytes: string }>(SQL`
-        INSERT INTO partial_upload_rates (deployer, window_started, bytes) VALUES (${deployer}, now(), ${incomingBytes})
-        ON CONFLICT (deployer) DO UPDATE SET
-          bytes = CASE WHEN partial_upload_rates.window_started < now() - interval '1 minute'
-            THEN EXCLUDED.bytes ELSE partial_upload_rates.bytes + EXCLUDED.bytes END,
-          window_started = CASE WHEN partial_upload_rates.window_started < now() - interval '1 minute'
-            THEN now() ELSE partial_upload_rates.window_started END
-        RETURNING bytes`)
-        if (BigInt(rate.rows[0].bytes) > BigInt(bytesPerMinute)) {
-          throw new InvalidRequestError('Partial upload byte rate exceeded. Retry after one minute.')
-        }
         metrics.observe('partial_upload_reserved_bytes', {}, Number(total.total))
       },
       signal
     )
+  }
+
+  async function discardUnadmitted(entityId: string): Promise<void> {
+    await database.query(SQL`DELETE FROM pending_scenes WHERE entity_id = ${entityId} AND reserved_bytes = 0
+      AND NOT EXISTS (SELECT 1 FROM pending_scene_files WHERE entity_id = ${entityId})`)
   }
 
   async function recordStored(
@@ -262,6 +273,7 @@ export async function createPendingScenesManager(
     getByEntityId,
     upsert,
     reserve,
+    discardUnadmitted,
     recordStored,
     getProgress,
     markMissing,

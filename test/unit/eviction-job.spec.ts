@@ -27,6 +27,7 @@ describe('EvictionJob', () => {
       getByEntityId: jest.fn(),
       upsert: jest.fn(),
       reserve: jest.fn(),
+      discardUnadmitted: jest.fn(),
       recordStored: jest.fn(),
       getProgress: jest.fn().mockResolvedValue(new Map()),
       markMissing: jest.fn(),

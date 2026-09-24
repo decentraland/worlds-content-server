@@ -6,7 +6,7 @@ import { getPositiveInteger, raceWithSignal } from '../../logic/concurrency'
 import { UploadClient } from '../upload-transaction'
 import { IContentLocks } from './types'
 
-// Backoff while another request holds the entity lock; the request's own deadline bounds the wait.
+// Backoff while GC or another request holds a lock; the request's own deadline bounds the wait.
 const ENTITY_LOCK_RETRY_MIN_MS = 25
 const ENTITY_LOCK_RETRY_MAX_MS = 500
 
@@ -37,8 +37,8 @@ export async function createContentLocks(
   const max = await getPositiveInteger(components.config, 'CONTENT_LOCK_CONNECTIONS', 16)
   const pg = await createPgComponent(components, { pool: { max, connectionTimeoutMillis: 10_000 } })
 
-  // One attempt: the shared/exclusive gate blocks only behind a GC batch, while a busy entity is
-  // reported back instead of awaited so waiters never hold a pool connection.
+  // One attempt. Only GC blocks on the exclusive gate; uploads report a GC batch or a busy entity back
+  // instead of waiting, so they never hold a pool connection while waiting.
   async function attempt<T>(
     exclusive: boolean,
     operation: (signal?: AbortSignal) => Promise<T>,
@@ -62,10 +62,22 @@ export async function createContentLocks(
     let failed = false
     try {
       if (signal?.aborted) abort()
-      const query = exclusive
-        ? SQL`SELECT pg_advisory_lock(hashtextextended('worlds-content-gc', 0))`
-        : SQL`SELECT pg_advisory_lock_shared(hashtextextended('worlds-content-gc', 0))`
-      await raceWithSignal(client.query(query), controller.signal)
+      if (exclusive) {
+        await raceWithSignal(
+          client.query(SQL`SELECT pg_advisory_lock(hashtextextended('worlds-content-gc', 0))`),
+          controller.signal
+        )
+      } else {
+        const gate = await raceWithSignal(
+          client.query<{ acquired: boolean }>(
+            SQL`SELECT pg_try_advisory_lock_shared(hashtextextended('worlds-content-gc', 0)) AS acquired`
+          ),
+          controller.signal
+        )
+        if (!gate.rows[0]?.acquired) {
+          return { acquired: false }
+        }
+      }
       if (entityId) {
         const entityLock = await raceWithSignal(
           client.query<{ acquired: boolean }>(

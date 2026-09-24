@@ -22,6 +22,7 @@ describe('when staging a partial deployment', () => {
   let getWorldScenes: jest.Mock
   let getCompleted: jest.Mock
   let deleteByEntityId: jest.Mock
+  let discardUnadmitted: jest.Mock
   let stage: Awaited<ReturnType<typeof createPartialDeploymentsComponent>>['stage']
 
   beforeEach(async () => {
@@ -58,6 +59,7 @@ describe('when staging a partial deployment', () => {
     getWorldScenes = jest.fn().mockResolvedValue({ scenes: [], total: 0 })
     getCompleted = jest.fn().mockResolvedValue({ creationTimestamp: 123 })
     deleteByEntityId = jest.fn().mockResolvedValue(undefined)
+    discardUnadmitted = jest.fn().mockResolvedValue(undefined)
     components = {
       config: { getNumber: jest.fn().mockResolvedValue(undefined) },
       coordinates: createCoordinatesComponent(),
@@ -74,7 +76,8 @@ describe('when staging a partial deployment', () => {
         getProgress,
         markMissing: jest.fn(),
         getCompleted,
-        deleteByEntityId
+        deleteByEntityId,
+        discardUnadmitted
       },
       storage: { fileInfo, storeStream },
       validator: { validateStaging, validate },
@@ -256,6 +259,33 @@ describe('when staging a partial deployment', () => {
           cleaned: [['entity']]
         })
       })
+    })
+  })
+  describe('and the first batch of an upload is not admitted', () => {
+    let error: unknown
+
+    beforeEach(async () => {
+      reserve.mockRejectedValueOnce(new Error('budget exceeded'))
+      error = await stage(input).catch((e) => e)
+    })
+
+    it('should discard the upload it created so it does not hold a slot of the cap', () => {
+      expect({ error, discarded: discardUnadmitted.mock.calls }).toEqual({
+        error: new Error('budget exceeded'),
+        discarded: [['entity']]
+      })
+    })
+  })
+
+  describe('and a later batch of an upload is not admitted', () => {
+    beforeEach(async () => {
+      getPending.mockResolvedValueOnce({ createdAt: new Date(), deployer: 'deployer', initialized: true })
+      reserve.mockRejectedValueOnce(new Error('rate exceeded'))
+      await stage(input).catch(() => undefined)
+    })
+
+    it('should keep the existing upload', () => {
+      expect(discardUnadmitted).not.toHaveBeenCalled()
     })
   })
 })

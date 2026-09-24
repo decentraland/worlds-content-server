@@ -12,6 +12,7 @@ import {
   SceneReplacementConflictError
 } from '../../types'
 import { extractAuthChain } from '../../logic/extract-auth-chain'
+import { validateAuthChain, validateSignature, validateSigner } from '../../logic/validations/common'
 import { buildSceneDeploymentMessage } from '../../logic/utils'
 import { InvalidRequestError } from '@dcl/http-commons'
 import { FileInfo, IContentStorageComponent } from '@dcl/catalyst-storage'
@@ -123,7 +124,8 @@ type AuthenticatedRequest = { entityId: string; authChain: AuthChain; isPartial:
 
 /**
  * Cheap request checks that must run before any content lock is taken, so a request that can't be
- * authenticated never holds a lock connection. Partial batches are signature-checked locally here.
+ * authenticated never holds a lock connection. The signature check is the same local one the
+ * deployment validator runs.
  */
 async function authenticateRequest(ctx: DeployEntityContext): Promise<AuthenticatedRequest> {
   const entityId = requireString(ctx.formData.fields.entityId?.value[0])
@@ -135,6 +137,12 @@ async function authenticateRequest(ctx: DeployEntityContext): Promise<Authentica
     if (!AuthChain.validate(authChain)) throw new InvalidRequestError('Invalid auth chain.')
     const signature = await Authenticator.validateSignature(entityId, authChain, null, Date.now())
     if (!signature.ok) throw new InvalidRequestError(`Invalid auth chain: ${signature.message}`)
+    return { entityId, authChain, isPartial }
+  }
+  const identity = { entity: { id: entityId }, authChain } as DeploymentToValidate
+  for (const validation of [validateAuthChain, validateSigner, validateSignature]) {
+    const result = await validation(identity)
+    if (!result.ok()) throw new InvalidRequestError(`Deployment failed: ${result.errors.join(', ')}`)
   }
   return { entityId, authChain, isPartial }
 }

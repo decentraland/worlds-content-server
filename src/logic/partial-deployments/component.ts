@@ -120,7 +120,13 @@ export async function createPartialDeploymentsComponent(
       { maxPendingPerDeployer },
       signal
     )
-    await pendingScenesManager.reserve(entity.id, [...receipts.values()], maxSize, incomingBytes, signal)
+    try {
+      await pendingScenesManager.reserve(entity.id, [...receipts.values()], maxSize, incomingBytes, signal)
+    } catch (error) {
+      // A first batch that isn't admitted must not keep its new upload holding a slot of the cap.
+      if (!pending) await pendingScenesManager.discardUnadmitted(entity.id).catch(() => undefined)
+      throw error
+    }
 
     await deploymentProcessing.trackStage('storage', files.size, () =>
       mapWithConcurrency(

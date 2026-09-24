@@ -53,3 +53,49 @@ test('when requests wait for a busy entity lock', ({ components }) => {
     })
   })
 })
+
+test('when uploads arrive while garbage collection holds the exclusive lock', ({ components }) => {
+  let locks: IContentLocks
+  let gc: Promise<string>
+  let uploads: Promise<string[]>
+  let lockWaiters: number
+
+  beforeEach(async () => {
+    locks = await createContentLocks({
+      config: {
+        ...components.config,
+        getNumber: async (key: string) => (key === 'CONTENT_LOCK_CONNECTIONS' ? 2 : components.config.getNumber(key))
+      },
+      logs: components.logs,
+      metrics: components.metrics
+    })
+    await locks[START_COMPONENT]?.({} as any)
+    let releaseGc!: () => void
+    const held = new Promise<void>((resolve) => (releaseGc = resolve))
+    gc = locks.withWrite(async () => {
+      await held
+      return 'gc'
+    })
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    uploads = Promise.all([1, 2, 3].map((i) => locks.withRead(async () => `upload ${i}`)))
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    const waiting = await components.database.query<{ count: string }>(
+      `SELECT COUNT(*) AS count FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND wait_event = 'advisory'`
+    )
+    lockWaiters = Number(waiting.rows[0].count)
+    releaseGc()
+  })
+
+  afterEach(async () => {
+    await Promise.allSettled([gc, uploads])
+    await locks[STOP_COMPONENT]?.()
+  })
+
+  it('should not hold connections waiting on the lock and run every upload once GC finishes', async () => {
+    expect({ lockWaiters, gc: await gc, uploads: await uploads }).toEqual({
+      lockWaiters: 0,
+      gc: 'gc',
+      uploads: ['upload 1', 'upload 2', 'upload 3']
+    })
+  })
+})

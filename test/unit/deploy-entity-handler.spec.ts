@@ -24,13 +24,18 @@ describe('deployEntity', () => {
   const entityId = 'bafkreiahsvnr4x4rnskhkwfbnbplkbqhzb3xagdwpyfy44lgcndmhyizde'
   let tmpDir: string
   let fileCounter: number
+  let defaultSignatureSpy: jest.SpyInstance
 
   beforeEach(() => {
     tmpDir = mkdtempSync(path.join(os.tmpdir(), 'deploy-entity-test-'))
     fileCounter = 0
+    // Every request is authenticated before the handler takes a lock; the fixture auth chain is
+    // unsigned, so contexts that test later stages treat it as valid.
+    defaultSignatureSpy = jest.spyOn(Authenticator, 'validateSignature').mockResolvedValue({ ok: true })
   })
 
   afterEach(() => {
+    defaultSignatureSpy.mockRestore()
     rmSync(tmpDir, { recursive: true, force: true })
   })
 
@@ -125,6 +130,37 @@ describe('deployEntity', () => {
 
       expect(error).toBeInstanceOf(InvalidRequestError)
       expect(error.message).toBe('The entity file is not valid JSON.')
+    })
+  })
+
+  describe('when a regular deployment is not validly signed', () => {
+    let validateSignatureSpy: jest.SpyInstance
+    let withRead: jest.Mock
+    let caughtError: unknown
+
+    beforeEach(async () => {
+      validateSignatureSpy = jest
+        .spyOn(Authenticator, 'validateSignature')
+        .mockResolvedValue({ ok: false, message: 'bad signature' })
+      withRead = jest.fn()
+      const baseContext = createContext(entityId, { [entityId]: makeFile(Buffer.from('{}')) })
+      const context = {
+        ...baseContext,
+        components: { ...baseContext.components, contentLocks: { withRead } }
+      } as unknown as DeployContext
+      caughtError = await deployEntity(context).catch((error) => error)
+    })
+
+    afterEach(() => {
+      validateSignatureSpy.mockRestore()
+      jest.resetAllMocks()
+    })
+
+    it('should reject it without taking any content lock', () => {
+      expect({ caughtError, locks: withRead.mock.calls.length }).toEqual({
+        caughtError: new InvalidRequestError('Deployment failed: bad signature'),
+        locks: 0
+      })
     })
   })
 

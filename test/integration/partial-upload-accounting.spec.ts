@@ -105,6 +105,53 @@ test('when accounting for independent partial uploads', ({ components }) => {
     })
   })
 
+  describe('and a batch is rejected by the byte budget', () => {
+    let error: unknown
+    let rateBytes: string
+
+    beforeEach(async () => {
+      await create(first)
+      error = await manager
+        .reserve(first.id, [{ hash: 'content-a', size: 700, stored: false }], 1000n, 700)
+        .catch((e) => e)
+      const result = await components.database.query<{ bytes: string }>('SELECT bytes FROM partial_upload_rates')
+      rateBytes = result.rows[0].bytes
+    })
+
+    it('should still charge the received bytes against the byte rate', () => {
+      expect({ message: (error as Error).message, rateBytes }).toEqual({
+        message: 'Partial upload storage budget exceeded. Complete uploads or wait for cleanup.',
+        rateBytes: '700'
+      })
+    })
+  })
+
+  describe('and the first batch of a new upload is rejected and discarded', () => {
+    beforeEach(async () => {
+      await create(first)
+      await manager
+        .reserve(first.id, [{ hash: 'content-a', size: 700, stored: false }], 1000n, 700)
+        .catch(() => undefined)
+      await manager.discardUnadmitted(first.id)
+    })
+
+    it('should free the upload slot', async () => {
+      expect(await pendingCount()).toBe(0)
+    })
+  })
+
+  describe('and an admitted upload is discarded as unadmitted', () => {
+    beforeEach(async () => {
+      await create(first)
+      await manager.reserve(first.id, [{ hash: 'content-a', size: 400, stored: false }], 1000n, 400)
+      await manager.discardUnadmitted(first.id)
+    })
+
+    it('should keep the upload and its reservation', async () => {
+      expect(await pendingCount()).toBe(1)
+    })
+  })
+
   describe('and an expired upload still occupies storage', () => {
     beforeEach(async () => {
       await create(first)
