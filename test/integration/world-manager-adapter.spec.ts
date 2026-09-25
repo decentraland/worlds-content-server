@@ -2003,10 +2003,14 @@ test('WorldManagerAdapter', function ({ components }) {
           { authChain: created.owner.authChain, size: 100 }
         )
 
-        // Replace both scenes with a single scene spanning all their parcels
+        // Replace both scenes with a single scene spanning all their parcels. The timestamp must be
+        // newer than both: deployScene rejects a deploy that an already-deployed overlapping scene
+        // outranks, and with the spread timestamp the tie would break on entity id ('-second' sorts
+        // above '-replacement').
         const replacementEntity = {
           ...created.entity,
           id: `${created.entity.id}-replacement`,
+          timestamp: created.entity.timestamp + 1,
           metadata: {
             ...created.entity.metadata,
             display: { title: 'Replacement Title', description: 'Replacement Desc' },

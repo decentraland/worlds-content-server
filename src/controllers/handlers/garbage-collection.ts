@@ -1,91 +1,38 @@
 import { HandlerContextWithPath } from '../../types'
 import { IHttpServerComponent } from '@dcl/core-commons'
+import { getReferencedContentKeys } from '../../adapters/content-references'
 
-function formatSecs(millis: number): string {
-  return `${(millis / 1000).toFixed(2)} secs`
-}
-
+/** Deletes unreferenced content in bounded batches, excluding uploads through each check/delete pair. */
 export async function garbageCollectionHandler(
-  context: HandlerContextWithPath<'database' | 'logs' | 'storage', '/gc'>
+  context: HandlerContextWithPath<'database' | 'logs' | 'pendingScenesManager' | 'storage' | 'contentLocks', '/gc'>
 ): Promise<IHttpServerComponent.IResponse> {
-  const { database, logs, storage } = context.components
+  const { database, logs, pendingScenesManager, storage, contentLocks } = context.components
   const logger = logs.getLogger('garbage-collection')
-
-  async function getAllActiveKeys() {
-    const start = Date.now()
-    logger.info('Getting all keys active in the database...')
-
-    const activeKeys = new Set<string>()
-
-    // Get all scenes from world_scenes table
-    const scenesResult = await database.query<{
-      entity_id: string
-      entity: {
-        content?: Array<{ hash: string }>
-      }
-    }>('SELECT entity_id, entity FROM world_scenes WHERE entity IS NOT NULL')
-    scenesResult.rows.forEach((row) => {
-      // Add entity file and deployment auth-chain
-      activeKeys.add(row.entity_id)
-      activeKeys.add(`${row.entity_id}.auth`)
-
-      // Add all referenced content files
-      if (row.entity.content) {
-        for (const file of row.entity.content) {
-          activeKeys.add(file.hash)
-        }
+  let removed = 0
+  let batch: string[] = []
+  async function flush(): Promise<void> {
+    const keys = batch
+    batch = []
+    await contentLocks.withWrite(async () => {
+      const referenced = await getReferencedContentKeys(
+        database,
+        new Date(Date.now() - pendingScenesManager.ttlMs),
+        keys
+      )
+      const orphaned = keys.filter((key) => !referenced.has(key))
+      if (orphaned.length) {
+        await storage.delete(orphaned)
+        removed += orphaned.length
       }
     })
-
-    // Get all world thumbnail hashes and add them as active keys
-    const thumbnailsResult = await database.query<{ thumbnail_hash: string }>(
-      'SELECT thumbnail_hash FROM worlds WHERE thumbnail_hash IS NOT NULL'
-    )
-    thumbnailsResult.rows.forEach((row) => {
-      activeKeys.add(row.thumbnail_hash)
-    })
-
-    logger.info(`Done in ${formatSecs(Date.now() - start)}. Database contains ${activeKeys.size} active keys.`)
-
-    return activeKeys
   }
-
-  logger.info('Starting garbage collection...')
-
-  const activeKeys = await getAllActiveKeys()
-
-  logger.info('Getting keys from storage that are not currently active...')
-  const start = Date.now()
-  let totalRemovedKeys = 0
-  const batch = new Set<string>()
   for await (const key of storage.allFileIds()) {
-    if (!activeKeys.has(key)) {
-      batch.add(key)
-    }
-
-    if (batch.size === 1000) {
-      logger.info(`Deleting a batch of ${batch.size} keys from storage...`)
-      await storage.delete([...batch])
-      totalRemovedKeys += batch.size
-      batch.clear()
-    }
+    batch.push(key)
+    if (batch.length === 1000) await flush()
   }
-
-  if (batch.size > 0) {
-    logger.info(`Deleting a batch of ${batch.size} keys from storage...`)
-    await storage.delete([...batch])
-    totalRemovedKeys += batch.size
-  }
-  logger.info(
-    `Done in ${formatSecs(Date.now() - start)}. Deleted ${totalRemovedKeys} keys that are not active in the storage.`
-  )
-
-  logger.info('Garbage collection finished.')
-
-  return {
-    status: 200,
-    body: {
-      message: `Garbage collection removed ${totalRemovedKeys} unused keys.`
-    }
-  }
+  if (batch.length) await flush()
+  // Release expired accounting only after its physical objects are reclaimed or referenced elsewhere.
+  await pendingScenesManager.deleteExpired()
+  logger.info('Garbage collection finished', { removed })
+  return { status: 200, body: { message: `Garbage collection removed ${removed} unused keys.` } }
 }

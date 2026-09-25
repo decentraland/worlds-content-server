@@ -11,7 +11,54 @@ The database contains the following main tables:
 3. **`world_permissions`** - Stores deployment and streaming permission grants
 4. **`world_permission_parcels`** - Stores parcel-level permission restrictions (normalized)
 5. **`blocked`** - Stores blocked wallet addresses
-6. **`migrations`** - Tracks executed database migrations (internal, managed automatically)
+6. **`pending_scenes`** - Stores partial (multi-request) deployments still being uploaded (not yet live)
+7. **`migrations`** - Tracks executed database migrations (internal, managed automatically)
+
+### Table: `pending_scenes`
+
+Staging area for partial deployments: a scene's content can be uploaded across several `POST /entities`
+requests (with `partial=true`), and the entity only becomes a live `world_scenes` row once every
+referenced file is present. Intentionally has **no** foreign key to `worlds` — a half-uploaded world must
+not create a `worlds` row (which would leak into listings and world-validity checks) before it goes live.
+The authoritative entity bytes live in content storage under the entity id; the `entity` JSONB here is a
+copy used by garbage collection. Columns: `entity_id` (PK), `world_name`, `parcels` (TEXT[]), `entity`
+(JSONB), `deployer`, `created_at`/`updated_at` (TIMESTAMPTZ), `initialized` (BOOLEAN), and
+`reserved_bytes` (BIGINT). Uploads may overlap parcels and never replace another pending row.
+`created_at` anchors freshness and the fixed `PENDING_DEPLOYMENT_TTL` (default 24h). Expired rows stay
+charged until the eviction job or GC reclaims their objects, then removes their accounting.
+
+### Table: `pending_scene_files`
+
+Primary key `(entity_id, hash)`, with a cascading FK to `pending_scenes`. `size` is the reserved byte
+count; `stored` distinguishes successful writes/verified reused content from reservations. Reserves
+are atomic under a database admission lock. The pending-row `reserved_bytes` caches the sum so global
+admission scans session totals instead of every content receipt. Failed writes remain conservatively
+charged; retrying a hash does not reserve its storage twice. Incoming bytes, including retries, are
+also counted in `partial_upload_rates` (`deployer` PK, `window_started`, `bytes`).
+
+### Table: `completed_scene_uploads`
+
+Primary key `entity_id`; columns `deployer`, `world_name`, `parcels`, `completed_at`. Publication writes
+this receipt and removes pending state in the same transaction as the scene. The original signer gets
+a stable completion response even after replacement or undeployment. Receipts expire independently
+under `COMPLETED_UPLOAD_TTL` and do not retain content or consume staging slots.
+
+### Content protection
+
+Upload processing takes a shared PostgreSQL advisory lock through publication; GC and expired upload
+cleanup take its exclusive counterpart for each physical delete batch. A separate WKC pool prevents
+lock waiters from exhausting application query connections. Reference checks combine deployed scenes,
+world thumbnails and live pending manifests in one SQL snapshot under that lock. Per-entity advisory
+locks serialize batches and competing standard/partial completion attempts for the same entity.
+
+#### Indexes
+
+- **Primary Key**: `entity_id`
+- **Index**: `pending_scenes_created_at_idx` on `created_at` (TTL expiry and GC protection set)
+- **Index**: `pending_scenes_deployer_created_at_idx` on `(deployer, created_at)` (per-deployer upload count cap)
+
+Deliberately unindexed: `world_name` and `parcels`. Uploads are addressed by entity id and never
+looked up or replaced by overlap, so an index on either would only add write cost per staging insert.
 
 ---
 
@@ -36,7 +83,19 @@ erDiagram
         VARCHAR deployer "Ethereum address"
         TEXT_ARRAY parcels "Parcel coordinates"
         BIGINT size "Scene size in bytes"
+        VARCHAR status "DEPLOYED or UNDEPLOYED (soft delete)"
         TIMESTAMP created_at "Creation timestamp"
+        TIMESTAMP updated_at "Last status change"
+    }
+
+    pending_scenes {
+        VARCHAR entity_id PK "IPFS hash (CID)"
+        VARCHAR world_name "World being uploaded to (no FK)"
+        TEXT_ARRAY parcels "Parcel coordinates"
+        JSONB entity "Full entity JSON"
+        VARCHAR deployer "Ethereum address (lowercase)"
+        TIMESTAMPTZ created_at "Upload start (TTL anchor)"
+        TIMESTAMPTZ updated_at "Last batch received"
     }
 
     world_permissions {
@@ -91,18 +150,35 @@ Stores world metadata and access settings. With multi-scene support, this table 
 
 ### Columns
 
-| Column              | Type      | Nullable     | Description                                                                              |
-| ------------------- | --------- | ------------ | ---------------------------------------------------------------------------------------- |
-| `name`              | VARCHAR   | NOT NULL     | **Primary Key**. World name (DCL name, e.g., `"myworld.dcl.eth"`). Stored in lowercase.  |
-| `access`            | JSONB     | **NOT NULL** | Access control settings. See [Access Settings](#access-settings) below.                  |
-| `owner`             | VARCHAR   | NULL         | Ethereum address of the DCL name owner (verified via blockchain).                        |
-| `spawn_coordinates` | VARCHAR   | NULL         | World spawn parcel coordinate (e.g., `"0,0"`). Must belong be a coordinate inside of the world's shape. |
-| `created_at`        | TIMESTAMP | NOT NULL     | Timestamp when the world record was first created.                                       |
-| `updated_at`        | TIMESTAMP | NOT NULL     | Timestamp when the world record was last updated.                                        |
+| Column                 | Type      | Nullable     | Description                                                                              |
+| ---------------------- | --------- | ------------ | ---------------------------------------------------------------------------------------- |
+| `name`                 | VARCHAR   | NOT NULL     | **Primary Key**. World name (DCL name, e.g., `"myworld.dcl.eth"`). Stored in lowercase.  |
+| `access`               | JSONB     | **NOT NULL** | Access control settings. See [Access Settings](#access-settings) below.                  |
+| `owner`                | VARCHAR   | NULL         | Ethereum address of the DCL name owner (verified via blockchain).                        |
+| `spawn_coordinates`    | VARCHAR   | NULL         | World spawn parcel coordinate (e.g., `"0,0"`). Must belong be a coordinate inside of the world's shape. |
+| `title`                | VARCHAR   | NULL         | World title (settings; seeded from the first deployed scene's metadata).                 |
+| `description`          | TEXT      | NULL         | World description (settings; seeded from the first deployed scene's metadata).           |
+| `content_rating`       | VARCHAR   | NULL         | Content rating (settings).                                                               |
+| `skybox_time`          | INTEGER   | NULL         | Fixed skybox time override (settings).                                                   |
+| `categories`           | TEXT[]    | NULL         | World categories/tags (settings).                                                        |
+| `single_player`        | BOOLEAN   | NULL         | Whether the world runs in single-player mode (settings).                                 |
+| `show_in_places`       | BOOLEAN   | NULL         | Whether the world is listed in Places (settings).                                        |
+| `thumbnail_hash`       | VARCHAR   | NULL         | Content hash of the world thumbnail (settings).                                          |
+| `last_deployed_at`     | TIMESTAMP | NULL         | Denormalized: timestamp of the latest deployed scene (maintained on deploy/undeploy).    |
+| `deployed_scene_count` | INTEGER   | NOT NULL     | Denormalized: number of DEPLOYED scenes (default 0).                                     |
+| `scene_min_x`          | INTEGER   | NULL         | Denormalized: bounding rectangle of deployed scene parcels (min X).                      |
+| `scene_max_x`          | INTEGER   | NULL         | Denormalized: bounding rectangle of deployed scene parcels (max X).                      |
+| `scene_min_y`          | INTEGER   | NULL         | Denormalized: bounding rectangle of deployed scene parcels (min Y).                      |
+| `scene_max_y`          | INTEGER   | NULL         | Denormalized: bounding rectangle of deployed scene parcels (max Y).                      |
+| `created_at`           | TIMESTAMP | NOT NULL     | Timestamp when the world record was first created.                                       |
+| `updated_at`           | TIMESTAMP | NOT NULL     | Timestamp when the world record was last updated.                                        |
 
 ### Indexes
 
 - **Primary Key**: `name`
+- **GIN Index**: `worlds_search_idx` on `search_vector` (full-text search)
+- **GIN Indexes**: `worlds_name_trgm_idx`, `worlds_title_trgm_idx`, `worlds_description_trgm_idx` (trigram search)
+- **Index**: `worlds_last_deployed_at_idx` on `last_deployed_at` (world listings ordered by recency)
 
 ### Access Settings
 
@@ -178,7 +254,9 @@ Stores individual scene deployments within worlds. Each world can have multiple 
 | `deployer`              | VARCHAR   | NOT NULL | Ethereum address of the wallet that deployed this scene.                                     |
 | `parcels`               | TEXT[]    | NOT NULL | Array of parcel coordinates this scene occupies (e.g., `['0,0', '0,1', '1,0']`).             |
 | `size`                  | BIGINT    | NOT NULL | Total size of this scene's content files in bytes.                                           |
+| `status`                | VARCHAR   | NOT NULL | Deployment status: `DEPLOYED` or `UNDEPLOYED` (soft delete; default `DEPLOYED`).             |
 | `created_at`            | TIMESTAMP | NOT NULL | Timestamp when the scene was first deployed.                                                 |
+| `updated_at`            | TIMESTAMP | NOT NULL | Timestamp of the last status change or redeploy.                                             |
 
 ### Indexes
 
@@ -186,6 +264,9 @@ Stores individual scene deployments within worlds. Each world can have multiple 
 - **Index**: `world_scenes_world_name_idx` on `world_name` column
 - **GIN Index**: `world_scenes_parcels_idx` on `parcels` column (for array operations)
 - **Index**: `world_scenes_deployer_idx` on `deployer` column
+- **Partial Index**: `world_scenes_status_idx` on `status` WHERE `status = 'DEPLOYED'` (hot-path reads)
+- **Partial Index**: `world_scenes_undeployed_updated_at_idx` on `updated_at` WHERE `status = 'UNDEPLOYED'` (eviction job)
+- **Index**: `world_scenes_updated_at_idx` on `updated_at` (garbage collection's deployed-since re-check)
 
 ### Constraints
 

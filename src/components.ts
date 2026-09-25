@@ -1,3 +1,4 @@
+import { createContentLocks } from './adapters/content-locks/component'
 import { createDotEnvConfigComponent } from '@well-known-components/env-config-provider'
 import {
   createServerComponent,
@@ -24,6 +25,8 @@ import { createWorldsIndexerComponent } from './adapters/worlds-indexer'
 
 import { createValidator } from './logic/validations'
 import { createEntityDeployer } from './adapters/entity-deployer'
+import { createPendingScenesManager } from './adapters/pending-scenes-manager'
+import { createPartialDeploymentsComponent } from './logic/partial-deployments'
 import { createMigrationExecutor } from './adapters/migration-executor'
 import { createNameDenyListChecker } from './adapters/name-deny-list-checker'
 import { createDatabaseComponent } from './adapters/database-component'
@@ -175,6 +178,7 @@ export async function initComponents(): Promise<AppComponents> {
   })
 
   const database = await createDatabaseComponent({ config, logs, metrics })
+  const contentLocks = await createContentLocks({ config, logs, metrics })
 
   const coordinates = createCoordinatesComponent()
 
@@ -266,6 +270,29 @@ export async function initComponents(): Promise<AppComponents> {
     worldsManager
   })
 
+  const pendingScenesManager = await createPendingScenesManager({
+    config,
+    database,
+    logs,
+    metrics,
+    storage,
+    contentLocks
+  })
+
+  const partialDeployments = await createPartialDeploymentsComponent({
+    config,
+    coordinates,
+    entityDeployer,
+    limitsManager,
+    logs,
+    pendingScenesManager,
+    deploymentProcessing,
+    metrics,
+    storage,
+    validator,
+    worldsManager
+  })
+
   const migrationExecutor = createMigrationExecutor({
     config,
     logs,
@@ -298,7 +325,7 @@ export async function initComponents(): Promise<AppComponents> {
 
   const worlds = createWorldsComponent({ blocking, coordinates, logs, snsClient, worldsManager })
 
-  const evictionJob = await createEvictionJob({ config, logs, worlds })
+  const evictionJob = await createEvictionJob({ config, logs, worlds, pendingScenesManager })
 
   const denyList = await createDenyListComponent({ config, fetch, logs })
   const bans = await createBansComponent({ config, fetch, logs })
@@ -329,7 +356,12 @@ export async function initComponents(): Promise<AppComponents> {
   }
   const rateLimiter = await createRateLimiterComponent({ config, logs, redis })
 
+  // Lifecycle starts components sequentially in this order: the database, then migrations, then
+  // everything that serves requests or runs jobs against the schema.
   return {
+    database,
+    migrationExecutor,
+    contentLocks,
     access,
     accessChangeHandler,
     accessChecker,
@@ -339,7 +371,6 @@ export async function initComponents(): Promise<AppComponents> {
     config,
     settingsPolicy,
     coordinates,
-    database,
     deploymentProcessing,
     denyList,
     entityDeployer,
@@ -351,7 +382,6 @@ export async function initComponents(): Promise<AppComponents> {
     logs,
     marketplaceSubGraph,
     metrics,
-    migrationExecutor,
     blocking,
     nameDenyListChecker,
     nameOwnership,
@@ -359,6 +389,8 @@ export async function initComponents(): Promise<AppComponents> {
     nats,
     notificationService,
     participantKicker,
+    partialDeployments,
+    pendingScenesManager,
     peersRegistry,
     permissions,
     permissionsManager,

@@ -15,6 +15,7 @@ import {
   DeploymentProcessingTimeoutError
 } from '../../src/logic/deployment-processing'
 import { hashV1 } from '@dcl/hashing'
+import { Authenticator } from '@dcl/crypto'
 import { DeploymentToValidate, SceneReplacementConflictError } from '../../src/types'
 
 type DeployContext = Parameters<typeof deployEntity>[0]
@@ -23,13 +24,18 @@ describe('deployEntity', () => {
   const entityId = 'bafkreiahsvnr4x4rnskhkwfbnbplkbqhzb3xagdwpyfy44lgcndmhyizde'
   let tmpDir: string
   let fileCounter: number
+  let defaultSignatureSpy: jest.SpyInstance
 
   beforeEach(() => {
     tmpDir = mkdtempSync(path.join(os.tmpdir(), 'deploy-entity-test-'))
     fileCounter = 0
+    // Every request is authenticated before the handler takes a lock; the fixture auth chain is
+    // unsigned, so contexts that test later stages treat it as valid.
+    defaultSignatureSpy = jest.spyOn(Authenticator, 'validateSignature').mockResolvedValue({ ok: true })
   })
 
   afterEach(() => {
+    defaultSignatureSpy.mockRestore()
     rmSync(tmpDir, { recursive: true, force: true })
   })
 
@@ -66,7 +72,17 @@ describe('deployEntity', () => {
   function createContext(id: string, files: Record<string, ReturnType<typeof makeFile>>): DeployContext {
     return {
       components: {
+        contentLocks: {
+          withRead: async (operation: (signal: AbortSignal) => Promise<unknown>, signal: AbortSignal) =>
+            operation(signal)
+        },
         deploymentProcessing: createDeploymentProcessingMock(),
+        // Default no-op pending-scenes manager; tests of partial requests that need a pending row override it.
+        pendingScenesManager: {
+          getByEntityId: jest.fn().mockResolvedValue(undefined),
+          getCompleted: jest.fn().mockResolvedValue(undefined),
+          deleteByEntityId: jest.fn().mockResolvedValue(undefined)
+        },
         logs: {
           getLogger: jest.fn().mockReturnValue({ debug: jest.fn(), error: jest.fn(), info: jest.fn(), warn: jest.fn() })
         }
@@ -74,8 +90,8 @@ describe('deployEntity', () => {
       formData: {
         fields: {
           entityId: makeField(id),
-          'authChain[0][payload]': makeField('0xpayload'),
-          'authChain[0][signature]': makeField('0xsignature'),
+          'authChain[0][payload]': makeField('0x0000000000000000000000000000000000000001'),
+          'authChain[0][signature]': makeField(''),
           'authChain[0][type]': makeField('SIGNER')
         },
         files
@@ -112,6 +128,222 @@ describe('deployEntity', () => {
 
       expect(error).toBeInstanceOf(InvalidRequestError)
       expect(error.message).toBe('The entity file is not valid JSON.')
+    })
+  })
+
+  describe('when a regular deployment is not validly signed', () => {
+    let validateSignatureSpy: jest.SpyInstance
+    let withRead: jest.Mock
+    let caughtError: unknown
+
+    beforeEach(async () => {
+      validateSignatureSpy = jest
+        .spyOn(Authenticator, 'validateSignature')
+        .mockResolvedValue({ ok: false, message: 'bad signature' })
+      withRead = jest.fn()
+      const baseContext = createContext(entityId, { [entityId]: makeFile(Buffer.from('{}')) })
+      const context = {
+        ...baseContext,
+        components: { ...baseContext.components, contentLocks: { withRead } }
+      } as unknown as DeployContext
+      caughtError = await deployEntity(context).catch((error) => error)
+    })
+
+    afterEach(() => {
+      validateSignatureSpy.mockRestore()
+      jest.resetAllMocks()
+    })
+
+    it('should reject it without taking any content lock', () => {
+      expect({ caughtError, locks: withRead.mock.calls.length }).toEqual({
+        caughtError: new InvalidRequestError('Deployment failed: bad signature'),
+        locks: 0
+      })
+    })
+  })
+
+  describe('when a partial request is not validly signed', () => {
+    let validateSignatureSpy: jest.SpyInstance
+    let withRead: jest.Mock
+    let caughtError: unknown
+
+    beforeEach(async () => {
+      validateSignatureSpy = jest
+        .spyOn(Authenticator, 'validateSignature')
+        .mockResolvedValue({ ok: false, message: 'bad signature' })
+      withRead = jest.fn()
+      const baseContext = createContext(entityId, { [entityId]: makeFile(Buffer.from('{}')) })
+      baseContext.formData.fields.partial = makeField('true')
+      const context = {
+        ...baseContext,
+        components: { ...baseContext.components, contentLocks: { withRead } }
+      } as unknown as DeployContext
+      caughtError = await deployEntity(context).catch((error) => error)
+    })
+
+    afterEach(() => {
+      validateSignatureSpy.mockRestore()
+      jest.resetAllMocks()
+    })
+
+    it('should reject it without taking any content lock', () => {
+      expect({ caughtError, locks: withRead.mock.calls.length }).toEqual({
+        caughtError: new InvalidRequestError('Invalid auth chain: bad signature'),
+        locks: 0
+      })
+    })
+  })
+
+  describe('when the partial query parameter is sent', () => {
+    let withRead: jest.Mock
+    let context: DeployContext
+    let caughtError: unknown
+
+    beforeEach(() => {
+      withRead = jest.fn()
+      const baseContext = createContext(entityId, { [entityId]: makeFile(Buffer.from('{}')) })
+      context = {
+        ...baseContext,
+        components: { ...baseContext.components, contentLocks: { withRead } },
+        url: new URL('https://request.example/entities?partial=true')
+      } as unknown as DeployContext
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    describe('and the partial form field is missing', () => {
+      beforeEach(async () => {
+        caughtError = await deployEntity(context).catch((error) => error)
+      })
+
+      it('should reject it without taking any content lock', () => {
+        expect({ caughtError, locks: withRead.mock.calls.length }).toEqual({
+          caughtError: new InvalidRequestError(
+            "The 'partial=true' query parameter requires the 'partial=true' form field"
+          ),
+          locks: 0
+        })
+      })
+    })
+
+    describe('and the partial form field is not true', () => {
+      beforeEach(async () => {
+        context.formData.fields.partial = makeField('false')
+        caughtError = await deployEntity(context).catch((error) => error)
+      })
+
+      it('should reject it without taking any content lock', () => {
+        expect({ caughtError, locks: withRead.mock.calls.length }).toEqual({
+          caughtError: new InvalidRequestError(
+            "The 'partial=true' query parameter requires the 'partial=true' form field"
+          ),
+          locks: 0
+        })
+      })
+    })
+
+    describe('and the partial form field is true but the request is not validly signed', () => {
+      let validateSignatureSpy: jest.SpyInstance
+
+      beforeEach(async () => {
+        validateSignatureSpy = jest
+          .spyOn(Authenticator, 'validateSignature')
+          .mockResolvedValue({ ok: false, message: 'bad signature' })
+        context.formData.fields.partial = makeField('true')
+        caughtError = await deployEntity(context).catch((error) => error)
+      })
+
+      afterEach(() => {
+        validateSignatureSpy.mockRestore()
+      })
+
+      it('should handle it as a partial request', () => {
+        expect(caughtError).toEqual(new InvalidRequestError('Invalid auth chain: bad signature'))
+      })
+    })
+  })
+
+  describe('when a partial resume request omits the entity file', () => {
+    let validateSignatureSpy: jest.SpyInstance
+    let getByEntityId: jest.Mock
+    let retrieve: jest.Mock
+    let caughtError: unknown
+
+    function createResumeContext(): DeployContext {
+      const baseContext = createContext(entityId, {})
+      baseContext.formData.fields.partial = makeField('true')
+      return {
+        ...baseContext,
+        components: {
+          ...baseContext.components,
+          pendingScenesManager: {
+            getByEntityId,
+            getCompleted: jest.fn().mockResolvedValue(undefined),
+            deleteByEntityId: jest.fn()
+          },
+          storage: { retrieve }
+        }
+      } as unknown as DeployContext
+    }
+
+    beforeEach(() => {
+      // The signature gate alone must never authorize the storage read-back — any keypair can produce
+      // a valid signature over any entity id — so it is mocked as passing in every context here.
+      validateSignatureSpy = jest.spyOn(Authenticator, 'validateSignature').mockResolvedValue({ ok: true })
+      retrieve = jest.fn().mockResolvedValue(undefined)
+    })
+
+    afterEach(() => {
+      validateSignatureSpy.mockRestore()
+      jest.resetAllMocks()
+    })
+
+    describe('and no pending upload exists for the entity', () => {
+      beforeEach(async () => {
+        getByEntityId = jest.fn().mockResolvedValue(undefined)
+        caughtError = await deployEntity(createResumeContext()).catch((error) => error)
+      })
+
+      it('should reject asking for the entity file without reading storage', () => {
+        expect({ caughtError, retrieves: retrieve.mock.calls.length }).toEqual({
+          caughtError: new InvalidRequestError(
+            `The first partial request for an entity must include the entity file "${entityId}".`
+          ),
+          retrieves: 0
+        })
+      })
+    })
+
+    describe('and the pending upload belongs to a different deployer', () => {
+      beforeEach(async () => {
+        getByEntityId = jest.fn().mockResolvedValue({ deployer: '0xsomeoneelse', createdAt: new Date() })
+        caughtError = await deployEntity(createResumeContext()).catch((error) => error)
+      })
+
+      it('should reject asking for the entity file without reading storage', () => {
+        expect({ caughtError, retrieves: retrieve.mock.calls.length }).toEqual({
+          caughtError: new InvalidRequestError(
+            `The first partial request for an entity must include the entity file "${entityId}".`
+          ),
+          retrieves: 0
+        })
+      })
+    })
+
+    describe('and the pending upload belongs to the signer', () => {
+      beforeEach(async () => {
+        // createContext signs with payload '0xpayload'; the pending row stores deployers lowercased.
+        getByEntityId = jest
+          .fn()
+          .mockResolvedValue({ deployer: '0x0000000000000000000000000000000000000001', createdAt: new Date() })
+        caughtError = await deployEntity(createResumeContext()).catch((error) => error)
+      })
+
+      it('should read the entity back from storage', () => {
+        expect(retrieve).toHaveBeenCalledWith(entityId)
+      })
     })
   })
 
@@ -181,12 +413,21 @@ describe('deployEntity', () => {
           config: {
             getString: jest.fn().mockResolvedValue('https://configured.example')
           },
+          contentLocks: {
+            withRead: async (operation: (signal: AbortSignal) => Promise<unknown>, signal: AbortSignal) =>
+              operation(signal)
+          },
           deploymentProcessing: createDeploymentProcessingMock({ fileInfoConcurrency: 2 }),
           entityDeployer: { deployEntity: entityDeployerDeploy },
+          pendingScenesManager: {
+            getByEntityId: jest.fn().mockResolvedValue(undefined),
+            getCompleted: jest.fn().mockResolvedValue(undefined),
+            deleteByEntityId: jest.fn().mockResolvedValue(undefined)
+          },
           storage: { fileInfo },
           validator: { validateAfterStorage, validateBeforeStorage }
         },
-        url: { host: 'request.example' }
+        url: new URL('https://request.example/entities')
       } as unknown as DeployContext
 
       const response = await deployEntity(context)
@@ -249,6 +490,10 @@ describe('deployEntity', () => {
         ...baseContext,
         components: {
           ...baseContext.components,
+          contentLocks: {
+            withRead: async (operation: (signal: AbortSignal) => Promise<unknown>, signal: AbortSignal) =>
+              operation(signal)
+          },
           config: { getString: jest.fn().mockResolvedValue(undefined) },
           entityDeployer: { deployEntity: entityDeployerDeploy },
           storage: { fileInfo: jest.fn().mockResolvedValue(undefined) },
@@ -279,6 +524,107 @@ describe('deployEntity', () => {
     })
   })
 
+  describe('when the entity was already deployed by a concurrent duplicate request', () => {
+    let response: Awaited<ReturnType<typeof deployEntity>>
+    let getWorldScenes: jest.Mock
+
+    beforeEach(async () => {
+      const entity = {
+        type: 'scene',
+        pointers: ['0,0'],
+        timestamp: Date.now(),
+        content: [],
+        metadata: { worldConfiguration: { name: 'world.dcl.eth' }, scene: { parcels: ['0,0'] } }
+      }
+      getWorldScenes = jest.fn().mockResolvedValue({ scenes: [{ entityId }], total: 1 })
+      const baseContext = createContext(entityId, { [entityId]: makeFile(Buffer.from(JSON.stringify(entity))) })
+      const context = {
+        ...baseContext,
+        components: {
+          ...baseContext.components,
+          contentLocks: {
+            withRead: async (operation: (signal: AbortSignal) => Promise<unknown>, signal: AbortSignal) =>
+              operation(signal)
+          },
+          config: { getString: jest.fn().mockResolvedValue(undefined) },
+          entityDeployer: {
+            deployEntity: jest.fn().mockRejectedValue(Object.assign(new Error('duplicate key'), { code: '23505' }))
+          },
+          storage: { fileInfo: jest.fn().mockResolvedValue(undefined) },
+          validator: {
+            validateBeforeStorage: jest.fn(async (deployment: DeploymentToValidate) => {
+              deployment.sceneReplacementAuthorization = { mode: 'unrestricted-owner' }
+              return { errors: [], ok: () => true }
+            }),
+            validateAfterStorage: jest.fn().mockResolvedValue({ errors: [], ok: () => true })
+          },
+          worldsManager: { getWorldScenes }
+        }
+      } as unknown as DeployContext
+
+      response = await deployEntity(context)
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should respond with an idempotent success verified against the deployed scenes', () => {
+      expect({ status: response.status, queried: getWorldScenes.mock.calls[0] }).toEqual({
+        status: 200,
+        queried: [{ worldName: 'world.dcl.eth', entityId }, { limit: 1 }]
+      })
+    })
+  })
+
+  describe('when the deploy fails with a unique violation but the entity is not deployed', () => {
+    let caughtError: unknown
+
+    beforeEach(async () => {
+      const entity = {
+        type: 'scene',
+        pointers: ['0,0'],
+        timestamp: Date.now(),
+        content: [],
+        metadata: { worldConfiguration: { name: 'world.dcl.eth' }, scene: { parcels: ['0,0'] } }
+      }
+      const baseContext = createContext(entityId, { [entityId]: makeFile(Buffer.from(JSON.stringify(entity))) })
+      const context = {
+        ...baseContext,
+        components: {
+          ...baseContext.components,
+          contentLocks: {
+            withRead: async (operation: (signal: AbortSignal) => Promise<unknown>, signal: AbortSignal) =>
+              operation(signal)
+          },
+          config: { getString: jest.fn().mockResolvedValue(undefined) },
+          entityDeployer: {
+            deployEntity: jest.fn().mockRejectedValue(Object.assign(new Error('duplicate key'), { code: '23505' }))
+          },
+          storage: { fileInfo: jest.fn().mockResolvedValue(undefined) },
+          validator: {
+            validateBeforeStorage: jest.fn(async (deployment: DeploymentToValidate) => {
+              deployment.sceneReplacementAuthorization = { mode: 'unrestricted-owner' }
+              return { errors: [], ok: () => true }
+            }),
+            validateAfterStorage: jest.fn().mockResolvedValue({ errors: [], ok: () => true })
+          },
+          worldsManager: { getWorldScenes: jest.fn().mockResolvedValue({ scenes: [], total: 0 }) }
+        }
+      } as unknown as DeployContext
+
+      caughtError = await deployEntity(context).catch((error) => error)
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should propagate the original unique-violation error', () => {
+      expect((caughtError as { code?: string }).code).toBe('23505')
+    })
+  })
+
   describe('when the authorized replacement snapshot changes before persistence', () => {
     let response: Awaited<ReturnType<typeof deployEntity>>
 
@@ -297,6 +643,10 @@ describe('deployEntity', () => {
         ...baseContext,
         components: {
           ...baseContext.components,
+          contentLocks: {
+            withRead: async (operation: (signal: AbortSignal) => Promise<unknown>, signal: AbortSignal) =>
+              operation(signal)
+          },
           config: { getString: jest.fn().mockResolvedValue(undefined) },
           entityDeployer: {
             deployEntity: jest.fn().mockRejectedValue(new SceneReplacementConflictError('world.dcl.eth'))

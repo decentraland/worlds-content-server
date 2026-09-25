@@ -35,7 +35,11 @@ export const validateBaseEntity: Validation = async (deployment: DeploymentToVal
 
 export function createValidateDeploymentTtl(components: Pick<ValidatorComponents, 'config'>) {
   return async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
-    const ttl = Date.now() - deployment.entity.timestamp
+    // A partial (multi-request) upload can span longer than the deployment TTL, so when a pending
+    // upload exists the entity's freshness is measured against when the upload started
+    // (pendingCreatedAt) rather than now. Full deploys never set it and anchor on Date.now().
+    const anchor = deployment.pendingCreatedAt?.getTime() ?? Date.now()
+    const ttl = anchor - deployment.entity.timestamp
     const maxTtl = (await components.config.getNumber('DEPLOYMENT_TTL')) || 300_000
     if (ttl < -MAX_DEPLOYMENT_FUTURE_SKEW_MS) {
       return createValidationResult([
@@ -76,7 +80,13 @@ export const validateSignature: Validation = async (deployment: DeploymentToVali
   return createValidationResult(result.message ? [result.message] : [])
 }
 
-export const validateFiles = async (
+/**
+ * Validates the files uploaded in *this* request: each must be referenced by the entity (or be the
+ * entity file), be a CIDv1, and hash to its declared key. Runs in both the full and staging validation
+ * paths — it does not depend on the full content set being present. Hashing is bounded by `concurrency`
+ * and cancellable via `signal`; `trackWorker` lets the caller meter each hash worker.
+ */
+export const validateUploadedFiles = async (
   deployment: DeploymentToValidate,
   concurrency: number = DEFAULT_FILE_HASH_CONCURRENCY,
   signal: AbortSignal | undefined = deployment.signal,
@@ -110,7 +120,19 @@ export const validateFiles = async (
     }
   }
 
-  // then ensure that all missing files are uploaded
+  return createValidationResult(errors)
+}
+
+/**
+ * Validates that every file the entity references is present — either uploaded now or already stored.
+ * Only meaningful once the full content set can be present, so it runs in the full validation path but
+ * NOT while staging a partial deployment.
+ */
+export const validateNoMissingFiles: Validation = async (
+  deployment: DeploymentToValidate
+): Promise<ValidationResult> => {
+  const errors: string[] = []
+
   for (const file of deployment.entity.content!) {
     const isFilePresent = deployment.files.has(file.hash) || deployment.contentHashesInStorage.get(file.hash)
     if (!isFilePresent) {
@@ -119,6 +141,26 @@ export const validateFiles = async (
   }
 
   return createValidationResult(errors)
+}
+
+/**
+ * Full-deployment file validation: runs the uploaded-file checks and the no-missing-files check and
+ * returns their errors combined. Listing the two separately in `validateAll` would short-circuit on
+ * the first failure and hide the missing-file errors behind uploaded-file errors — the original
+ * `validateFiles` reported both together, which this preserves. Not used while staging a partial
+ * deployment (completeness is intentionally not required there).
+ */
+export const validateFiles = async (
+  deployment: DeploymentToValidate,
+  concurrency: number = DEFAULT_FILE_HASH_CONCURRENCY,
+  signal: AbortSignal | undefined = deployment.signal,
+  trackWorker?: (operation: () => Promise<string>) => Promise<string>
+): Promise<ValidationResult> => {
+  const [uploaded, missing] = await Promise.all([
+    validateUploadedFiles(deployment, concurrency, signal, trackWorker),
+    validateNoMissingFiles(deployment)
+  ])
+  return createValidationResult([...uploaded.errors, ...missing.errors])
 }
 
 export const validateSupportedEntityType = async (deployment: DeploymentToValidate): Promise<ValidationResult> => {

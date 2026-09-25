@@ -1,3 +1,4 @@
+import type { IContentLocks } from './adapters/content-locks/types'
 import type {
   IBaseComponent,
   IConfigComponent,
@@ -26,6 +27,10 @@ import { ISettingsComponent } from './logic/settings'
 import { ISchemaValidatorComponent } from '@dcl/schema-validator-component'
 import { IWorldSettingsPolicyComponent } from './logic/world-settings-policy'
 import { ICoordinatesComponent } from './logic/coordinates'
+// Type-only imports so the central types module can reference these component interfaces (for
+// AppComponents below) without a runtime import cycle through their component.ts factories.
+import type { IPendingScenesManager } from './adapters/pending-scenes-manager/types'
+import type { IPartialDeploymentsComponent } from './logic/partial-deployments/types'
 import { ISearchComponent } from './adapters/search'
 import {
   IPermissionsComponent,
@@ -82,6 +87,12 @@ export type DeploymentToValidate = {
   files: Map<string, DeploymentFile>
   authChain: AuthChain
   contentHashesInStorage: Map<string, boolean>
+  /**
+   * created_at of the pending (partial) upload for this entity, set only by partial staging and
+   * finalization. The deployment TTL check validates the entity timestamp against this anchor instead
+   * of now, so a multi-request upload can span longer than the TTL.
+   */
+  pendingCreatedAt?: Date
   /** Storage metadata fetched once before validation, keyed by unique content hash. */
   contentFileInfos?: Map<string, FileInfo | undefined>
   /** Cancels request-scoped processing after disconnect or the configured processing deadline. */
@@ -125,6 +136,8 @@ export type SceneDeploymentData = {
   deadlineAt?: number
   /** Cancels persistence until the transaction reaches its commit boundary. */
   signal?: AbortSignal
+  /** Set when this publication finalizes a partial upload, so its signer gets a completion receipt. */
+  completesPartialUpload?: boolean
 }
 
 export type SceneReplacementAuthorization = { mode: 'unrestricted-owner' } | { mode: 'scoped'; entityIds: string[] }
@@ -329,6 +342,19 @@ export interface Validator {
   validateAfterStorage(deployment: DeploymentToValidate): Promise<ValidationResult>
   /** Runs the complete validation pipeline. */
   validate(deployment: DeploymentToValidate): Promise<ValidationResult>
+  /**
+   * Validations a partial (staging) scene deployment must pass before its full content set is present:
+   * everything except content-completeness and the storage-backed size check.
+   *
+   * `skipPermissionCheck` skips the (slow, external) deployment-permission check. Safe only when the
+   * upload already has a non-expired pending record: creating that record required passing the
+   * permission check, uploaded bytes are hash-verified against the staged manifest, and the finalize
+   * step re-runs the full validation (including permission) before anything goes live.
+   */
+  validateStaging(
+    deployment: DeploymentToValidate,
+    options?: { skipPermissionCheck?: boolean }
+  ): Promise<ValidationResult>
 }
 
 export type ValidationResult = {
@@ -355,6 +381,10 @@ export type MigratorComponents = Pick<
 >
 
 export type Validation = (deployment: DeploymentToValidate) => ValidationResult | Promise<ValidationResult>
+
+// PendingScene / UpsertPendingScene / IPendingScenesManager live in ./adapters/pending-scenes-manager/types
+// StageDeploymentInput / StageDeploymentResult / IPartialDeploymentsComponent live in
+// ./logic/partial-deployments/types (both imported above for AppComponents).
 
 export type INameOwnership = {
   findOwners(worldNames: string[]): Promise<ReadonlyMap<string, EthAddress | undefined>>
@@ -479,6 +509,12 @@ export type IWorldsManager = {
   getDeployedWorldCount(): Promise<{ ens: number; dcl: number }>
   getMetadataForWorld(worldName: string): Promise<WorldMetadata | undefined>
   getEntityForWorlds(worldNames: string[]): Promise<Entity[]>
+  /**
+   * Whether a strictly-newer scene (deployment ordering) is already deployed on this scene's parcels.
+   * A non-authoritative fast-fail for the deploy path (reject before storing content); deployScene
+   * performs the authoritative, race-free check under a per-world lock.
+   */
+  hasNewerDeployedScene(worldName: string, scene: Entity): Promise<boolean>
   /** Persists a scene and its already-calculated deployment metadata. */
   deployScene(
     worldName: string,
@@ -486,7 +522,7 @@ export type IWorldsManager = {
     owner: EthAddress,
     replacementAuthorization: SceneReplacementAuthorization,
     deployment?: SceneDeploymentData
-  ): Promise<{ metadataUpdated: boolean }>
+  ): Promise<{ metadataUpdated: boolean; creationTimestamp?: number }>
   /** Atomically undeploys matching scenes and returns the rows actually changed. */
   undeployScene(worldName: string, parcels: string[], authorizedEntityIds?: string[]): Promise<SceneUndeploymentResult>
   storeAccess(worldName: string, access: AccessSetting): Promise<void>
@@ -570,6 +606,7 @@ export type IWorldsIndexer = {
 }
 
 export type DeploymentResult = {
+  creationTimestamp?: number
   message: string
 }
 
@@ -584,8 +621,14 @@ export type IEntityDeployer = {
     deploymentSize: number,
     signal?: AbortSignal,
     deadlineAt?: number,
-    sceneReplacementAuthorization?: SceneReplacementAuthorization
+    sceneReplacementAuthorization?: SceneReplacementAuthorization,
+    options?: DeployEntityOptions
   ): Promise<DeploymentResult>
+}
+
+export type DeployEntityOptions = {
+  /** The publication finalizes a partial upload; see SceneDeploymentData.completesPartialUpload. */
+  completesPartialUpload?: boolean
 }
 
 export type AwsConfig = {
@@ -638,6 +681,7 @@ export type BaseComponents = {
   config: IConfigComponent
   settingsPolicy: IWorldSettingsPolicyComponent
   coordinates: ICoordinatesComponent
+  contentLocks: IContentLocks
   database: IPgComponent
   deploymentProcessing: IDeploymentProcessingComponent
   entityDeployer: IEntityDeployer
@@ -650,6 +694,8 @@ export type BaseComponents = {
   marketplaceSubGraph: ISubgraphComponent
   metrics: IMetricsComponent<keyof typeof metricDeclarations>
   migrationExecutor: MigrationExecutor
+  partialDeployments: IPartialDeploymentsComponent
+  pendingScenesManager: IPendingScenesManager
   nats: INatsComponent
   nameDenyListChecker: INameDenyListChecker
   nameOwnership: INameOwnership

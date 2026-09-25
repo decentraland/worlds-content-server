@@ -79,7 +79,11 @@ function createComponents(
     },
     snsClient: { publishMessage: jest.fn().mockResolvedValue({ MessageId: 'mid', SequenceNumber: 'seq' }) },
     storage: { storeStream: storageStoreStream },
-    worldsManager: { deployScene: worldsDeployScene, getWorldSettings: worldsGetWorldSettings }
+    worldsManager: {
+      deployScene: worldsDeployScene,
+      getWorldSettings: worldsGetWorldSettings,
+      hasNewerDeployedScene: jest.fn().mockResolvedValue(false)
+    }
   } as unknown as EntityDeployerComponents
   return { components, loggerError, loggerWarn, worldsDeployScene, worldsGetWorldSettings }
 }
@@ -321,47 +325,64 @@ describe('entity deployer', () => {
     })
   })
 
-  describe('when the request is aborted while a content upload never settles', () => {
+  describe('when cancellation races with a storage writer still settling', () => {
     let caughtError: unknown
     let worldsDeployScene: jest.Mock
+    let settledBeforeWriter: boolean
+    let releaseWriter: () => void
 
     beforeEach(async () => {
       const controller = new AbortController()
       const contentHashes = ['hash-0', 'hash-1']
       const storageStoreStream = jest.fn((hash: string) =>
-        hash === 'hash-0' ? new Promise<void>(() => undefined) : Promise.resolve()
+        hash === 'hash-0'
+          ? new Promise<void>((resolve) => {
+              releaseWriter = resolve
+            })
+          : Promise.resolve()
       )
       const setup = createComponents(storageStoreStream, 2)
       worldsDeployScene = setup.worldsDeployScene
       const entity = createScene(contentHashes)
       const files = new Map(contentHashes.map((hash) => [hash, createDeploymentFile(hash)]))
-      const deployer: IEntityDeployer = createEntityDeployer(setup.components)
-
-      const deployment = deployer.deployEntity(
-        'https://worlds.example',
-        entity,
-        new Map(contentHashes.map((hash) => [hash, false])),
-        files,
-        JSON.stringify(entity),
-        [],
-        2,
-        controller.signal
-      )
+      const deployer = createEntityDeployer(setup.components)
+      settledBeforeWriter = false
+      const deployment = deployer
+        .deployEntity(
+          'https://worlds.example',
+          entity,
+          new Map(contentHashes.map((hash) => [hash, false])),
+          files,
+          JSON.stringify(entity),
+          [],
+          2,
+          controller.signal
+        )
+        .catch((error) => {
+          settledBeforeWriter = true
+          return error
+        })
       await new Promise<void>((resolve) => setImmediate(resolve))
       controller.abort(new Error('deadline exceeded'))
-      caughtError = await deployment.catch((error) => error)
+      await new Promise<void>((resolve) => setImmediate(resolve))
+      const earlySettlement = settledBeforeWriter
+      releaseWriter()
+      caughtError = await deployment
+      settledBeforeWriter = earlySettlement
     })
 
     afterEach(() => {
       jest.resetAllMocks()
     })
 
-    it('should reject with the abort reason instead of waiting for the wedged upload', () => {
+    it('should keep the content protection until writers settle and never publish', () => {
       expect({
         error: caughtError instanceof Error ? caughtError.message : caughtError,
+        settledBeforeWriter,
         worldDeployments: worldsDeployScene.mock.calls.length
       }).toEqual({
         error: 'deadline exceeded',
+        settledBeforeWriter: false,
         worldDeployments: 0
       })
     })
@@ -496,6 +517,39 @@ describe('entity deployer', () => {
         deploymentResult: { message: 'No post deployment hook for this entity type' },
         worldDeployments: 0
       })
+    })
+  })
+
+  describe('when a scene deployment finalizes a partial upload', () => {
+    let worldsDeployScene: jest.Mock
+
+    beforeEach(async () => {
+      const setup = createComponents(jest.fn().mockResolvedValue(undefined), 2)
+      worldsDeployScene = setup.worldsDeployScene
+      const entity = createScene([])
+      const deployer = createEntityDeployer(setup.components)
+
+      await deployer.deployEntity(
+        'https://worlds.example',
+        entity,
+        new Map(),
+        new Map(),
+        JSON.stringify(entity),
+        [],
+        0,
+        undefined,
+        undefined,
+        unrestrictedReplacementAuthorization,
+        { completesPartialUpload: true }
+      )
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should ask scene persistence to record the completion receipt', () => {
+      expect(worldsDeployScene.mock.calls[0][4]).toEqual(expect.objectContaining({ completesPartialUpload: true }))
     })
   })
 

@@ -283,14 +283,18 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   router.put(
     '/world/:world_name/settings',
     signedFetchMiddleware,
-    multipartParserWrapper(updateWorldSettingsHandler, {
-      inFlightUploadBudget,
-      maxSizeInBytes: MAX_WORLD_SETTINGS_UPLOAD_SIZE_IN_BYTES,
-      uploadTimeoutMs,
-      route: 'world-settings',
-      onTelemetry,
-      onCleanupError
-    })
+    multipartParserWrapper(
+      (ctx: Parameters<typeof updateWorldSettingsHandler>[0]) =>
+        globalContext.components.contentLocks.withRead(() => updateWorldSettingsHandler(ctx)),
+      {
+        inFlightUploadBudget,
+        maxSizeInBytes: MAX_WORLD_SETTINGS_UPLOAD_SIZE_IN_BYTES,
+        uploadTimeoutMs,
+        route: 'world-settings',
+        onTelemetry,
+        onCleanupError
+      }
+    )
   )
 
   // World manifest
