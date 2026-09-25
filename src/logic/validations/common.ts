@@ -37,7 +37,7 @@ export function createValidateDeploymentTtl(components: Pick<ValidatorComponents
   return async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
     // A partial (multi-request) upload can span longer than the deployment TTL, so when a pending
     // upload exists the entity's freshness is measured against when the upload started
-    // (pendingCreatedAt) rather than now. Full deploys have no pending row and anchor on Date.now().
+    // (pendingCreatedAt) rather than now. Full deploys never set it and anchor on Date.now().
     const anchor = deployment.pendingCreatedAt?.getTime() ?? Date.now()
     const ttl = anchor - deployment.entity.timestamp
     const maxTtl = (await components.config.getNumber('DEPLOYMENT_TTL')) || 300_000

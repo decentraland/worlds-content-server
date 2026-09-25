@@ -6,6 +6,7 @@ import { Authenticator } from '@dcl/crypto'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { getIdentity, Identity, makeid, cleanup } from '../utils'
 import FormData from 'form-data'
+import SQL from 'sql-template-strings'
 
 // Lower the per-deployer concurrent-pending cap so it's exercisable without staging 10+ uploads.
 // Runs at module evaluation, before the test harness initializes components in beforeAll, and
@@ -421,6 +422,86 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
         status: 400,
         body: expect.objectContaining({ message: 'Deployment failed: this entity is already deployed.' }),
         pending: 0
+      })
+    })
+  })
+
+  describe('when another authorized signer deploys the entity of a live upload without partial', () => {
+    let vanillaStatus: number
+    let pendingAfterDeploy: number
+    let receiptsAfterDeploy: number
+    let nextBatch: Awaited<ReturnType<typeof post>>
+
+    beforeEach(async () => {
+      const { database } = components
+      const { namePermissionChecker } = stubComponents
+      await post(buildForm([entityId, contentHashes[0]], Authenticator.signPayload(identity.authChain, entityId)))
+      const other = await getIdentity()
+      namePermissionChecker.checkPermission.mockResolvedValue(true)
+      vanillaStatus = (
+        await post(buildForm([entityId, ...contentHashes], Authenticator.signPayload(other.authChain, entityId), false))
+      ).status
+      pendingAfterDeploy = await countPending()
+      const receipts = await database.query<{ count: string }>(
+        SQL`SELECT COUNT(*) AS count FROM completed_scene_uploads WHERE entity_id = ${entityId}`
+      )
+      receiptsAfterDeploy = parseInt(receipts.rows[0].count)
+      nextBatch = await post(
+        buildForm([entityId, contentHashes[1]], Authenticator.signPayload(identity.authChain, entityId))
+      )
+    })
+
+    it('should publish it and drop the upload without recording a completion receipt', () => {
+      expect({ vanillaStatus, pendingAfterDeploy, receiptsAfterDeploy }).toEqual({
+        vanillaStatus: 200,
+        pendingAfterDeploy: 0,
+        receiptsAfterDeploy: 0
+      })
+    })
+
+    it("should reject the partial uploader's next batch as already deployed", async () => {
+      expect({ status: nextBatch.status, body: await nextBatch.json() }).toEqual({
+        status: 400,
+        body: expect.objectContaining({ message: 'Deployment failed: this entity is already deployed.' })
+      })
+    })
+  })
+
+  describe('when a full deployment of a stale entity has a pending upload', () => {
+    let response: Awaited<ReturnType<typeof post>>
+
+    beforeEach(async () => {
+      const { database } = components
+      const startedAt = Date.now() - 10 * 60 * 1000
+      const stale = await DeploymentBuilder.buildEntity({
+        type: EntityType.SCENE as any,
+        pointers: ['20,24'],
+        files: new Map([['file1.txt', stringToUtf8Bytes(makeid(100))]]),
+        metadata: {
+          main: 'file1.txt',
+          scene: { base: '20,24', parcels: ['20,24'] },
+          worldConfiguration: { name: worldName }
+        },
+        timestamp: startedAt
+      })
+      entityId = stale.entityId
+      files = stale.files
+      contentHashes = Array.from(files.keys()).filter((k) => k !== entityId)
+      const entity = JSON.parse(Buffer.from(files.get(entityId)!).toString())
+      const deployer = identity.authChain.authChain[0].payload.toLowerCase()
+      await database.query(SQL`
+        INSERT INTO pending_scenes (entity_id, world_name, parcels, entity, deployer, created_at)
+        VALUES (${entityId}, ${worldName}, ${['20,24']}::text[], ${entity}::jsonb, ${deployer}, ${new Date(startedAt)})`)
+      response = await post(
+        buildForm([entityId, ...contentHashes], Authenticator.signPayload(identity.authChain, entityId), false)
+      )
+    })
+
+    it('should validate its freshness against now instead of the upload start', async () => {
+      expect({ status: response.status, body: await response.json(), deployed: await countDeployedScenes() }).toEqual({
+        status: 400,
+        body: expect.objectContaining({ message: expect.stringContaining('Deployment was created') }),
+        deployed: 0
       })
     })
   })

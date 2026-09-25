@@ -520,6 +520,39 @@ describe('entity deployer', () => {
     })
   })
 
+  describe('when a scene deployment finalizes a partial upload', () => {
+    let worldsDeployScene: jest.Mock
+
+    beforeEach(async () => {
+      const setup = createComponents(jest.fn().mockResolvedValue(undefined), 2)
+      worldsDeployScene = setup.worldsDeployScene
+      const entity = createScene([])
+      const deployer = createEntityDeployer(setup.components)
+
+      await deployer.deployEntity(
+        'https://worlds.example',
+        entity,
+        new Map(),
+        new Map(),
+        JSON.stringify(entity),
+        [],
+        0,
+        undefined,
+        undefined,
+        unrestrictedReplacementAuthorization,
+        { completesPartialUpload: true }
+      )
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should ask scene persistence to record the completion receipt', () => {
+      expect(worldsDeployScene.mock.calls[0][4]).toEqual(expect.objectContaining({ completesPartialUpload: true }))
+    })
+  })
+
   describe('when the world name has no resolvable owner', () => {
     let caughtError: unknown
     let worldsDeployScene: jest.Mock

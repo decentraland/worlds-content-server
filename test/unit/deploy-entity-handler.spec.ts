@@ -77,9 +77,7 @@ describe('deployEntity', () => {
             operation(signal)
         },
         deploymentProcessing: createDeploymentProcessingMock(),
-        // Default no-op pending-scenes manager: the vanilla deploy path looks up (and cleans up) any
-        // pending partial upload for the entity. Returning no pending row keeps these tests exercising
-        // the plain single-request path; tests that need a pending row override this.
+        // Default no-op pending-scenes manager; tests of partial requests that need a pending row override it.
         pendingScenesManager: {
           getByEntityId: jest.fn().mockResolvedValue(undefined),
           getCompleted: jest.fn().mockResolvedValue(undefined),

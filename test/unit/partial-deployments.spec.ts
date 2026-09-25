@@ -152,6 +152,15 @@ describe('when staging a partial deployment', () => {
       await stage(input)
       expect(storeStream.mock.calls[0][2]).toBe(input.signal)
     })
+    describe('and the upload is published', () => {
+      beforeEach(async () => {
+        await stage(input)
+      })
+
+      it('should mark the publication as a partial finalization so its signer gets a completion receipt', () => {
+        expect(deployEntity.mock.calls[0][10]).toEqual({ completesPartialUpload: true })
+      })
+    })
     describe('and storage has lost a previously acknowledged file', () => {
       beforeEach(() => {
         fileInfo.mockResolvedValueOnce(undefined)
@@ -200,12 +209,18 @@ describe('when staging a partial deployment', () => {
       error = await stage(input).catch((e) => e)
     })
 
-    it('should reject it before creating an upload or reserving bytes', () => {
+    it('should reject it before validating, creating an upload or reserving bytes', () => {
       expect({
         message: (error as Error).message,
+        validations: validateStaging.mock.calls.length,
         uploads: upsert.mock.calls.length,
         reservations: reserve.mock.calls.length
-      }).toEqual({ message: 'Deployment failed: this entity is already deployed.', uploads: 0, reservations: 0 })
+      }).toEqual({
+        message: 'Deployment failed: this entity is already deployed.',
+        validations: 0,
+        uploads: 0,
+        reservations: 0
+      })
     })
   })
 

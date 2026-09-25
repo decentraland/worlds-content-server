@@ -68,6 +68,11 @@ export async function createPartialDeploymentsComponent(
     signal?.throwIfAborted()
     // Validation and publication see the manifest; accounting and storage only see uploaded files.
     const deploymentFiles = manifest ? new Map([...files, [entity.id, manifest]]) : files
+    // A published entity is never restaged; checked first so a superseded upload's stale TTL can't mask it.
+    const claimedWorld: unknown = entity.metadata?.worldConfiguration?.name
+    if (typeof claimedWorld === 'string' && (await isDeployed(claimedWorld.toLowerCase(), entity.id, signal))) {
+      throw new InvalidRequestError(ALREADY_DEPLOYED)
+    }
     const pending = await pendingScenesManager.getByEntityId(entity.id, signal)
     const validation: DeploymentToValidate = {
       entity,
@@ -88,11 +93,6 @@ export async function createPartialDeploymentsComponent(
     const contentHashes = Array.from(new Set((entity.content ?? []).map((content) => content.hash)))
     const worldName = entity.metadata.worldConfiguration.name.toLowerCase()
     const parcels = Array.from(new Set(coordinates.canonicalizeParcels(entity.pointers)))
-    // A deployed entity is never staged again: its original signer already got the completion receipt,
-    // and anyone else would only leave a reservation behind before failing at publication.
-    if (await isDeployed(worldName, entity.id, signal)) {
-      throw new InvalidRequestError(ALREADY_DEPLOYED)
-    }
     if (!pending && (await raceWithSignal(worldsManager.hasNewerDeployedScene(worldName, entity), signal))) {
       throw new InvalidRequestError(
         'Deployment failed: a newer scene is already deployed on one or more of these parcels.'
@@ -178,7 +178,8 @@ export async function createPartialDeploymentsComponent(
         calculateDeploymentSizeFromFileInfos(entity, deploymentFiles, presentInfos),
         signal,
         deadlineAt,
-        deployment.sceneReplacementAuthorization
+        deployment.sceneReplacementAuthorization,
+        { completesPartialUpload: true }
       )
     } catch (error) {
       if (!isUniqueViolation(error) || !(await isDeployed(worldName, entity.id).catch(() => false))) {

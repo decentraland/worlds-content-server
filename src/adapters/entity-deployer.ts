@@ -1,6 +1,7 @@
 import {
   AppComponents,
   DeploymentFile,
+  DeployEntityOptions,
   DeploymentResult,
   IEntityDeployer,
   MissingSceneReplacementAuthorizationError,
@@ -23,7 +24,8 @@ type PostDeploymentHook = (
   deploymentSize: number,
   signal?: AbortSignal,
   deadlineAt?: number,
-  sceneReplacementAuthorization?: SceneReplacementAuthorization
+  sceneReplacementAuthorization?: SceneReplacementAuthorization,
+  options?: DeployEntityOptions
 ) => Promise<DeploymentResult>
 
 /** Maximum number of independent content-addressed objects uploaded concurrently. */
@@ -66,7 +68,8 @@ export function createEntityDeployer(
     deploymentSize: number,
     signal?: AbortSignal,
     deadlineAt?: number,
-    sceneReplacementAuthorization?: SceneReplacementAuthorization
+    sceneReplacementAuthorization?: SceneReplacementAuthorization,
+    options?: DeployEntityOptions
   ): Promise<DeploymentResult> {
     // Fast-fail BEFORE writing anything to storage if a newer scene already holds these parcels. This is
     // non-authoritative (deployScene re-checks atomically under a lock), but it keeps a rejected older
@@ -117,7 +120,16 @@ export function createEntityDeployer(
 
     signal?.throwIfAborted()
     return await deploymentProcessing.trackStage('persistence', 1, () =>
-      postDeployment(baseUrl, entity, authChain, deploymentSize, signal, deadlineAt, sceneReplacementAuthorization)
+      postDeployment(
+        baseUrl,
+        entity,
+        authChain,
+        deploymentSize,
+        signal,
+        deadlineAt,
+        sceneReplacementAuthorization,
+        options
+      )
     )
   }
 
@@ -132,10 +144,20 @@ export function createEntityDeployer(
     deploymentSize: number,
     signal?: AbortSignal,
     deadlineAt?: number,
-    sceneReplacementAuthorization?: SceneReplacementAuthorization
+    sceneReplacementAuthorization?: SceneReplacementAuthorization,
+    options?: DeployEntityOptions
   ): Promise<DeploymentResult> {
     const hookForType = postDeploymentHooks[entity.type] || noPostDeploymentHook
-    return hookForType(baseUrl, entity, authChain, deploymentSize, signal, deadlineAt, sceneReplacementAuthorization)
+    return hookForType(
+      baseUrl,
+      entity,
+      authChain,
+      deploymentSize,
+      signal,
+      deadlineAt,
+      sceneReplacementAuthorization,
+      options
+    )
   }
 
   async function noPostDeploymentHook(
@@ -157,7 +179,8 @@ export function createEntityDeployer(
     deploymentSize: number,
     signal?: AbortSignal,
     deadlineAt?: number,
-    sceneReplacementAuthorization?: SceneReplacementAuthorization
+    sceneReplacementAuthorization?: SceneReplacementAuthorization,
+    options?: DeployEntityOptions
   ) {
     const { config, metrics, snsClient } = components
 
@@ -189,7 +212,8 @@ export function createEntityDeployer(
         authChain,
         size: deploymentSize,
         ...(deadlineAt === undefined ? {} : { deadlineAt }),
-        ...(signal === undefined ? {} : { signal })
+        ...(signal === undefined ? {} : { signal }),
+        ...(options?.completesPartialUpload ? { completesPartialUpload: true } : {})
       }
     )
 

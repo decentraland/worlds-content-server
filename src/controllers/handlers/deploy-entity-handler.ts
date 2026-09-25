@@ -271,16 +271,13 @@ async function deployEntityWithSignal(
     return { status: 202, body: { missing: result.missing ?? [] } }
   }
 
-  // Vanilla (single-request) deployment — behaves exactly as before, plus TTL anchoring on and cleanup
-  // of any pending upload that happens to exist for this entity.
-  const pending = await ctx.components.pendingScenesManager.getByEntityId(entityId, signal)
-
+  // Vanilla (single-request) deployment: always validated against now, even while a partial upload of
+  // the same entity is pending, whose staging state the publication then drops.
   const deployment: DeploymentToValidate = {
     entity,
     files: uploadedFiles,
     authChain,
     contentHashesInStorage: new Map<string, boolean>(),
-    pendingCreatedAt: pending?.createdAt,
     signal
   }
 
@@ -362,20 +359,6 @@ async function deployEntityWithSignal(
         entity.metadata?.scene?.parcels || []
       )
     }
-  }
-
-  // The entity is now fully deployed via the vanilla path, so drop any staging row for it. Done
-  // unconditionally (not just when the early `pending` lookup saw one): a concurrent partial request
-  // could have created the row AFTER that snapshot, and it would otherwise linger until
-  // PENDING_DEPLOYMENT_TTL, holding a slot of the deployer's pending cap. `deleteByEntityId` is an
-  // idempotent indexed delete (a no-op in the common no-pending case). Best-effort: the deployment
-  // already committed, so a cleanup failure must not turn a successful deploy into a 5xx.
-  try {
-    await ctx.components.pendingScenesManager.deleteByEntityId(entityId)
-  } catch (error) {
-    ctx.components.logs
-      .getLogger('deploy-entity')
-      .warn(`Failed to delete pending scene after a successful deploy: ${error}`, { entityId })
   }
 
   return {

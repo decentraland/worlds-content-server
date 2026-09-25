@@ -88,9 +88,9 @@ export type DeploymentToValidate = {
   authChain: AuthChain
   contentHashesInStorage: Map<string, boolean>
   /**
-   * created_at of the pending (partial) upload for this entity, when one exists. The deployment TTL
-   * check validates the entity timestamp against this anchor instead of now, so a multi-request upload
-   * can span longer than the TTL.
+   * created_at of the pending (partial) upload for this entity, set only by partial staging and
+   * finalization. The deployment TTL check validates the entity timestamp against this anchor instead
+   * of now, so a multi-request upload can span longer than the TTL.
    */
   pendingCreatedAt?: Date
   /** Storage metadata fetched once before validation, keyed by unique content hash. */
@@ -136,6 +136,8 @@ export type SceneDeploymentData = {
   deadlineAt?: number
   /** Cancels persistence until the transaction reaches its commit boundary. */
   signal?: AbortSignal
+  /** Set when this publication finalizes a partial upload, so its signer gets a completion receipt. */
+  completesPartialUpload?: boolean
 }
 
 export type SceneReplacementAuthorization = { mode: 'unrestricted-owner' } | { mode: 'scoped'; entityIds: string[] }
@@ -619,8 +621,14 @@ export type IEntityDeployer = {
     deploymentSize: number,
     signal?: AbortSignal,
     deadlineAt?: number,
-    sceneReplacementAuthorization?: SceneReplacementAuthorization
+    sceneReplacementAuthorization?: SceneReplacementAuthorization,
+    options?: DeployEntityOptions
   ): Promise<DeploymentResult>
+}
+
+export type DeployEntityOptions = {
+  /** The publication finalizes a partial upload; see SceneDeploymentData.completesPartialUpload. */
+  completesPartialUpload?: boolean
 }
 
 export type AwsConfig = {
