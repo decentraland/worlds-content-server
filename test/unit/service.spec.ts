@@ -20,6 +20,14 @@ describe('when the service starts', () => {
     }
     const database = {
       query: jest.fn(async () => ({ rows: [] })),
+      getPool: () => ({
+        connect: jest.fn(async () => ({
+          query: jest.fn(async () => ({ rows: [{ acquired: true }] })),
+          on: jest.fn(),
+          removeListener: jest.fn(),
+          release: jest.fn()
+        }))
+      }),
       [START_COMPONENT]: jest.fn(async () => void events.push('database started'))
     }
     allMigrations.splice(0, allMigrations.length, {
