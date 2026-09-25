@@ -467,6 +467,100 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
     })
   })
 
+  describe('when a partially deployed entity is undeployed', () => {
+    let originalCompletion: { status: number; body: { creationTimestamp: number } }
+
+    function sendAll(signer: Identity, partial = true) {
+      return post(
+        buildForm([entityId, ...contentHashes], Authenticator.signPayload(signer.authChain, entityId), partial)
+      )
+    }
+
+    async function toCompletion(response: Awaited<ReturnType<typeof post>>) {
+      return { status: response.status, body: await response.json() }
+    }
+
+    beforeEach(async () => {
+      originalCompletion = await toCompletion(await sendAll(identity))
+      await components.worldsManager.undeployWorld(worldName)
+    })
+
+    describe('and its finalizer replays the completing request', () => {
+      let replay: { status: number; body: { creationTimestamp: number } }
+      let deployed: number
+
+      beforeEach(async () => {
+        replay = await toCompletion(await sendAll(identity))
+        deployed = await countDeployedScenes()
+      })
+
+      it('should answer with the original completion without publishing the entity again', () => {
+        expect({ status: replay.status, creationTimestamp: replay.body.creationTimestamp, deployed }).toEqual({
+          status: 200,
+          creationTimestamp: originalCompletion.body.creationTimestamp,
+          deployed: 0
+        })
+      })
+    })
+
+    describe('and another authorized signer publishes it again through a partial upload', () => {
+      let republication: { status: number; body: { creationTimestamp: number } }
+      let republicationRetry: { status: number; body: { creationTimestamp: number } }
+      let originalReplay: { status: number; body: { message: string } }
+
+      beforeEach(async () => {
+        const other = await getIdentity()
+        stubComponents.namePermissionChecker.checkPermission.mockResolvedValue(true)
+        republication = await toCompletion(await sendAll(other))
+        republicationRetry = await toCompletion(await sendAll(other))
+        originalReplay = await toCompletion(await sendAll(identity))
+      })
+
+      it("should answer the new finalizer's retry with its own completion", () => {
+        expect({
+          status: republication.status,
+          retryStatus: republicationRetry.status,
+          retryCreationTimestamp: republicationRetry.body.creationTimestamp
+        }).toEqual({ status: 200, retryStatus: 200, retryCreationTimestamp: republication.body.creationTimestamp })
+      })
+
+      it("should reject the earlier finalizer's replay as already deployed", () => {
+        expect(originalReplay).toEqual({
+          status: 400,
+          body: expect.objectContaining({ message: 'Deployment failed: this entity is already deployed.' })
+        })
+      })
+    })
+
+    describe('and another authorized signer publishes it again without partial', () => {
+      let republicationStatus: number
+      let receipts: number
+      let originalReplay: { status: number; body: { message: string } }
+
+      beforeEach(async () => {
+        const other = await getIdentity()
+        stubComponents.namePermissionChecker.checkPermission.mockResolvedValue(true)
+        republicationStatus = (await sendAll(other, false)).status
+        const result = await components.database.query<{ count: string }>(
+          SQL`SELECT COUNT(*) AS count FROM completed_scene_uploads WHERE entity_id = ${entityId}`
+        )
+        receipts = parseInt(result.rows[0].count)
+        originalReplay = await toCompletion(await sendAll(identity))
+      })
+
+      it('should publish it and drop the earlier completion receipt', () => {
+        expect({ republicationStatus, receipts }).toEqual({ republicationStatus: 200, receipts: 0 })
+      })
+
+      it("should reject the earlier finalizer's replay as already deployed", () => {
+        expect(originalReplay).toEqual({
+          status: 400,
+          body: expect.objectContaining({ message: 'Deployment failed: this entity is already deployed.' })
+        })
+      })
+    })
+  })
+
   describe('when a full deployment of a stale entity has a pending upload', () => {
     let response: Awaited<ReturnType<typeof post>>
 

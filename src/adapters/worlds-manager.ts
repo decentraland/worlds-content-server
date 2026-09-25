@@ -709,16 +709,19 @@ export async function createWorldsManagerComponent({
         )
       `)
 
-      // The completion receipt and publication commit together. It survives pending cleanup,
-      // scene replacement and client disconnects, and cannot falsely acknowledge a rolled-back deploy.
-      // Only a partial finalization gets one, and only for its own signer.
+      // The completion receipt commits with the publication and survives pending cleanup, replacement,
+      // undeployment and disconnects; only a partial finalizer gets one. It tracks the entity's latest
+      // publication, so re-publishing the entity after an undeploy replaces or drops it.
       if (deployment?.completesPartialUpload) {
         await query(SQL`
           INSERT INTO completed_scene_uploads (entity_id, deployer, world_name, parcels, completed_at)
           VALUES (${scene.id}, ${deployer}, ${worldName}, ${scene.metadata?.scene?.parcels || []}::text[],
             ${new Date(creationTimestamp)})
-          ON CONFLICT (entity_id) DO NOTHING
+          ON CONFLICT (entity_id) DO UPDATE SET deployer = EXCLUDED.deployer, world_name = EXCLUDED.world_name,
+            parcels = EXCLUDED.parcels, completed_at = EXCLUDED.completed_at
         `)
+      } else {
+        await query(SQL`DELETE FROM completed_scene_uploads WHERE entity_id = ${scene.id}`)
       }
       // Any publication of the entity supersedes its pending upload, whose staged files are now stored.
       await query(SQL`DELETE FROM pending_scenes WHERE entity_id = ${scene.id}`)
