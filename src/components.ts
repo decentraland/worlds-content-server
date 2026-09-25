@@ -356,7 +356,11 @@ export async function initComponents(): Promise<AppComponents> {
   }
   const rateLimiter = await createRateLimiterComponent({ config, logs, redis })
 
+  // Lifecycle starts components sequentially in this order: the database, then migrations, then
+  // everything that serves requests or runs jobs against the schema.
   return {
+    database,
+    migrationExecutor,
     contentLocks,
     access,
     accessChangeHandler,
@@ -367,7 +371,6 @@ export async function initComponents(): Promise<AppComponents> {
     config,
     settingsPolicy,
     coordinates,
-    database,
     deploymentProcessing,
     denyList,
     entityDeployer,
@@ -379,7 +382,6 @@ export async function initComponents(): Promise<AppComponents> {
     logs,
     marketplaceSubGraph,
     metrics,
-    migrationExecutor,
     blocking,
     nameDenyListChecker,
     nameOwnership,

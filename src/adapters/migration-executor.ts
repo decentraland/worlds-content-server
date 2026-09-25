@@ -1,20 +1,20 @@
 import { Migration, MigratorComponents } from '../types'
-import { IBaseComponent } from '@well-known-components/interfaces/dist/components/base-component'
+import { IBaseComponent, START_COMPONENT } from '@well-known-components/interfaces'
 import SQL from 'sql-template-strings'
 import { allMigrations } from '../migrations/all-migrations'
 
-export interface MigrationExecutor {
-  run: () => Promise<void>
-}
+/**
+ * Applies pending migrations when started. Lifecycle starts components one at a time in their
+ * declaration order, so every component declared after this one (the HTTP server, consumers and jobs)
+ * only starts once the schema is current.
+ */
+export type MigrationExecutor = IBaseComponent
 
-export function createMigrationExecutor(components: MigratorComponents): MigrationExecutor & IBaseComponent {
+export function createMigrationExecutor(components: MigratorComponents): MigrationExecutor {
   const { logs } = components
   const logger = logs.getLogger('migration-executor')
 
-  const alreadyRunMigrations: string[] = []
-  const pendingMigrations: Migration[] = []
-
-  async function start(): Promise<void> {
+  async function getPendingMigrations(): Promise<Migration[]> {
     // Create the migrations table if it does not exist
     await components.database.query(SQL`
         CREATE TABLE IF NOT EXISTS migrations
@@ -29,13 +29,12 @@ export function createMigrationExecutor(components: MigratorComponents): Migrati
     const result = await components.database.query<{ name: string; run_on: Date }>(
       'SELECT name, run_on from migrations'
     )
-    alreadyRunMigrations.push(...result.rows.map((row) => row.name))
-
-    // Determine pending migrations
-    pendingMigrations.push(...allMigrations.filter((migration) => !alreadyRunMigrations.includes(migration.id)))
+    const alreadyRunMigrations = new Set(result.rows.map((row) => row.name))
+    return allMigrations.filter((migration) => !alreadyRunMigrations.has(migration.id))
   }
 
-  async function run(): Promise<void> {
+  async function start(): Promise<void> {
+    const pendingMigrations = await getPendingMigrations()
     if (pendingMigrations.length === 0) {
       logger.debug('Migrations are up to date, nothing to run')
       return
@@ -53,7 +52,6 @@ export function createMigrationExecutor(components: MigratorComponents): Migrati
   }
 
   return {
-    start,
-    run
+    [START_COMPONENT]: start
   }
 }
