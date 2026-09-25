@@ -43,9 +43,9 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
     return form
   }
 
-  async function post(form: FormData) {
+  async function post(form: FormData, path = '/entities') {
     const { localFetch } = components
-    return localFetch.fetch('/entities', {
+    return localFetch.fetch(path, {
       method: 'POST',
       headers: form.getHeaders(),
       body: form.getBuffer()
@@ -634,6 +634,52 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
         status: 400,
         body: expect.objectContaining({ message: 'This upload was started by another account.' }),
         unchanged: true
+      })
+    })
+  })
+
+  describe('when a request declares partial=true in the query but not in the form', () => {
+    let status: number
+    let body: unknown
+    let deployedScenes: number
+    let pending: number
+
+    beforeEach(async () => {
+      const authChain = Authenticator.signPayload(identity.authChain, entityId)
+      const response = await post(buildForm([entityId, ...contentHashes], authChain, false), '/entities?partial=true')
+      status = response.status
+      body = await response.json()
+      deployedScenes = await countDeployedScenes()
+      pending = await countPending()
+    })
+
+    it('should reject it with 400 without deploying or staging anything', () => {
+      expect({ status, body, deployedScenes, pending }).toEqual({
+        status: 400,
+        body: expect.objectContaining({
+          message: "The 'partial=true' query parameter requires the 'partial=true' form field"
+        }),
+        deployedScenes: 0,
+        pending: 0
+      })
+    })
+  })
+
+  describe('when a request declares partial=true in both the query and the form', () => {
+    let status: number
+    let body: unknown
+
+    beforeEach(async () => {
+      const authChain = Authenticator.signPayload(identity.authChain, entityId)
+      const response = await post(buildForm([entityId], authChain), '/entities?partial=true')
+      status = response.status
+      body = await response.json()
+    })
+
+    it('should stage it as a partial batch', () => {
+      expect({ status, body }).toEqual({
+        status: 202,
+        body: { missing: expect.arrayContaining(contentHashes) }
       })
     })
   })

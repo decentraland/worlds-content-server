@@ -194,6 +194,77 @@ describe('deployEntity', () => {
     })
   })
 
+  describe('when the partial query parameter is sent', () => {
+    let withRead: jest.Mock
+    let context: DeployContext
+    let caughtError: unknown
+
+    beforeEach(() => {
+      withRead = jest.fn()
+      const baseContext = createContext(entityId, { [entityId]: makeFile(Buffer.from('{}')) })
+      context = {
+        ...baseContext,
+        components: { ...baseContext.components, contentLocks: { withRead } },
+        url: new URL('https://request.example/entities?partial=true')
+      } as unknown as DeployContext
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    describe('and the partial form field is missing', () => {
+      beforeEach(async () => {
+        caughtError = await deployEntity(context).catch((error) => error)
+      })
+
+      it('should reject it without taking any content lock', () => {
+        expect({ caughtError, locks: withRead.mock.calls.length }).toEqual({
+          caughtError: new InvalidRequestError(
+            "The 'partial=true' query parameter requires the 'partial=true' form field"
+          ),
+          locks: 0
+        })
+      })
+    })
+
+    describe('and the partial form field is not true', () => {
+      beforeEach(async () => {
+        context.formData.fields.partial = makeField('false')
+        caughtError = await deployEntity(context).catch((error) => error)
+      })
+
+      it('should reject it without taking any content lock', () => {
+        expect({ caughtError, locks: withRead.mock.calls.length }).toEqual({
+          caughtError: new InvalidRequestError(
+            "The 'partial=true' query parameter requires the 'partial=true' form field"
+          ),
+          locks: 0
+        })
+      })
+    })
+
+    describe('and the partial form field is true but the request is not validly signed', () => {
+      let validateSignatureSpy: jest.SpyInstance
+
+      beforeEach(async () => {
+        validateSignatureSpy = jest
+          .spyOn(Authenticator, 'validateSignature')
+          .mockResolvedValue({ ok: false, message: 'bad signature' })
+        context.formData.fields.partial = makeField('true')
+        caughtError = await deployEntity(context).catch((error) => error)
+      })
+
+      afterEach(() => {
+        validateSignatureSpy.mockRestore()
+      })
+
+      it('should handle it as a partial request', () => {
+        expect(caughtError).toEqual(new InvalidRequestError('Invalid auth chain: bad signature'))
+      })
+    })
+  })
+
   describe('when a partial resume request omits the entity file', () => {
     let validateSignatureSpy: jest.SpyInstance
     let getByEntityId: jest.Mock
@@ -356,7 +427,7 @@ describe('deployEntity', () => {
           storage: { fileInfo },
           validator: { validateAfterStorage, validateBeforeStorage }
         },
-        url: { host: 'request.example' }
+        url: new URL('https://request.example/entities')
       } as unknown as DeployContext
 
       const response = await deployEntity(context)

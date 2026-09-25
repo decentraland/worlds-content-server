@@ -128,11 +128,15 @@ type AuthenticatedRequest = { entityId: string; authChain: AuthChain; isPartial:
  * deployment validator runs.
  */
 async function authenticateRequest(ctx: DeployEntityContext): Promise<AuthenticatedRequest> {
-  const entityId = requireString(ctx.formData.fields.entityId?.value[0])
-  const authChain = extractAuthChain(ctx)
   // A `partial=true` field marks a staging request of a multi-request (partial) deployment: content may
   // be uploaded across several requests and the world only becomes live once all of it is present.
   const isPartial = ctx.formData.fields.partial?.value[0] === 'true'
+  // Clients may also declare a batch with `?partial=true`; it must agree with the form, as on Catalyst.
+  if (!isPartial && ctx.url.searchParams.get('partial') === 'true') {
+    throw new InvalidRequestError("The 'partial=true' query parameter requires the 'partial=true' form field")
+  }
+  const entityId = requireString(ctx.formData.fields.entityId?.value[0])
+  const authChain = extractAuthChain(ctx)
   if (isPartial) {
     if (!AuthChain.validate(authChain)) throw new InvalidRequestError('Invalid auth chain.')
     const signature = await Authenticator.validateSignature(entityId, authChain, null, Date.now())
