@@ -1,6 +1,6 @@
 import { START_COMPONENT, STOP_COMPONENT } from '@well-known-components/interfaces'
 import { createPgComponent } from '@dcl/pg-component'
-import SQL from 'sql-template-strings'
+import SQL, { SQLStatement } from 'sql-template-strings'
 import { AppComponents } from '../../types'
 import { getPositiveInteger, raceWithSignal } from '../../logic/concurrency'
 import { UploadClient } from '../upload-transaction'
@@ -86,19 +86,31 @@ export async function createContentLocks(
     }
     const controller = new AbortController()
     const abort = (): void => controller.abort(signal?.reason)
-    const connectionError = (error: Error): void => controller.abort(error)
+    // Reuse the connection unless its transport broke or a lock statement may still be running on it.
+    let reusable = true
+    let lockTimeoutSet = false
+    const connectionError = (error: Error): void => {
+      reusable = false
+      controller.abort(error)
+    }
     signal?.addEventListener('abort', abort, { once: true })
     client.on('error', connectionError)
-    let failed = false
+    // Only a lock statement that fails or is abandoned on abort leaves the session in an unknown state.
+    async function lockQuery<R extends Record<string, unknown>>(sql: string | SQLStatement): Promise<R[]> {
+      try {
+        return (await raceWithSignal(client.query<R>(sql), controller.signal)).rows
+      } catch (error) {
+        if ((error as { code?: string }).code !== LOCK_NOT_AVAILABLE) reusable = false
+        throw error
+      }
+    }
     try {
       if (signal?.aborted) abort()
       if (exclusive) {
-        await client.query(`SET lock_timeout = ${Math.ceil(writerLockTimeoutMs)}`)
+        await lockQuery(`SET lock_timeout = ${Math.ceil(writerLockTimeoutMs)}`)
+        lockTimeoutSet = true
         try {
-          await raceWithSignal(
-            client.query(SQL`SELECT pg_advisory_lock(hashtextextended('worlds-content-gc', 0))`),
-            controller.signal
-          )
+          await lockQuery(SQL`SELECT pg_advisory_lock(hashtextextended('worlds-content-gc', 0))`)
         } catch (error) {
           if ((error as { code?: string }).code === LOCK_NOT_AVAILABLE) {
             return { acquired: false }
@@ -106,46 +118,37 @@ export async function createContentLocks(
           throw error
         }
       } else {
-        const gate = await raceWithSignal(
-          client.query<{ acquired: boolean }>(
-            SQL`SELECT pg_try_advisory_lock_shared(hashtextextended('worlds-content-gc', 0)) AS acquired`
-          ),
-          controller.signal
+        const gate = await lockQuery<{ acquired: boolean }>(
+          SQL`SELECT pg_try_advisory_lock_shared(hashtextextended('worlds-content-gc', 0)) AS acquired`
         )
-        if (!gate.rows[0]?.acquired) {
+        if (!gate[0]?.acquired) {
           return { acquired: false }
         }
       }
       if (entityId) {
-        const entityLock = await raceWithSignal(
-          client.query<{ acquired: boolean }>(
-            SQL`SELECT pg_try_advisory_lock(hashtextextended(${'partial-entity:' + entityId}, 0)) AS acquired`
-          ),
-          controller.signal
+        const entityLock = await lockQuery<{ acquired: boolean }>(
+          SQL`SELECT pg_try_advisory_lock(hashtextextended(${'partial-entity:' + entityId}, 0)) AS acquired`
         )
-        if (!entityLock.rows[0]?.acquired) {
+        if (!entityLock[0]?.acquired) {
           return { acquired: false }
         }
       }
       controller.signal.throwIfAborted()
       return { acquired: true, value: await operation(controller.signal) }
-    } catch (error) {
-      failed = true
-      throw error
     } finally {
       signal?.removeEventListener('abort', abort)
-      // Destroy a connection with a queued acquisition or broken transport. A successful operation
-      // unlocks explicitly, allowing the lock pool to reuse its connection without session leaks.
-      if (!failed) {
+      // A failed operation leaves a healthy connection: unlock and reuse it; destroy it only when
+      // unlocking is impossible, since the session would otherwise keep its locks in the pool.
+      if (reusable) {
         try {
           await client.query('SELECT pg_advisory_unlock_all()')
-          if (exclusive) await client.query('RESET lock_timeout')
+          if (lockTimeoutSet) await client.query('RESET lock_timeout')
         } catch {
-          failed = true
+          reusable = false
         }
       }
       client.removeListener('error', connectionError)
-      client.release(failed)
+      client.release(!reusable)
     }
   }
 
