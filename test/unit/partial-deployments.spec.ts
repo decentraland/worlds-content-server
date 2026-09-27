@@ -69,6 +69,7 @@ describe('when staging a partial deployment', () => {
       logs: { getLogger: jest.fn() },
       metrics: { increment: jest.fn() },
       pendingScenesManager: {
+        ttlMs: 86_400_000,
         getByEntityId: getPending,
         upsert,
         reserve,
@@ -100,6 +101,30 @@ describe('when staging a partial deployment', () => {
         metadata: 0,
         reservations: 0
       })
+    })
+  })
+
+  describe('and the batch admits a new upload', () => {
+    beforeEach(async () => {
+      await stage(input)
+    })
+
+    it('should create the upload at the instant its freshness was validated', () => {
+      expect(upsert.mock.calls[0][0].admittedAt).toBe(validateStaging.mock.calls[0][0].pendingCreatedAt)
+    })
+  })
+
+  describe('and the batch resumes an existing upload', () => {
+    let createdAt: Date
+
+    beforeEach(async () => {
+      createdAt = new Date(5_000)
+      getPending.mockResolvedValueOnce({ createdAt, deployer: 'deployer', initialized: true })
+      await stage(input)
+    })
+
+    it('should validate freshness against the upload admission', () => {
+      expect(validateStaging.mock.calls[0][0].pendingCreatedAt).toBe(createdAt)
     })
   })
 
@@ -154,11 +179,12 @@ describe('when staging a partial deployment', () => {
     })
     describe('and the upload is published', () => {
       beforeEach(async () => {
+        upsert.mockResolvedValueOnce({ createdAt: new Date(5_000) })
         await stage(input)
       })
 
-      it('should mark the publication as a partial finalization so its signer gets a completion receipt', () => {
-        expect(deployEntity.mock.calls[0][10]).toEqual({ completesPartialUpload: true })
+      it('should mark the publication as a partial finalization that expires with the upload', () => {
+        expect(deployEntity.mock.calls[0][10]).toEqual({ completesPartialUpload: { expiresAt: 86_405_000 } })
       })
     })
     describe('and storage has lost a previously acknowledged file', () => {

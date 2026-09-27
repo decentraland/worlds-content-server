@@ -298,6 +298,32 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
       })
     })
 
+    describe('and cleanup removes the upload while its completing batch is being validated', () => {
+      let completingResponse: Awaited<ReturnType<typeof post>>
+      let completingBody: { message?: string }
+      let deployedScenes: number
+
+      beforeEach(async () => {
+        await post(buildForm([entityId, hashA], authChain))
+        // The completing batch already passed its liveness check when expiry cleanup deletes the upload.
+        stubComponents.namePermissionChecker.checkPermission.mockImplementation(async () => {
+          await components.database.query(SQL`DELETE FROM pending_scenes WHERE entity_id = ${entityId}`)
+          return true
+        })
+        completingResponse = await post(buildForm([hashB], authChain))
+        completingBody = await completingResponse.json()
+        deployedScenes = await countDeployedScenes()
+      })
+
+      it('should reject the completing request as expired without publishing the scene', () => {
+        expect({ status: completingResponse.status, message: completingBody.message, deployedScenes }).toEqual({
+          status: 400,
+          message: 'This upload expired. Create a new entity with a fresh timestamp.',
+          deployedScenes: 0
+        })
+      })
+    })
+
     describe('and the deployer loses the name permission mid-upload', () => {
       let stagingResponse: Awaited<ReturnType<typeof post>>
 

@@ -137,8 +137,11 @@ export type SceneDeploymentData = {
   deadlineAt?: number
   /** Cancels persistence until the transaction reaches its commit boundary. */
   signal?: AbortSignal
-  /** Set when this publication finalizes a partial upload, so its signer gets a completion receipt. */
-  completesPartialUpload?: boolean
+  /**
+   * Set when this publication finalizes a partial upload, so its signer gets a completion receipt.
+   * Publication is refused once the upload is gone or `expiresAt` (epoch ms) has passed.
+   */
+  completesPartialUpload?: { expiresAt: number }
 }
 
 export type SceneReplacementAuthorization = { mode: 'unrestricted-owner' } | { mode: 'scoped'; entityIds: string[] }
@@ -636,7 +639,7 @@ export type IEntityDeployer = {
 
 export type DeployEntityOptions = {
   /** The publication finalizes a partial upload; see SceneDeploymentData.completesPartialUpload. */
-  completesPartialUpload?: boolean
+  completesPartialUpload?: { expiresAt: number }
 }
 
 export type AwsConfig = {

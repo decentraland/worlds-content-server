@@ -74,12 +74,14 @@ export async function createPartialDeploymentsComponent(
       throw new InvalidRequestError(ALREADY_DEPLOYED)
     }
     const pending = await pendingScenesManager.getByEntityId(entity.id, signal)
+    // One admission instant, taken before any I/O, anchors both freshness and the upload's lifetime.
+    const admittedAt = pending?.createdAt ?? new Date()
     const validation: DeploymentToValidate = {
       entity,
       files: deploymentFiles,
       authChain,
       contentHashesInStorage: new Map(),
-      pendingCreatedAt: pending?.createdAt,
+      pendingCreatedAt: admittedAt,
       signal
     }
     const stagingValidation = await validator.validateStaging(validation, {
@@ -116,7 +118,7 @@ export async function createPartialDeploymentsComponent(
       .reduce((sum, receipt) => sum + BigInt(receipt.size), 0n)
     if (knownSceneBytes > maxSize) throw new InvalidRequestError('Deployment failed: The deployment is too big.')
     const pendingRow = await pendingScenesManager.upsert(
-      { entityId: entity.id, worldName, parcels, entity, deployer: authChain[0].payload },
+      { entityId: entity.id, worldName, parcels, entity, deployer: authChain[0].payload, admittedAt },
       { maxPendingPerDeployer },
       signal
     )
@@ -179,7 +181,7 @@ export async function createPartialDeploymentsComponent(
         signal,
         deadlineAt,
         deployment.sceneReplacementAuthorization,
-        { completesPartialUpload: true }
+        { completesPartialUpload: { expiresAt: pendingRow.createdAt.getTime() + pendingScenesManager.ttlMs } }
       )
     } catch (error) {
       if (!isUniqueViolation(error) || !(await isDeployed(worldName, entity.id).catch(() => false))) {

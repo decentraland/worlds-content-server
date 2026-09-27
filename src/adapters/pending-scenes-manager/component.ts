@@ -5,6 +5,7 @@ import { getPositiveInteger, raceWithSignal } from '../../logic/concurrency'
 import { withUploadTransaction } from '../upload-transaction'
 import { getReferencedContentKeys } from '../content-references'
 import { IPendingScenesManager, PendingScene, UpsertPendingScene, FileReceipt } from './types'
+import { PartialUploadExpiredError } from './errors'
 
 type PendingSceneRow = {
   entity_id: string
@@ -69,7 +70,7 @@ export async function createPendingScenesManager(
         created_at, updated_at, initialized FROM pending_scenes WHERE entity_id = ${input.entityId}`)
         if (existing.rows[0]) {
           if (existing.rows[0].created_at.getTime() < Date.now() - ttlMs) {
-            throw new InvalidRequestError('This upload expired. Create a new entity with a fresh timestamp.')
+            throw new PartialUploadExpiredError()
           }
           // Reservations are charged to the upload's creator, so nobody else may add batches to it.
           if (existing.rows[0].deployer !== deployer) {
@@ -86,8 +87,8 @@ export async function createPendingScenesManager(
           )
         }
         const result = await query<PendingSceneRow>(SQL`
-        INSERT INTO pending_scenes (entity_id, world_name, parcels, entity, deployer)
-        VALUES (${input.entityId}, ${input.worldName.toLowerCase()}, ${input.parcels}::text[], ${input.entity}::jsonb, ${deployer})
+        INSERT INTO pending_scenes (entity_id, world_name, parcels, entity, deployer, created_at)
+        VALUES (${input.entityId}, ${input.worldName.toLowerCase()}, ${input.parcels}::text[], ${input.entity}::jsonb, ${deployer}, ${input.admittedAt})
         RETURNING entity_id, world_name, parcels, deployer, created_at, updated_at, initialized`)
         return toPendingScene(result.rows[0])
       },

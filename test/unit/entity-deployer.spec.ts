@@ -540,7 +540,7 @@ describe('entity deployer', () => {
         undefined,
         undefined,
         unrestrictedReplacementAuthorization,
-        { completesPartialUpload: true }
+        { completesPartialUpload: { expiresAt: 42 } }
       )
     })
 
@@ -549,7 +549,9 @@ describe('entity deployer', () => {
     })
 
     it('should ask scene persistence to record the completion receipt', () => {
-      expect(worldsDeployScene.mock.calls[0][4]).toEqual(expect.objectContaining({ completesPartialUpload: true }))
+      expect(worldsDeployScene.mock.calls[0][4]).toEqual(
+        expect.objectContaining({ completesPartialUpload: { expiresAt: 42 } })
+      )
     })
   })
 

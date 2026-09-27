@@ -213,7 +213,7 @@ export function createEntityDeployer(
         size: deploymentSize,
         ...(deadlineAt === undefined ? {} : { deadlineAt }),
         ...(signal === undefined ? {} : { signal }),
-        ...(options?.completesPartialUpload ? { completesPartialUpload: true } : {})
+        ...(options?.completesPartialUpload ? { completesPartialUpload: options.completesPartialUpload } : {})
       }
     )
 

@@ -38,6 +38,7 @@ import SQL, { type SQLStatement } from 'sql-template-strings'
 import { buildWorldRuntimeMetadata } from '../logic/world-runtime-metadata-utils'
 import { AccessSetting, defaultAccess } from '../logic/access'
 import { raceWithSignal } from '../logic/concurrency'
+import { PartialUploadExpiredError } from './pending-scenes-manager/errors'
 
 type BoundingRow = { min_x: number; max_x: number; min_y: number; max_y: number }
 
@@ -724,7 +725,12 @@ export async function createWorldsManagerComponent({
         await query(SQL`DELETE FROM completed_scene_uploads WHERE entity_id = ${scene.id}`)
       }
       // Any publication of the entity supersedes its pending upload, whose staged files are now stored.
-      await query(SQL`DELETE FROM pending_scenes WHERE entity_id = ${scene.id}`)
+      const pendingUpload = await query(SQL`DELETE FROM pending_scenes WHERE entity_id = ${scene.id} RETURNING 1`)
+      // Re-checked at the commit boundary: a batch admitted just before expiry must not publish after it.
+      const partialUpload = deployment?.completesPartialUpload
+      if (partialUpload && (pendingUpload.rows.length === 0 || Date.now() >= partialUpload.expiresAt)) {
+        throw new PartialUploadExpiredError()
+      }
 
       // Update denormalized scene stats
       await query(buildRecalculateWorldSceneStatsQuery(worldName.toLowerCase()))

@@ -13,9 +13,9 @@ test('when accounting for independent partial uploads', ({ components }) => {
   let signer: string
   let limits: Record<string, number>
 
-  async function create(entity: Entity, deployer = signer): Promise<void> {
+  async function create(entity: Entity, deployer = signer, admittedAt = new Date()): Promise<void> {
     await manager.upsert(
-      { entityId: entity.id, entity, deployer, worldName: 'test.dcl.eth', parcels: ['0,0'] },
+      { entityId: entity.id, entity, deployer, worldName: 'test.dcl.eth', parcels: ['0,0'], admittedAt },
       { maxPendingPerDeployer: 10 }
     )
   }
@@ -53,6 +53,21 @@ test('when accounting for independent partial uploads', ({ components }) => {
   afterEach(async () => {
     jest.restoreAllMocks()
     await cleanup(components.storage, components.database)
+  })
+
+  describe('and a new upload is admitted', () => {
+    let admittedAt: Date
+    let createdAt: Date | undefined
+
+    beforeEach(async () => {
+      admittedAt = new Date(Date.now() - 60_000)
+      await create(first, signer, admittedAt)
+      createdAt = (await manager.getByEntityId(first.id))?.createdAt
+    })
+
+    it('should start its lifetime at the admission instant', () => {
+      expect(createdAt).toEqual(admittedAt)
+    })
   })
 
   describe('and two overlapping uploads reserve the same account budget concurrently', () => {

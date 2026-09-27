@@ -17,6 +17,8 @@ export type UpsertPendingScene = {
   parcels: string[]
   entity: Entity
   deployer: string
+  /** Admission instant: anchors both the entity freshness check and the fixed upload lifetime. */
+  admittedAt: Date
 }
 
 export type FileReceipt = { hash: string; size: number; stored: boolean }
