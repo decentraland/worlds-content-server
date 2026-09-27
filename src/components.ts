@@ -293,14 +293,7 @@ export async function initComponents(): Promise<AppComponents> {
     worldsManager
   })
 
-  const migrationExecutor = createMigrationExecutor({
-    config,
-    logs,
-    database: database,
-    nameOwnership,
-    storage,
-    worldsManager
-  })
+  const migrationExecutor = createMigrationExecutor({ config, logs, database, nameOwnership, storage })
 
   const notificationService = await createNotificationsClientComponent({ config, fetch, logs })
 

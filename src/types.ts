@@ -18,6 +18,7 @@ import { AuthChain, AuthLink, Entity, EthAddress, IPFSv2 } from '@dcl/schemas'
 import { Readable } from 'stream'
 import { MigrationExecutor } from './adapters/migration-executor'
 import { IPgComponent } from '@dcl/pg-component'
+import type { SQLStatement } from 'sql-template-strings'
 import { AuthIdentity } from '@dcl/crypto'
 import { IFetchComponent } from '@dcl/core-commons'
 import { INatsComponent } from '@well-known-components/nats-component/dist/types'
@@ -375,10 +376,17 @@ export type ValidatorComponents = Pick<
   | 'worldsManager'
 >
 
-export type MigratorComponents = Pick<
-  AppComponents,
-  'config' | 'logs' | 'database' | 'nameOwnership' | 'storage' | 'worldsManager'
->
+/** The database handle migrations receive: bound to the session that holds the migrations lock. */
+export type MigrationDatabase = {
+  query<T extends Record<string, any> = Record<string, any>>(
+    sql: string | SQLStatement
+  ): Promise<{ rows: T[]; rowCount: number }>
+}
+
+/** No pool-backed component on purpose: every migration statement must run on the lock session. */
+export type MigratorComponents = Pick<AppComponents, 'config' | 'logs' | 'nameOwnership' | 'storage'> & {
+  database: MigrationDatabase
+}
 
 export type Validation = (deployment: DeploymentToValidate) => ValidationResult | Promise<ValidationResult>
 

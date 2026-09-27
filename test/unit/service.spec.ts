@@ -1,8 +1,8 @@
 import { ILoggerComponent, IBaseComponent, Lifecycle, START_COMPONENT } from '@well-known-components/interfaces'
-import { createMigrationExecutor } from '../../src/adapters/migration-executor'
+import { createMigrationExecutor, MigrationExecutorComponents } from '../../src/adapters/migration-executor'
 import { allMigrations } from '../../src/migrations/all-migrations'
 import { main } from '../../src/service'
-import { AppComponents, MigratorComponents } from '../../src/types'
+import { AppComponents } from '../../src/types'
 
 jest.mock('../../src/migrations/all-migrations', () => ({ allMigrations: [] }))
 jest.mock('../../src/controllers/routes', () => ({
@@ -38,7 +38,7 @@ describe('when the service starts', () => {
         events.push('migration applied')
       }
     })
-    const migrationExecutor = createMigrationExecutor({ database, logs } as unknown as MigratorComponents)
+    const migrationExecutor = createMigrationExecutor({ database, logs } as unknown as MigrationExecutorComponents)
     const server: IBaseComponent & { use: jest.Mock; setContext: jest.Mock } = {
       use: jest.fn(),
       setContext: jest.fn(),
