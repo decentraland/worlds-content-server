@@ -101,7 +101,7 @@ test('when uploads arrive while garbage collection holds the exclusive lock', ({
   })
 })
 
-test('when several writers queue behind an upload holding the shared lock', ({ components }) => {
+test('when several writers wait behind an upload holding the shared lock', ({ components }) => {
   let locks: IContentLocks
   let upload: Promise<string>
   let writers: Promise<string[]>
@@ -138,11 +138,57 @@ test('when several writers queue behind an upload holding the shared lock', ({ c
     await locks[STOP_COMPONENT]?.()
   })
 
-  it('should let only one writer wait on a connection and run all of them once the upload ends', async () => {
+  it('should keep every writer off the lock queue and run all of them once the upload ends', async () => {
     expect({ lockWaiters, writers: await writers }).toEqual({
-      lockWaiters: 1,
+      lockWaiters: 0,
       writers: ['writer 1', 'writer 2', 'writer 3']
     })
+  })
+})
+
+test('when an upload arrives while a writer waits behind another upload', ({ components }) => {
+  let locks: IContentLocks
+  let upload: Promise<string>
+  let writer: Promise<string>
+  let laterUpload: string
+
+  beforeEach(async () => {
+    locks = await createContentLocks({
+      config: {
+        ...components.config,
+        getNumber: async (key: string) => (key === 'CONTENT_LOCK_CONNECTIONS' ? 3 : components.config.getNumber(key))
+      },
+      logs: components.logs,
+      metrics: components.metrics
+    })
+    await locks[START_COMPONENT]?.({} as any)
+    let releaseUpload!: () => void
+    const held = new Promise<void>((resolve) => (releaseUpload = resolve))
+    upload = locks.withRead(async () => {
+      await held
+      return 'upload'
+    })
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    writer = locks.withWrite(async () => 'writer')
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    laterUpload = await Promise.race([
+      locks.withRead(async () => 'later upload'),
+      new Promise<string>((resolve) => setTimeout(() => resolve('blocked'), 1_000))
+    ])
+    releaseUpload()
+  })
+
+  afterEach(async () => {
+    await Promise.allSettled([upload, writer])
+    await locks[STOP_COMPONENT]?.()
+  })
+
+  it('should let the new upload proceed without waiting for the writer', () => {
+    expect(laterUpload).toBe('later upload')
+  })
+
+  it('should run the writer once the uploads end', async () => {
+    expect(await writer).toBe('writer')
   })
 })
 
@@ -162,7 +208,7 @@ test('when a writer waits behind an upload that keeps the shared lock past the b
         logs: components.logs,
         metrics: components.metrics
       },
-      { writerLockTimeoutMs: 200, writerMaxWaitMs: 1_000 }
+      { writerRetryMaxMs: 100, writerMaxWaitMs: 1_000 }
     )
     await locks[START_COMPONENT]?.({} as any)
     let releaseUpload!: () => void

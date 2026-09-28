@@ -16,7 +16,7 @@ describe('when the lock pool times out while opening a new connection', () => {
     operation = jest.fn()
     const locks = await createContentLocks({
       config: { getNumber: async () => undefined } as any,
-      logs: {} as any,
+      logs: { getLogger: () => ({ warn: jest.fn() }) } as any,
       metrics: {} as any
     })
     deadline = new Error('processing deadline')
@@ -62,7 +62,7 @@ async function createLocksWith(client: FakeClient) {
   jest.mocked(createPgComponent).mockResolvedValue({ getPool: () => ({ connect: async () => client }) } as any)
   return createContentLocks({
     config: { getNumber: async () => undefined } as any,
-    logs: {} as any,
+    logs: { getLogger: () => ({ warn: jest.fn() }) } as any,
     metrics: {} as any
   })
 }
@@ -169,20 +169,27 @@ describe('when the request is cancelled while a lock query is still running', ()
 
 describe('when a writer gives up waiting for the exclusive gate', () => {
   let client: FakeClient
+  let operation: jest.Mock
+  let warn: jest.Mock
   let statements: string[]
   let error: unknown
 
   beforeEach(async () => {
-    client = createFakeClient(async (sql) => {
-      if (sql.includes('pg_advisory_lock(')) throw Object.assign(new Error('lock timeout'), { code: '55P03' })
-      return { rows: [], rowCount: 0 }
-    })
-    jest.mocked(createPgComponent).mockResolvedValue({ getPool: () => ({ connect: async () => client }) } as any)
-    const locks = await createContentLocks(
-      { config: { getNumber: async () => undefined } as any, logs: {} as any, metrics: {} as any },
-      { writerLockTimeoutMs: 1, writerMaxWaitMs: 0 }
+    client = createFakeClient(async (sql) =>
+      sql.includes('pg_try_advisory_lock(') ? { rows: [{ acquired: false }], rowCount: 1 } : { rows: [], rowCount: 0 }
     )
-    error = await locks.withWrite(jest.fn()).catch((e) => e)
+    jest.mocked(createPgComponent).mockResolvedValue({ getPool: () => ({ connect: async () => client }) } as any)
+    warn = jest.fn()
+    const locks = await createContentLocks(
+      {
+        config: { getNumber: async () => undefined } as any,
+        logs: { getLogger: () => ({ warn }) } as any,
+        metrics: {} as any
+      },
+      { writerRetryMaxMs: 10, writerMaxWaitMs: 100 }
+    )
+    operation = jest.fn()
+    error = await locks.withWrite(operation).catch((e) => e)
     statements = client.query.mock.calls.map(([sql]) => statementText(sql))
   })
 
@@ -190,11 +197,28 @@ describe('when a writer gives up waiting for the exclusive gate', () => {
     jest.resetAllMocks()
   })
 
-  it('should reset its lock timeout and return the connection to the pool', () => {
+  it('should fail with the typed busy error without running the operation', () => {
+    expect({ timedOut: error instanceof ContentLockTimeoutError, ran: operation.mock.calls.length }).toEqual({
+      timedOut: true,
+      ran: 0
+    })
+  })
+
+  it('should only ever try the gate, never queue on it', () => {
     expect({
-      timedOut: error instanceof ContentLockTimeoutError,
-      reset: statements.includes('RESET lock_timeout'),
-      release: client.release.mock.calls
-    }).toEqual({ timedOut: true, reset: true, release: [[false]] })
+      attempts: statements.filter((sql) => sql.includes('pg_try_advisory_lock(')).length > 1,
+      queued: statements.some((sql) => sql.includes('pg_advisory_lock(') || sql.includes('lock_timeout'))
+    }).toEqual({ attempts: true, queued: false })
+  })
+
+  it('should return the connection to the pool after every attempt', () => {
+    expect(client.release.mock.calls.every(([destroy]) => destroy === false)).toBe(true)
+  })
+
+  it('should warn that the writer gave up', () => {
+    expect(warn).toHaveBeenCalledWith(
+      'Gave up waiting for in-flight uploads to release the content lock',
+      expect.objectContaining({ waitedMs: expect.any(Number) })
+    )
   })
 })

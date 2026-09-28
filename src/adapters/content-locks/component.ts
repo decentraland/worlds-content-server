@@ -10,10 +10,10 @@ import { ContentLocksOptions, IContentLocks } from './types'
 // Backoff while GC or another request holds a lock; the request's own deadline bounds the wait.
 const ENTITY_LOCK_RETRY_MIN_MS = 25
 const ENTITY_LOCK_RETRY_MAX_MS = 500
-// How long one writer attempt queues for the gate, and pauses after failing, so uploads get turns.
-const WRITER_LOCK_TIMEOUT_MS = 10_000
+// Writers only try the gate, never queue on it, so a waiting writer can't hold back new uploads.
+const WRITER_RETRY_MIN_MS = 50
+const WRITER_RETRY_MAX_MS = 1_000
 const WRITER_MAX_WAIT_MS = 60_000
-const LOCK_NOT_AVAILABLE = '55P03'
 
 // node-postgres reports a pool-connect timeout with one of two messages, depending on whether it was
 // waiting for a free connection or still opening a new one.
@@ -53,15 +53,17 @@ export async function createContentLocks(
   components: Pick<AppComponents, 'config' | 'logs' | 'metrics'>,
   options: ContentLocksOptions = {}
 ): Promise<IContentLocks> {
-  const writerLockTimeoutMs = options.writerLockTimeoutMs ?? WRITER_LOCK_TIMEOUT_MS
+  const { logs } = components
+  const logger = logs.getLogger('content-locks')
+  const writerRetryMaxMs = options.writerRetryMaxMs ?? WRITER_RETRY_MAX_MS
   const writerMaxWaitMs = options.writerMaxWaitMs ?? WRITER_MAX_WAIT_MS
   const max = await getPositiveInteger(components.config, 'CONTENT_LOCK_CONNECTIONS', 16)
   const pg = await createPgComponent(components, {
     pool: { max, connectionTimeoutMillis: options.connectionTimeoutMs ?? 10_000 }
   })
 
-  // One attempt. Only GC queues on the exclusive gate, bounded by lock_timeout; uploads report a GC batch
-  // or a busy entity back instead of waiting, so they never hold a pool connection while waiting.
+  // One non-queuing attempt: a held gate or busy entity is reported back, so nobody waits on a
+  // connection, and a waiting writer is never queued ahead of new shared holders.
   async function attempt<T>(
     exclusive: boolean,
     operation: (signal?: AbortSignal) => Promise<T>,
@@ -88,7 +90,6 @@ export async function createContentLocks(
     const abort = (): void => controller.abort(signal?.reason)
     // Reuse the connection unless its transport broke or a lock statement may still be running on it.
     let reusable = true
-    let lockTimeoutSet = false
     const connectionError = (error: Error): void => {
       reusable = false
       controller.abort(error)
@@ -100,30 +101,19 @@ export async function createContentLocks(
       try {
         return (await raceWithSignal(client.query<R>(sql), controller.signal)).rows
       } catch (error) {
-        if ((error as { code?: string }).code !== LOCK_NOT_AVAILABLE) reusable = false
+        reusable = false
         throw error
       }
     }
     try {
       if (signal?.aborted) abort()
-      if (exclusive) {
-        await lockQuery(`SET lock_timeout = ${Math.ceil(writerLockTimeoutMs)}`)
-        lockTimeoutSet = true
-        try {
-          await lockQuery(SQL`SELECT pg_advisory_lock(hashtextextended('worlds-content-gc', 0))`)
-        } catch (error) {
-          if ((error as { code?: string }).code === LOCK_NOT_AVAILABLE) {
-            return { acquired: false }
-          }
-          throw error
-        }
-      } else {
-        const gate = await lockQuery<{ acquired: boolean }>(
-          SQL`SELECT pg_try_advisory_lock_shared(hashtextextended('worlds-content-gc', 0)) AS acquired`
-        )
-        if (!gate[0]?.acquired) {
-          return { acquired: false }
-        }
+      const gate = await lockQuery<{ acquired: boolean }>(
+        exclusive
+          ? SQL`SELECT pg_try_advisory_lock(hashtextextended('worlds-content-gc', 0)) AS acquired`
+          : SQL`SELECT pg_try_advisory_lock_shared(hashtextextended('worlds-content-gc', 0)) AS acquired`
+      )
+      if (!gate[0]?.acquired) {
+        return { acquired: false }
       }
       if (entityId) {
         const entityLock = await lockQuery<{ acquired: boolean }>(
@@ -142,7 +132,6 @@ export async function createContentLocks(
       if (reusable) {
         try {
           await client.query('SELECT pg_advisory_unlock_all()')
-          if (lockTimeoutSet) await client.query('RESET lock_timeout')
         } catch {
           reusable = false
         }
@@ -158,21 +147,26 @@ export async function createContentLocks(
     signal?: AbortSignal,
     entityId?: string
   ): Promise<T> {
-    const writerDeadline = Date.now() + writerMaxWaitMs
-    for (let delayMs = ENTITY_LOCK_RETRY_MIN_MS; ; delayMs = Math.min(delayMs * 2, ENTITY_LOCK_RETRY_MAX_MS)) {
+    const startedAt = Date.now()
+    const maxDelayMs = exclusive ? writerRetryMaxMs : ENTITY_LOCK_RETRY_MAX_MS
+    let delayMs = exclusive ? Math.min(WRITER_RETRY_MIN_MS, maxDelayMs) : ENTITY_LOCK_RETRY_MIN_MS
+    for (; ; delayMs = Math.min(delayMs * 2, maxDelayMs)) {
       const result = await attempt(exclusive, operation, signal, entityId)
       if (result.acquired) {
         return result.value
       }
-      if (exclusive && Date.now() + writerLockTimeoutMs > writerDeadline) {
+      // Constant uploads may starve GC; it is periodic, so it gives up and retries next cycle.
+      if (exclusive && Date.now() + delayMs > startedAt + writerMaxWaitMs) {
+        logger.warn('Gave up waiting for in-flight uploads to release the content lock', {
+          waitedMs: Date.now() - startedAt
+        })
         throw new ContentLockTimeoutError()
       }
-      await sleep(exclusive ? writerLockTimeoutMs : delayMs, signal)
+      await sleep(delayMs, signal)
     }
   }
 
-  // Writers are rare (GC and expired-upload cleanup). Queuing them in-process keeps a waiting writer from
-  // holding more than one connection while it waits behind in-flight uploads.
+  // Writers are rare (GC and expired-upload cleanup); one per process polls the gate at a time.
   let writers: Promise<unknown> = Promise.resolve()
   function withWrite<T>(operation: () => Promise<T>): Promise<T> {
     const turn = writers.then(() => run(true, operation))
