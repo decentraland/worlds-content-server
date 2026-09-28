@@ -31,6 +31,7 @@ import { ICoordinatesComponent } from './logic/coordinates'
 // Type-only imports so the central types module can reference these component interfaces (for
 // AppComponents below) without a runtime import cycle through their component.ts factories.
 import type { IPendingScenesManager } from './adapters/pending-scenes-manager/types'
+import type { ISourceUploadLimits } from './adapters/source-upload-limits/types'
 import type { IPartialDeploymentsComponent } from './logic/partial-deployments/types'
 import { ISearchComponent } from './adapters/search'
 import {
@@ -707,6 +708,7 @@ export type BaseComponents = {
   migrationExecutor: MigrationExecutor
   partialDeployments: IPartialDeploymentsComponent
   pendingScenesManager: IPendingScenesManager
+  sourceUploadLimits: ISourceUploadLimits
   nats: INatsComponent
   nameDenyListChecker: INameDenyListChecker
   nameOwnership: INameOwnership

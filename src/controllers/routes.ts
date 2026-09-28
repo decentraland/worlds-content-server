@@ -1,6 +1,7 @@
 import { Router } from '@dcl/http-server'
 import {
   createInFlightUploadBudget,
+  DEFAULT_MAX_UPLOAD_SIZE_IN_BYTES,
   InFlightUploadBudget,
   InFlightUploadBudgetSnapshot,
   MAX_WORLD_SETTINGS_UPLOAD_SIZE_IN_BYTES,
@@ -9,6 +10,7 @@ import {
   MultipartTelemetryEvent
 } from '../logic/multipart'
 import { BaseComponents, GlobalContext } from '../types'
+import { createSourceUploadAdmission } from './source-upload-admission'
 import { availableContentHandler, getContentFile, headContentFile } from './handlers/content-file-handler'
 import { deployEntity } from './handlers/deploy-entity-handler'
 import { worldAboutHandler } from './handlers/world-about-handler'
@@ -254,8 +256,14 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   router.get('/world/:world_name/about', worldAboutHandler)
 
   // Post world scene(s)
+  // Every body holds a share of its source's in-flight uploads until the request ends, taken before
+  // the body is read.
   router.post(
     '/entities',
+    createSourceUploadAdmission(globalContext.components, {
+      route: 'entities',
+      maxRequestBytes: DEFAULT_MAX_UPLOAD_SIZE_IN_BYTES
+    }),
     multipartParserWrapper(deployEntity, {
       inFlightUploadBudget,
       uploadTimeoutMs,
@@ -282,6 +290,11 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   router.get('/world/:world_name/settings', getWorldSettingsHandler)
   router.put(
     '/world/:world_name/settings',
+    // Shares the in-flight parser budget, so every request also takes its source's share.
+    createSourceUploadAdmission(globalContext.components, {
+      route: 'world-settings',
+      maxRequestBytes: MAX_WORLD_SETTINGS_UPLOAD_SIZE_IN_BYTES
+    }),
     signedFetchMiddleware,
     multipartParserWrapper(
       (ctx: Parameters<typeof updateWorldSettingsHandler>[0]) =>

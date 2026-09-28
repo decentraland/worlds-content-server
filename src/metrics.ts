@@ -61,6 +61,11 @@ export const metricDeclarations = {
     type: IMetricsComponent.CounterType,
     labelNames: ['route', 'reason']
   },
+  multipart_upload_unattributed: {
+    help: 'Multipart uploads without a client source, so not bound by the per-source limits',
+    type: IMetricsComponent.CounterType,
+    labelNames: ['route']
+  },
   multipart_upload_cleanup_failures: {
     help: 'Multipart upload directories whose initial cleanup attempt failed',
     type: IMetricsComponent.CounterType,
