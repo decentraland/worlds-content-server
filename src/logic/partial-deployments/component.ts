@@ -5,6 +5,7 @@ import { AppComponents, DeploymentToValidate, MissingSceneReplacementAuthorizati
 import { getPositiveInteger, mapWithConcurrency, raceWithSignal } from '../concurrency'
 import { calculateDeploymentSizeFromFileInfos } from '../validations/scene'
 import { FileReceipt } from '../../adapters/pending-scenes-manager/types'
+import { PartialUploadExpiredError } from '../../adapters/pending-scenes-manager/errors'
 import { IPartialDeploymentsComponent, StageDeploymentInput, StageDeploymentResult } from './types'
 
 const ALREADY_DEPLOYED = 'Deployment failed: this entity is already deployed.'
@@ -64,7 +65,7 @@ export async function createPartialDeploymentsComponent(
   }
 
   async function stage(input: StageDeploymentInput): Promise<StageDeploymentResult> {
-    const { baseUrl, entity, entityRaw, authChain, files, manifest, signal, deadlineAt } = input
+    const { baseUrl, entity, entityRaw, authChain, files, manifest, signal, deadlineAt, requestArrivedAt } = input
     signal?.throwIfAborted()
     // Validation and publication see the manifest; accounting and storage only see uploaded files.
     const deploymentFiles = manifest ? new Map([...files, [entity.id, manifest]]) : files
@@ -74,8 +75,8 @@ export async function createPartialDeploymentsComponent(
       throw new InvalidRequestError(ALREADY_DEPLOYED)
     }
     const pending = await pendingScenesManager.getByEntityId(entity.id, signal)
-    // One admission instant, taken before any I/O, anchors both freshness and the upload's lifetime.
-    const admittedAt = pending?.createdAt ?? new Date()
+    // One admission instant, the request's arrival, anchors both freshness and the upload's lifetime.
+    const admittedAt = pending?.createdAt ?? new Date(requestArrivedAt)
     const validation: DeploymentToValidate = {
       entity,
       files: deploymentFiles,
@@ -118,7 +119,15 @@ export async function createPartialDeploymentsComponent(
       .reduce((sum, receipt) => sum + BigInt(receipt.size), 0n)
     if (knownSceneBytes > maxSize) throw new InvalidRequestError('Deployment failed: The deployment is too big.')
     const pendingRow = await pendingScenesManager.upsert(
-      { entityId: entity.id, worldName, parcels, entity, deployer: authChain[0].payload, admittedAt },
+      {
+        entityId: entity.id,
+        worldName,
+        parcels,
+        entity,
+        deployer: authChain[0].payload,
+        admittedAt,
+        resumes: !!pending
+      },
       { maxPendingPerDeployer },
       signal
     )
@@ -130,6 +139,10 @@ export async function createPartialDeploymentsComponent(
       throw error
     }
 
+    // Re-checked right before storing: a batch admitted just before expiry must store nothing.
+    if (Date.now() >= pendingRow.createdAt.getTime() + pendingScenesManager.ttlMs) {
+      throw new PartialUploadExpiredError()
+    }
     await deploymentProcessing.trackStage('storage', files.size, () =>
       mapWithConcurrency(
         Array.from(files),

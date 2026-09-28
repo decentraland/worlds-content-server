@@ -78,6 +78,8 @@ export async function createPendingScenesManager(
           }
           return toPendingScene(existing.rows[0])
         }
+        // Only cleanup of an expired upload removes one seen earlier; re-creating it would restart it.
+        if (input.resumes) throw new PartialUploadExpiredError()
         const count = await query<{ count: string }>(
           SQL`SELECT COUNT(*) AS count FROM pending_scenes WHERE deployer = ${deployer}`
         )

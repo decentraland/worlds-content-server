@@ -19,6 +19,7 @@ import { FileInfo, IContentStorageComponent } from '@dcl/catalyst-storage'
 import { calculateDeploymentSizeFromFileInfos } from '../../logic/validations/scene'
 import { Readable } from 'stream'
 import { mapWithConcurrency, raceWithSignal } from '../../logic/concurrency'
+import { getRequestArrival } from '../request-arrival'
 import {
   DEFAULT_CONTENT_FILE_INFO_CONCURRENCY,
   DeploymentProcessingAbortedError,
@@ -261,7 +262,8 @@ async function deployEntityWithSignal(
       files: uploadedFiles,
       manifest,
       signal,
-      deadlineAt
+      deadlineAt,
+      requestArrivedAt: getRequestArrival(ctx)
     })
     if (result.complete) {
       return {

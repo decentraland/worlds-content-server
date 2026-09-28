@@ -6,6 +6,7 @@ import { Authenticator } from '@dcl/crypto'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { getIdentity, Identity, makeid, cleanup } from '../utils'
 import FormData from 'form-data'
+import { request } from 'http'
 import SQL from 'sql-template-strings'
 
 // Lower the per-deployer concurrent-pending cap so it's exercisable without staging 10+ uploads.
@@ -227,6 +228,43 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
           expect(secondResponse.status).toBe(200)
           expect(await countPending()).toBe(0)
         })
+      })
+    })
+  })
+
+  describe('when the first batch of an upload takes a while to arrive', () => {
+    let sentAt: number
+    let status: number | undefined
+    let createdAt: Date
+
+    beforeEach(async () => {
+      const form = buildForm([entityId, contentHashes[0]], Authenticator.signPayload(identity.authChain, entityId))
+      const body = form.getBuffer()
+      const port = await components.config.requireNumber('HTTP_SERVER_PORT')
+      sentAt = Date.now()
+      status = await new Promise<number | undefined>((resolve, reject) => {
+        const upload = request(`http://127.0.0.1:${port}/entities`, {
+          method: 'POST',
+          headers: { ...form.getHeaders(), 'content-length': String(body.length) }
+        })
+        upload.on('response', (response) => {
+          response.resume()
+          resolve(response.statusCode)
+        })
+        upload.on('error', reject)
+        upload.write(body.subarray(0, Math.floor(body.length / 2)))
+        setTimeout(() => upload.end(body.subarray(Math.floor(body.length / 2))), 1_500)
+      })
+      const row = await components.database.query<{ created_at: Date }>(
+        SQL`SELECT created_at FROM pending_scenes WHERE entity_id = ${entityId}`
+      )
+      createdAt = row.rows[0].created_at
+    })
+
+    it('should admit the upload at the moment the request arrived, not when its body finished', () => {
+      expect({ status, admittedBeforeBodyEnded: createdAt.getTime() < sentAt + 1_000 }).toEqual({
+        status: 202,
+        admittedBeforeBodyEnded: true
       })
     })
   })

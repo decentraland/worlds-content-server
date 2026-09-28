@@ -19,6 +19,8 @@ export type UpsertPendingScene = {
   deployer: string
   /** Admission instant: anchors both the entity freshness check and the fixed upload lifetime. */
   admittedAt: Date
+  /** Whether the caller already saw this upload live; if it is gone by now, it expired. */
+  resumes: boolean
 }
 
 export type FileReceipt = { hash: string; size: number; stored: boolean }

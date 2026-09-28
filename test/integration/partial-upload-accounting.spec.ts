@@ -3,7 +3,7 @@ import { Entity, EntityType } from '@dcl/schemas'
 import { bufferToStream } from '@dcl/catalyst-storage'
 import { test } from '../components'
 import { cleanup } from '../utils'
-import { createPendingScenesManager } from '../../src/adapters/pending-scenes-manager'
+import { createPendingScenesManager, PartialUploadExpiredError } from '../../src/adapters/pending-scenes-manager'
 import { IPendingScenesManager } from '../../src/adapters/pending-scenes-manager/types'
 
 test('when accounting for independent partial uploads', ({ components }) => {
@@ -13,9 +13,9 @@ test('when accounting for independent partial uploads', ({ components }) => {
   let signer: string
   let limits: Record<string, number>
 
-  async function create(entity: Entity, deployer = signer, admittedAt = new Date()): Promise<void> {
+  async function create(entity: Entity, deployer = signer, admittedAt = new Date(), resumes = false): Promise<void> {
     await manager.upsert(
-      { entityId: entity.id, entity, deployer, worldName: 'test.dcl.eth', parcels: ['0,0'], admittedAt },
+      { entityId: entity.id, entity, deployer, worldName: 'test.dcl.eth', parcels: ['0,0'], admittedAt, resumes },
       { maxPendingPerDeployer: 10 }
     )
   }
@@ -67,6 +67,24 @@ test('when accounting for independent partial uploads', ({ components }) => {
 
     it('should start its lifetime at the admission instant', () => {
       expect(createdAt).toEqual(admittedAt)
+    })
+  })
+
+  describe('and an upload the batch saw live was removed by cleanup before it is upserted', () => {
+    let upsertError: unknown
+    let pending: number
+
+    beforeEach(async () => {
+      upsertError = await create(first, signer, new Date(Date.now() - 60_000), true).catch((error: unknown) => error)
+      pending = await pendingCount()
+    })
+
+    it('should answer that the upload expired', () => {
+      expect(upsertError).toBeInstanceOf(PartialUploadExpiredError)
+    })
+
+    it('should not recreate the upload', () => {
+      expect(pending).toBe(0)
     })
   })
 

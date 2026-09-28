@@ -10,6 +10,7 @@ import {
   MultipartTelemetryEvent
 } from '../logic/multipart'
 import { BaseComponents, GlobalContext } from '../types'
+import { stampRequestArrival } from './request-arrival'
 import { createSourceUploadAdmission } from './source-upload-admission'
 import { availableContentHandler, getContentFile, headContentFile } from './handlers/content-file-handler'
 import { deployEntity } from './handlers/deploy-entity-handler'
@@ -256,10 +257,11 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   router.get('/world/:world_name/about', worldAboutHandler)
 
   // Post world scene(s)
-  // Every body holds a share of its source's in-flight uploads until the request ends, taken before
-  // the body is read.
+  // Stamped on arrival, then every body holds a share of its source's in-flight uploads until the
+  // request ends, all before the body is read.
   router.post(
     '/entities',
+    stampRequestArrival(),
     createSourceUploadAdmission(globalContext.components, {
       route: 'entities',
       maxRequestBytes: DEFAULT_MAX_UPLOAD_SIZE_IN_BYTES

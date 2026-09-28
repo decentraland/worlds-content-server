@@ -4,6 +4,7 @@ import { createCoordinatesComponent } from '../../src/logic/coordinates'
 import { createDeploymentProcessingMock } from '../mocks/deployment-processing-mock'
 import { DeploymentToValidate } from '../../src/types'
 import { StageDeploymentInput } from '../../src/logic/partial-deployments/types'
+import { PartialUploadExpiredError } from '../../src/adapters/pending-scenes-manager'
 
 type Components = Parameters<typeof createPartialDeploymentsComponent>[0]
 
@@ -42,7 +43,8 @@ describe('when staging a partial deployment', () => {
         metadata: { worldConfiguration: { name: 'world.dcl.eth' }, scene: { base: '0,0', parcels: ['0,0'] } }
       },
       authChain: [{ type: AuthLinkType.SIGNER, payload: 'deployer', signature: '' }],
-      files: new Map([['a', { size: 300, getStream: jest.fn(), getHash: jest.fn(), asBuffer: jest.fn() }]])
+      files: new Map([['a', { size: 300, getStream: jest.fn(), getHash: jest.fn(), asBuffer: jest.fn() }]]),
+      requestArrivedAt: Date.now() - 1_000
     }
     fileInfo = jest.fn().mockResolvedValue(undefined)
     getProgress = jest.fn().mockResolvedValue(new Map([['a', 300]]))
@@ -112,6 +114,31 @@ describe('when staging a partial deployment', () => {
     it('should create the upload at the instant its freshness was validated', () => {
       expect(upsert.mock.calls[0][0].admittedAt).toBe(validateStaging.mock.calls[0][0].pendingCreatedAt)
     })
+
+    it('should admit it at the request arrival', () => {
+      expect(upsert.mock.calls[0][0].admittedAt).toEqual(new Date(input.requestArrivedAt))
+    })
+
+    it('should let the upload be created', () => {
+      expect(upsert.mock.calls[0][0].resumes).toBe(false)
+    })
+  })
+
+  describe('and the upload expires before the batch stores its files', () => {
+    let caughtError: unknown
+
+    beforeEach(async () => {
+      upsert.mockResolvedValueOnce({ createdAt: new Date(Date.now() - 86_400_000) })
+      caughtError = await stage(input).catch((error: unknown) => error)
+    })
+
+    it('should reject the batch as expired', () => {
+      expect(caughtError).toBeInstanceOf(PartialUploadExpiredError)
+    })
+
+    it('should not store any of its files', () => {
+      expect(storeStream).not.toHaveBeenCalled()
+    })
   })
 
   describe('and the batch resumes an existing upload', () => {
@@ -125,6 +152,10 @@ describe('when staging a partial deployment', () => {
 
     it('should validate freshness against the upload admission', () => {
       expect(validateStaging.mock.calls[0][0].pendingCreatedAt).toBe(createdAt)
+    })
+
+    it('should require the upload to still exist instead of re-creating it', () => {
+      expect(upsert.mock.calls[0][0].resumes).toBe(true)
     })
   })
 
@@ -178,13 +209,18 @@ describe('when staging a partial deployment', () => {
       expect(storeStream.mock.calls[0][2]).toBe(input.signal)
     })
     describe('and the upload is published', () => {
+      let createdAt: Date
+
       beforeEach(async () => {
-        upsert.mockResolvedValueOnce({ createdAt: new Date(5_000) })
+        createdAt = new Date(Date.now() - 5_000)
+        upsert.mockResolvedValueOnce({ createdAt })
         await stage(input)
       })
 
       it('should mark the publication as a partial finalization that expires with the upload', () => {
-        expect(deployEntity.mock.calls[0][10]).toEqual({ completesPartialUpload: { expiresAt: 86_405_000 } })
+        expect(deployEntity.mock.calls[0][10]).toEqual({
+          completesPartialUpload: { expiresAt: createdAt.getTime() + 86_400_000 }
+        })
       })
     })
     describe('and storage has lost a previously acknowledged file', () => {

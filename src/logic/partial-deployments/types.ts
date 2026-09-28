@@ -21,6 +21,8 @@ export type StageDeploymentInput = {
   signal?: AbortSignal
   /** Absolute processing deadline forwarded to the deploy transaction when this request finalizes. */
   deadlineAt?: number
+  /** When the request arrived, before its body was read; admits a new upload at that instant. */
+  requestArrivedAt: number
 }
 
 export type StageDeploymentResult = {
