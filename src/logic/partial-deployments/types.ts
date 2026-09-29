@@ -45,4 +45,10 @@ export type IPartialDeploymentsComponent = {
    * (HTTP 429) when a partial-upload quota is full.
    */
   stage(input: StageDeploymentInput): Promise<StageDeploymentResult>
+  /**
+   * Returns the live publication of an entity as a completed result, or undefined when it isn't
+   * published. The entity id is the entity file's hash, so the live entity is exactly what any
+   * uploader of that id asked for; callers answer every partial batch for it with this result.
+   */
+  findPublication(baseUrl: string, entityId: string, signal?: AbortSignal): Promise<StageDeploymentResult | undefined>
 }

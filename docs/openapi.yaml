@@ -329,8 +329,8 @@ paths:
         storage) only while a still-live pending upload for this entity exists AND the request is
         signed by the same address that started it; otherwise — including a resume after the pending
         upload expired, or a request signed by a different authorized deployer — the entity file must
-        be re-sent (a request omitting it is rejected with `400`, except for a retained successful
-        completion). An expired upload cannot be revived by resending its old manifest. Each request stores the files it
+        be re-sent (a request omitting it is rejected with `400`, except when the entity is published
+        or the signer holds a retained successful completion). An expired upload cannot be revived by resending its old manifest. Each request stores the files it
         carries; the scene only goes live once every referenced file is present. A request that still
         leaves files missing returns `202` with the list of outstanding hashes; the request that
         completes the set runs full validation, deploys, and returns `200`. Uploads are identified by
@@ -342,7 +342,10 @@ paths:
         a completed partial request without the manifest and receive the same `200` body and timestamp
         for `COMPLETED_UPLOAD_TTL` (default 24 hours), even after that scene is replaced or undeployed.
         This acknowledges the original publication; it does not publish the scene again. Authentication
-        must still be valid. Expired, uncompleted uploads require a new entity with a fresh timestamp.
+        must still be valid. While the entity is published, any validly signed partial request for it,
+        from any signer and with or without the manifest, returns `200` with the publication's
+        `creationTimestamp` (the entity ID is the hash of the entity file, so the live entity is exactly
+        what was uploaded). Expired, uncompleted uploads require a new entity with a fresh timestamp.
 
         Upload count, aggregate reserved bytes, and accepted byte rate are limited per deployer; an
         additional byte budget applies server-wide. Reservations precede storage writes and abandoned

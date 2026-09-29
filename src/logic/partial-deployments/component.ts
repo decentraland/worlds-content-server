@@ -1,14 +1,12 @@
 import { InvalidRequestError } from '@dcl/http-commons'
 import { buildSceneDeploymentMessage } from '../utils'
 import { FileInfo } from '@dcl/catalyst-storage'
-import { AppComponents, DeploymentToValidate, MissingSceneReplacementAuthorizationError } from '../../types'
+import { AppComponents, DeploymentToValidate, MissingSceneReplacementAuthorizationError, WorldScene } from '../../types'
 import { getPositiveInteger, mapWithConcurrency, raceWithSignal } from '../concurrency'
 import { calculateDeploymentSizeFromFileInfos } from '../validations/scene'
 import { FileReceipt } from '../../adapters/pending-scenes-manager/types'
 import { PartialUploadExpiredError } from '../../adapters/pending-scenes-manager/errors'
 import { IPartialDeploymentsComponent, StageDeploymentInput, StageDeploymentResult } from './types'
-
-const ALREADY_DEPLOYED = 'Deployment failed: this entity is already deployed.'
 
 function isUniqueViolation(error: unknown): boolean {
   return typeof error === 'object' && error !== null && (error as { code?: string }).code === '23505'
@@ -69,11 +67,6 @@ export async function createPartialDeploymentsComponent(
     signal?.throwIfAborted()
     // Validation and publication see the manifest; accounting and storage only see uploaded files.
     const deploymentFiles = manifest ? new Map([...files, [entity.id, manifest]]) : files
-    // A published entity is never restaged; checked first so a superseded upload's stale TTL can't mask it.
-    const claimedWorld: unknown = entity.metadata?.worldConfiguration?.name
-    if (typeof claimedWorld === 'string' && (await isDeployed(claimedWorld.toLowerCase(), entity.id, signal))) {
-      throw new InvalidRequestError(ALREADY_DEPLOYED)
-    }
     const pending = await pendingScenesManager.getByEntityId(entity.id, signal)
     // One admission instant, the request's arrival, anchors both freshness and the upload's lifetime.
     const admittedAt = pending?.createdAt ?? new Date(requestArrivedAt)
@@ -197,29 +190,38 @@ export async function createPartialDeploymentsComponent(
         { completesPartialUpload: { expiresAt: pendingRow.createdAt.getTime() + pendingScenesManager.ttlMs } }
       )
     } catch (error) {
-      if (!isUniqueViolation(error) || !(await isDeployed(worldName, entity.id).catch(() => false))) {
-        throw error
-      }
-      // Published concurrently: drop this request's staging state and answer like a completion retry.
+      const concurrent = isUniqueViolation(error)
+        ? await findPublication(baseUrl, entity.id).catch(() => undefined)
+        : undefined
+      if (!concurrent) throw error
+      // Published concurrently: drop this request's staging state and answer with the live publication.
       await pendingScenesManager.deleteByEntityId(entity.id).catch(() => undefined)
-      const completed = await pendingScenesManager.getCompleted(entity.id, authChain[0].payload, signal)
-      if (!completed) {
-        throw new InvalidRequestError(ALREADY_DEPLOYED)
-      }
-      return {
-        complete: true,
-        creationTimestamp: completed.creationTimestamp,
-        result: { message: buildSceneDeploymentMessage(baseUrl, completed.worldName, completed.parcels) }
-      }
+      return concurrent
     }
     // Publication returns the same timestamp it atomically persists with the completion receipt.
     return { complete: true, result, creationTimestamp: result.creationTimestamp }
   }
 
-  async function isDeployed(worldName: string, entityId: string, signal?: AbortSignal): Promise<boolean> {
-    const { scenes } = await raceWithSignal(worldsManager.getWorldScenes({ worldName, entityId }, { limit: 1 }), signal)
-    return scenes.length > 0
+  async function findPublication(
+    baseUrl: string,
+    entityId: string,
+    signal?: AbortSignal
+  ): Promise<StageDeploymentResult | undefined> {
+    const { scenes } = await raceWithSignal(worldsManager.getWorldScenes({ entityId }, { limit: 1 }), signal)
+    const scene: WorldScene | undefined = scenes[0]
+    if (!scene) return undefined
+    return {
+      complete: true,
+      creationTimestamp: scene.createdAt.getTime(),
+      result: {
+        message: buildSceneDeploymentMessage(
+          baseUrl,
+          scene.entity.metadata?.worldConfiguration?.name ?? scene.worldName,
+          scene.entity.metadata?.scene?.parcels ?? scene.parcels
+        )
+      }
+    }
   }
 
-  return { stage }
+  return { stage, findPublication }
 }

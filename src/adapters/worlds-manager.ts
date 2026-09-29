@@ -534,7 +534,7 @@ export async function createWorldsManagerComponent({
     }
 
     let metadataUpdated = false
-    const creationTimestamp = Date.now()
+    let creationTimestamp = Date.now()
 
     await withDeploymentTransaction(deployment?.signal, async (query) => {
       // Serialize concurrent deploys to the same world so the "reject if a newer scene already holds
@@ -547,6 +547,8 @@ export async function createWorldsManagerComponent({
       await query(
         SQL`SELECT pg_advisory_xact_lock(hashtextextended(${'world_scene_deploy:' + worldName.toLowerCase()}, 0))`
       )
+      // Taken under the lock so publications of a world are timestamped in commit order.
+      creationTimestamp = Date.now()
 
       // Reject if a strictly-newer scene (Decentraland ordering: greater entity.timestamp, tie broken
       // by greater entity id) already occupies any of these parcels. This makes an older deploy — most
@@ -705,8 +707,8 @@ export async function createWorldsManagerComponent({
           ${parcels}::text[],
           ${size},
           'DEPLOYED',
-          ${new Date()},
-          ${new Date()}
+          ${new Date(creationTimestamp)},
+          ${new Date(creationTimestamp)}
         )
       `)
 

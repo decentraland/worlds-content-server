@@ -263,31 +263,10 @@ describe('when staging a partial deployment', () => {
     })
   })
 
-  describe('and the entity is already deployed', () => {
-    let error: unknown
+  describe('and publication collides with a concurrent publication of the same entity', () => {
+    let result: Awaited<ReturnType<typeof stage>>
 
     beforeEach(async () => {
-      getWorldScenes.mockResolvedValueOnce({ scenes: [{ entityId: 'entity' }], total: 1 })
-      error = await stage(input).catch((e) => e)
-    })
-
-    it('should reject it before validating, creating an upload or reserving bytes', () => {
-      expect({
-        message: (error as Error).message,
-        validations: validateStaging.mock.calls.length,
-        uploads: upsert.mock.calls.length,
-        reservations: reserve.mock.calls.length
-      }).toEqual({
-        message: 'Deployment failed: this entity is already deployed.',
-        validations: 0,
-        uploads: 0,
-        reservations: 0
-      })
-    })
-  })
-
-  describe('and publication collides with a concurrent publication of the same entity', () => {
-    beforeEach(() => {
       getPending.mockResolvedValueOnce({ createdAt: new Date(), deployer: 'deployer', initialized: true })
       getProgress.mockResolvedValueOnce(
         new Map([
@@ -297,45 +276,53 @@ describe('when staging a partial deployment', () => {
       )
       fileInfo.mockImplementation(async (hash) => ({ size: hash === 'a' ? 300 : 500 }))
       deployEntity.mockRejectedValueOnce(Object.assign(new Error('duplicate key'), { code: '23505' }))
-      getWorldScenes
-        .mockResolvedValueOnce({ scenes: [], total: 0 })
-        .mockResolvedValueOnce({ scenes: [{ entityId: 'entity' }], total: 1 })
+      getWorldScenes.mockResolvedValueOnce({
+        scenes: [
+          {
+            entityId: 'entity',
+            worldName: 'world.dcl.eth',
+            parcels: ['0,0'],
+            entity: input.entity,
+            createdAt: new Date(456)
+          }
+        ],
+        total: 1
+      })
+      // No completion receipt for this signer: the live publication answers regardless.
+      getCompleted.mockResolvedValue(undefined)
+      result = await stage(input)
     })
 
-    describe('and the completion receipt belongs to this signer', () => {
-      let result: Awaited<ReturnType<typeof stage>>
-
-      beforeEach(async () => {
-        getCompleted.mockResolvedValueOnce({ creationTimestamp: 456, worldName: 'world.dcl.eth', parcels: ['0,0'] })
-        result = await stage(input)
-      })
-
-      it('should drop this request staging state and answer with the original completion', () => {
-        expect({ result, cleaned: deleteByEntityId.mock.calls }).toEqual({
-          result: {
-            complete: true,
-            creationTimestamp: 456,
-            result: { message: expect.stringContaining('world.dcl.eth') }
-          },
-          cleaned: [['entity']]
-        })
+    it('should drop this request staging state and answer with the live publication', () => {
+      expect({ result, cleaned: deleteByEntityId.mock.calls }).toEqual({
+        result: {
+          complete: true,
+          creationTimestamp: 456,
+          result: { message: expect.stringContaining('world.dcl.eth') }
+        },
+        cleaned: [['entity']]
       })
     })
+  })
 
-    describe('and there is no completion receipt for this signer', () => {
-      let error: unknown
+  describe('and publication fails with a unique violation while the entity is not published', () => {
+    let error: unknown
 
-      beforeEach(async () => {
-        getCompleted.mockResolvedValueOnce(undefined)
-        error = await stage(input).catch((e) => e)
-      })
+    beforeEach(async () => {
+      getPending.mockResolvedValueOnce({ createdAt: new Date(), deployer: 'deployer', initialized: true })
+      getProgress.mockResolvedValueOnce(
+        new Map([
+          ['a', 300],
+          ['b', 500]
+        ])
+      )
+      fileInfo.mockImplementation(async (hash) => ({ size: hash === 'a' ? 300 : 500 }))
+      deployEntity.mockRejectedValueOnce(Object.assign(new Error('duplicate key'), { code: '23505' }))
+      error = await stage(input).catch((e) => e)
+    })
 
-      it('should drop this request staging state and reject it as already deployed', () => {
-        expect({ message: (error as Error).message, cleaned: deleteByEntityId.mock.calls }).toEqual({
-          message: 'Deployment failed: this entity is already deployed.',
-          cleaned: [['entity']]
-        })
-      })
+    it('should propagate the original collision', () => {
+      expect(error).toMatchObject({ message: 'duplicate key', code: '23505' })
     })
   })
   describe('and the first batch of an upload is not admitted', () => {
@@ -363,6 +350,68 @@ describe('when staging a partial deployment', () => {
 
     it('should keep the existing upload', () => {
       expect(discardUnadmitted).not.toHaveBeenCalled()
+    })
+  })
+})
+
+describe('when finding the publication of an entity', () => {
+  let getWorldScenes: jest.Mock
+  let findPublication: Awaited<ReturnType<typeof createPartialDeploymentsComponent>>['findPublication']
+
+  beforeEach(async () => {
+    getWorldScenes = jest.fn()
+    ;({ findPublication } = await createPartialDeploymentsComponent({
+      config: { getNumber: jest.fn().mockResolvedValue(undefined) },
+      worldsManager: { getWorldScenes }
+    } as unknown as Components))
+  })
+
+  afterEach(() => {
+    jest.resetAllMocks()
+  })
+
+  describe('and the entity is published', () => {
+    let result: Awaited<ReturnType<typeof findPublication>>
+
+    beforeEach(async () => {
+      getWorldScenes.mockResolvedValueOnce({
+        scenes: [
+          {
+            entityId: 'entity',
+            worldName: 'world.dcl.eth',
+            parcels: ['0,0'],
+            entity: { metadata: { worldConfiguration: { name: 'World.dcl.eth' }, scene: { parcels: ['0,0'] } } },
+            createdAt: new Date(789)
+          }
+        ],
+        total: 1
+      })
+      result = await findPublication('https://worlds.example', 'entity')
+    })
+
+    it('should look it up among deployed scenes by entity id alone', () => {
+      expect(getWorldScenes).toHaveBeenCalledWith({ entityId: 'entity' }, { limit: 1 })
+    })
+
+    it('should answer with a completed result carrying the publication timestamp', () => {
+      expect(result).toEqual({
+        complete: true,
+        creationTimestamp: 789,
+        result: { message: expect.stringContaining('World.dcl.eth') }
+      })
+    })
+  })
+
+  describe('and the entity is not published', () => {
+    let result: Awaited<ReturnType<typeof findPublication>>
+
+    beforeEach(async () => {
+      getWorldScenes.mockResolvedValueOnce({ scenes: [], total: 0 })
+      result = await findPublication('https://worlds.example', 'entity')
+    })
+
+    it('should return nothing', () => {
+      expect(result).toBeUndefined()
     })
   })
 })

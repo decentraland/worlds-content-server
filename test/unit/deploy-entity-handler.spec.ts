@@ -78,12 +78,14 @@ describe('deployEntity', () => {
             operation(signal)
         },
         deploymentProcessing: createDeploymentProcessingMock(),
+        config: { getString: jest.fn().mockResolvedValue(undefined) },
         // Default no-op pending-scenes manager; tests of partial requests that need a pending row override it.
         pendingScenesManager: {
           getByEntityId: jest.fn().mockResolvedValue(undefined),
           getCompleted: jest.fn().mockResolvedValue(undefined),
           deleteByEntityId: jest.fn().mockResolvedValue(undefined)
         },
+        partialDeployments: { findPublication: jest.fn().mockResolvedValue(undefined) },
         logs: {
           getLogger: jest.fn().mockReturnValue({ debug: jest.fn(), error: jest.fn(), info: jest.fn(), warn: jest.fn() })
         }
@@ -191,6 +193,44 @@ describe('deployEntity', () => {
       expect({ caughtError, locks: withRead.mock.calls.length }).toEqual({
         caughtError: new InvalidRequestError('Invalid auth chain: bad signature'),
         locks: 0
+      })
+    })
+  })
+
+  describe('when a partial batch carrying the manifest targets a published entity', () => {
+    let validateSignatureSpy: jest.SpyInstance
+    let stage: jest.Mock
+    let response: Awaited<ReturnType<typeof deployEntity>>
+
+    beforeEach(async () => {
+      validateSignatureSpy = jest.spyOn(Authenticator, 'validateSignature').mockResolvedValue({ ok: true })
+      stage = jest.fn()
+      const baseContext = createContext(entityId, { [entityId]: makeFile(Buffer.from('{}')) })
+      baseContext.formData.fields.partial = makeField('true')
+      const context = {
+        ...baseContext,
+        components: {
+          ...baseContext.components,
+          partialDeployments: {
+            stage,
+            findPublication: jest
+              .fn()
+              .mockResolvedValue({ complete: true, creationTimestamp: 789, result: { message: 'published' } })
+          }
+        }
+      } as unknown as DeployContext
+      response = await deployEntity(context)
+    })
+
+    afterEach(() => {
+      validateSignatureSpy.mockRestore()
+      jest.resetAllMocks()
+    })
+
+    it('should answer 200 with the publication without staging the batch', () => {
+      expect({ response, stages: stage.mock.calls.length }).toEqual({
+        response: { status: 200, body: { creationTimestamp: 789, message: 'published' } },
+        stages: 0
       })
     })
   })
@@ -344,6 +384,52 @@ describe('deployEntity', () => {
 
       it('should read the entity back from storage', () => {
         expect(retrieve).toHaveBeenCalledWith(entityId)
+      })
+    })
+
+    describe('and the entity is already published', () => {
+      let response: Awaited<ReturnType<typeof deployEntity>>
+      let findPublication: jest.Mock
+
+      beforeEach(async () => {
+        getByEntityId = jest.fn().mockResolvedValue(undefined)
+        findPublication = jest
+          .fn()
+          .mockResolvedValue({ complete: true, creationTimestamp: 789, result: { message: 'published' } })
+        const context = createResumeContext()
+        ;(context.components as any).partialDeployments = { findPublication }
+        response = await deployEntity(context)
+      })
+
+      it('should answer 200 with the publication without reading storage or requiring the entity file', () => {
+        expect({ response, retrieves: retrieve.mock.calls.length }).toEqual({
+          response: { status: 200, body: { creationTimestamp: 789, message: 'published' } },
+          retrieves: 0
+        })
+      })
+    })
+
+    describe('and the signer holds a completion receipt', () => {
+      let response: Awaited<ReturnType<typeof deployEntity>>
+      let findPublication: jest.Mock
+
+      beforeEach(async () => {
+        getByEntityId = jest.fn().mockResolvedValue(undefined)
+        findPublication = jest.fn()
+        const context = createResumeContext()
+        ;(context.components as any).partialDeployments = { findPublication }
+        ;(context.components as any).pendingScenesManager.getCompleted = jest
+          .fn()
+          .mockResolvedValue({ creationTimestamp: 456, worldName: 'world.dcl.eth', parcels: ['0,0'] })
+        response = await deployEntity(context)
+      })
+
+      it('should answer with the original completion before looking up the publication', () => {
+        expect({ status: response.status, body: response.body, lookups: findPublication.mock.calls.length }).toEqual({
+          status: 200,
+          body: expect.objectContaining({ creationTimestamp: 456 }),
+          lookups: 0
+        })
       })
     })
   })
@@ -537,7 +623,7 @@ describe('deployEntity', () => {
         content: [],
         metadata: { worldConfiguration: { name: 'world.dcl.eth' }, scene: { parcels: ['0,0'] } }
       }
-      getWorldScenes = jest.fn().mockResolvedValue({ scenes: [{ entityId }], total: 1 })
+      getWorldScenes = jest.fn().mockResolvedValue({ scenes: [{ entityId, createdAt: new Date(321) }], total: 1 })
       const baseContext = createContext(entityId, { [entityId]: makeFile(Buffer.from(JSON.stringify(entity))) })
       const context = {
         ...baseContext,
@@ -575,6 +661,10 @@ describe('deployEntity', () => {
         status: 200,
         queried: [{ worldName: 'world.dcl.eth', entityId }, { limit: 1 }]
       })
+    })
+
+    it("should answer with the live publication's timestamp", () => {
+      expect(response.body).toEqual(expect.objectContaining({ creationTimestamp: 321 }))
     })
   })
 

@@ -161,9 +161,10 @@ async function deployEntityWithSignal(
 ): Promise<IHttpServerComponent.IResponse> {
   const { deploymentProcessing } = ctx.components
   if (isPartial) {
+    const baseUrl = (await ctx.components.config.getString('HTTP_BASE_URL')) || `https://${ctx.url.host}`
+    // The receipt keeps answering the finalizer after an undeploy or replacement.
     const completed = await ctx.components.pendingScenesManager.getCompleted(entityId, authChain[0].payload, signal)
     if (completed) {
-      const baseUrl = (await ctx.components.config.getString('HTTP_BASE_URL')) || `https://${ctx.url.host}`
       return {
         status: 200,
         body: {
@@ -171,6 +172,11 @@ async function deployEntityWithSignal(
           message: buildSceneDeploymentMessage(baseUrl, completed.worldName, completed.parcels)
         }
       }
+    }
+    // A live entity is never restaged: any signer's batch, with or without the manifest, gets its publication.
+    const published = await ctx.components.partialDeployments.findPublication(baseUrl, entityId, signal)
+    if (published) {
+      return { status: 200, body: { creationTimestamp: published.creationTimestamp, ...published.result } }
     }
   }
 
@@ -324,7 +330,7 @@ async function deployEntityWithSignal(
   const baseUrl = (await ctx.components.config.getString('HTTP_BASE_URL')) || `https://${ctx.url.host}`
   const deploymentSize = calculateDeploymentSizeFromFileInfos(entity, uploadedFiles, contentFileInfos)
   signal.throwIfAborted()
-  let message: { message?: string }
+  let message: { message?: string; creationTimestamp?: number }
   try {
     message = await ctx.components.entityDeployer.deployEntity(
       baseUrl,
@@ -360,6 +366,8 @@ async function deployEntityWithSignal(
       .getLogger('deploy-entity')
       .info('Deployment finalized concurrently; returning idempotent success', { entityId, worldName })
     message = {
+      // The live publication's timestamp, as the partial path answers.
+      creationTimestamp: existing.scenes[0].createdAt.getTime(),
       message: buildSceneDeploymentMessage(
         baseUrl,
         entity.metadata?.worldConfiguration?.name ?? worldName,

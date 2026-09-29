@@ -10,8 +10,11 @@ ID as the upload identifier; there is no session creation or explicit commit end
    It returns `200 { creationTimestamp, ...serviceSpecificFields }`.
 4. Replaying completion with valid authentication returns the original result during completion
    retention. It does not redeploy an entity subsequently replaced or undeployed.
-5. An expired upload needs a newly timestamped/signed entity. Retries do not extend upload lifetime.
-6. Overlapping uploads coexist within quotas. Publication uses entity timestamp ordering, breaking
+5. Any batch for an entity that is currently published, from any signer and with or without the
+   manifest, returns `200` with the publication's `creationTimestamp`. The entity ID is the hash of
+   the entity file, so the live entity is exactly what the uploader wanted.
+6. An expired upload needs a newly timestamped/signed entity. Retries do not extend upload lifetime.
+7. Overlapping uploads coexist within quotas. Publication uses entity timestamp ordering, breaking
    ties by entity ID; completion order never lets an older entity overwrite a newer deployed entity.
 
 `400` covers validation, expiry and admission failures. `408` covers processing deadlines. Clients

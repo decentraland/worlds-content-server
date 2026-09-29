@@ -40,8 +40,9 @@ also counted in `partial_upload_rates` (`deployer` PK, `window_started`, `bytes`
 
 Primary key `entity_id`; columns `deployer`, `world_name`, `parcels`, `completed_at`. Publication writes
 this receipt and removes pending state in the same transaction as the scene. The original signer gets
-a stable completion response even after replacement or undeployment. Receipts expire independently
-under `COMPLETED_UPLOAD_TTL` and do not retain content or consume staging slots.
+a stable completion response even after replacement or undeployment; while the entity is published,
+every signer is answered from `world_scenes` instead. `completed_at` equals the scene's `created_at`.
+Receipts expire independently under `COMPLETED_UPLOAD_TTL` and do not retain content or consume staging slots.
 
 ### Content protection
 

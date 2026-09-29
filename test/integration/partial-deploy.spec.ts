@@ -110,7 +110,11 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
   partialDeploymentContract(() => ({
     entityId,
     contentHashes,
-    send: (keys) => post(buildForm(keys, Authenticator.signPayload(identity.authChain, entityId)))
+    send: (keys) => post(buildForm(keys, Authenticator.signPayload(identity.authChain, entityId))),
+    sendAsAnotherSigner: async (keys) => {
+      const other = await getIdentity()
+      return post(buildForm(keys, Authenticator.signPayload(other.authChain, entityId)))
+    }
   }))
 
   describe('when recording progress over several batches', () => {
@@ -468,11 +472,12 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
   })
 
   describe('when another authorized signer stages an already deployed entity', () => {
+    let publication: { creationTimestamp: number }
     let response: Awaited<ReturnType<typeof post>>
 
     beforeEach(async () => {
       const authChain = Authenticator.signPayload(identity.authChain, entityId)
-      await post(buildForm([entityId, ...contentHashes], authChain))
+      publication = await (await post(buildForm([entityId, ...contentHashes], authChain))).json()
       const other = await getIdentity()
       const { namePermissionChecker } = stubComponents
       namePermissionChecker.checkPermission.mockResolvedValue(true)
@@ -481,10 +486,10 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
       )
     })
 
-    it('should reject it without leaving a reservation behind', async () => {
+    it('should answer with the publication without leaving a reservation behind', async () => {
       expect({ status: response.status, body: await response.json(), pending: await countPending() }).toEqual({
-        status: 400,
-        body: expect.objectContaining({ message: 'Deployment failed: this entity is already deployed.' }),
+        status: 200,
+        body: expect.objectContaining({ creationTimestamp: publication.creationTimestamp }),
         pending: 0
       })
     })
@@ -495,6 +500,7 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
     let pendingAfterDeploy: number
     let receiptsAfterDeploy: number
     let nextBatch: Awaited<ReturnType<typeof post>>
+    let vanillaTimestamp: number
 
     beforeEach(async () => {
       const { database } = components
@@ -502,9 +508,11 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
       await post(buildForm([entityId, contentHashes[0]], Authenticator.signPayload(identity.authChain, entityId)))
       const other = await getIdentity()
       namePermissionChecker.checkPermission.mockResolvedValue(true)
-      vanillaStatus = (
-        await post(buildForm([entityId, ...contentHashes], Authenticator.signPayload(other.authChain, entityId), false))
-      ).status
+      const vanilla = await post(
+        buildForm([entityId, ...contentHashes], Authenticator.signPayload(other.authChain, entityId), false)
+      )
+      vanillaStatus = vanilla.status
+      vanillaTimestamp = (await vanilla.json()).creationTimestamp
       pendingAfterDeploy = await countPending()
       const receipts = await database.query<{ count: string }>(
         SQL`SELECT COUNT(*) AS count FROM completed_scene_uploads WHERE entity_id = ${entityId}`
@@ -523,10 +531,10 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
       })
     })
 
-    it("should reject the partial uploader's next batch as already deployed", async () => {
+    it("should answer the partial uploader's next batch with the publication", async () => {
       expect({ status: nextBatch.status, body: await nextBatch.json() }).toEqual({
-        status: 400,
-        body: expect.objectContaining({ message: 'Deployment failed: this entity is already deployed.' })
+        status: 200,
+        body: expect.objectContaining({ creationTimestamp: vanillaTimestamp })
       })
     })
   })
@@ -570,7 +578,7 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
     describe('and another authorized signer publishes it again through a partial upload', () => {
       let republication: { status: number; body: { creationTimestamp: number } }
       let republicationRetry: { status: number; body: { creationTimestamp: number } }
-      let originalReplay: { status: number; body: { message: string } }
+      let originalReplay: { status: number; body: { creationTimestamp: number } }
 
       beforeEach(async () => {
         const other = await getIdentity()
@@ -588,23 +596,23 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
         }).toEqual({ status: 200, retryStatus: 200, retryCreationTimestamp: republication.body.creationTimestamp })
       })
 
-      it("should reject the earlier finalizer's replay as already deployed", () => {
+      it("should answer the earlier finalizer's replay with the live publication", () => {
         expect(originalReplay).toEqual({
-          status: 400,
-          body: expect.objectContaining({ message: 'Deployment failed: this entity is already deployed.' })
+          status: 200,
+          body: expect.objectContaining({ creationTimestamp: republication.body.creationTimestamp })
         })
       })
     })
 
     describe('and another authorized signer publishes it again without partial', () => {
-      let republicationStatus: number
+      let republication: { status: number; body: { creationTimestamp: number } }
       let receipts: number
-      let originalReplay: { status: number; body: { message: string } }
+      let originalReplay: { status: number; body: { creationTimestamp: number } }
 
       beforeEach(async () => {
         const other = await getIdentity()
         stubComponents.namePermissionChecker.checkPermission.mockResolvedValue(true)
-        republicationStatus = (await sendAll(other, false)).status
+        republication = await toCompletion(await sendAll(other, false))
         const result = await components.database.query<{ count: string }>(
           SQL`SELECT COUNT(*) AS count FROM completed_scene_uploads WHERE entity_id = ${entityId}`
         )
@@ -613,13 +621,16 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
       })
 
       it('should publish it and drop the earlier completion receipt', () => {
-        expect({ republicationStatus, receipts }).toEqual({ republicationStatus: 200, receipts: 0 })
+        expect({ republicationStatus: republication.status, receipts }).toEqual({
+          republicationStatus: 200,
+          receipts: 0
+        })
       })
 
-      it("should reject the earlier finalizer's replay as already deployed", () => {
+      it("should answer the earlier finalizer's replay with the live publication", () => {
         expect(originalReplay).toEqual({
-          status: 400,
-          body: expect.objectContaining({ message: 'Deployment failed: this entity is already deployed.' })
+          status: 200,
+          body: expect.objectContaining({ creationTimestamp: republication.body.creationTimestamp })
         })
       })
     })
