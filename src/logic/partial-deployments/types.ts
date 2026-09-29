@@ -41,7 +41,8 @@ export type IPartialDeploymentsComponent = {
    * Stages one request of a partial scene deployment: validates everything that doesn't need the full
    * content set, stores the uploaded files, records/refreshes the pending scene, and — when this
    * request completes the content set — runs the full validation + deploy and returns the result.
-   * Throws `InvalidRequestError` (HTTP 400) on client errors.
+   * Throws `InvalidRequestError` (HTTP 400) on client errors and `PartialUploadQuotaExceededError`
+   * (HTTP 429) when a partial-upload quota is full.
    */
   stage(input: StageDeploymentInput): Promise<StageDeploymentResult>
 }

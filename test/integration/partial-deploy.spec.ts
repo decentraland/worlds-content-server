@@ -1103,8 +1103,8 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
       replaceResponse = await post(makeForm(replacement.entityId, replacement.files, [replacement.entityId], replAuth))
     })
 
-    it('should reject the additional upload even though its parcels overlap', () => {
-      expect(replaceResponse.status).toBe(400)
+    it('should reject the additional upload with 429 even though its parcels overlap', () => {
+      expect(replaceResponse.status).toBe(429)
     })
 
     it('should keep the deployer at the cap (net count unchanged)', async () => {
@@ -1129,8 +1129,24 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
       overCapResponse = await post(makeForm(scenes[3].entityId, scenes[3].files, [scenes[3].entityId], fourthAuth))
     })
 
-    it('should reject the upload beyond the cap with 400', () => {
-      expect(overCapResponse.status).toBe(400)
+    it('should reject the upload beyond the cap with 429, the quota message and a Retry-After', async () => {
+      expect({
+        status: overCapResponse.status,
+        retryAfter: Number(overCapResponse.headers.get('retry-after')),
+        body: await overCapResponse.json()
+      }).toEqual({
+        status: 429,
+        retryAfter: expect.any(Number),
+        body: {
+          error: 'Too Many Requests',
+          message:
+            'Too many partial uploads in progress for this account: 3 of the 3 allowed. Complete an upload or wait for expired uploads to be cleaned up.'
+        }
+      })
+    })
+
+    it("should retry once the account's oldest upload could expire", () => {
+      expect(Number(overCapResponse.headers.get('retry-after'))).toBeGreaterThan(86_000)
     })
 
     it('should not create a pending row for the rejected upload', async () => {

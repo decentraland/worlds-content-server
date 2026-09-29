@@ -17,6 +17,7 @@ import {
 import { hashV1 } from '@dcl/hashing'
 import { Authenticator } from '@dcl/crypto'
 import { DeploymentToValidate, SceneReplacementConflictError } from '../../src/types'
+import { PartialUploadQuotaExceededError } from '../../src/adapters/pending-scenes-manager'
 
 type DeployContext = Parameters<typeof deployEntity>[0]
 
@@ -676,6 +677,34 @@ describe('deployEntity', () => {
           error: 'Conflict',
           message: 'Scene replacement authorization changed while deploying to world "world.dcl.eth". Please retry.'
         }
+      })
+    })
+  })
+
+  describe('when a partial-upload quota is full', () => {
+    let response: Awaited<ReturnType<typeof deployEntity>>
+
+    beforeEach(async () => {
+      const context = createContext(entityId, { [entityId]: makeFile(Buffer.from('{}')) })
+      context.components.contentLocks = {
+        withRead: jest
+          .fn()
+          .mockRejectedValueOnce(
+            new PartialUploadQuotaExceededError('bytes_per_minute', 'This account sent too much this minute.', 42)
+          )
+      } as unknown as DeployContext['components']['contentLocks']
+      response = await deployEntity(context)
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should answer 429 with the quota message and its Retry-After', () => {
+      expect(response).toEqual({
+        status: 429,
+        headers: { 'Retry-After': '42' },
+        body: { error: 'Too Many Requests', message: 'This account sent too much this minute.' }
       })
     })
   })

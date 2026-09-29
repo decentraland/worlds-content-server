@@ -20,6 +20,7 @@ import { calculateDeploymentSizeFromFileInfos } from '../../logic/validations/sc
 import { Readable } from 'stream'
 import { mapWithConcurrency, raceWithSignal } from '../../logic/concurrency'
 import { getRequestArrival } from '../request-arrival'
+import { PartialUploadQuotaExceededError } from '../../adapters/pending-scenes-manager'
 import {
   DEFAULT_CONTENT_FILE_INFO_CONCURRENCY,
   DeploymentProcessingAbortedError,
@@ -425,6 +426,16 @@ export async function deployEntity(ctx: DeployEntityContext): Promise<IHttpServe
         body: {
           error: 'Request Timeout',
           message: timeoutError.message
+        }
+      }
+    }
+    if (error instanceof PartialUploadQuotaExceededError) {
+      return {
+        status: 429,
+        headers: { 'Retry-After': String(error.retryAfterSeconds) },
+        body: {
+          error: 'Too Many Requests',
+          message: error.message
         }
       }
     }

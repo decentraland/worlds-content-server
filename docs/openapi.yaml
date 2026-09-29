@@ -424,6 +424,24 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: >-
+            The client source already has its share of uploads in flight, or a partial-upload quota is
+            full (uploads per account, staged bytes per account or per server, bytes per minute). The
+            message names the quota with its measured and allowed values.
+          headers:
+            Retry-After:
+              description: >-
+                Seconds to wait. Byte rate: until the account's one-minute window resets. Other partial
+                quotas: until the oldest upload holding that quota expires, or 60 when it has already
+                expired and only cleanup can free it.
+              schema:
+                type: integer
+                example: 60
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '499':
           description: >-
             Client closed the request before deployment processing completed. The response is

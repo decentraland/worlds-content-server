@@ -3,7 +3,12 @@ import { Entity, EntityType } from '@dcl/schemas'
 import { bufferToStream } from '@dcl/catalyst-storage'
 import { test } from '../components'
 import { cleanup } from '../utils'
-import { createPendingScenesManager, PartialUploadExpiredError } from '../../src/adapters/pending-scenes-manager'
+import {
+  createPendingScenesManager,
+  PARTIAL_UPLOAD_CLEANUP_RETRY_AFTER_SECONDS,
+  PartialUploadExpiredError,
+  PartialUploadQuotaExceededError
+} from '../../src/adapters/pending-scenes-manager'
 import { IPendingScenesManager } from '../../src/adapters/pending-scenes-manager/types'
 
 test('when accounting for independent partial uploads', ({ components }) => {
@@ -13,10 +18,16 @@ test('when accounting for independent partial uploads', ({ components }) => {
   let signer: string
   let limits: Record<string, number>
 
-  async function create(entity: Entity, deployer = signer, admittedAt = new Date(), resumes = false): Promise<void> {
+  async function create(
+    entity: Entity,
+    deployer = signer,
+    admittedAt = new Date(),
+    resumes = false,
+    maxPendingPerDeployer = 10
+  ): Promise<void> {
     await manager.upsert(
       { entityId: entity.id, entity, deployer, worldName: 'test.dcl.eth', parcels: ['0,0'], admittedAt, resumes },
-      { maxPendingPerDeployer: 10 }
+      { maxPendingPerDeployer }
     )
   }
 
@@ -26,7 +37,12 @@ test('when accounting for independent partial uploads', ({ components }) => {
   }
 
   beforeEach(async () => {
-    limits = { MAX_PENDING_BYTES_PER_DEPLOYER: 600, MAX_PENDING_BYTES: 1000, MAX_PARTIAL_UPLOAD_BYTES_PER_MINUTE: 5000 }
+    limits = {
+      MAX_PENDING_BYTES_PER_DEPLOYER: 600,
+      MAX_PENDING_BYTES: 1000,
+      MAX_PARTIAL_UPLOAD_BYTES_PER_MINUTE: 5000,
+      PENDING_DEPLOYMENT_TTL: 300_000
+    }
     signer = '0xaccount'
     first = {
       version: 'v3',
@@ -153,8 +169,129 @@ test('when accounting for independent partial uploads', ({ components }) => {
 
     it('should still charge the received bytes against the byte rate', () => {
       expect({ message: (error as Error).message, rateBytes }).toEqual({
-        message: 'Partial upload storage budget exceeded. Complete uploads or wait for cleanup.',
+        message:
+          'This batch would stage 700 bytes for this account, above its limit of 600 bytes. Complete an upload or wait for expired uploads to be cleaned up.',
         rateBytes: '700'
+      })
+    })
+  })
+
+  describe('and the account already has its maximum of uploads', () => {
+    let error: unknown
+
+    beforeEach(async () => {
+      await create(first, signer, new Date(Date.now() - 60_000))
+      error = await create(second, signer, new Date(), false, 1).catch((e: unknown) => e)
+    })
+
+    it('should reject with the upload-count quota, retrying when its oldest upload expires', () => {
+      expect({
+        quota: (error as PartialUploadQuotaExceededError).quota,
+        message: (error as Error).message,
+        retryAfter: (error as PartialUploadQuotaExceededError).retryAfterSeconds
+      }).toEqual({
+        quota: 'uploads_per_account',
+        message:
+          'Too many partial uploads in progress for this account: 1 of the 1 allowed. Complete an upload or wait for expired uploads to be cleaned up.',
+        retryAfter: 240
+      })
+    })
+  })
+
+  describe('and the account is at its maximum of uploads with one awaiting cleanup', () => {
+    let error: unknown
+
+    beforeEach(async () => {
+      await create(first, signer, new Date(Date.now() - 400_000))
+      error = await create(second, signer, new Date(), false, 1).catch((e: unknown) => e)
+    })
+
+    it('should retry after the cleanup hint', () => {
+      expect((error as PartialUploadQuotaExceededError).retryAfterSeconds).toBe(
+        PARTIAL_UPLOAD_CLEANUP_RETRY_AFTER_SECONDS
+      )
+    })
+  })
+
+  describe('and a batch exceeds the account byte quota', () => {
+    let error: unknown
+
+    beforeEach(async () => {
+      await create({ ...first, id: 'idle' }, signer, new Date(Date.now() - 250_000))
+      await create({ ...first, id: 'other' }, '0xother', new Date(Date.now() - 150_000))
+      await create(first, signer, new Date(Date.now() - 100_000))
+      await create(second)
+      await manager.reserve('other', [{ hash: 'content-c', size: 50, stored: false }], 1000n, 50)
+      await manager.reserve(first.id, [{ hash: 'content-a', size: 400, stored: false }], 1000n, 400)
+      error = await manager
+        .reserve(second.id, [{ hash: 'content-b', size: 300, stored: false }], 1000n, 300)
+        .catch((e: unknown) => e)
+    })
+
+    it("should reject with the account byte quota, retrying when the account's oldest charged upload expires", () => {
+      expect({
+        quota: (error as PartialUploadQuotaExceededError).quota,
+        message: (error as Error).message,
+        retryAfter: (error as PartialUploadQuotaExceededError).retryAfterSeconds
+      }).toEqual({
+        quota: 'bytes_per_account',
+        message:
+          'This batch would stage 700 bytes for this account, above its limit of 600 bytes. Complete an upload or wait for expired uploads to be cleaned up.',
+        retryAfter: 200
+      })
+    })
+  })
+
+  describe('and a batch exceeds the server byte quota', () => {
+    let error: unknown
+
+    beforeEach(async () => {
+      await create({ ...first, id: 'idle' }, '0xidle', new Date(Date.now() - 250_000))
+      await create(first, '0xanother', new Date(Date.now() - 50_000))
+      await create(second)
+      await manager.reserve(first.id, [{ hash: 'content-a', size: 500, stored: false }], 1000n, 500)
+      error = await manager
+        .reserve(second.id, [{ hash: 'content-b', size: 550, stored: false }], 1000n, 550)
+        .catch((e: unknown) => e)
+    })
+
+    it("should reject with the server byte quota, retrying when the server's oldest charged upload expires", () => {
+      expect({
+        quota: (error as PartialUploadQuotaExceededError).quota,
+        message: (error as Error).message,
+        retryAfter: (error as PartialUploadQuotaExceededError).retryAfterSeconds
+      }).toEqual({
+        quota: 'bytes_per_server',
+        message: 'This batch would stage 1.0 KiB on the server, above its limit of 1000 bytes. Retry later.',
+        retryAfter: 250
+      })
+    })
+  })
+
+  describe('and a batch exceeds the per-minute byte rate', () => {
+    let error: unknown
+
+    beforeEach(async () => {
+      await create(first)
+      await manager.reserve(first.id, [{ hash: 'content-a', size: 100, stored: false }], 1000n, 100)
+      await components.database.query(
+        SQL`UPDATE partial_upload_rates SET window_started = now() - interval '30 seconds'`
+      )
+      error = await manager
+        .reserve(first.id, [{ hash: 'content-a', size: 100, stored: false }], 1000n, 6000)
+        .catch((e: unknown) => e)
+    })
+
+    it("should reject with the byte-rate quota, retrying when the account's minute window resets", () => {
+      expect({
+        quota: (error as PartialUploadQuotaExceededError).quota,
+        message: (error as Error).message,
+        retryAfter: (error as PartialUploadQuotaExceededError).retryAfterSeconds
+      }).toEqual({
+        quota: 'bytes_per_minute',
+        message:
+          'This account sent 6.0 KiB of partial uploads this minute, above the limit of 4.9 KiB per minute. Retry in 30 s.',
+        retryAfter: 30
       })
     })
   })
@@ -197,7 +334,7 @@ test('when accounting for independent partial uploads', ({ components }) => {
     it('should keep its bytes charged until cleanup succeeds', async () => {
       await expect(
         manager.reserve(second.id, [{ hash: 'content-b', size: 400, stored: false }], 1000n, 400)
-      ).rejects.toThrow('storage budget exceeded')
+      ).rejects.toThrow('above its limit of 600 bytes')
       await manager.deleteExpired()
       await expect(
         manager.reserve(second.id, [{ hash: 'content-b', size: 400, stored: false }], 1000n, 400)
@@ -213,7 +350,7 @@ test('when accounting for independent partial uploads', ({ components }) => {
         await expect(manager.deleteExpired()).rejects.toThrow('storage unavailable')
         await expect(
           manager.reserve(second.id, [{ hash: 'content-b', size: 400, stored: false }], 1000n, 400)
-        ).rejects.toThrow('storage budget exceeded')
+        ).rejects.toThrow('above its limit of 600 bytes')
       })
     })
 

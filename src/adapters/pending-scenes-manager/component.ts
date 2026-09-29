@@ -5,7 +5,8 @@ import { getPositiveInteger, raceWithSignal } from '../../logic/concurrency'
 import { withUploadTransaction } from '../upload-transaction'
 import { getReferencedContentKeys } from '../content-references'
 import { IPendingScenesManager, PendingScene, UpsertPendingScene, FileReceipt } from './types'
-import { PartialUploadExpiredError } from './errors'
+import { PartialUploadExpiredError, PartialUploadQuotaExceededError } from './errors'
+import { formatBytes } from '../../logic/multipart'
 
 type PendingSceneRow = {
   entity_id: string
@@ -16,6 +17,12 @@ type PendingSceneRow = {
   updated_at: Date
   initialized: boolean
 }
+
+/**
+ * Retry hint once expired uploads awaiting cleanup hold the quota. The sweep runs daily per replica and
+ * on demand, so when it runs next isn't knowable here.
+ */
+export const PARTIAL_UPLOAD_CLEANUP_RETRY_AFTER_SECONDS = 60
 
 function toPendingScene(row: PendingSceneRow): PendingScene {
   return {
@@ -45,6 +52,13 @@ export async function createPendingScenesManager(
   const globalBytes = BigInt(await getPositiveInteger(config, 'MAX_PENDING_BYTES', 50 * 1024 ** 3))
   const bytesPerMinute = await getPositiveInteger(config, 'MAX_PARTIAL_UPLOAD_BYTES_PER_MINUTE', 512 * 1024 ** 2)
   const completionTtl = await getPositiveInteger(config, 'COMPLETED_UPLOAD_TTL', 24 * 60 * 60 * 1000)
+
+  // Capacity held by the oldest charged upload frees no earlier than its expiry; once it has expired,
+  // only the (unscheduled) cleanup frees it.
+  function retryAfterOldest(oldestCreatedAt: Date | null): number {
+    const untilExpiry = oldestCreatedAt ? oldestCreatedAt.getTime() + ttlMs - Date.now() : 0
+    return untilExpiry > 0 ? Math.max(1, Math.ceil(untilExpiry / 1000)) : PARTIAL_UPLOAD_CLEANUP_RETRY_AFTER_SECONDS
+  }
 
   async function getByEntityId(entityId: string, signal?: AbortSignal): Promise<PendingScene | undefined> {
     const result = await raceWithSignal(
@@ -80,12 +94,14 @@ export async function createPendingScenesManager(
         }
         // Only cleanup of an expired upload removes one seen earlier; re-creating it would restart it.
         if (input.resumes) throw new PartialUploadExpiredError()
-        const count = await query<{ count: string }>(
-          SQL`SELECT COUNT(*) AS count FROM pending_scenes WHERE deployer = ${deployer}`
+        const count = await query<{ count: string; oldest: Date | null }>(
+          SQL`SELECT COUNT(*) AS count, MIN(created_at) AS oldest FROM pending_scenes WHERE deployer = ${deployer}`
         )
         if (Number(count.rows[0].count) >= limit.maxPendingPerDeployer) {
-          throw new InvalidRequestError(
-            `Too many partial uploads in progress for this account (max ${limit.maxPendingPerDeployer}). Complete an upload or wait for expired uploads to be cleaned up.`
+          throw new PartialUploadQuotaExceededError(
+            'uploads_per_account',
+            `Too many partial uploads in progress for this account: ${count.rows[0].count} of the ${limit.maxPendingPerDeployer} allowed. Complete an upload or wait for expired uploads to be cleaned up.`,
+            retryAfterOldest(count.rows[0].oldest)
           )
         }
         const result = await query<PendingSceneRow>(SQL`
@@ -114,18 +130,24 @@ export async function createPendingScenesManager(
     // Committed on its own, before admission: the batch was received and processed even if it is then
     // rejected, so repeating rejected batches can't escape the rate limit.
     const rate = await raceWithSignal(
-      database.query<{ bytes: string }>(SQL`
+      database.query<{ bytes: string; retry_after: number }>(SQL`
       INSERT INTO partial_upload_rates (deployer, window_started, bytes) VALUES (${deployer}, now(), ${incomingBytes})
       ON CONFLICT (deployer) DO UPDATE SET
         bytes = CASE WHEN partial_upload_rates.window_started < now() - interval '1 minute'
           THEN EXCLUDED.bytes ELSE partial_upload_rates.bytes + EXCLUDED.bytes END,
         window_started = CASE WHEN partial_upload_rates.window_started < now() - interval '1 minute'
           THEN now() ELSE partial_upload_rates.window_started END
-      RETURNING bytes`),
+      RETURNING bytes,
+        GREATEST(1, CEIL(EXTRACT(EPOCH FROM window_started + interval '1 minute' - now())))::int AS retry_after`),
       signal
     )
     if (BigInt(rate.rows[0].bytes) > BigInt(bytesPerMinute)) {
-      throw new InvalidRequestError('Partial upload byte rate exceeded. Retry after one minute.')
+      const retryAfter = rate.rows[0].retry_after
+      throw new PartialUploadQuotaExceededError(
+        'bytes_per_minute',
+        `This account sent ${formatBytes(Number(rate.rows[0].bytes))} of partial uploads this minute, above the limit of ${formatBytes(bytesPerMinute)} per minute. Retry in ${retryAfter} s.`,
+        retryAfter
+      )
     }
     await withUploadTransaction(
       database,
@@ -144,17 +166,36 @@ export async function createPendingScenesManager(
         await query(SQL`UPDATE pending_scenes SET reserved_bytes = (
         SELECT COALESCE(SUM(size), 0) FROM pending_scene_files WHERE entity_id = ${entityId}
       ) WHERE entity_id = ${entityId}`)
-        const totals = await query<{ account: string; total: string; scene: string }>(SQL`
+        const totals = await query<{
+          account: string
+          total: string
+          scene: string
+          account_oldest: Date | null
+          oldest: Date | null
+        }>(SQL`
         SELECT COALESCE(SUM(reserved_bytes) FILTER (WHERE deployer = ${deployer}), 0)::text AS account,
           COALESCE(SUM(reserved_bytes), 0)::text AS total,
+          MIN(created_at) FILTER (WHERE deployer = ${deployer} AND reserved_bytes > 0) AS account_oldest,
+          MIN(created_at) FILTER (WHERE reserved_bytes > 0) AS oldest,
           (SELECT COALESCE(SUM(size), 0)::text FROM pending_scene_files
             WHERE entity_id = ${entityId} AND hash != ${entityId}) AS scene
         FROM pending_scenes`)
         const total = totals.rows[0]
         if (BigInt(total.scene) > maxSceneBytes)
           throw new InvalidRequestError('Deployment failed: The deployment is too big.')
-        if (BigInt(total.account) > accountBytes || BigInt(total.total) > globalBytes) {
-          throw new InvalidRequestError('Partial upload storage budget exceeded. Complete uploads or wait for cleanup.')
+        if (BigInt(total.account) > accountBytes) {
+          throw new PartialUploadQuotaExceededError(
+            'bytes_per_account',
+            `This batch would stage ${formatBytes(Number(total.account))} for this account, above its limit of ${formatBytes(Number(accountBytes))}. Complete an upload or wait for expired uploads to be cleaned up.`,
+            retryAfterOldest(total.account_oldest)
+          )
+        }
+        if (BigInt(total.total) > globalBytes) {
+          throw new PartialUploadQuotaExceededError(
+            'bytes_per_server',
+            `This batch would stage ${formatBytes(Number(total.total))} on the server, above its limit of ${formatBytes(Number(globalBytes))}. Retry later.`,
+            retryAfterOldest(total.oldest)
+          )
         }
         metrics.observe('partial_upload_reserved_bytes', {}, Number(total.total))
       },
