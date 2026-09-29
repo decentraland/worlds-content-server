@@ -14,8 +14,8 @@ describe('createMultipartUploadGuard', () => {
       getNumber: jest.fn(async (key: string) => {
         const values: Record<string, number> = {
           MAX_IN_FLIGHT_UPLOAD_BYTES: 100,
-          MAX_CONCURRENT_UPLOADS: 2,
-          MAX_IN_FLIGHT_UPLOAD_FILES: 10,
+          MIN_UPLOAD_RESERVATION_BYTES: 20,
+          UPLOAD_FILE_OVERHEAD_BYTES: 5,
           MAX_ORPHANED_UPLOAD_DIRECTORIES: 3,
           MULTIPART_UPLOAD_TIMEOUT_MS: 300
         }
@@ -49,12 +49,16 @@ describe('createMultipartUploadGuard', () => {
       expect(guard.inFlightUploadBudget.snapshot().capacity).toBe(100)
     })
 
-    it('should configure the concurrent upload capacity', () => {
-      expect(guard.inFlightUploadBudget.snapshot().maxConcurrentUploads).toBe(2)
+    it('should configure the per-request minimum reservation', () => {
+      expect(guard.inFlightUploadBudget.snapshot().minUploadReservationBytes).toBe(20)
     })
 
-    it('should configure the aggregate temporary-file capacity', () => {
-      expect(guard.inFlightUploadBudget.snapshot().maxInFlightUploadFiles).toBe(10)
+    it('should derive the concurrent upload capacity from the byte budget', () => {
+      expect(guard.inFlightUploadBudget.snapshot().maxConcurrentUploads).toBe(5)
+    })
+
+    it('should configure the per-file charge', () => {
+      expect(guard.inFlightUploadBudget.snapshot().uploadFileOverheadBytes).toBe(5)
     })
 
     it('should configure the orphan-directory capacity', () => {
@@ -69,12 +73,12 @@ describe('createMultipartUploadGuard', () => {
       expect(config.getNumber).toHaveBeenCalledWith('MAX_IN_FLIGHT_UPLOAD_BYTES')
     })
 
-    it('should read the concurrency limit setting', () => {
-      expect(config.getNumber).toHaveBeenCalledWith('MAX_CONCURRENT_UPLOADS')
+    it('should read the per-request minimum reservation setting', () => {
+      expect(config.getNumber).toHaveBeenCalledWith('MIN_UPLOAD_RESERVATION_BYTES')
     })
 
-    it('should read the temporary-file limit setting', () => {
-      expect(config.getNumber).toHaveBeenCalledWith('MAX_IN_FLIGHT_UPLOAD_FILES')
+    it('should read the per-file charge setting', () => {
+      expect(config.getNumber).toHaveBeenCalledWith('UPLOAD_FILE_OVERHEAD_BYTES')
     })
 
     it('should read the orphan-directory limit setting', () => {
@@ -129,8 +133,8 @@ describe('createMultipartUploadGuard', () => {
       acquisition.lease!.release({ retainBytes: 25, retainFiles: 1, retainDirectory: true })
     })
 
-    it('should report the retained bytes as orphaned storage', () => {
-      expect(observe).toHaveBeenCalledWith('multipart_upload_orphaned_bytes', {}, 25)
+    it('should report the retained bytes and per-file charge as orphaned storage', () => {
+      expect(observe).toHaveBeenCalledWith('multipart_upload_orphaned_bytes', {}, 30)
     })
 
     it('should report the retained temporary file', () => {
@@ -177,7 +181,7 @@ describe('createMultipartUploadGuard', () => {
       guard.onTelemetry({
         kind: 'rejected',
         route: 'world-settings',
-        reason: 'concurrency',
+        reason: 'bytes',
         actualBytes: 10,
         contentLengthPresent: true,
         snapshot: guard.inFlightUploadBudget.snapshot()
@@ -195,7 +199,7 @@ describe('createMultipartUploadGuard', () => {
     it('should increment the labeled rejection counter', () => {
       expect(increment).toHaveBeenCalledWith('multipart_upload_rejections', {
         route: 'world-settings',
-        reason: 'concurrency'
+        reason: 'bytes'
       })
     })
 
@@ -204,9 +208,11 @@ describe('createMultipartUploadGuard', () => {
         'Multipart upload rejected',
         expect.objectContaining({
           route: 'world-settings',
-          reason: 'concurrency',
+          reason: 'bytes',
           capacity: 100,
-          maxConcurrentUploads: 2
+          maxConcurrentUploads: 5,
+          minUploadReservationBytes: 20,
+          uploadFileOverheadBytes: 5
         })
       )
     })

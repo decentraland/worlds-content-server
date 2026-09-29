@@ -70,8 +70,8 @@ export async function createMultipartUploadGuard(
   const { config, logs, metrics } = components
   const logger = logs.getLogger('multipart-uploads')
   const maxInFlightUploadBytes = await config.getNumber('MAX_IN_FLIGHT_UPLOAD_BYTES')
-  const maxConcurrentUploads = await config.getNumber('MAX_CONCURRENT_UPLOADS')
-  const maxInFlightUploadFiles = await config.getNumber('MAX_IN_FLIGHT_UPLOAD_FILES')
+  const minUploadReservationBytes = await config.getNumber('MIN_UPLOAD_RESERVATION_BYTES')
+  const uploadFileOverheadBytes = await config.getNumber('UPLOAD_FILE_OVERHEAD_BYTES')
   const maxOrphanedUploadDirectories = await config.getNumber('MAX_ORPHANED_UPLOAD_DIRECTORIES')
   const uploadTimeoutMs = await config.getNumber('MULTIPART_UPLOAD_TIMEOUT_MS')
   const onStateChange = ({
@@ -89,13 +89,12 @@ export async function createMultipartUploadGuard(
     metrics.observe('multipart_upload_orphaned_directories', {}, orphanedDirectories)
     metrics.observe('multipart_upload_active', {}, activeUploads)
   }
-  const inFlightUploadBudget = createInFlightUploadBudget(
-    maxInFlightUploadBytes,
-    maxConcurrentUploads,
-    onStateChange,
-    maxInFlightUploadFiles,
-    maxOrphanedUploadDirectories
-  )
+  const inFlightUploadBudget = createInFlightUploadBudget(maxInFlightUploadBytes, {
+    minUploadReservationBytes,
+    uploadFileOverheadBytes,
+    maxOrphanedUploadDirectories,
+    onStateChange
+  })
   const onTelemetry = (event: MultipartTelemetryEvent): void => {
     metrics.observe(
       'multipart_upload_size_bytes',
@@ -118,7 +117,8 @@ export async function createMultipartUploadGuard(
         orphanedFiles: event.snapshot.orphanedFiles,
         orphanedDirectories: event.snapshot.orphanedDirectories,
         capacity: event.snapshot.capacity,
-        maxInFlightUploadFiles: event.snapshot.maxInFlightUploadFiles,
+        minUploadReservationBytes: event.snapshot.minUploadReservationBytes,
+        uploadFileOverheadBytes: event.snapshot.uploadFileOverheadBytes,
         maxOrphanedUploadDirectories: event.snapshot.maxOrphanedUploadDirectories,
         activeUploads: event.snapshot.activeUploads,
         maxConcurrentUploads: event.snapshot.maxConcurrentUploads,
