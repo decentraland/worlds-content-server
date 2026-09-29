@@ -261,9 +261,31 @@ class UploadCapacityError extends MultipartRejectionError {
   }
 }
 
+/** Formats a byte count for client-facing messages. */
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} bytes`
+  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KiB`
+  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MiB`
+  return `${(bytes / 1024 ** 3).toFixed(1)} GiB`
+}
+
+/** Describes a body that didn't arrive in time with what was measured, so a creator can report it. */
+export function describeUploadTimeout(timeoutMs: number, receivedBytes: number, declaredBytes?: number): string {
+  const seconds = timeoutMs / 1000
+  const received =
+    declaredBytes === undefined
+      ? formatBytes(receivedBytes)
+      : `${formatBytes(receivedBytes)} of ${formatBytes(declaredBytes)}`
+  const rate = (receivedBytes / 1024 / seconds).toFixed(1)
+  return (
+    `The upload did not finish within ${seconds} s: received ${received} (about ${rate} KiB/s). ` +
+    'Retry on a faster connection or send smaller batches.'
+  )
+}
+
 class UploadTimeoutError extends MultipartRejectionError {
-  constructor(actualBytes: number) {
-    super('timeout', 'The multipart upload timed out.', actualBytes)
+  constructor(actualBytes: number, timeoutMs: number, receivedBytes: number, declaredBytes?: number) {
+    super('timeout', describeUploadTimeout(timeoutMs, receivedBytes, declaredBytes), actualBytes)
   }
 }
 
@@ -575,7 +597,7 @@ export function multipartParserWrapper<Ctx extends FormDataContext, T extends IH
     }
     const lease = acquisition.lease
     try {
-      const result = await parseAndHandle(ctx, lease, uploadTimeoutMs)
+      const result = await parseAndHandle(ctx, lease, uploadTimeoutMs, declaredSize)
       notifySafely(options?.onTelemetry, {
         kind: 'completed',
         route: options?.route ?? 'unknown',
@@ -613,7 +635,8 @@ export function multipartParserWrapper<Ctx extends FormDataContext, T extends IH
   async function parseAndHandle(
     ctx: IHttpServerComponent.DefaultContext,
     lease: InFlightUploadLease,
-    timeoutMs: number
+    timeoutMs: number,
+    declaredBytes: number | undefined
   ): Promise<T> {
     let formDataParser: busboy.Busboy
     try {
@@ -841,7 +864,10 @@ export function multipartParserWrapper<Ctx extends FormDataContext, T extends IH
           }
         })
         abortController = new AbortController()
-        const timeout = setTimeout(() => abortParsing(new UploadTimeoutError(lease.getReservedBytes())), timeoutMs)
+        const timeout = setTimeout(
+          () => abortParsing(new UploadTimeoutError(lease.getReservedBytes(), timeoutMs, wireBytes, declaredBytes)),
+          timeoutMs
+        )
         try {
           await pipeline(bodyStream, wireSizeGuard, formDataParser, { signal: abortController.signal })
         } finally {

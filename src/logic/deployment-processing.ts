@@ -16,7 +16,10 @@ export const MAX_DEPLOYMENT_PROCESSING_TIMEOUT_MS = 2_147_483_647
 
 export class DeploymentProcessingTimeoutError extends Error {
   constructor(timeoutMs: number) {
-    super(`Deployment processing exceeded the ${timeoutMs}ms deadline.`)
+    super(
+      `The server could not finish processing the deployment within ${timeoutMs / 1000} s after receiving it. ` +
+        'Retry the deployment; if it keeps timing out, report it.'
+    )
     this.name = 'DeploymentProcessingTimeoutError'
   }
 }

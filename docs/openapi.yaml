@@ -410,7 +410,10 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '408':
-          description: Multipart upload or post-body deployment processing timed out
+          description: >-
+            The body did not arrive within the upload deadline, or processing did not finish within the
+            post-body deadline. The message says which, with the deadline and, for an upload, the bytes
+            received (of those declared) and the measured rate.
           content:
             application/json:
               schema:
@@ -1233,7 +1236,9 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '408':
-          description: Multipart upload timed out
+          description: >-
+            The body did not arrive within the upload deadline; the message states the deadline, the
+            bytes received (of those declared) and the measured rate.
           content:
             application/json:
               schema:

@@ -9,6 +9,7 @@ import FormData from 'form-data'
 import { hashV1 } from '@dcl/hashing'
 import {
   createInFlightUploadBudget,
+  formatBytes,
   InFlightUploadBudget,
   InFlightUploadBudgetSnapshot,
   multipartParserWrapper,
@@ -1111,8 +1112,16 @@ describe('multipartParserWrapper', function () {
       jest.clearAllMocks()
     })
 
-    it('should respond with a 408', () => {
-      expect(response.status).toBe(408)
+    it('should respond with a 408 that states the deadline and what was received', () => {
+      expect({ status: response.status, body: response.body }).toEqual({
+        status: 408,
+        body: {
+          error: 'Request Timeout',
+          message:
+            'The upload did not finish within 0.01 s: received 0 bytes (about 0.0 KiB/s). ' +
+            'Retry on a faster connection or send smaller batches.'
+        }
+      })
     })
 
     it('should report a timeout rejection', () => {
@@ -1124,6 +1133,55 @@ describe('multipartParserWrapper', function () {
     })
   })
 
+  describe('when formatting sizes for a client-facing message', () => {
+    let formatted: string[]
+
+    beforeEach(() => {
+      formatted = [512, 1536, 5 * 1024 ** 2, 3 * 1024 ** 3].map(formatBytes)
+    })
+
+    it('should use the largest unit below the size', () => {
+      expect(formatted).toEqual(['512 bytes', '1.5 KiB', '5.0 MiB', '3.0 GiB'])
+    })
+  })
+
+  describe('when a body that declared its length stalls before the upload deadline', () => {
+    let parse: (ctx: any) => Promise<any>
+    let context: any
+    let response: any
+
+    beforeEach(async () => {
+      parse = multipartParserWrapper(
+        jest.fn(async () => ({ status: 200 })),
+        {
+          maxSizeInBytes: 10_000,
+          inFlightUploadBudget: createInFlightUploadBudget(10_000, 1),
+          uploadTimeoutMs: 20
+        }
+      )
+      const contentType = new FormData().getHeaders()['content-type']
+      const headers: Record<string, string> = { 'content-type': contentType, 'content-length': '4096' }
+      const stalledBody = new Readable({
+        read() {}
+      })
+      stalledBody.push(Buffer.alloc(1024, 'a'))
+      context = {
+        request: {
+          headers: { get: (name: string) => headers[name.toLowerCase()] ?? null },
+          body: stalledBody
+        }
+      }
+
+      response = await parse(context)
+    })
+
+    it('should report the received and declared sizes and the measured rate', () => {
+      expect(response.body.message).toBe(
+        'The upload did not finish within 0.02 s: received 1.0 KiB of 4.0 KiB (about 50.0 KiB/s). ' +
+          'Retry on a faster connection or send smaller batches.'
+      )
+    })
+  })
   describe('when the request body stream errors mid-upload', () => {
     let handler: jest.Mock
     let parse: (ctx: any) => Promise<any>

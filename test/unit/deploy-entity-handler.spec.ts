@@ -710,7 +710,9 @@ describe('deployEntity', () => {
         status: 408,
         body: {
           error: 'Request Timeout',
-          message: 'Deployment processing exceeded the 10ms deadline.'
+          message:
+            'The server could not finish processing the deployment within 0.01 s after receiving it. ' +
+            'Retry the deployment; if it keeps timing out, report it.'
         }
       })
     })

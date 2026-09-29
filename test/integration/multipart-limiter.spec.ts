@@ -343,8 +343,13 @@ describe('multipart limiter over HTTP', () => {
       jest.clearAllMocks()
     })
 
-    it('should respond with a 408', () => {
-      expect(timeoutResult.status).toBe(408)
+    it('should respond with a 408 stating the deadline, the bytes received and the rate', () => {
+      expect({ status: timeoutResult.status, message: JSON.parse(timeoutResult.body).message }).toEqual({
+        status: 408,
+        message: expect.stringMatching(
+          /^The upload did not finish within 0\.025 s: received \d+ bytes \(about \d+\.\d KiB\/s\)\. Retry on a faster connection or send smaller batches\.$/
+        )
+      })
     })
 
     it('should release the concurrent upload slot', () => {
