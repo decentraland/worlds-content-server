@@ -1,6 +1,7 @@
 import { IHttpServerComponent } from '@dcl/core-commons'
 import { SourceUploadLimitExceededError } from '../../src/adapters/source-upload-limits'
 import { createSourceUploadAdmission } from '../../src/controllers/source-upload-admission'
+import { IClientSourceComponent } from '../../src/logic/client-source'
 
 describe('when admitting a multipart upload by its source', () => {
   let acquire: jest.Mock
@@ -8,6 +9,7 @@ describe('when admitting a multipart upload by its source', () => {
   let increment: jest.Mock
   let next: jest.Mock
   let headers: Record<string, string>
+  let clientSource: IClientSourceComponent
   let admission: ReturnType<typeof createSourceUploadAdmission>
 
   function context(): IHttpServerComponent.DefaultContext {
@@ -20,8 +22,12 @@ describe('when admitting a multipart upload by its source', () => {
     increment = jest.fn()
     next = jest.fn().mockResolvedValue({ status: 200 })
     headers = { 'cf-connecting-ip': '203.0.113.1', 'content-length': '500' }
+    clientSource = {
+      header: 'cf-connecting-ip',
+      getClientSource: (request) => request.headers.get('cf-connecting-ip') || undefined
+    }
     admission = createSourceUploadAdmission(
-      { metrics: { increment } as never, sourceUploadLimits: { maxRequestBytes: 1_000, acquire } },
+      { clientSource, metrics: { increment } as never, sourceUploadLimits: { maxRequestBytes: 1_000, acquire } },
       { route: 'entities', maxRequestBytes: 800 }
     )
   })
@@ -61,6 +67,18 @@ describe('when admitting a multipart upload by its source', () => {
 
     it("should charge the route's maximum", () => {
       expect(acquire).toHaveBeenCalledWith('203.0.113.1', 800)
+    })
+  })
+
+  describe('and the client source is resolved from another trusted header', () => {
+    beforeEach(async () => {
+      headers['x-real-ip'] = '198.51.100.7'
+      clientSource.getClientSource = (request) => request.headers.get('x-real-ip') || undefined
+      await admission(context(), next)
+    })
+
+    it('should charge the source that header reports', () => {
+      expect(acquire).toHaveBeenCalledWith('198.51.100.7', 500)
     })
   })
 

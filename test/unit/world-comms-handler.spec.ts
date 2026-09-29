@@ -13,18 +13,28 @@ import { HandlerContextWithPath } from '../../src/types'
 import { DecentralandSignatureContext } from '@dcl/crypto-middleware'
 import { IAccessComponent, AccessType } from '../../src/logic/access'
 import { IRateLimiterComponent } from '../../src/logic/rate-limiter'
+import { IClientSourceComponent } from '../../src/logic/client-source'
 
 type CommsMetadata = {
   secret?: string
 }
 
 type HandlerContext = HandlerContextWithPath<
-  'access' | 'comms' | 'rateLimiter',
+  'access' | 'clientSource' | 'comms' | 'rateLimiter',
   '/worlds/:worldName/comms' | '/worlds/:worldName/scenes/:sceneId/comms'
 > &
   DecentralandSignatureContext<CommsMetadata>
 
 describe('worldCommsHandler', () => {
+  let clientSource: IClientSourceComponent
+
+  beforeEach(() => {
+    clientSource = {
+      header: 'cf-connecting-ip',
+      getClientSource: (request) => request.headers.get('cf-connecting-ip') || undefined
+    }
+  })
+
   afterEach(() => {
     jest.resetAllMocks()
   })
@@ -57,7 +67,7 @@ describe('worldCommsHandler', () => {
       }
 
       context = {
-        components: { access, comms, rateLimiter },
+        components: { access, clientSource, comms, rateLimiter },
         params: { worldName },
         request: { headers: new Map() },
         verification: {
@@ -96,7 +106,7 @@ describe('worldCommsHandler', () => {
         connectionString = 'livekit:wss://host?access_token=abc123'
 
         context = {
-          components: { access, comms, rateLimiter },
+          components: { access, clientSource, comms, rateLimiter },
           params: { worldName },
           request: { headers: new Map() },
           verification: {
@@ -234,7 +244,7 @@ describe('worldCommsHandler', () => {
       }
 
       context = {
-        components: { access, comms, rateLimiter },
+        components: { access, clientSource, comms, rateLimiter },
         params: { worldName, sceneId },
         request: { headers: new Map() },
         verification: {
@@ -281,7 +291,7 @@ describe('worldCommsHandler', () => {
         connectionString = 'livekit:wss://host?access_token=abc123'
 
         context = {
-          components: { access, comms, rateLimiter },
+          components: { access, clientSource, comms, rateLimiter },
           params: { worldName, sceneId },
           request: { headers: new Map() },
           verification: {
@@ -385,7 +395,7 @@ describe('worldCommsHandler', () => {
       }
 
       context = {
-        components: { access, comms, rateLimiter },
+        components: { access, clientSource, comms, rateLimiter },
         params: { worldName },
         request: {
           headers: new Map([['cf-connecting-ip', clientIp]])
@@ -501,7 +511,7 @@ describe('worldCommsHandler', () => {
     describe('and only x-forwarded-for is present without cf-connecting-ip', () => {
       beforeEach(() => {
         context = {
-          components: { access, comms, rateLimiter },
+          components: { access, clientSource, comms, rateLimiter },
           params: { worldName },
           request: {
             headers: new Map([['x-forwarded-for', '5.6.7.8, 9.10.11.12']])
@@ -525,10 +535,38 @@ describe('worldCommsHandler', () => {
       })
     })
 
+    describe('and the service trusts another client IP header', () => {
+      beforeEach(async () => {
+        clientSource.getClientSource = (request) => request.headers.get('x-real-ip') || undefined
+        context = {
+          components: { access, clientSource, comms, rateLimiter },
+          params: { worldName },
+          request: {
+            headers: new Map([
+              ['cf-connecting-ip', clientIp],
+              ['x-real-ip', '198.51.100.7']
+            ])
+          },
+          verification: {
+            auth: identity,
+            authMetadata: { secret: 'my-secret' }
+          }
+        } as unknown as HandlerContext
+
+        rateLimiter.isRateLimited.mockResolvedValueOnce(false)
+        comms.getWorldRoomConnectionString.mockResolvedValueOnce('livekit:wss://host?access_token=abc123')
+        await worldCommsHandler(context)
+      })
+
+      it("should rate limit by that header's address", () => {
+        expect(rateLimiter.isRateLimited).toHaveBeenCalledWith(worldName, '198.51.100.7')
+      })
+    })
+
     describe('and no IP headers are present', () => {
       beforeEach(() => {
         context = {
-          components: { access, comms, rateLimiter },
+          components: { access, clientSource, comms, rateLimiter },
           params: { worldName },
           request: {
             headers: new Map()
@@ -580,7 +618,7 @@ describe('worldCommsHandler', () => {
       }
 
       context = {
-        components: { access, comms, rateLimiter },
+        components: { access, clientSource, comms, rateLimiter },
         params: { worldName },
         request: { headers: new Map() },
         verification: {

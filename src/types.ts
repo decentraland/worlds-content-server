@@ -32,6 +32,7 @@ import { ICoordinatesComponent } from './logic/coordinates'
 // AppComponents below) without a runtime import cycle through their component.ts factories.
 import type { IPendingScenesManager } from './adapters/pending-scenes-manager/types'
 import type { ISourceUploadLimits } from './adapters/source-upload-limits/types'
+import type { IClientSourceComponent } from './logic/client-source/types'
 import type { IPartialDeploymentsComponent } from './logic/partial-deployments/types'
 import { ISearchComponent } from './adapters/search'
 import {
@@ -709,6 +710,7 @@ export type BaseComponents = {
   partialDeployments: IPartialDeploymentsComponent
   pendingScenesManager: IPendingScenesManager
   sourceUploadLimits: ISourceUploadLimits
+  clientSource: IClientSourceComponent
   nats: INatsComponent
   nameDenyListChecker: INameDenyListChecker
   nameOwnership: INameOwnership

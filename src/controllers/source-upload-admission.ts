@@ -1,7 +1,6 @@
 import { IHttpServerComponent } from '@dcl/core-commons'
 import { SourceUploadLease, SourceUploadLimitExceededError } from '../adapters/source-upload-limits'
 import { AppComponents } from '../types'
-import { getClientSource } from './client-source'
 
 // A slot frees when one of the source's uploads ends, which the source itself controls.
 const SOURCE_UPLOAD_RETRY_AFTER_SECONDS = 5
@@ -11,25 +10,25 @@ const SOURCE_UPLOAD_RETRY_AFTER_SECONDS = 5
  * flight than its share, and holds that share until the request ends. Applies to every request on the
  * route, since a body that never completes is never authenticated. A request with no client source
  * is not limited per source.
- * @param components Per-source limits and metrics.
+ * @param components Client-source resolver, per-source limits and metrics.
  * @param options Route label and the route's largest accepted payload.
  * @returns Middleware to place before the multipart parser.
  */
 export function createSourceUploadAdmission(
-  components: Pick<AppComponents, 'metrics' | 'sourceUploadLimits'>,
+  components: Pick<AppComponents, 'clientSource' | 'metrics' | 'sourceUploadLimits'>,
   options: { route: string; maxRequestBytes: number }
 ): (
   context: IHttpServerComponent.DefaultContext,
   next: () => Promise<IHttpServerComponent.IResponse>
 ) => Promise<IHttpServerComponent.IResponse> {
-  const { metrics, sourceUploadLimits } = components
+  const { clientSource, metrics, sourceUploadLimits } = components
   const maxRequestBytes = Math.min(options.maxRequestBytes, sourceUploadLimits.maxRequestBytes)
   return async (context, next) => {
     // Node rejects a body past its declared length; one without a declaration may grow to the cap.
     const header = context.request.headers.get('content-length')
     const declared = header !== null && /^\d+$/.test(header) ? Number(header) : NaN
     const bytes = Number.isSafeInteger(declared) ? Math.min(declared, maxRequestBytes) : maxRequestBytes
-    const source = getClientSource(context.request)
+    const source = clientSource.getClientSource(context.request)
     // Unattributed callers (internal services, direct routes) would otherwise lock each other out in
     // one shared share; only the process-wide budget bounds them, and they are counted.
     if (source === undefined) {
