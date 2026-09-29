@@ -61,4 +61,6 @@ export interface IPendingScenesManager extends IBaseComponent {
   getActivePendingKeys(): Promise<Set<string>>
   /** The fixed pending upload lifetime used by GC. */
   readonly ttlMs: number
+  /** How often the scheduled job runs {@link IPendingScenesManager.deleteExpired}. */
+  readonly cleanupIntervalMs: number
 }

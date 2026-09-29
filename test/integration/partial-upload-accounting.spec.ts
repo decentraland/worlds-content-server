@@ -5,7 +5,6 @@ import { test } from '../components'
 import { cleanup } from '../utils'
 import {
   createPendingScenesManager,
-  PARTIAL_UPLOAD_CLEANUP_RETRY_AFTER_SECONDS,
   PartialUploadExpiredError,
   PartialUploadQuotaExceededError
 } from '../../src/adapters/pending-scenes-manager'
@@ -41,7 +40,8 @@ test('when accounting for independent partial uploads', ({ components }) => {
       MAX_PENDING_BYTES_PER_DEPLOYER: 600,
       MAX_PENDING_BYTES: 1000,
       MAX_PARTIAL_UPLOAD_BYTES_PER_MINUTE: 5000,
-      PENDING_DEPLOYMENT_TTL: 300_000
+      PENDING_DEPLOYMENT_TTL: 300_000,
+      PARTIAL_UPLOAD_CLEANUP_INTERVAL_MS: 120_000
     }
     signer = '0xaccount'
     first = {
@@ -199,17 +199,53 @@ test('when accounting for independent partial uploads', ({ components }) => {
   })
 
   describe('and the account is at its maximum of uploads with one awaiting cleanup', () => {
-    let error: unknown
+    describe('and no cleanup has run yet', () => {
+      let error: unknown
 
-    beforeEach(async () => {
-      await create(first, signer, new Date(Date.now() - 400_000))
-      error = await create(second, signer, new Date(), false, 1).catch((e: unknown) => e)
+      beforeEach(async () => {
+        await create(first, signer, new Date(Date.now() - 400_000))
+        error = await create(second, signer, new Date(), false, 1).catch((e: unknown) => e)
+      })
+
+      it('should retry after one cleanup interval', () => {
+        expect((error as PartialUploadQuotaExceededError).retryAfterSeconds).toBe(120)
+      })
     })
 
-    it('should retry after the cleanup hint', () => {
-      expect((error as PartialUploadQuotaExceededError).retryAfterSeconds).toBe(
-        PARTIAL_UPLOAD_CLEANUP_RETRY_AFTER_SECONDS
-      )
+    describe('and the last cleanup finished 50 seconds ago', () => {
+      let error: unknown
+
+      beforeEach(async () => {
+        await manager.deleteExpired()
+        await create(first, signer, new Date(Date.now() - 400_000))
+        const now = Date.now()
+        jest.spyOn(Date, 'now').mockReturnValue(now + 50_000)
+        error = await create(second, signer, new Date(now + 50_000), false, 1).catch((e: unknown) => e)
+      })
+
+      it('should retry when the next cleanup runs', () => {
+        expect((error as PartialUploadQuotaExceededError).retryAfterSeconds).toBe(70)
+      })
+    })
+  })
+
+  describe('and the lifetime and cleanup settings are not configured', () => {
+    let defaults: { ttlMs: number; cleanupIntervalMs: number }
+
+    beforeEach(async () => {
+      const unconfigured = await createPendingScenesManager({
+        config: { ...components.config, getNumber: jest.fn(async () => undefined) },
+        database: components.database,
+        logs: components.logs,
+        metrics: components.metrics,
+        storage: components.storage,
+        contentLocks: components.contentLocks
+      })
+      defaults = { ttlMs: unconfigured.ttlMs, cleanupIntervalMs: unconfigured.cleanupIntervalMs }
+    })
+
+    it('should keep uploads for one hour and clean them up every five minutes', () => {
+      expect(defaults).toEqual({ ttlMs: 60 * 60 * 1000, cleanupIntervalMs: 5 * 60 * 1000 })
     })
   })
 

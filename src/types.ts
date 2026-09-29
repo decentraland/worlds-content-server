@@ -700,6 +700,7 @@ export type BaseComponents = {
   entityDeployer: IEntityDeployer
   ethereumProvider: HTTPProvider
   evictionJob: IJobComponent
+  partialUploadCleanupJob: IJobComponent
   fetch: IFetchComponent
   limitsManager: ILimitsManager
   livekitClient: LivekitClient

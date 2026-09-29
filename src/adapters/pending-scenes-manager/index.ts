@@ -1,3 +1,7 @@
-export { createPendingScenesManager, PARTIAL_UPLOAD_CLEANUP_RETRY_AFTER_SECONDS } from './component'
+export {
+  createPendingScenesManager,
+  DEFAULT_PARTIAL_UPLOAD_CLEANUP_INTERVAL_MS,
+  DEFAULT_PENDING_DEPLOYMENT_TTL_MS
+} from './component'
 export * from './types'
 export * from './errors'

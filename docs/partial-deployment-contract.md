@@ -38,8 +38,8 @@ staging sweep; files never attached to a deployment would otherwise be invisible
 ## Operation and rollout
 
 Default limits: 10 uploads/account, 1 GiB staged/account, 50 GiB staged/server database, 512 MiB accepted
-batch bytes/account/minute, 24-hour pending lifetime and 24-hour completion retention. All are configured
-in `.env.default`. Staging charges manifest bytes and referenced content; reused content is charged
+batch bytes/account/minute, 1-hour pending lifetime (expired uploads cleaned up every 5 minutes) and
+24-hour completion retention. All are configured in `.env.default`. Staging charges manifest bytes and referenced content; reused content is charged
 conservatively per upload. Expired slots and bytes remain charged if physical cleanup fails.
 
 Migration `0028_partial_upload_progress` adds receipt/accounting tables. Quiesce GC and finish or drain

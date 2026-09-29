@@ -273,6 +273,7 @@ async function initComponents(): Promise<TestComponents> {
   const worlds = createWorldsComponent({ blocking, coordinates, logs, worldsManager, snsClient })
 
   const evictionJob = { start: jest.fn(), stop: jest.fn() }
+  const partialUploadCleanupJob = { start: jest.fn(), stop: jest.fn() }
 
   const redis = createRedisMock()
   const rateLimiter = await createRateLimiterComponent({ config, logs, redis })
@@ -306,6 +307,7 @@ async function initComponents(): Promise<TestComponents> {
     denyList,
     entityDeployer,
     evictionJob,
+    partialUploadCleanupJob,
     fetch,
     limitsManager,
     localFetch: await createAuthenticatedLocalFetchComponent(config),

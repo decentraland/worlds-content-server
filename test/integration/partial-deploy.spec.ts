@@ -1157,7 +1157,11 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
     })
 
     it("should retry once the account's oldest upload could expire", () => {
-      expect(Number(overCapResponse.headers.get('retry-after'))).toBeGreaterThan(86_000)
+      const retryAfter = Number(overCapResponse.headers.get('retry-after'))
+      expect({ withinLifetime: retryAfter <= 3_600, nearExpiry: retryAfter > 3_500 }).toEqual({
+        withinLifetime: true,
+        nearExpiry: true
+      })
     })
 
     it('should not create a pending row for the rejected upload', async () => {

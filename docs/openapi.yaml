@@ -345,7 +345,8 @@ paths:
         must still be valid. While the entity is published, any validly signed partial request for it,
         from any signer and with or without the manifest, returns `200` with the publication's
         `creationTimestamp` (the entity ID is the hash of the entity file, so the live entity is exactly
-        what was uploaded). Expired, uncompleted uploads require a new entity with a fresh timestamp.
+        what was uploaded). Uploads expire `PENDING_DEPLOYMENT_TTL` (default 1 hour) after their first
+        request; expired, uncompleted uploads require a new entity with a fresh timestamp.
 
         Upload count, aggregate reserved bytes, and accepted byte rate are limited per deployer; an
         additional byte budget applies server-wide. Reservations precede storage writes and abandoned
@@ -436,8 +437,9 @@ paths:
             Retry-After:
               description: >-
                 Seconds to wait. Byte rate: until the account's one-minute window resets. Other partial
-                quotas: until the oldest upload holding that quota expires, or 60 when it has already
-                expired and only cleanup can free it.
+                quotas: until the oldest upload holding that quota expires or, when it has already
+                expired and only cleanup can free it, until the next cleanup run (at most
+                `PARTIAL_UPLOAD_CLEANUP_INTERVAL_MS`, default 5 minutes).
               schema:
                 type: integer
                 example: 60

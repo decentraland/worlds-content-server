@@ -18,11 +18,10 @@ type PendingSceneRow = {
   initialized: boolean
 }
 
-/**
- * Retry hint once expired uploads awaiting cleanup hold the quota. The sweep runs daily per replica and
- * on demand, so when it runs next isn't knowable here.
- */
-export const PARTIAL_UPLOAD_CLEANUP_RETRY_AFTER_SECONDS = 60
+/** Default lifetime of a pending (partial) upload, anchored at its first request. */
+export const DEFAULT_PENDING_DEPLOYMENT_TTL_MS = 60 * 60 * 1000
+/** Default interval between expired-upload cleanup runs. */
+export const DEFAULT_PARTIAL_UPLOAD_CLEANUP_INTERVAL_MS = 5 * 60 * 1000
 
 function toPendingScene(row: PendingSceneRow): PendingScene {
   return {
@@ -47,17 +46,27 @@ export async function createPendingScenesManager(
 ): Promise<IPendingScenesManager> {
   const { config, database, logs, metrics, storage, contentLocks } = components
   const logger = logs.getLogger('pending-scenes-manager')
-  const ttlMs = await getPositiveInteger(config, 'PENDING_DEPLOYMENT_TTL', 24 * 60 * 60 * 1000)
+  const ttlMs = await getPositiveInteger(config, 'PENDING_DEPLOYMENT_TTL', DEFAULT_PENDING_DEPLOYMENT_TTL_MS)
+  const cleanupIntervalMs = await getPositiveInteger(
+    config,
+    'PARTIAL_UPLOAD_CLEANUP_INTERVAL_MS',
+    DEFAULT_PARTIAL_UPLOAD_CLEANUP_INTERVAL_MS
+  )
   const accountBytes = BigInt(await getPositiveInteger(config, 'MAX_PENDING_BYTES_PER_DEPLOYER', 1024 ** 3))
   const globalBytes = BigInt(await getPositiveInteger(config, 'MAX_PENDING_BYTES', 50 * 1024 ** 3))
   const bytesPerMinute = await getPositiveInteger(config, 'MAX_PARTIAL_UPLOAD_BYTES_PER_MINUTE', 512 * 1024 ** 2)
   const completionTtl = await getPositiveInteger(config, 'COMPLETED_UPLOAD_TTL', 24 * 60 * 60 * 1000)
 
+  // When this replica's cleanup last finished; the scheduled sweep runs again one interval later.
+  let lastCleanupFinishedAt: number | undefined
+
   // Capacity held by the oldest charged upload frees no earlier than its expiry; once it has expired,
-  // only the (unscheduled) cleanup frees it.
+  // only the next cleanup run frees it.
   function retryAfterOldest(oldestCreatedAt: Date | null): number {
     const untilExpiry = oldestCreatedAt ? oldestCreatedAt.getTime() + ttlMs - Date.now() : 0
-    return untilExpiry > 0 ? Math.max(1, Math.ceil(untilExpiry / 1000)) : PARTIAL_UPLOAD_CLEANUP_RETRY_AFTER_SECONDS
+    const untilCleanup =
+      lastCleanupFinishedAt === undefined ? cleanupIntervalMs : lastCleanupFinishedAt + cleanupIntervalMs - Date.now()
+    return Math.max(1, Math.ceil((untilExpiry > 0 ? untilExpiry : untilCleanup) / 1000))
   }
 
   async function getByEntityId(entityId: string, signal?: AbortSignal): Promise<PendingScene | undefined> {
@@ -268,6 +277,14 @@ export async function createPendingScenesManager(
   }
 
   async function deleteExpired(): Promise<number> {
+    try {
+      return await sweepExpired()
+    } finally {
+      lastCleanupFinishedAt = Date.now()
+    }
+  }
+
+  async function sweepExpired(): Promise<number> {
     // Fetch ids without holding up uploads for an entire sweep. Each small physical delete batch
     // gets its own exclusive gate; reservations are released only after every batch succeeds.
     const expired = await database.query<{ entity_id: string }>(SQL`
@@ -314,6 +331,7 @@ export async function createPendingScenesManager(
 
   return {
     ttlMs,
+    cleanupIntervalMs,
     getByEntityId,
     upsert,
     reserve,
