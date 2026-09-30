@@ -53,7 +53,7 @@ export async function createContentLocks(
   components: Pick<AppComponents, 'config' | 'logs' | 'metrics'>,
   options: ContentLocksOptions = {}
 ): Promise<IContentLocks> {
-  const { logs } = components
+  const { logs, metrics } = components
   const logger = logs.getLogger('content-locks')
   const writerRetryMaxMs = options.writerRetryMaxMs ?? WRITER_RETRY_MAX_MS
   const writerMaxWaitMs = options.writerMaxWaitMs ?? WRITER_MAX_WAIT_MS
@@ -157,6 +157,7 @@ export async function createContentLocks(
       }
       // Constant uploads may starve GC; it is periodic, so it gives up and retries next cycle.
       if (exclusive && Date.now() + delayMs > startedAt + writerMaxWaitMs) {
+        metrics.increment('content_lock_writer_timeouts')
         logger.warn('Gave up waiting for in-flight uploads to release the content lock', {
           waitedMs: Date.now() - startedAt
         })

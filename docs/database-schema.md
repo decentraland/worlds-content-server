@@ -22,8 +22,8 @@ referenced file is present. Intentionally has **no** foreign key to `worlds` —
 not create a `worlds` row (which would leak into listings and world-validity checks) before it goes live.
 The authoritative entity bytes live in content storage under the entity id; the `entity` JSONB here is a
 copy used by garbage collection. Columns: `entity_id` (PK), `world_name`, `parcels` (TEXT[]), `entity`
-(JSONB), `deployer`, `created_at`/`updated_at` (TIMESTAMPTZ), `initialized` (BOOLEAN), and
-`reserved_bytes` (BIGINT). Uploads may overlap parcels and never replace another pending row.
+(JSONB), `deployer`, `created_at`/`updated_at` (TIMESTAMPTZ), `initialized` (BOOLEAN),
+`reserved_bytes` (BIGINT), and `batches` (INTEGER, stored batches so far, reported on publication). Uploads may overlap parcels and never replace another pending row.
 `created_at` anchors freshness and the fixed `PENDING_DEPLOYMENT_TTL` (default 1h). Expired rows stay
 charged until the cleanup job (every `PARTIAL_UPLOAD_CLEANUP_INTERVAL_MS`, default 5 minutes) or GC
 reclaims their objects, then removes their accounting.

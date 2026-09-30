@@ -95,6 +95,7 @@ export async function createMultipartUploadGuard(
     maxOrphanedUploadDirectories,
     onStateChange
   })
+  metrics.observe('multipart_upload_capacity_bytes', {}, inFlightUploadBudget.snapshot().capacity)
   const onTelemetry = (event: MultipartTelemetryEvent): void => {
     metrics.observe(
       'multipart_upload_size_bytes',

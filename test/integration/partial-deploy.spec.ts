@@ -191,9 +191,21 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
 
         describe('and the last batch uploads the remaining content file', () => {
           let thirdResponse: Awaited<ReturnType<typeof post>>
+          let observe: jest.SpyInstance
 
           beforeEach(async () => {
+            observe = jest.spyOn(components.metrics, 'observe')
             thirdResponse = await post(buildForm([hash2], authChain))
+          })
+
+          afterEach(() => {
+            observe.mockRestore()
+          })
+
+          it('should report that the upload took three batches', () => {
+            expect(observe.mock.calls.filter(([name]) => name === 'partial_upload_batches_per_upload')).toEqual([
+              ['partial_upload_batches_per_upload', {}, 3]
+            ])
           })
 
           it('should finalize with 200 and the deployment message', async () => {

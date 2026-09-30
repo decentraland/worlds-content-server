@@ -38,6 +38,7 @@ type DeployEntityContext = FormDataContext &
     | 'deploymentProcessing'
     | 'entityDeployer'
     | 'logs'
+    | 'metrics'
     | 'partialDeployments'
     | 'pendingScenesManager'
     | 'storage'
@@ -385,7 +386,33 @@ async function deployEntityWithSignal(
   }
 }
 
+const PARTIAL_OUTCOME_BY_STATUS: Record<number, string> = {
+  200: 'finalized',
+  202: 'accepted',
+  408: 'timeout',
+  429: 'throttled',
+  499: 'aborted'
+}
+
 export async function deployEntity(ctx: DeployEntityContext): Promise<IHttpServerComponent.IResponse> {
+  if (ctx.formData.fields.partial?.value[0] !== 'true') return handleDeployment(ctx)
+  const { metrics } = ctx.components
+  try {
+    const response = await handleDeployment(ctx)
+    const status = response.status ?? 200
+    metrics.increment('partial_upload_requests', {
+      outcome: PARTIAL_OUTCOME_BY_STATUS[status] ?? (status < 500 ? 'validation_error' : 'error')
+    })
+    return response
+  } catch (error) {
+    metrics.increment('partial_upload_requests', {
+      outcome: error instanceof InvalidRequestError ? 'validation_error' : 'error'
+    })
+    throw error
+  }
+}
+
+async function handleDeployment(ctx: DeployEntityContext): Promise<IHttpServerComponent.IResponse> {
   const abortContext = ctx.components.deploymentProcessing.createAbortContext(ctx.request?.signal)
   try {
     const request = await authenticateRequest(ctx)
@@ -438,6 +465,7 @@ export async function deployEntity(ctx: DeployEntityContext): Promise<IHttpServe
       }
     }
     if (error instanceof PartialUploadQuotaExceededError) {
+      ctx.components.metrics.increment('partial_upload_throttled', { reason: error.quota })
       return {
         status: 429,
         headers: { 'Retry-After': String(error.retryAfterSeconds) },

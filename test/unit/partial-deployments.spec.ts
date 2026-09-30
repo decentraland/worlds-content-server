@@ -24,6 +24,8 @@ describe('when staging a partial deployment', () => {
   let getCompleted: jest.Mock
   let deleteByEntityId: jest.Mock
   let discardUnadmitted: jest.Mock
+  let increment: jest.Mock
+  let observe: jest.Mock
   let stage: Awaited<ReturnType<typeof createPartialDeploymentsComponent>>['stage']
 
   beforeEach(async () => {
@@ -62,6 +64,8 @@ describe('when staging a partial deployment', () => {
     getCompleted = jest.fn().mockResolvedValue({ creationTimestamp: 123 })
     deleteByEntityId = jest.fn().mockResolvedValue(undefined)
     discardUnadmitted = jest.fn().mockResolvedValue(undefined)
+    increment = jest.fn()
+    observe = jest.fn()
     components = {
       config: { getNumber: jest.fn().mockResolvedValue(undefined) },
       coordinates: createCoordinatesComponent(),
@@ -69,13 +73,13 @@ describe('when staging a partial deployment', () => {
       entityDeployer: { deployEntity },
       limitsManager: { getMaxAllowedSizeInBytesFor: jest.fn().mockResolvedValue(10000n) },
       logs: { getLogger: jest.fn() },
-      metrics: { increment: jest.fn() },
+      metrics: { increment, observe },
       pendingScenesManager: {
         ttlMs: 86_400_000,
         getByEntityId: getPending,
         upsert,
         reserve,
-        recordStored: jest.fn(),
+        recordStored: jest.fn().mockResolvedValue(2),
         getProgress,
         markMissing: jest.fn(),
         getCompleted,
@@ -121,6 +125,10 @@ describe('when staging a partial deployment', () => {
 
     it('should let the upload be created', () => {
       expect(upsert.mock.calls[0][0].resumes).toBe(false)
+    })
+
+    it('should count it as a started upload', () => {
+      expect(increment).toHaveBeenCalledWith('partial_uploads_started')
     })
   })
 
@@ -220,6 +228,22 @@ describe('when staging a partial deployment', () => {
       it('should mark the publication as a partial finalization that expires with the upload', () => {
         expect(deployEntity.mock.calls[0][10]).toEqual({
           completesPartialUpload: { expiresAt: createdAt.getTime() + 86_400_000 }
+        })
+      })
+
+      it('should report the completed upload with its batches and its duration since admission', () => {
+        expect({
+          completed: increment.mock.calls.filter(([name]) => name === 'partial_uploads_completed'),
+          started: increment.mock.calls.filter(([name]) => name === 'partial_uploads_started'),
+          batches: observe.mock.calls.filter(([name]) => name === 'partial_upload_batches_per_upload'),
+          lastedAtLeastItsAge: observe.mock.calls
+            .filter(([name]) => name === 'partial_upload_duration_seconds')
+            .map(([, , seconds]) => seconds >= 5)
+        }).toEqual({
+          completed: [['partial_uploads_completed']],
+          started: [],
+          batches: [['partial_upload_batches_per_upload', {}, 2]],
+          lastedAtLeastItsAge: [true]
         })
       })
     })

@@ -6,6 +6,7 @@ import { withUploadTransaction } from '../upload-transaction'
 import { getReferencedContentKeys } from '../content-references'
 import { IPendingScenesManager, PendingScene, UpsertPendingScene, FileReceipt } from './types'
 import { PartialUploadExpiredError, PartialUploadQuotaExceededError } from './errors'
+import { ContentLockTimeoutError } from '../content-locks/errors'
 import { formatBytes } from '../../logic/multipart'
 
 type PendingSceneRow = {
@@ -59,6 +60,7 @@ export async function createPendingScenesManager(
 
   // When this replica's cleanup last finished; the scheduled sweep runs again one interval later.
   let lastCleanupFinishedAt: number | undefined
+  metrics.observe('partial_upload_capacity_bytes', {}, Number(globalBytes))
 
   // Capacity held by the oldest charged upload frees no earlier than its expiry; once it has expired,
   // only the next cleanup run frees it.
@@ -222,14 +224,17 @@ export async function createPendingScenesManager(
     hashes: string[],
     initialized: boolean,
     signal?: AbortSignal
-  ): Promise<void> {
-    await withUploadTransaction(
+  ): Promise<number> {
+    return withUploadTransaction(
       database,
       async (query) => {
         await query(
           SQL`UPDATE pending_scene_files SET stored = true WHERE entity_id = ${entityId} AND hash = ANY(${hashes}::text[])`
         )
-        if (initialized) await query(SQL`UPDATE pending_scenes SET initialized = true WHERE entity_id = ${entityId}`)
+        const batches = await query<{ batches: number }>(SQL`UPDATE pending_scenes
+          SET batches = batches + 1, initialized = initialized OR ${initialized}
+          WHERE entity_id = ${entityId} RETURNING batches`)
+        return batches.rows[0]?.batches ?? 0
       },
       signal
     )
@@ -277,9 +282,19 @@ export async function createPendingScenesManager(
   }
 
   async function deleteExpired(): Promise<number> {
+    const { end } = metrics.startTimer('partial_upload_cleanup_duration_seconds')
+    let outcome: 'success' | 'deferred' | 'error' = 'error'
     try {
-      return await sweepExpired()
+      const removed = await sweepExpired()
+      outcome = 'success'
+      metrics.observe('partial_upload_cleanup_last_success_timestamp_seconds', {}, Date.now() / 1000)
+      return removed
+    } catch (error) {
+      if (error instanceof ContentLockTimeoutError) outcome = 'deferred'
+      throw error
     } finally {
+      end()
+      metrics.increment('partial_upload_cleanup_runs', { outcome })
       lastCleanupFinishedAt = Date.now()
     }
   }
@@ -306,6 +321,7 @@ export async function createPendingScenesManager(
         SQL`DELETE FROM pending_scenes WHERE entity_id = ${entityId} AND created_at < ${new Date(Date.now() - ttlMs)}`
       )
       removed++
+      metrics.increment('partial_upload_expired_uploads')
     }
     await database.query(
       SQL`DELETE FROM completed_scene_uploads WHERE completed_at < ${new Date(Date.now() - completionTtl)}`
@@ -317,6 +333,12 @@ export async function createPendingScenesManager(
       FROM pending_scene_files f JOIN pending_scenes p USING (entity_id)`)
     metrics.observe('partial_upload_reserved_bytes', {}, Number(totals.rows[0].bytes))
     metrics.observe('partial_upload_cleanup_backlog_bytes', {}, Number(totals.rows[0].expired))
+    const uploads = await database.query<{ live: string; expired: string }>(SQL`
+      SELECT COUNT(*) FILTER (WHERE created_at >= ${new Date(Date.now() - ttlMs)})::text AS live,
+        COUNT(*) FILTER (WHERE created_at < ${new Date(Date.now() - ttlMs)})::text AS expired
+      FROM pending_scenes`)
+    metrics.observe('partial_uploads_pending', { state: 'live' }, Number(uploads.rows[0].live))
+    metrics.observe('partial_uploads_pending', { state: 'expired' }, Number(uploads.rows[0].expired))
     logger.info('Cleaned expired uploads', { removed })
     return removed
   }

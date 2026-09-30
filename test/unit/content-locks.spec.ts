@@ -171,6 +171,7 @@ describe('when a writer gives up waiting for the exclusive gate', () => {
   let client: FakeClient
   let operation: jest.Mock
   let warn: jest.Mock
+  let increment: jest.Mock
   let statements: string[]
   let error: unknown
 
@@ -180,11 +181,12 @@ describe('when a writer gives up waiting for the exclusive gate', () => {
     )
     jest.mocked(createPgComponent).mockResolvedValue({ getPool: () => ({ connect: async () => client }) } as any)
     warn = jest.fn()
+    increment = jest.fn()
     const locks = await createContentLocks(
       {
         config: { getNumber: async () => undefined } as any,
         logs: { getLogger: () => ({ warn }) } as any,
-        metrics: {} as any
+        metrics: { increment } as any
       },
       { writerRetryMaxMs: 10, writerMaxWaitMs: 100 }
     )
@@ -213,6 +215,10 @@ describe('when a writer gives up waiting for the exclusive gate', () => {
 
   it('should return the connection to the pool after every attempt', () => {
     expect(client.release.mock.calls.every(([destroy]) => destroy === false)).toBe(true)
+  })
+
+  it('should count the deferred writer once', () => {
+    expect(increment.mock.calls).toEqual([['content_lock_writer_timeouts']])
   })
 
   it('should warn that the writer gave up', () => {

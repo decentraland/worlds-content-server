@@ -69,6 +69,10 @@ describe('createMultipartUploadGuard', () => {
       expect(guard.uploadTimeoutMs).toBe(300)
     })
 
+    it('should report the aggregate byte capacity', () => {
+      expect(observe).toHaveBeenCalledWith('multipart_upload_capacity_bytes', {}, 100)
+    })
+
     it('should read the byte limit setting', () => {
       expect(config.getNumber).toHaveBeenCalledWith('MAX_IN_FLIGHT_UPLOAD_BYTES')
     })

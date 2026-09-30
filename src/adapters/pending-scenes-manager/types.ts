@@ -45,8 +45,11 @@ export interface IPendingScenesManager extends IBaseComponent {
   ): Promise<void>
   /** Removes an upload whose first batch was never admitted, so it doesn't hold a slot of its deployer's cap. */
   discardUnadmitted(entityId: string): Promise<void>
-  /** Records successful writes; initialized means the initial stored-content inventory is complete. */
-  recordStored(entityId: string, hashes: string[], initialized: boolean, signal?: AbortSignal): Promise<void>
+  /**
+   * Records successful writes and counts the batch; initialized means the initial stored-content
+   * inventory is complete. Returns the upload's stored batches so far.
+   */
+  recordStored(entityId: string, hashes: string[], initialized: boolean, signal?: AbortSignal): Promise<number>
   /** Returns successfully stored file sizes, never treating reservations as completed writes. */
   getProgress(entityId: string, signal?: AbortSignal): Promise<Map<string, number>>
   /** Forgets receipts invalidated by a final storage verification. Reservations remain charged. */

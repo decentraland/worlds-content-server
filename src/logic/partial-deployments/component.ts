@@ -131,6 +131,7 @@ export async function createPartialDeploymentsComponent(
       if (!pending) await pendingScenesManager.discardUnadmitted(entity.id).catch(() => undefined)
       throw error
     }
+    if (!pending) metrics.increment('partial_uploads_started')
 
     // Re-checked right before storing: a batch admitted just before expiry must store nothing.
     if (Date.now() >= pendingRow.createdAt.getTime() + pendingScenesManager.ttlMs) {
@@ -146,7 +147,7 @@ export async function createPartialDeploymentsComponent(
         { signal }
       )
     )
-    await pendingScenesManager.recordStored(entity.id, [...files.keys()], true, signal)
+    const batches = await pendingScenesManager.recordStored(entity.id, [...files.keys()], true, signal)
     const progress = await pendingScenesManager.getProgress(entity.id, signal)
     const missing = contentHashes.filter((hash) => !progress.has(hash))
     metrics.increment('partial_upload_batches', { outcome: missing.length ? 'incomplete' : 'finalizing' })
@@ -198,6 +199,9 @@ export async function createPartialDeploymentsComponent(
       await pendingScenesManager.deleteByEntityId(entity.id).catch(() => undefined)
       return concurrent
     }
+    metrics.increment('partial_uploads_completed')
+    metrics.observe('partial_upload_duration_seconds', {}, (Date.now() - pendingRow.createdAt.getTime()) / 1000)
+    metrics.observe('partial_upload_batches_per_upload', {}, batches)
     // Publication returns the same timestamp it atomically persists with the completion receipt.
     return { complete: true, result, creationTimestamp: result.creationTimestamp }
   }

@@ -86,6 +86,7 @@ describe('deployEntity', () => {
           deleteByEntityId: jest.fn().mockResolvedValue(undefined)
         },
         partialDeployments: { findPublication: jest.fn().mockResolvedValue(undefined) },
+        metrics: { increment: jest.fn() },
         logs: {
           getLogger: jest.fn().mockReturnValue({ debug: jest.fn(), error: jest.fn(), info: jest.fn(), warn: jest.fn() })
         }
@@ -197,20 +198,72 @@ describe('deployEntity', () => {
     })
   })
 
+  describe('when a partial batch is rejected as invalid', () => {
+    let validateSignatureSpy: jest.SpyInstance
+    let increment: jest.Mock
+
+    beforeEach(async () => {
+      validateSignatureSpy = jest
+        .spyOn(Authenticator, 'validateSignature')
+        .mockResolvedValue({ ok: false, message: 'bad signature' })
+      increment = jest.fn()
+      const context = createContext(entityId, { [entityId]: makeFile(Buffer.from('{}')) })
+      context.formData.fields.partial = makeField('true')
+      context.components.metrics = { increment } as unknown as DeployContext['components']['metrics']
+      await deployEntity(context).catch(() => undefined)
+    })
+
+    afterEach(() => {
+      validateSignatureSpy.mockRestore()
+      jest.resetAllMocks()
+    })
+
+    it('should count it as a validation error', () => {
+      expect(increment.mock.calls).toEqual([['partial_upload_requests', { outcome: 'validation_error' }]])
+    })
+  })
+
+  describe('when a regular deployment is rejected as invalid', () => {
+    let validateSignatureSpy: jest.SpyInstance
+    let increment: jest.Mock
+
+    beforeEach(async () => {
+      validateSignatureSpy = jest
+        .spyOn(Authenticator, 'validateSignature')
+        .mockResolvedValue({ ok: false, message: 'bad signature' })
+      increment = jest.fn()
+      const context = createContext(entityId, { [entityId]: makeFile(Buffer.from('{}')) })
+      context.components.metrics = { increment } as unknown as DeployContext['components']['metrics']
+      await deployEntity(context).catch(() => undefined)
+    })
+
+    afterEach(() => {
+      validateSignatureSpy.mockRestore()
+      jest.resetAllMocks()
+    })
+
+    it('should not count it as a partial upload batch', () => {
+      expect(increment.mock.calls).toEqual([])
+    })
+  })
+
   describe('when a partial batch carrying the manifest targets a published entity', () => {
     let validateSignatureSpy: jest.SpyInstance
     let stage: jest.Mock
+    let increment: jest.Mock
     let response: Awaited<ReturnType<typeof deployEntity>>
 
     beforeEach(async () => {
       validateSignatureSpy = jest.spyOn(Authenticator, 'validateSignature').mockResolvedValue({ ok: true })
       stage = jest.fn()
+      increment = jest.fn()
       const baseContext = createContext(entityId, { [entityId]: makeFile(Buffer.from('{}')) })
       baseContext.formData.fields.partial = makeField('true')
       const context = {
         ...baseContext,
         components: {
           ...baseContext.components,
+          metrics: { increment },
           partialDeployments: {
             stage,
             findPublication: jest
@@ -232,6 +285,10 @@ describe('deployEntity', () => {
         response: { status: 200, body: { creationTimestamp: 789, message: 'published' } },
         stages: 0
       })
+    })
+
+    it('should count the batch as finalized', () => {
+      expect(increment.mock.calls).toEqual([['partial_upload_requests', { outcome: 'finalized' }]])
     })
   })
 
@@ -795,6 +852,32 @@ describe('deployEntity', () => {
         status: 429,
         headers: { 'Retry-After': '42' },
         body: { error: 'Too Many Requests', message: 'This account sent too much this minute.' }
+      })
+    })
+
+    describe('and the request is a partial batch', () => {
+      let increment: jest.Mock
+
+      beforeEach(async () => {
+        increment = jest.fn()
+        const context = createContext(entityId, { [entityId]: makeFile(Buffer.from('{}')) })
+        context.formData.fields.partial = makeField('true')
+        context.components.metrics = { increment } as unknown as DeployContext['components']['metrics']
+        context.components.contentLocks = {
+          withRead: jest
+            .fn()
+            .mockRejectedValueOnce(
+              new PartialUploadQuotaExceededError('bytes_per_server', 'The server staging is full.', 42)
+            )
+        } as unknown as DeployContext['components']['contentLocks']
+        await deployEntity(context)
+      })
+
+      it('should count it as throttled by the quota that rejected it', () => {
+        expect(increment.mock.calls).toEqual([
+          ['partial_upload_throttled', { reason: 'bytes_per_server' }],
+          ['partial_upload_requests', { outcome: 'throttled' }]
+        ])
       })
     })
   })
