@@ -105,6 +105,8 @@ export async function createPendingScenesManager(
         }
         // Only cleanup of an expired upload removes one seen earlier; re-creating it would restart it.
         if (input.resumes) throw new PartialUploadExpiredError()
+        // A delayed first batch (slow validation or lock waits) may arrive already past its deadline.
+        if (input.admittedAt.getTime() < Date.now() - ttlMs) throw new PartialUploadExpiredError()
         const count = await query<{ count: string; oldest: Date | null }>(
           SQL`SELECT COUNT(*) AS count, MIN(created_at) AS oldest FROM pending_scenes WHERE deployer = ${deployer}`
         )
@@ -133,11 +135,18 @@ export async function createPendingScenesManager(
     signal?: AbortSignal
   ): Promise<void> {
     const owner = await raceWithSignal(
-      database.query<{ deployer: string }>(SQL`SELECT deployer FROM pending_scenes WHERE entity_id = ${entityId}`),
+      database.query<{ deployer: string; created_at: Date }>(
+        SQL`SELECT deployer, created_at FROM pending_scenes WHERE entity_id = ${entityId}`
+      ),
       signal
     )
     if (!owner.rows[0]) throw new InvalidRequestError('Upload no longer exists; resend its manifest.')
     const deployer = owner.rows[0].deployer
+    // Nothing is charged to an upload past its deadline.
+    const assertLive = (): void => {
+      if (owner.rows[0].created_at.getTime() < Date.now() - ttlMs) throw new PartialUploadExpiredError()
+    }
+    assertLive()
     // Committed on its own, before admission: the batch was received and processed even if it is then
     // rejected, so repeating rejected batches can't escape the rate limit.
     const rate = await raceWithSignal(
@@ -166,6 +175,7 @@ export async function createPendingScenesManager(
         // One short global admission critical section makes both aggregate budgets atomic. No storage
         // or external validation occurs under this lock. Expired reservations stay counted until cleanup.
         await query(SQL`SELECT pg_advisory_xact_lock(hashtextextended('partial-upload-budget', 0))`)
+        assertLive()
         if (receipts.length) {
           await query(SQL`INSERT INTO pending_scene_files (entity_id, hash, size, stored)
           SELECT ${entityId}, r.hash, r.size, r.stored

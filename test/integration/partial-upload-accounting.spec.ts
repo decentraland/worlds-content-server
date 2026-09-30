@@ -104,6 +104,92 @@ test('when accounting for independent partial uploads', ({ components }) => {
     })
   })
 
+  describe('and the first batch of a new upload is created after its deadline', () => {
+    let upsertError: unknown
+    let pending: number
+
+    beforeEach(async () => {
+      upsertError = await create(first, signer, new Date(Date.now() - limits.PENDING_DEPLOYMENT_TTL - 1_000)).catch(
+        (error: unknown) => error
+      )
+      pending = await pendingCount()
+    })
+
+    it('should answer that the upload expired without creating it', () => {
+      expect({ expired: upsertError instanceof PartialUploadExpiredError, pending }).toEqual({
+        expired: true,
+        pending: 0
+      })
+    })
+  })
+
+  describe('and an upload reaches its deadline before its batch is charged', () => {
+    let reserveError: unknown
+    let charges: unknown
+
+    beforeEach(async () => {
+      await create(first)
+      await components.database.query(SQL`UPDATE pending_scenes SET created_at = now() - interval '2 days'`)
+      reserveError = await manager
+        .reserve(first.id, [{ hash: 'content-a', size: 400, stored: false }], 1000n, 400)
+        .catch((error: unknown) => error)
+      const reserved = await components.database.query('SELECT reserved_bytes FROM pending_scenes')
+      const rate = await components.database.query('SELECT bytes FROM partial_upload_rates')
+      charges = { reserved: reserved.rows, rate: rate.rows }
+    })
+
+    it('should answer that the upload expired without charging its bytes or byte rate', () => {
+      expect({ expired: reserveError instanceof PartialUploadExpiredError, charges }).toEqual({
+        expired: true,
+        charges: { reserved: [{ reserved_bytes: '0' }], rate: [] }
+      })
+    })
+  })
+
+  describe('and an upload reaches its deadline while its batch waits for the byte budget', () => {
+    type LockClient = { query(sql: string): Promise<{ rowCount: number | null }>; release(): void }
+    let lockClient: LockClient | undefined
+    let reserveError: unknown
+    let reserved: unknown
+
+    beforeEach(async () => {
+      await create(first)
+      lockClient = (await components.database.getPool().connect()) as unknown as LockClient
+      await lockClient.query('BEGIN')
+      await lockClient.query(`SELECT pg_advisory_xact_lock(hashtextextended('partial-upload-budget', 0))`)
+      const reservation = manager
+        .reserve(first.id, [{ hash: 'content-a', size: 400, stored: false }], 1000n, 400)
+        .catch((error: unknown) => error)
+      let waiting = false
+      for (let attempt = 0; attempt < 200 && !waiting; attempt++) {
+        const locks = await lockClient.query(`SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND NOT granted`)
+        waiting = (locks.rowCount ?? 0) > 0
+        if (!waiting) await new Promise<void>((resolve) => setTimeout(resolve, 10))
+      }
+      const realNow = Date.now.bind(Date)
+      jest.spyOn(Date, 'now').mockImplementation(() => realNow() + limits.PENDING_DEPLOYMENT_TTL + 1_000)
+      await lockClient.query('COMMIT')
+      lockClient.release()
+      lockClient = undefined
+      reserveError = await reservation
+      reserved = (await components.database.query('SELECT reserved_bytes FROM pending_scenes')).rows
+    })
+
+    afterEach(async () => {
+      if (lockClient) {
+        await lockClient.query('ROLLBACK').catch(() => undefined)
+        lockClient.release()
+      }
+    })
+
+    it('should answer that the upload expired without reserving its bytes', () => {
+      expect({ expired: reserveError instanceof PartialUploadExpiredError, reserved }).toEqual({
+        expired: true,
+        reserved: [{ reserved_bytes: '0' }]
+      })
+    })
+  })
+
   describe('and two overlapping uploads reserve the same account budget concurrently', () => {
     let results: PromiseSettledResult<void>[]
     beforeEach(async () => {
@@ -203,7 +289,11 @@ test('when accounting for independent partial uploads', ({ components }) => {
       let error: unknown
 
       beforeEach(async () => {
-        await create(first, signer, new Date(Date.now() - 400_000))
+        await create(first)
+        // Expired uploads can't be created, so this one is aged past its lifetime after the fact.
+        await components.database.query(
+          SQL`UPDATE pending_scenes SET created_at = ${new Date(Date.now() - 400_000)} WHERE entity_id = ${first.id}`
+        )
         error = await create(second, signer, new Date(), false, 1).catch((e: unknown) => e)
       })
 
@@ -217,7 +307,11 @@ test('when accounting for independent partial uploads', ({ components }) => {
 
       beforeEach(async () => {
         await manager.deleteExpired()
-        await create(first, signer, new Date(Date.now() - 400_000))
+        await create(first)
+        // Expired uploads can't be created, so this one is aged past its lifetime after the fact.
+        await components.database.query(
+          SQL`UPDATE pending_scenes SET created_at = ${new Date(Date.now() - 400_000)} WHERE entity_id = ${first.id}`
+        )
         const now = Date.now()
         jest.spyOn(Date, 'now').mockReturnValue(now + 50_000)
         error = await create(second, signer, new Date(now + 50_000), false, 1).catch((e: unknown) => e)

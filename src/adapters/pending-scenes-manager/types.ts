@@ -29,13 +29,19 @@ export type CompletedUpload = { worldName: string; parcels: string[]; creationTi
 export interface IPendingScenesManager extends IBaseComponent {
   /** Retrieves a live upload without renewing its fixed expiration. */
   getByEntityId(entityId: string, signal?: AbortSignal): Promise<PendingScene | undefined>
-  /** Creates an independent entity upload under the account count cap; requires the shared content lock. */
+  /**
+   * Creates an independent entity upload under the account count cap; requires the shared content lock.
+   * @throws PartialUploadExpiredError when the upload is gone or its lifetime from `admittedAt` has ended.
+   */
   upsert(
     input: UpsertPendingScene,
     limit: { maxPendingPerDeployer: number },
     signal?: AbortSignal
   ): Promise<PendingScene>
-  /** Reserves bytes before writes, including concurrent account/global budgets and incoming byte rate. */
+  /**
+   * Reserves bytes before writes, including concurrent account/global budgets and incoming byte rate.
+   * @throws PartialUploadExpiredError when the upload has expired; nothing is charged then.
+   */
   reserve(
     entityId: string,
     receipts: FileReceipt[],
