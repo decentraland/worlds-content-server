@@ -16,14 +16,16 @@ const makeSignedMultipartRequest = (
   localFetch: IAuthenticatedFetchComponent,
   path: string,
   identity: Identity,
-  fields: Record<string, string>,
+  fields: Record<string, string | string[]>,
   files?: Record<string, { buffer: Buffer; filename: string }>,
   method: string = 'PUT'
 ) => {
   const form = new FormData()
 
   for (const [key, value] of Object.entries(fields)) {
-    form.append(key, value)
+    for (const item of Array.isArray(value) ? value : [value]) {
+      form.append(key, item)
+    }
   }
 
   if (files) {
@@ -478,6 +480,34 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
 
         const settings = await worldsManager.getWorldSettings(worldName)
         expect(settings?.categories).toEqual([])
+      })
+    })
+
+    describe('when the user sends each category as its own form field', () => {
+      let status: number
+      let categories: string[] | undefined
+
+      beforeEach(async () => {
+        const { localFetch, worldCreator, worldsManager } = components
+
+        const identity = await getIdentity()
+        const created = await worldCreator.createWorldWithScene({ owner: identity.authChain })
+        stubComponents.namePermissionChecker.checkPermission.mockImplementation(
+          async (ethAddress, name) =>
+            ethAddress === identity.authChain.authChain[0].payload.toLowerCase() && name === created.worldName
+        )
+        const response = await makeSignedMultipartRequest(
+          localFetch,
+          `/world/${created.worldName}/settings`,
+          identity,
+          { categories: ['art', 'gaming'] }
+        )
+        status = response.status
+        categories = (await worldsManager.getWorldSettings(created.worldName))?.categories
+      })
+
+      it('should store every category', () => {
+        expect({ status, categories }).toEqual({ status: 200, categories: ['art', 'gaming'] })
       })
     })
 

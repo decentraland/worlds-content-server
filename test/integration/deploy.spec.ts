@@ -1342,7 +1342,7 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
         // Expected to fail
       }
 
-      expect(metrics.increment).not.toHaveBeenCalled()
+      expect(metrics.increment).not.toHaveBeenCalledWith('world_deployments_counter', expect.anything())
     })
 
     it('should not make the world accessible via /world/:world_name/about endpoint', async () => {
@@ -1443,7 +1443,7 @@ test('DeployEntity POST /entities', function ({ components, stubComponents }) {
         // Expected to fail
       }
 
-      expect(metrics.increment).not.toHaveBeenCalled()
+      expect(metrics.increment).not.toHaveBeenCalledWith('world_deployments_counter', expect.anything())
     })
   })
 

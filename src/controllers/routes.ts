@@ -1,6 +1,7 @@
 import { Router } from '@dcl/http-server'
 import {
   createInFlightUploadBudget,
+  DEFAULT_MAX_UPLOAD_SIZE_IN_BYTES,
   InFlightUploadBudget,
   InFlightUploadBudgetSnapshot,
   MAX_WORLD_SETTINGS_UPLOAD_SIZE_IN_BYTES,
@@ -9,6 +10,8 @@ import {
   MultipartTelemetryEvent
 } from '../logic/multipart'
 import { BaseComponents, GlobalContext } from '../types'
+import { stampRequestArrival } from './request-arrival'
+import { createSourceUploadAdmission } from './source-upload-admission'
 import { availableContentHandler, getContentFile, headContentFile } from './handlers/content-file-handler'
 import { deployEntity } from './handlers/deploy-entity-handler'
 import { worldAboutHandler } from './handlers/world-about-handler'
@@ -67,8 +70,8 @@ export async function createMultipartUploadGuard(
   const { config, logs, metrics } = components
   const logger = logs.getLogger('multipart-uploads')
   const maxInFlightUploadBytes = await config.getNumber('MAX_IN_FLIGHT_UPLOAD_BYTES')
-  const maxConcurrentUploads = await config.getNumber('MAX_CONCURRENT_UPLOADS')
-  const maxInFlightUploadFiles = await config.getNumber('MAX_IN_FLIGHT_UPLOAD_FILES')
+  const minUploadReservationBytes = await config.getNumber('MIN_UPLOAD_RESERVATION_BYTES')
+  const uploadFileOverheadBytes = await config.getNumber('UPLOAD_FILE_OVERHEAD_BYTES')
   const maxOrphanedUploadDirectories = await config.getNumber('MAX_ORPHANED_UPLOAD_DIRECTORIES')
   const uploadTimeoutMs = await config.getNumber('MULTIPART_UPLOAD_TIMEOUT_MS')
   const onStateChange = ({
@@ -86,13 +89,13 @@ export async function createMultipartUploadGuard(
     metrics.observe('multipart_upload_orphaned_directories', {}, orphanedDirectories)
     metrics.observe('multipart_upload_active', {}, activeUploads)
   }
-  const inFlightUploadBudget = createInFlightUploadBudget(
-    maxInFlightUploadBytes,
-    maxConcurrentUploads,
-    onStateChange,
-    maxInFlightUploadFiles,
-    maxOrphanedUploadDirectories
-  )
+  const inFlightUploadBudget = createInFlightUploadBudget(maxInFlightUploadBytes, {
+    minUploadReservationBytes,
+    uploadFileOverheadBytes,
+    maxOrphanedUploadDirectories,
+    onStateChange
+  })
+  metrics.observe('multipart_upload_capacity_bytes', {}, inFlightUploadBudget.snapshot().capacity)
   const onTelemetry = (event: MultipartTelemetryEvent): void => {
     metrics.observe(
       'multipart_upload_size_bytes',
@@ -115,7 +118,8 @@ export async function createMultipartUploadGuard(
         orphanedFiles: event.snapshot.orphanedFiles,
         orphanedDirectories: event.snapshot.orphanedDirectories,
         capacity: event.snapshot.capacity,
-        maxInFlightUploadFiles: event.snapshot.maxInFlightUploadFiles,
+        minUploadReservationBytes: event.snapshot.minUploadReservationBytes,
+        uploadFileOverheadBytes: event.snapshot.uploadFileOverheadBytes,
         maxOrphanedUploadDirectories: event.snapshot.maxOrphanedUploadDirectories,
         activeUploads: event.snapshot.activeUploads,
         maxConcurrentUploads: event.snapshot.maxConcurrentUploads,
@@ -254,8 +258,15 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   router.get('/world/:world_name/about', worldAboutHandler)
 
   // Post world scene(s)
+  // Stamped on arrival, then every body holds a share of its source's in-flight uploads until the
+  // request ends, all before the body is read.
   router.post(
     '/entities',
+    stampRequestArrival(),
+    createSourceUploadAdmission(globalContext.components, {
+      route: 'entities',
+      maxRequestBytes: DEFAULT_MAX_UPLOAD_SIZE_IN_BYTES
+    }),
     multipartParserWrapper(deployEntity, {
       inFlightUploadBudget,
       uploadTimeoutMs,
@@ -282,15 +293,25 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   router.get('/world/:world_name/settings', getWorldSettingsHandler)
   router.put(
     '/world/:world_name/settings',
-    signedFetchMiddleware,
-    multipartParserWrapper(updateWorldSettingsHandler, {
-      inFlightUploadBudget,
-      maxSizeInBytes: MAX_WORLD_SETTINGS_UPLOAD_SIZE_IN_BYTES,
-      uploadTimeoutMs,
+    // Shares the in-flight parser budget, so every request also takes its source's share.
+    createSourceUploadAdmission(globalContext.components, {
       route: 'world-settings',
-      onTelemetry,
-      onCleanupError
-    })
+      maxRequestBytes: MAX_WORLD_SETTINGS_UPLOAD_SIZE_IN_BYTES
+    }),
+    signedFetchMiddleware,
+    multipartParserWrapper(
+      (ctx: Parameters<typeof updateWorldSettingsHandler>[0]) =>
+        globalContext.components.contentLocks.withRead(() => updateWorldSettingsHandler(ctx)),
+      {
+        inFlightUploadBudget,
+        maxSizeInBytes: MAX_WORLD_SETTINGS_UPLOAD_SIZE_IN_BYTES,
+        uploadTimeoutMs,
+        route: 'world-settings',
+        onTelemetry,
+        onCleanupError,
+        repeatableFields: ['categories']
+      }
+    )
   )
 
   // World manifest

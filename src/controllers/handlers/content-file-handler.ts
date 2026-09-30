@@ -175,11 +175,15 @@ export async function getContentFile(
 
   // Sniff the MIME type from the start of the file, not the requested range (which may begin
   // mid-file). encoding is null here (compressed content bailed out above), so a small read from
-  // offset 0 yields valid bytes to inspect.
-  const head = await ctx.components.storage.retrieve(ctx.params.hashId, {
-    start: 0,
-    end: Math.min(MIME_SNIFF_BYTES - 1, fileInfo.size - 1)
-  })
+  // offset 0 yields valid bytes to inspect. Best-effort: a sniff-read failure (e.g. the object
+  // reclaimed between the two retrieves — folder-based storage throws rather than returning
+  // undefined) must not turn the already-retrieved, servable range into a 500.
+  const head = await ctx.components.storage
+    .retrieve(ctx.params.hashId, {
+      start: 0,
+      end: Math.min(MIME_SNIFF_BYTES - 1, fileInfo.size - 1)
+    })
+    .catch(() => undefined)
   const contentType = head ? await detectContentType(head) : DEFAULT_CONTENT_TYPE
 
   return {

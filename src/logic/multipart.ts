@@ -103,14 +103,19 @@ const DEFAULT_LIMITS: busboy.Limits = {
  * an unauthenticated client could open many concurrent uploads and exhaust resources.
  *
  * Uploads are streamed to disk rather than buffered in memory, so the limiting resource is the
- * container's ephemeral storage (e.g. 20 GB by default on Fargate), not RAM. The 4 GB default
- * leaves ample headroom while allowing many concurrent uploads; tune it to the available disk via
- * the MAX_IN_FLIGHT_UPLOAD_BYTES config. Requests grow their reservations from parsed payload
- * bytes as they arrive, so multipart framing is never charged against the buffered-byte budget.
+ * container's ephemeral storage (e.g. 20 GB by default on Fargate), not RAM. Tune it to the
+ * available disk via the MAX_IN_FLIGHT_UPLOAD_BYTES config. Requests grow their reservations from
+ * parsed payload bytes as they arrive, so multipart framing is never charged against the budget.
+ *
+ * The same budget also bounds concurrency and temporary files: every request reserves at least
+ * {@link DEFAULT_MIN_UPLOAD_RESERVATION_BYTES} (budget / 16 MiB concurrent small requests) and
+ * every file part adds {@link DEFAULT_UPLOAD_FILE_OVERHEAD_BYTES} (budget / 16 KiB files).
  */
 export const DEFAULT_MAX_IN_FLIGHT_UPLOAD_BYTES = 4 * 1024 * MB
-export const DEFAULT_MAX_CONCURRENT_UPLOADS = 40
-export const DEFAULT_MAX_IN_FLIGHT_UPLOAD_FILES = 40_000
+/** Per-request overhead charged even for tiny bodies: fields in memory, parser buffers, temp dir, socket. */
+export const DEFAULT_MIN_UPLOAD_RESERVATION_BYTES = 16 * MB
+/** Per-file overhead charged on top of its bytes: inode, block rounding, descriptor. */
+export const DEFAULT_UPLOAD_FILE_OVERHEAD_BYTES = 16 * 1024
 export const DEFAULT_MAX_ORPHANED_UPLOAD_DIRECTORIES = 40
 export const DEFAULT_MULTIPART_UPLOAD_TIMEOUT_MS = 5 * 60 * 1000
 export const DEFAULT_REJECTED_UPLOAD_DRAIN_TIMEOUT_MS = 5 * 1000
@@ -120,15 +125,29 @@ export const MAX_WORLD_SETTINGS_UPLOAD_SIZE_IN_BYTES = 2 * MB
 
 export type InFlightUploadBudgetSnapshot = {
   capacity: number
+  /** Charged bytes: payload plus per-file overhead, never below the per-request minimum. */
   reservedBytes: number
   orphanedBytes: number
   reservedFiles: number
   orphanedFiles: number
   orphanedDirectories: number
   activeUploads: number
+  /** Concurrent small requests the budget admits: capacity / minUploadReservationBytes. */
   maxConcurrentUploads: number
-  maxInFlightUploadFiles: number
+  minUploadReservationBytes: number
+  uploadFileOverheadBytes: number
   maxOrphanedUploadDirectories: number
+}
+
+export type InFlightUploadBudgetOptions = {
+  /** Minimum bytes every admitted request reserves. Defaults to {@link DEFAULT_MIN_UPLOAD_RESERVATION_BYTES}. */
+  minUploadReservationBytes?: number
+  /** Bytes charged per uploaded file on top of its payload. Defaults to {@link DEFAULT_UPLOAD_FILE_OVERHEAD_BYTES}. */
+  uploadFileOverheadBytes?: number
+  /** Failed-cleanup directories tolerated before admission stops. */
+  maxOrphanedUploadDirectories?: number
+  /** Receives admitted-upload reservation state changes. */
+  onStateChange?: (snapshot: InFlightUploadBudgetSnapshot) => void
 }
 
 export type InFlightUploadReleaseOptions = {
@@ -141,13 +160,15 @@ export type InFlightUploadReleaseOptions = {
 }
 
 export type InFlightUploadLease = {
-  /** Returns payload bytes currently reserved by this upload. */
-  getReservedBytes: () => number
-  /** Returns temporary files currently reserved by this upload. */
+  /** Returns payload bytes currently accounted to this upload. */
+  getPayloadBytes: () => number
+  /** Returns temporary files currently accounted to this upload. */
   getReservedFiles: () => number
-  /** Changes the upload's payload-byte reservation if aggregate capacity permits it. */
+  /** Returns the bytes this upload charges against the budget. */
+  getChargedBytes: () => number
+  /** Changes the upload's payload bytes if aggregate capacity permits the resulting charge. */
   resize: (bytes: number) => boolean
-  /** Changes the upload's temporary-file reservation if aggregate capacity permits it. */
+  /** Changes the upload's temporary-file count if aggregate capacity permits the resulting charge. */
   resizeFiles: (files: number) => boolean
   /** Releases active resources, optionally retaining resources left on disk after failed cleanup. */
   release: (options?: InFlightUploadReleaseOptions) => void
@@ -157,10 +178,11 @@ export type InFlightUploadLease = {
 
 export type InFlightUploadAcquisition =
   | { lease: InFlightUploadLease; rejectionReason?: undefined }
-  | { lease?: undefined; rejectionReason: 'bytes' | 'concurrency' | 'storage' }
+  | { lease?: undefined; rejectionReason: 'bytes' | 'storage' }
 
 export type InFlightUploadBudget = {
   capacity: number
+  uploadFileOverheadBytes: number
   acquire: (bytes: number) => InFlightUploadAcquisition
   tryAcquireRejectedBodyDrain: () => (() => void) | undefined
   snapshot: () => InFlightUploadBudgetSnapshot
@@ -168,7 +190,6 @@ export type InFlightUploadBudget = {
 
 export type MultipartRejectionReason =
   | 'bytes'
-  | 'concurrency'
   | 'timeout'
   | 'wire_size'
   | 'payload_size'
@@ -223,6 +244,8 @@ export type MultipartParserOptions = {
   fileSystem?: MultipartFileSystem
   /** Delays for bounded background retries after a temporary-directory cleanup failure. */
   cleanupRetryDelaysMs?: readonly number[]
+  /** Field names that may repeat to carry several values. Every other form name must be unique. */
+  repeatableFields?: readonly string[]
 }
 
 function validatePositiveByteLimit(name: string, value: number): void {
@@ -261,9 +284,31 @@ class UploadCapacityError extends MultipartRejectionError {
   }
 }
 
+/** Formats a byte count for client-facing messages. */
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} bytes`
+  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KiB`
+  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MiB`
+  return `${(bytes / 1024 ** 3).toFixed(1)} GiB`
+}
+
+/** Describes a body that didn't arrive in time with what was measured, so a creator can report it. */
+export function describeUploadTimeout(timeoutMs: number, receivedBytes: number, declaredBytes?: number): string {
+  const seconds = timeoutMs / 1000
+  const received =
+    declaredBytes === undefined
+      ? formatBytes(receivedBytes)
+      : `${formatBytes(receivedBytes)} of ${formatBytes(declaredBytes)}`
+  const rate = (receivedBytes / 1024 / seconds).toFixed(1)
+  return (
+    `The upload did not finish within ${seconds} s: received ${received} (about ${rate} KiB/s). ` +
+    'Retry on a faster connection or send smaller batches.'
+  )
+}
+
 class UploadTimeoutError extends MultipartRejectionError {
-  constructor(actualBytes: number) {
-    super('timeout', 'The multipart upload timed out.', actualBytes)
+  constructor(actualBytes: number, timeoutMs: number, receivedBytes: number, declaredBytes?: number) {
+    super('timeout', describeUploadTimeout(timeoutMs, receivedBytes, declaredBytes), actualBytes)
   }
 }
 
@@ -342,24 +387,36 @@ function drainRequestBody(body: unknown, timeoutMs: number, inFlightUploadBudget
 /**
  * Creates a byte budget shared by every multipart route that receives the returned object.
  *
- * @param capacity Maximum number of bytes that may be reserved concurrently.
- * @param maxConcurrentUploads Maximum simultaneous admitted uploads and, independently, rejected-body drains.
- * @param onStateChange Receives admitted-upload reservation state changes.
- * @param maxInFlightUploadFiles Maximum temporary files across active and orphaned uploads.
- * @param maxOrphanedUploadDirectories Maximum failed-cleanup directories tolerated before admission stops.
+ * Each admitted request charges max(minUploadReservationBytes, payload + files × uploadFileOverheadBytes),
+ * so the one byte capacity bounds disk bytes, concurrent requests and temporary files together.
+ *
+ * @param capacity Maximum number of bytes that may be charged concurrently.
+ * @param options Per-request and per-file charges, orphan-directory limit and state observer.
  * @returns A synchronous reservation and rejected-body drain tracker for multipart requests.
  */
 export function createInFlightUploadBudget(
   capacity: number = DEFAULT_MAX_IN_FLIGHT_UPLOAD_BYTES,
-  maxConcurrentUploads: number = DEFAULT_MAX_CONCURRENT_UPLOADS,
-  onStateChange?: (snapshot: InFlightUploadBudgetSnapshot) => void,
-  maxInFlightUploadFiles: number = DEFAULT_MAX_IN_FLIGHT_UPLOAD_FILES,
-  maxOrphanedUploadDirectories: number = DEFAULT_MAX_ORPHANED_UPLOAD_DIRECTORIES
+  options: InFlightUploadBudgetOptions = {}
 ): InFlightUploadBudget {
+  const {
+    minUploadReservationBytes = DEFAULT_MIN_UPLOAD_RESERVATION_BYTES,
+    uploadFileOverheadBytes = DEFAULT_UPLOAD_FILE_OVERHEAD_BYTES,
+    maxOrphanedUploadDirectories = DEFAULT_MAX_ORPHANED_UPLOAD_DIRECTORIES,
+    onStateChange
+  } = options
   validatePositiveByteLimit('maxInFlightUploadBytes', capacity)
-  validatePositiveByteLimit('maxConcurrentUploads', maxConcurrentUploads)
-  validatePositiveByteLimit('maxInFlightUploadFiles', maxInFlightUploadFiles)
+  validateReservationBytes('minUploadReservationBytes', minUploadReservationBytes)
+  validateReservationBytes('uploadFileOverheadBytes', uploadFileOverheadBytes)
   validatePositiveByteLimit('maxOrphanedUploadDirectories', maxOrphanedUploadDirectories)
+  if (capacity < minUploadReservationBytes) {
+    throw new Error(
+      `maxInFlightUploadBytes (${capacity}) must be greater than or equal to minUploadReservationBytes (${minUploadReservationBytes})`
+    )
+  }
+  // Rejected bodies are drained without disk, but still hold a socket each: cap them like small uploads.
+  const maxConcurrentUploads = Math.floor(capacity / Math.max(minUploadReservationBytes, 1))
+  const charge = (payloadBytes: number, files: number): number =>
+    Math.max(minUploadReservationBytes, payloadBytes + files * uploadFileOverheadBytes)
   let reservedBytes = 0
   let orphanedBytes = 0
   let reservedFiles = 0
@@ -377,13 +434,15 @@ export function createInFlightUploadBudget(
     orphanedDirectories,
     activeUploads,
     maxConcurrentUploads,
-    maxInFlightUploadFiles,
+    minUploadReservationBytes,
+    uploadFileOverheadBytes,
     maxOrphanedUploadDirectories
   })
   const emitState = (): void => notifySafely(onStateChange, snapshot())
 
   return {
     capacity,
+    uploadFileOverheadBytes,
     snapshot,
     tryAcquireRejectedBodyDrain(): (() => void) | undefined {
       if (activeRejectedBodyDrains >= maxConcurrentUploads) {
@@ -400,48 +459,50 @@ export function createInFlightUploadBudget(
     },
     acquire(bytes: number) {
       validateReservationBytes('upload reservation', bytes)
-      if (activeUploads >= maxConcurrentUploads) {
-        return { rejectionReason: 'concurrency' as const }
-      }
       if (orphanedDirectories >= maxOrphanedUploadDirectories) {
         return { rejectionReason: 'storage' as const }
       }
-      if (reservedBytes + bytes > capacity) {
+      const initialCharge = charge(bytes, 0)
+      if (reservedBytes + initialCharge > capacity) {
         return { rejectionReason: 'bytes' as const }
       }
-      reservedBytes += bytes
+      reservedBytes += initialCharge
       activeUploads++
       emitState()
       let leaseBytes = bytes
       let leaseFiles = 0
+      let leaseCharge = initialCharge
       let released = false
-      let retainedBytes = 0
+      let retainedCharge = 0
       let retainedFiles = 0
       let retainedDirectory = false
 
+      const recharge = (nextBytes: number, nextFiles: number): boolean => {
+        const nextCharge = charge(nextBytes, nextFiles)
+        if (released || reservedBytes - leaseCharge + nextCharge > capacity) {
+          return false
+        }
+        reservedBytes += nextCharge - leaseCharge
+        reservedFiles += nextFiles - leaseFiles
+        leaseBytes = nextBytes
+        leaseFiles = nextFiles
+        leaseCharge = nextCharge
+        emitState()
+        return true
+      }
+
       return {
         lease: {
-          getReservedBytes: () => leaseBytes,
+          getPayloadBytes: () => leaseBytes,
           getReservedFiles: () => leaseFiles,
+          getChargedBytes: () => leaseCharge,
           resize(nextBytes: number): boolean {
             validateReservationBytes('upload reservation', nextBytes)
-            if (released || reservedBytes - leaseBytes + nextBytes > capacity) {
-              return false
-            }
-            reservedBytes += nextBytes - leaseBytes
-            leaseBytes = nextBytes
-            emitState()
-            return true
+            return recharge(nextBytes, leaseFiles)
           },
           resizeFiles(nextFiles: number): boolean {
             validateReservationBytes('upload file reservation', nextFiles)
-            if (released || reservedFiles - leaseFiles + nextFiles > maxInFlightUploadFiles) {
-              return false
-            }
-            reservedFiles += nextFiles - leaseFiles
-            leaseFiles = nextFiles
-            emitState()
-            return true
+            return recharge(leaseBytes, nextFiles)
           },
           release(options?: InFlightUploadReleaseOptions): void {
             if (!released) {
@@ -453,12 +514,13 @@ export function createInFlightUploadBudget(
                 throw new Error('Retained upload resources cannot exceed the active reservation')
               }
               released = true
-              retainedBytes = nextRetainedBytes
+              // Only what stays on disk remains charged; the per-request minimum goes with the request.
+              retainedCharge = nextRetainedBytes + nextRetainedFiles * uploadFileOverheadBytes
               retainedFiles = nextRetainedFiles
               retainedDirectory = options?.retainDirectory ?? false
-              reservedBytes -= leaseBytes - retainedBytes
+              reservedBytes -= leaseCharge - retainedCharge
               reservedFiles -= leaseFiles - retainedFiles
-              orphanedBytes += retainedBytes
+              orphanedBytes += retainedCharge
               orphanedFiles += retainedFiles
               if (retainedDirectory) orphanedDirectories++
               activeUploads--
@@ -466,13 +528,13 @@ export function createInFlightUploadBudget(
             }
           },
           releaseRetainedResources(): void {
-            if (retainedBytes > 0 || retainedFiles > 0 || retainedDirectory) {
-              reservedBytes -= retainedBytes
-              orphanedBytes -= retainedBytes
+            if (retainedCharge > 0 || retainedFiles > 0 || retainedDirectory) {
+              reservedBytes -= retainedCharge
+              orphanedBytes -= retainedCharge
               reservedFiles -= retainedFiles
               orphanedFiles -= retainedFiles
               if (retainedDirectory) orphanedDirectories--
-              retainedBytes = 0
+              retainedCharge = 0
               retainedFiles = 0
               retainedDirectory = false
               emitState()
@@ -497,6 +559,7 @@ export function multipartParserWrapper<Ctx extends FormDataContext, T extends IH
   const uploadTimeoutMs = options?.uploadTimeoutMs ?? DEFAULT_MULTIPART_UPLOAD_TIMEOUT_MS
   const fileSystem: MultipartFileSystem = options?.fileSystem ?? { createWriteStream, mkdtemp, rm }
   const cleanupRetryDelaysMs = options?.cleanupRetryDelaysMs ?? DEFAULT_MULTIPART_CLEANUP_RETRY_DELAYS_MS
+  const repeatableFields = new Set(options?.repeatableFields ?? [])
 
   validatePositiveByteLimit('maxSizeInBytes', maxSizeInBytes)
   validatePositiveByteLimit('maxWireSizeInBytes', maxWireSizeInBytes)
@@ -505,9 +568,13 @@ export function multipartParserWrapper<Ctx extends FormDataContext, T extends IH
   for (const delayMs of cleanupRetryDelaysMs) {
     validateReservationBytes('multipart cleanup retry delay', delayMs)
   }
-  if (inFlightUploadBudget.capacity < maxSizeInBytes) {
+  const limits: busboy.Limits = { ...DEFAULT_LIMITS, fileSize: maxSizeInBytes, ...options?.limits }
+  const maxFilesPerRequest = limits.files ?? Infinity
+  // One maximum-size upload with every file part it may carry must fit the budget on its own.
+  const maxRequestCharge = maxSizeInBytes + maxFilesPerRequest * inFlightUploadBudget.uploadFileOverheadBytes
+  if (!(inFlightUploadBudget.capacity >= maxRequestCharge)) {
     throw new Error(
-      `maxInFlightUploadBytes (${inFlightUploadBudget.capacity}) must be greater than or equal to maxSizeInBytes (${maxSizeInBytes})`
+      `maxInFlightUploadBytes (${inFlightUploadBudget.capacity}) must be greater than or equal to maxSizeInBytes (${maxSizeInBytes}) + ${maxFilesPerRequest} files × uploadFileOverheadBytes (${inFlightUploadBudget.uploadFileOverheadBytes})`
     )
   }
   if (maxWireSizeInBytes < maxSizeInBytes) {
@@ -549,11 +616,11 @@ export function multipartParserWrapper<Ctx extends FormDataContext, T extends IH
     }
 
     // Bound aggregate temporary disk usage: this parser runs before any auth on POST /entities, so
-    // it must self-limit how much it writes at once. Every request acquires a concurrency slot and
-    // grows its reservation synchronously from parsed payload bytes. Content-Length cannot be used
-    // as a payload reservation because it includes multipart framing and can cause false capacity
-    // rejections. Requests that exceed either budget are shed with 503. The reservation is held
-    // until the handler completes, since the temp files and fields live for its duration.
+    // it must self-limit how much it writes at once. Every request reserves the per-request minimum
+    // and grows its charge synchronously from parsed payload bytes and file parts. Content-Length
+    // cannot be used as a payload reservation because it includes multipart framing and can cause
+    // false capacity rejections. Requests that exceed the budget are shed with 503. The reservation
+    // is held until the handler completes, since the temp files and fields live for its duration.
     const acquisition = inFlightUploadBudget.acquire(0)
     if (!acquisition.lease) {
       drainRequestBody(ctx.request.body, uploadTimeoutMs, inFlightUploadBudget)
@@ -564,22 +631,20 @@ export function multipartParserWrapper<Ctx extends FormDataContext, T extends IH
         body: {
           error: 'Service Unavailable',
           message:
-            acquisition.rejectionReason === 'concurrency'
-              ? 'Server is handling too many concurrent uploads, please retry shortly.'
-              : acquisition.rejectionReason === 'storage'
-                ? 'The server could not store the multipart upload, please retry shortly.'
-                : 'Server is buffering too many uploads, please retry shortly.'
+            acquisition.rejectionReason === 'storage'
+              ? 'The server could not store the multipart upload, please retry shortly.'
+              : 'Server is buffering too many uploads, please retry shortly.'
         }
         // The wrapper is typed to the handler's response type; this shed response is a valid IResponse.
       } as unknown as T
     }
     const lease = acquisition.lease
     try {
-      const result = await parseAndHandle(ctx, lease, uploadTimeoutMs)
+      const result = await parseAndHandle(ctx, lease, uploadTimeoutMs, declaredSize)
       notifySafely(options?.onTelemetry, {
         kind: 'completed',
         route: options?.route ?? 'unknown',
-        actualBytes: lease.getReservedBytes(),
+        actualBytes: lease.getPayloadBytes(),
         contentLengthPresent: declaredSize !== undefined,
         snapshot: inFlightUploadBudget.snapshot()
       })
@@ -613,7 +678,8 @@ export function multipartParserWrapper<Ctx extends FormDataContext, T extends IH
   async function parseAndHandle(
     ctx: IHttpServerComponent.DefaultContext,
     lease: InFlightUploadLease,
-    timeoutMs: number
+    timeoutMs: number,
+    declaredBytes: number | undefined
   ): Promise<T> {
     let formDataParser: busboy.Busboy
     try {
@@ -621,7 +687,7 @@ export function multipartParserWrapper<Ctx extends FormDataContext, T extends IH
         headers: {
           'content-type': ctx.request.headers.get('content-type') || undefined
         },
-        limits: { ...DEFAULT_LIMITS, fileSize: maxSizeInBytes, ...options?.limits }
+        limits
       })
     } catch (error: any) {
       throw new InvalidMultipartBodyError(error.message || 'Invalid multipart form data', 0)
@@ -633,6 +699,17 @@ export function multipartParserWrapper<Ctx extends FormDataContext, T extends IH
     // throw, aborting the request.
     const fields: FormDataContext['formData']['fields'] = Object.create(null)
     const files: FormDataContext['formData']['files'] = Object.create(null)
+    // A repeated part would be written to disk but only one copy kept, escaping byte accounting.
+    const seenNames = new Map<string, 'field' | 'file'>()
+    function rejectIfDuplicate(name: string, kind: 'field' | 'file'): boolean {
+      const seenAs = seenNames.get(name)
+      if (seenAs && !(kind === 'field' && seenAs === 'field' && repeatableFields.has(name))) {
+        abortParsing(new InvalidMultipartBodyError(`Duplicate form field '${name}'`, totalBytes))
+        return true
+      }
+      seenNames.set(name, kind)
+      return false
+    }
 
     // Uploaded files are streamed to temp files under this directory and removed once the handler
     // returns, so large content files are never held in memory in full.
@@ -663,7 +740,7 @@ export function multipartParserWrapper<Ctx extends FormDataContext, T extends IH
         abortParsing(new UploadPayloadSizeError('The multipart request is too large.', totalBytes))
         return false
       }
-      if (totalBytes > lease.getReservedBytes() && !lease.resize(totalBytes)) {
+      if (totalBytes > lease.getPayloadBytes() && !lease.resize(totalBytes)) {
         abortParsing(new UploadCapacityError(totalBytes))
         return false
       }
@@ -708,7 +785,7 @@ export function multipartParserWrapper<Ctx extends FormDataContext, T extends IH
 
     /**
      * Emitted for each new non-file field found.
-     * All field values are stored as arrays to support multiple values with the same name.
+     * Values are arrays; only names in `repeatableFields` may carry more than one.
      */
     formDataParser.on('field', function (name: string, value: string, info: FieldInfo): void {
       const bytes = Buffer.byteLength(value)
@@ -719,7 +796,7 @@ export function multipartParserWrapper<Ctx extends FormDataContext, T extends IH
         abortParsing(new UploadPayloadSizeError('The multipart request is too large.', totalBytes + bytes))
         return
       }
-      if (!accountBytes(bytes)) {
+      if (rejectIfDuplicate(name, 'field') || !accountBytes(bytes)) {
         return
       }
 
@@ -736,6 +813,12 @@ export function multipartParserWrapper<Ctx extends FormDataContext, T extends IH
       }
     })
     formDataParser.on('file', function (name: string, stream: Readable, info: FileInfo) {
+      // Checked on the part's headers, before any of its bytes are written or charged.
+      if (rejectIfDuplicate(name, 'file')) {
+        // Aborting destroys the parser, which errors this part's stream too.
+        stream.on('error', () => undefined).resume()
+        return
+      }
       const nextFileCount = totalFiles + 1
       if (!lease.resizeFiles(nextFileCount)) {
         // Keep draining this file through busboy instead of aborting synchronously from its `file`
@@ -834,14 +917,17 @@ export function multipartParserWrapper<Ctx extends FormDataContext, T extends IH
           transform(chunk: Buffer, _encoding, callback): void {
             wireBytes += chunk.length
             if (wireBytes > maxWireSizeInBytes) {
-              callback(new UploadWireSizeError(lease.getReservedBytes()))
+              callback(new UploadWireSizeError(lease.getPayloadBytes()))
               return
             }
             callback(null, chunk)
           }
         })
         abortController = new AbortController()
-        const timeout = setTimeout(() => abortParsing(new UploadTimeoutError(lease.getReservedBytes())), timeoutMs)
+        const timeout = setTimeout(
+          () => abortParsing(new UploadTimeoutError(lease.getPayloadBytes(), timeoutMs, wireBytes, declaredBytes)),
+          timeoutMs
+        )
         try {
           await pipeline(bodyStream, wireSizeGuard, formDataParser, { signal: abortController.signal })
         } finally {

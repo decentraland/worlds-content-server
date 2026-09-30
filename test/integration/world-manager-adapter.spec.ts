@@ -5,6 +5,7 @@ import { bufferToStream } from '@dcl/catalyst-storage'
 import { makeid } from '../utils'
 import { defaultAccess } from '../../src/logic/access'
 import { NoDeployedScenesError } from '../../src/types'
+import { PartialUploadExpiredError } from '../../src/adapters/pending-scenes-manager'
 import SQL from 'sql-template-strings'
 
 type LockClient = {
@@ -99,6 +100,96 @@ test('WorldManagerAdapter', function ({ components }) {
           message: expect.stringContaining('Scene replacement authorization changed')
         }),
         deployedEntityIds: [originalEntityId]
+      })
+    })
+  })
+
+  describe('when publishing the completion of a partial upload', () => {
+    let created: Awaited<ReturnType<typeof components.worldCreator.createWorldWithScene>>
+    let upload: typeof created.entity
+    let expiresAt: number
+    let removeUpload: boolean
+    let caughtError: unknown
+    let deployedEntityIds: string[]
+    let pendingUploads: number
+    let completionReceipts: number
+
+    beforeEach(async () => {
+      const { database, worldCreator } = components
+      created = await worldCreator.createWorldWithScene()
+      upload = { ...created.entity, id: `${created.entity.id}-partial` }
+      expiresAt = Date.now() + 60_000
+      removeUpload = false
+      await database.query(SQL`
+        INSERT INTO pending_scenes (entity_id, world_name, parcels, entity, deployer)
+        VALUES (${upload.id}, ${created.worldName}, ${upload.pointers}::text[], ${upload}::jsonb,
+          ${created.owner.authChain[0].payload.toLowerCase()})`)
+    })
+
+    async function publish(): Promise<void> {
+      const { database, worldsManager } = components
+      if (removeUpload) await database.query(SQL`DELETE FROM pending_scenes WHERE entity_id = ${upload.id}`)
+      caughtError = await worldsManager
+        .deployScene(
+          created.worldName,
+          upload,
+          created.owner.authChain[0].payload,
+          { mode: 'unrestricted-owner' },
+          { authChain: created.owner.authChain, size: 123, completesPartialUpload: { expiresAt } }
+        )
+        .then(() => undefined)
+        .catch((error: unknown) => error)
+      const result = await worldsManager.getWorldScenes({ worldName: created.worldName })
+      deployedEntityIds = result.scenes.map((scene) => scene.entityId)
+      const pending = await database.query(SQL`SELECT 1 FROM pending_scenes WHERE entity_id = ${upload.id}`)
+      pendingUploads = pending.rowCount
+      const receipts = await database.query(SQL`SELECT 1 FROM completed_scene_uploads WHERE entity_id = ${upload.id}`)
+      completionReceipts = receipts.rowCount
+    }
+
+    describe('and the upload is still live', () => {
+      beforeEach(async () => {
+        await publish()
+      })
+
+      it('should publish it, drop the upload and record the completion receipt', () => {
+        expect({ caughtError, deployedEntityIds, pendingUploads, completionReceipts }).toEqual({
+          caughtError: undefined,
+          deployedEntityIds: [upload.id],
+          pendingUploads: 0,
+          completionReceipts: 1
+        })
+      })
+    })
+
+    describe('and the upload expired before publication', () => {
+      beforeEach(async () => {
+        expiresAt = Date.now() - 1
+        await publish()
+      })
+
+      it('should refuse to publish it and keep the upload for cleanup', () => {
+        expect({ caughtError, deployedEntityIds, pendingUploads, completionReceipts }).toEqual({
+          caughtError: expect.any(PartialUploadExpiredError),
+          deployedEntityIds: [created.entityId],
+          pendingUploads: 1,
+          completionReceipts: 0
+        })
+      })
+    })
+
+    describe('and cleanup already removed the upload', () => {
+      beforeEach(async () => {
+        removeUpload = true
+        await publish()
+      })
+
+      it('should refuse to publish it', () => {
+        expect({ caughtError, deployedEntityIds, completionReceipts }).toEqual({
+          caughtError: expect.any(PartialUploadExpiredError),
+          deployedEntityIds: [created.entityId],
+          completionReceipts: 0
+        })
       })
     })
   })
@@ -2003,10 +2094,14 @@ test('WorldManagerAdapter', function ({ components }) {
           { authChain: created.owner.authChain, size: 100 }
         )
 
-        // Replace both scenes with a single scene spanning all their parcels
+        // Replace both scenes with a single scene spanning all their parcels. The timestamp must be
+        // newer than both: deployScene rejects a deploy that an already-deployed overlapping scene
+        // outranks, and with the spread timestamp the tie would break on entity id ('-second' sorts
+        // above '-replacement').
         const replacementEntity = {
           ...created.entity,
           id: `${created.entity.id}-replacement`,
+          timestamp: created.entity.timestamp + 1,
           metadata: {
             ...created.entity.metadata,
             display: { title: 'Replacement Title', description: 'Replacement Desc' },
