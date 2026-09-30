@@ -7,6 +7,7 @@ import { Readable, Writable } from 'stream'
 import { once } from 'events'
 import FormData from 'form-data'
 import { hashV1 } from '@dcl/hashing'
+import { InvalidRequestError } from '@dcl/http-commons'
 import {
   createInFlightUploadBudget,
   formatBytes,
@@ -600,6 +601,115 @@ describe('multipartParserWrapper', function () {
 
     it('should release all reserved bytes and the upload slot', () => {
       expect(stateAfterRejection).toMatchObject({ reservedBytes: 0, activeUploads: 0 })
+    })
+  })
+
+  describe('when two files share the same form name', () => {
+    let handler: jest.Mock
+    let createWriteStream: jest.Mock
+    let onTelemetry: jest.Mock
+    let inFlightUploadBudget: InFlightUploadBudget
+    let error: unknown
+
+    beforeEach(async () => {
+      handler = jest.fn(async () => ({ status: 200 }))
+      createWriteStream = jest.fn(createNodeWriteStream)
+      onTelemetry = jest.fn()
+      inFlightUploadBudget = createPayloadBudget(100000)
+      const parse = multipartParserWrapper(handler, {
+        maxSizeInBytes: 1000,
+        inFlightUploadBudget,
+        onTelemetry,
+        route: 'test',
+        fileSystem: { createWriteStream: createWriteStream as any, mkdtemp: fsPromises.mkdtemp, rm: fsPromises.rm }
+      })
+      const form = new FormData()
+      form.append('dup', Buffer.alloc(10, 1), { filename: 'dup' })
+      // Over maxSizeInBytes on its own, so writing it would fail with a size error instead.
+      form.append('dup', Buffer.alloc(2000, 2), { filename: 'dup' })
+      error = await parse(createMultipartContext(form)).catch((e) => e)
+    })
+
+    it('should reject the repeated part before writing or charging any of its bytes', () => {
+      expect({
+        error,
+        handled: handler.mock.calls.length,
+        tempFiles: createWriteStream.mock.calls.length,
+        rejection: onTelemetry.mock.calls.map(([event]) => event).find((event) => event.kind === 'rejected'),
+        state: inFlightUploadBudget.snapshot()
+      }).toEqual({
+        error: new InvalidRequestError("Duplicate form field 'dup'"),
+        handled: 0,
+        tempFiles: 1,
+        rejection: expect.objectContaining({
+          reason: 'invalid_multipart',
+          snapshot: expect.objectContaining({ reservedFiles: 1 })
+        }),
+        state: expect.objectContaining({ reservedBytes: 0, activeUploads: 0 })
+      })
+    })
+  })
+
+  describe('when two fields share the same form name', () => {
+    let handler: jest.Mock
+    let error: unknown
+
+    beforeEach(async () => {
+      handler = jest.fn(async () => ({ status: 200 }))
+      const parse = multipartParserWrapper(handler, { maxSizeInBytes: 100000 })
+      const form = new FormData()
+      form.append('partial', 'true')
+      form.append('partial', 'false')
+      error = await parse(createMultipartContext(form)).catch((e) => e)
+    })
+
+    it('should reject the request without invoking the handler', () => {
+      expect({ error, handled: handler.mock.calls.length }).toEqual({
+        error: new InvalidRequestError("Duplicate form field 'partial'"),
+        handled: 0
+      })
+    })
+  })
+
+  describe('when a field allowed to repeat is sent several times', () => {
+    let values: string[] | undefined
+
+    beforeEach(async () => {
+      values = undefined
+      const handler = jest.fn(async (ctx: any) => {
+        values = ctx.formData.fields.categories.value
+        return { status: 200 }
+      })
+      const parse = multipartParserWrapper(handler, { maxSizeInBytes: 100000, repeatableFields: ['categories'] })
+      const form = new FormData()
+      form.append('categories', 'art')
+      form.append('categories', 'gaming')
+      await parse(createMultipartContext(form))
+    })
+
+    it('should pass every value to the handler', () => {
+      expect(values).toEqual(['art', 'gaming'])
+    })
+  })
+
+  describe('when a file reuses the name of a field allowed to repeat', () => {
+    let handler: jest.Mock
+    let error: unknown
+
+    beforeEach(async () => {
+      handler = jest.fn(async () => ({ status: 200 }))
+      const parse = multipartParserWrapper(handler, { maxSizeInBytes: 100000, repeatableFields: ['categories'] })
+      const form = new FormData()
+      form.append('categories', 'art')
+      form.append('categories', Buffer.alloc(10, 1), { filename: 'categories' })
+      error = await parse(createMultipartContext(form)).catch((e) => e)
+    })
+
+    it('should reject the request without invoking the handler', () => {
+      expect({ error, handled: handler.mock.calls.length }).toEqual({
+        error: new InvalidRequestError("Duplicate form field 'categories'"),
+        handled: 0
+      })
     })
   })
 

@@ -725,6 +725,40 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
     })
   })
 
+  describe('when a batch of a live upload repeats a content file under the same hash', () => {
+    let response: Awaited<ReturnType<typeof post>>
+    let body: unknown
+    let chargesBefore: unknown
+    let chargesAfter: unknown
+
+    async function charges(): Promise<unknown> {
+      const { database } = components
+      const reserved = await database.query<{ reserved_bytes: string }>(
+        SQL`SELECT reserved_bytes FROM pending_scenes WHERE entity_id = ${entityId}`
+      )
+      const rate = await database.query<{ bytes: string }>(SQL`SELECT bytes FROM partial_upload_rates`)
+      return { reserved: reserved.rows, rate: rate.rows }
+    }
+
+    beforeEach(async () => {
+      const authChain = Authenticator.signPayload(identity.authChain, entityId)
+      await post(buildForm([entityId], authChain))
+      chargesBefore = await charges()
+      const [repeated] = contentHashes
+      response = await post(buildForm([repeated, repeated, repeated], authChain))
+      body = await response.json()
+      chargesAfter = await charges()
+    })
+
+    it('should reject it with 400 without charging the upload or its byte rate', () => {
+      expect({ status: response.status, body, chargesAfter }).toEqual({
+        status: 400,
+        body: expect.objectContaining({ message: `Duplicate form field '${contentHashes[0]}'` }),
+        chargesAfter: chargesBefore
+      })
+    })
+  })
+
   describe('when a request declares partial=true in the query but not in the form', () => {
     let status: number
     let body: unknown

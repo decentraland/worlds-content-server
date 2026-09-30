@@ -244,6 +244,8 @@ export type MultipartParserOptions = {
   fileSystem?: MultipartFileSystem
   /** Delays for bounded background retries after a temporary-directory cleanup failure. */
   cleanupRetryDelaysMs?: readonly number[]
+  /** Field names that may repeat to carry several values. Every other form name must be unique. */
+  repeatableFields?: readonly string[]
 }
 
 function validatePositiveByteLimit(name: string, value: number): void {
@@ -557,6 +559,7 @@ export function multipartParserWrapper<Ctx extends FormDataContext, T extends IH
   const uploadTimeoutMs = options?.uploadTimeoutMs ?? DEFAULT_MULTIPART_UPLOAD_TIMEOUT_MS
   const fileSystem: MultipartFileSystem = options?.fileSystem ?? { createWriteStream, mkdtemp, rm }
   const cleanupRetryDelaysMs = options?.cleanupRetryDelaysMs ?? DEFAULT_MULTIPART_CLEANUP_RETRY_DELAYS_MS
+  const repeatableFields = new Set(options?.repeatableFields ?? [])
 
   validatePositiveByteLimit('maxSizeInBytes', maxSizeInBytes)
   validatePositiveByteLimit('maxWireSizeInBytes', maxWireSizeInBytes)
@@ -696,6 +699,17 @@ export function multipartParserWrapper<Ctx extends FormDataContext, T extends IH
     // throw, aborting the request.
     const fields: FormDataContext['formData']['fields'] = Object.create(null)
     const files: FormDataContext['formData']['files'] = Object.create(null)
+    // A repeated part would be written to disk but only one copy kept, escaping byte accounting.
+    const seenNames = new Map<string, 'field' | 'file'>()
+    function rejectIfDuplicate(name: string, kind: 'field' | 'file'): boolean {
+      const seenAs = seenNames.get(name)
+      if (seenAs && !(kind === 'field' && seenAs === 'field' && repeatableFields.has(name))) {
+        abortParsing(new InvalidMultipartBodyError(`Duplicate form field '${name}'`, totalBytes))
+        return true
+      }
+      seenNames.set(name, kind)
+      return false
+    }
 
     // Uploaded files are streamed to temp files under this directory and removed once the handler
     // returns, so large content files are never held in memory in full.
@@ -771,7 +785,7 @@ export function multipartParserWrapper<Ctx extends FormDataContext, T extends IH
 
     /**
      * Emitted for each new non-file field found.
-     * All field values are stored as arrays to support multiple values with the same name.
+     * Values are arrays; only names in `repeatableFields` may carry more than one.
      */
     formDataParser.on('field', function (name: string, value: string, info: FieldInfo): void {
       const bytes = Buffer.byteLength(value)
@@ -782,7 +796,7 @@ export function multipartParserWrapper<Ctx extends FormDataContext, T extends IH
         abortParsing(new UploadPayloadSizeError('The multipart request is too large.', totalBytes + bytes))
         return
       }
-      if (!accountBytes(bytes)) {
+      if (rejectIfDuplicate(name, 'field') || !accountBytes(bytes)) {
         return
       }
 
@@ -799,6 +813,12 @@ export function multipartParserWrapper<Ctx extends FormDataContext, T extends IH
       }
     })
     formDataParser.on('file', function (name: string, stream: Readable, info: FileInfo) {
+      // Checked on the part's headers, before any of its bytes are written or charged.
+      if (rejectIfDuplicate(name, 'file')) {
+        // Aborting destroys the parser, which errors this part's stream too.
+        stream.on('error', () => undefined).resume()
+        return
+      }
       const nextFileCount = totalFiles + 1
       if (!lease.resizeFiles(nextFileCount)) {
         // Keep draining this file through busboy instead of aborting synchronously from its `file`

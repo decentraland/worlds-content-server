@@ -308,7 +308,8 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
         uploadTimeoutMs,
         route: 'world-settings',
         onTelemetry,
-        onCleanupError
+        onCleanupError,
+        repeatableFields: ['categories']
       }
     )
   )
