@@ -13,7 +13,7 @@ import {
 } from '../../types'
 import { extractAuthChain } from '../../logic/extract-auth-chain'
 import { validateAuthChain, validateSignature, validateSigner } from '../../logic/validations/common'
-import { buildSceneDeploymentMessage } from '../../logic/utils'
+import { buildSceneDeploymentMessage, isUniqueViolation } from '../../logic/utils'
 import { InvalidRequestError } from '@dcl/http-commons'
 import { FileInfo, IContentStorageComponent } from '@dcl/catalyst-storage'
 import { calculateDeploymentSizeFromFileInfos } from '../../logic/validations/scene'
@@ -29,6 +29,9 @@ import {
 } from '../../logic/deployment-processing'
 
 export { DEFAULT_CONTENT_FILE_INFO_CONCURRENCY } from '../../logic/deployment-processing'
+// The entity file is the scene manifest (JSON), small whatever the content size, so it is buffered
+// in full. Capped (5 MiB) because a partial resume reads it back from storage outside the multipart
+// in-flight-bytes budget, so concurrent resumes could otherwise each buffer a large stored entity.
 export const MAX_ENTITY_FILE_SIZE_IN_BYTES = 5 * 1024 * 1024
 
 type DeployEntityContext = FormDataContext &
@@ -46,20 +49,6 @@ type DeployEntityContext = FormDataContext &
     | 'worldsManager',
     '/entities'
   >
-
-// The world_scenes (world_name, entity_id) primary-key violation raised when a concurrent deploy of
-// the SAME entity already committed — deployScene deliberately preserves the DEPLOYED self-row so this
-// collision is the idempotency signal (see worlds-manager.deployScene).
-function isUniqueViolation(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && (error as { code?: string }).code === '23505'
-}
-
-// The entity file is the scene manifest (JSON): pointers, the content-hash list, and metadata — always
-// small, independent of how large the content itself is. Cap it so it can be safely read fully into
-// memory. This is important on a partial-resume request, where the entity is read back from storage and
-// its size is NOT covered by the multipart in-flight-bytes budget (the resume body is tiny), so without
-// a cap many concurrent resumes could each buffer a large stored entity and exhaust memory.
-const MAX_ENTITY_FILE_SIZE_BYTES = MAX_ENTITY_FILE_SIZE_IN_BYTES // 10 MB
 
 export function requireString(val: string | null | undefined): string {
   if (typeof val !== 'string') throw new InvalidRequestError('A string was expected')
@@ -192,7 +181,7 @@ async function deployEntityWithSignal(
     // Resume request: read the entity back from storage for an entity id the CLIENT supplied. The resume
     // body is tiny, so this read is NOT covered by the multipart in-flight-bytes budget — it must be
     // gated before any storage I/O or an attacker could turn cheap requests into concurrent
-    // MAX_ENTITY_FILE_SIZE_BYTES reads + buffers (memory + egress amplification). Two gates, cheap first:
+    // MAX_ENTITY_FILE_SIZE_IN_BYTES reads + buffers (memory + egress amplification). Two gates, cheap first:
     // 1. The local signature check (authenticateRequest): the request is validly signed for this entity
     //    id. Alone this is NOT sufficient — any keypair can sign any entity id — so also:
     // 2. A live pending upload for this entity, created by this same signer, must exist. Creating a
@@ -208,7 +197,7 @@ async function deployEntityWithSignal(
         // metadata is not trustworthy for enforcement) can't let an oversized blob through.
         const buf = await streamToBufferCapped(
           await raceWithSignal(stored.asStream(), signal),
-          MAX_ENTITY_FILE_SIZE_BYTES,
+          MAX_ENTITY_FILE_SIZE_IN_BYTES,
           signal
         )
         entityFile = {
@@ -230,15 +219,8 @@ async function deployEntityWithSignal(
         : `Entity file "${entityId}" is missing from the request.`
     )
   }
-  // Cap the manifest size only on the partial path. Its purpose is to bound the storage read-back and
-  // the first partial request's buffered manifest so a multi-request upload can't be wedged (resume caps
-  // the same way); the vanilla single-request path is bounded below by MAX_ENTITY_FILE_SIZE_IN_BYTES.
-  if (isPartial && entityFile.size > MAX_ENTITY_FILE_SIZE_BYTES) {
-    throw new InvalidRequestError(`The entity file "${entityId}" is too large (${entityFile.size} bytes).`)
-  }
-  // The entity file is read fully into memory, so cap it on the vanilla path (the partial path applies
-  // its own, larger cap above).
-  if (!isPartial && entityFile.size > MAX_ENTITY_FILE_SIZE_IN_BYTES) {
+  // The entity file is read fully into memory on both paths.
+  if (entityFile.size > MAX_ENTITY_FILE_SIZE_IN_BYTES) {
     throw new InvalidRequestError(
       `The entity file is too large. The maximum allowed size is ${MAX_ENTITY_FILE_SIZE_IN_BYTES} bytes.`
     )

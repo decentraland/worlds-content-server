@@ -7,6 +7,11 @@ export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+/** Whether a database error is a unique-constraint violation (SQLSTATE 23505). */
+export function isUniqueViolation(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && (error as { code?: string }).code === '23505'
+}
+
 /**
  * The user-facing success message for a scene deployment: the parcels covered plus the play URL.
  * Shared by the normal deploy path and both idempotent duplicate-deploy responses (vanilla retry and

@@ -379,14 +379,6 @@ export async function createPendingScenesManager(
     return removed
   }
 
-  async function getActivePendingKeys(): Promise<Set<string>> {
-    const result = await database.query<{ entity_id: string; hashes: string[] }>(SQL`
-      SELECT entity_id, ARRAY(SELECT jsonb_array_elements(entity->'content')->>'hash'
-        WHERE jsonb_typeof(entity->'content') = 'array') AS hashes
-      FROM pending_scenes WHERE created_at >= ${new Date(Date.now() - ttlMs)}`)
-    return new Set(result.rows.flatMap((row) => [row.entity_id, row.entity_id + '.auth', ...row.hashes]))
-  }
-
   return {
     ttlMs,
     cleanupIntervalMs,
@@ -399,7 +391,6 @@ export async function createPendingScenesManager(
     markMissing,
     getCompleted,
     deleteByEntityId,
-    deleteExpired,
-    getActivePendingKeys
+    deleteExpired
   }
 }

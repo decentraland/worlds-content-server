@@ -46,11 +46,13 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
 
   async function post(form: FormData, path = '/entities') {
     const { localFetch } = components
-    return localFetch.fetch(path, {
+    const response = await localFetch.fetch(path, {
       method: 'POST',
       headers: form.getHeaders(),
       body: form.getBuffer()
     })
+    // Buffered here so callers that only check the status never leave a response body unconsumed.
+    return new Response(await response.arrayBuffer(), { status: response.status, headers: response.headers })
   }
 
   async function countPending(): Promise<number> {

@@ -40,11 +40,14 @@ test('Per-source in-flight upload limits on POST /entities', function ({ compone
 
   async function post(source: string | undefined): Promise<Response> {
     const body = form()
-    return fetch(`${baseUrl}/entities`, {
+    const response = await fetch(`${baseUrl}/entities`, {
       method: 'POST',
       body: new Uint8Array(body.getBuffer()),
       headers: { ...body.getHeaders(), ...(source ? { 'cf-connecting-ip': source } : {}) }
     })
+    // Only the status and headers are checked; release the body's connection.
+    await response.body?.cancel()
+    return response
   }
 
   // Bounded, so a route that never admits fails the assertions instead of hanging.
@@ -136,6 +139,7 @@ test('Per-source in-flight upload limits on POST /entities', function ({ compone
         body: new Uint8Array(body.getBuffer()),
         headers: { ...body.getHeaders(), 'cf-connecting-ip': SOURCE }
       })
+      await response.body?.cancel()
     })
 
     it('should charge it to the same share and reject it with 429', () => {

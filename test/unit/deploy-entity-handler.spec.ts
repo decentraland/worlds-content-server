@@ -510,6 +510,23 @@ describe('deployEntity', () => {
         )
       )
     })
+
+    describe('and the request is a partial batch', () => {
+      let error: unknown
+
+      beforeEach(async () => {
+        context.formData.fields.partial = makeField('true')
+        error = await deployEntity(context).catch((e: unknown) => e)
+      })
+
+      it('should reject it with the same cap', () => {
+        expect(error).toEqual(
+          new InvalidRequestError(
+            `The entity file is too large. The maximum allowed size is ${MAX_ENTITY_FILE_SIZE_IN_BYTES} bytes.`
+          )
+        )
+      })
+    })
   })
 
   describe('when a valid deployment contains uploaded and stored content', () => {

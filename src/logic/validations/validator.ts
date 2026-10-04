@@ -105,7 +105,6 @@ function sceneStructuralValidations(components: ValidatorComponents): Validation
     createValidateParcelCoordinates(components),
     createValidateScenePointers(components),
     createValidateSceneDimensions(components),
-    createValidateFileCount(components),
     validateMiniMapImages,
     validateSkyboxTextures,
     validateThumbnail,
@@ -138,7 +137,7 @@ export function createStagingValidateFns(
     sceneValidations.push(createValidateDeploymentPermission(components))
   }
   return [
-    validateAll([...commonValidations(components), validateUploadedFiles, validateSupportedEntityType]),
+    validateAll([...commonValidations(components), validateUploadedFiles]),
     validateIfTypeMatches(EntityType.SCENE, validateAll(sceneValidations))
   ]
 }

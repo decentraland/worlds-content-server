@@ -1,5 +1,5 @@
 import { InvalidRequestError } from '@dcl/http-commons'
-import { buildSceneDeploymentMessage } from '../utils'
+import { buildSceneDeploymentMessage, isUniqueViolation } from '../utils'
 import { FileInfo } from '@dcl/catalyst-storage'
 import { AppComponents, DeploymentToValidate, MissingSceneReplacementAuthorizationError, WorldScene } from '../../types'
 import { getPositiveInteger, mapWithConcurrency, raceWithSignal } from '../concurrency'
@@ -7,10 +7,6 @@ import { calculateDeploymentSizeFromFileInfos } from '../validations/scene'
 import { FileReceipt } from '../../adapters/pending-scenes-manager/types'
 import { PartialUploadExpiredError } from '../../adapters/pending-scenes-manager/errors'
 import { IPartialDeploymentsComponent, StageDeploymentInput, StageDeploymentResult } from './types'
-
-function isUniqueViolation(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && (error as { code?: string }).code === '23505'
-}
 
 /**
  * Stages authenticated, entity-keyed upload batches. The HTTP handler holds the shared content lock

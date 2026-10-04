@@ -24,7 +24,7 @@ export type UpsertPendingScene = {
 }
 
 export type FileReceipt = { hash: string; size: number; stored: boolean }
-export type CompletedUpload = { worldName: string; parcels: string[]; creationTimestamp: number }
+type CompletedUpload = { worldName: string; parcels: string[]; creationTimestamp: number }
 
 export interface IPendingScenesManager extends IBaseComponent {
   /** Retrieves a live upload without renewing its fixed expiration. */
@@ -68,8 +68,6 @@ export interface IPendingScenesManager extends IBaseComponent {
   deleteByEntityId(entityId: string): Promise<void>
   /** Reclaims expired content under the exclusive lock before releasing its byte accounting. */
   deleteExpired(): Promise<number>
-  /** Returns non-expired staging references for compatibility with existing callers. */
-  getActivePendingKeys(): Promise<Set<string>>
   /** The fixed pending upload lifetime used by GC. */
   readonly ttlMs: number
   /** How often the scheduled job runs {@link IPendingScenesManager.deleteExpired}. */
