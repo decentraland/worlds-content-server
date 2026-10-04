@@ -6,8 +6,10 @@ import { cleanup } from '../utils'
 import {
   createPendingScenesManager,
   PartialUploadExpiredError,
-  PartialUploadQuotaExceededError
+  PartialUploadQuotaExceededError,
+  PartialUploadTooLargeError
 } from '../../src/adapters/pending-scenes-manager'
+import { DEFAULT_MAX_UPLOAD_SIZE_IN_BYTES } from '../../src/logic/multipart'
 import { IPendingScenesManager } from '../../src/adapters/pending-scenes-manager/types'
 
 test('when accounting for independent partial uploads', ({ components }) => {
@@ -39,7 +41,7 @@ test('when accounting for independent partial uploads', ({ components }) => {
     limits = {
       MAX_PENDING_BYTES_PER_DEPLOYER: 600,
       MAX_PENDING_BYTES: 1000,
-      MAX_PARTIAL_UPLOAD_BYTES_PER_MINUTE: 5000,
+      MAX_PARTIAL_UPLOAD_BYTES_PER_MINUTE: DEFAULT_MAX_UPLOAD_SIZE_IN_BYTES,
       PENDING_DEPLOYMENT_TTL: 300_000,
       PARTIAL_UPLOAD_CLEANUP_INTERVAL_MS: 120_000
     }
@@ -240,7 +242,7 @@ test('when accounting for independent partial uploads', ({ components }) => {
     })
   })
 
-  describe('and a batch is rejected by the byte budget', () => {
+  describe('and a batch alone exceeds the account byte budget', () => {
     let error: unknown
     let rateBytes: string
 
@@ -253,12 +255,40 @@ test('when accounting for independent partial uploads', ({ components }) => {
       rateBytes = result.rows[0].bytes
     })
 
-    it('should still charge the received bytes against the byte rate', () => {
-      expect({ message: (error as Error).message, rateBytes }).toEqual({
+    it('should reject it as too large for the account budget without a retry hint', () => {
+      expect({
+        tooLarge: error instanceof PartialUploadTooLargeError,
+        quota: (error as PartialUploadTooLargeError).quota,
+        message: (error as Error).message
+      }).toEqual({
+        tooLarge: true,
+        quota: 'bytes_per_account',
         message:
-          'This batch would stage 700 bytes for this account, above its limit of 600 bytes. Complete an upload or wait for expired uploads to be cleaned up.',
-        rateBytes: '700'
+          'This upload needs 700 bytes of staging, above the per-account partial upload limit of 600 bytes. Reduce its size.'
       })
+    })
+
+    it('should still charge the received bytes against the byte rate', () => {
+      expect(rateBytes).toBe('700')
+    })
+  })
+
+  describe("and an upload's own batches add up past the account byte budget", () => {
+    let error: unknown
+
+    beforeEach(async () => {
+      await create(first)
+      await manager.reserve(first.id, [{ hash: 'content-a', size: 400, stored: false }], 1000n, 400)
+      error = await manager
+        .reserve(first.id, [{ hash: 'content-b', size: 300, stored: false }], 1000n, 300)
+        .catch((e: unknown) => e)
+    })
+
+    it('should reject it as too large for the account budget', () => {
+      expect({
+        tooLarge: error instanceof PartialUploadTooLargeError,
+        quota: (error as PartialUploadTooLargeError).quota
+      }).toEqual({ tooLarge: true, quota: 'bytes_per_account' })
     })
   })
 
@@ -408,7 +438,7 @@ test('when accounting for independent partial uploads', ({ components }) => {
         SQL`UPDATE partial_upload_rates SET window_started = now() - interval '30 seconds'`
       )
       error = await manager
-        .reserve(first.id, [{ hash: 'content-a', size: 100, stored: false }], 1000n, 6000)
+        .reserve(first.id, [{ hash: 'content-a', size: 100, stored: false }], 1000n, DEFAULT_MAX_UPLOAD_SIZE_IN_BYTES)
         .catch((e: unknown) => e)
     })
 
@@ -420,9 +450,45 @@ test('when accounting for independent partial uploads', ({ components }) => {
       }).toEqual({
         quota: 'bytes_per_minute',
         message:
-          'This account sent 6.0 KiB of partial uploads this minute, above the limit of 4.9 KiB per minute. Retry in 30 s.',
+          'This account sent 350.0 MiB of partial uploads this minute, above the limit of 350.0 MiB per minute. Retry in 30 s.',
         retryAfter: 30
       })
+    })
+  })
+
+  describe('and a batch alone exceeds the per-minute byte rate', () => {
+    let error: unknown
+    let rateBytes: string
+
+    beforeEach(async () => {
+      await create(first)
+      error = await manager
+        .reserve(
+          first.id,
+          [{ hash: 'content-a', size: 100, stored: false }],
+          1000n,
+          DEFAULT_MAX_UPLOAD_SIZE_IN_BYTES + 1
+        )
+        .catch((e: unknown) => e)
+      const result = await components.database.query<{ bytes: string }>('SELECT bytes FROM partial_upload_rates')
+      rateBytes = result.rows[0].bytes
+    })
+
+    it('should reject it as too large for the byte rate without a retry hint', () => {
+      expect({
+        tooLarge: error instanceof PartialUploadTooLargeError,
+        quota: (error as PartialUploadTooLargeError).quota,
+        message: (error as Error).message
+      }).toEqual({
+        tooLarge: true,
+        quota: 'bytes_per_minute',
+        message:
+          'This batch is 350.0 MiB, above the partial upload limit of 350.0 MiB per minute. Send smaller batches.'
+      })
+    })
+
+    it('should still charge the received bytes against the byte rate', () => {
+      expect(rateBytes).toBe(String(DEFAULT_MAX_UPLOAD_SIZE_IN_BYTES + 1))
     })
   })
 

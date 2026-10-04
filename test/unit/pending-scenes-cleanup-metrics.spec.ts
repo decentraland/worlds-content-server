@@ -49,7 +49,9 @@ function buildMocks(): Mocks {
 function build(mocks: Mocks): Promise<IPendingScenesManager> {
   return createPendingScenesManager({
     config: {
-      getNumber: jest.fn(async (key: string) => (key === 'MAX_PENDING_BYTES' ? MAX_PENDING_BYTES : undefined))
+      getNumber: jest.fn(async (key: string) =>
+        key === 'MAX_PENDING_BYTES' || key === 'MAX_PENDING_BYTES_PER_DEPLOYER' ? MAX_PENDING_BYTES : undefined
+      )
     },
     database: { query: mocks.query },
     logs: { getLogger: () => ({ info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() }) },

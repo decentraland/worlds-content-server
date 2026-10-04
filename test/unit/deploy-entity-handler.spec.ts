@@ -17,7 +17,7 @@ import {
 import { hashV1 } from '@dcl/hashing'
 import { Authenticator } from '@dcl/crypto'
 import { DeploymentToValidate, SceneReplacementConflictError } from '../../src/types'
-import { PartialUploadQuotaExceededError } from '../../src/adapters/pending-scenes-manager'
+import { PartialUploadQuotaExceededError, PartialUploadTooLargeError } from '../../src/adapters/pending-scenes-manager'
 
 type DeployContext = Parameters<typeof deployEntity>[0]
 
@@ -878,6 +878,33 @@ describe('deployEntity', () => {
           ['partial_upload_throttled', { reason: 'bytes_per_server' }],
           ['partial_upload_requests', { outcome: 'throttled' }]
         ])
+      })
+    })
+  })
+
+  describe('when a partial upload exceeds a quota on its own', () => {
+    let tooLarge: PartialUploadTooLargeError
+    let error: unknown
+
+    beforeEach(async () => {
+      tooLarge = new PartialUploadTooLargeError('bytes_per_account', 'This upload needs too much staging.')
+      const context = createContext(entityId, { [entityId]: makeFile(Buffer.from('{}')) })
+      context.formData.fields.partial = makeField('true')
+      context.components.metrics = { increment: jest.fn() } as unknown as DeployContext['components']['metrics']
+      context.components.contentLocks = {
+        withRead: jest.fn().mockRejectedValueOnce(tooLarge)
+      } as unknown as DeployContext['components']['contentLocks']
+      error = await deployEntity(context).catch((e: unknown) => e)
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should propagate it as a 400 request error instead of a 429 retry', () => {
+      expect({ error, isRequestError: error instanceof InvalidRequestError }).toEqual({
+        error: tooLarge,
+        isRequestError: true
       })
     })
   })

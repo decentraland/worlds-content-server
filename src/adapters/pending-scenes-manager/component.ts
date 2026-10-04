@@ -5,9 +5,9 @@ import { getPositiveInteger, raceWithSignal } from '../../logic/concurrency'
 import { withUploadTransaction } from '../upload-transaction'
 import { getReferencedContentKeys } from '../content-references'
 import { IPendingScenesManager, PendingScene, UpsertPendingScene, FileReceipt } from './types'
-import { PartialUploadExpiredError, PartialUploadQuotaExceededError } from './errors'
+import { PartialUploadExpiredError, PartialUploadQuotaExceededError, PartialUploadTooLargeError } from './errors'
 import { ContentLockTimeoutError } from '../content-locks/errors'
-import { formatBytes } from '../../logic/multipart'
+import { DEFAULT_MAX_UPLOAD_SIZE_IN_BYTES, formatBytes } from '../../logic/multipart'
 
 type PendingSceneRow = {
   entity_id: string
@@ -57,6 +57,17 @@ export async function createPendingScenesManager(
   const globalBytes = BigInt(await getPositiveInteger(config, 'MAX_PENDING_BYTES', 50 * 1024 ** 3))
   const bytesPerMinute = await getPositiveInteger(config, 'MAX_PARTIAL_UPLOAD_BYTES_PER_MINUTE', 512 * 1024 ** 2)
   const completionTtl = await getPositiveInteger(config, 'COMPLETED_UPLOAD_TTL', 24 * 60 * 60 * 1000)
+  // Otherwise a valid request or upload could be rejected by its own size forever.
+  if (bytesPerMinute < DEFAULT_MAX_UPLOAD_SIZE_IN_BYTES) {
+    throw new Error(
+      `MAX_PARTIAL_UPLOAD_BYTES_PER_MINUTE (${bytesPerMinute}) must fit one maximum-size upload (${DEFAULT_MAX_UPLOAD_SIZE_IN_BYTES} bytes).`
+    )
+  }
+  if (globalBytes < accountBytes) {
+    throw new Error(
+      `MAX_PENDING_BYTES (${globalBytes}) must be at least MAX_PENDING_BYTES_PER_DEPLOYER (${accountBytes}).`
+    )
+  }
 
   // When this replica's cleanup last finished; the scheduled sweep runs again one interval later.
   let lastCleanupFinishedAt: number | undefined
@@ -161,6 +172,12 @@ export async function createPendingScenesManager(
         GREATEST(1, CEIL(EXTRACT(EPOCH FROM window_started + interval '1 minute' - now())))::int AS retry_after`),
       signal
     )
+    if (incomingBytes > bytesPerMinute) {
+      throw new PartialUploadTooLargeError(
+        'bytes_per_minute',
+        `This batch is ${formatBytes(incomingBytes)}, above the partial upload limit of ${formatBytes(bytesPerMinute)} per minute. Send smaller batches.`
+      )
+    }
     if (BigInt(rate.rows[0].bytes) > BigInt(bytesPerMinute)) {
       const retryAfter = rate.rows[0].retry_after
       throw new PartialUploadQuotaExceededError(
@@ -190,12 +207,14 @@ export async function createPendingScenesManager(
         const totals = await query<{
           account: string
           total: string
+          own: string
           scene: string
           account_oldest: Date | null
           oldest: Date | null
         }>(SQL`
         SELECT COALESCE(SUM(reserved_bytes) FILTER (WHERE deployer = ${deployer}), 0)::text AS account,
           COALESCE(SUM(reserved_bytes), 0)::text AS total,
+          COALESCE(SUM(reserved_bytes) FILTER (WHERE entity_id = ${entityId}), 0)::text AS own,
           MIN(created_at) FILTER (WHERE deployer = ${deployer} AND reserved_bytes > 0) AS account_oldest,
           MIN(created_at) FILTER (WHERE reserved_bytes > 0) AS oldest,
           (SELECT COALESCE(SUM(size), 0)::text FROM pending_scene_files
@@ -204,6 +223,13 @@ export async function createPendingScenesManager(
         const total = totals.rows[0]
         if (BigInt(total.scene) > maxSceneBytes)
           throw new InvalidRequestError('Deployment failed: The deployment is too big.')
+        // Over a budget on its own, an upload can never be admitted; the server budget is at least this one.
+        if (BigInt(total.own) > accountBytes) {
+          throw new PartialUploadTooLargeError(
+            'bytes_per_account',
+            `This upload needs ${formatBytes(Number(total.own))} of staging, above the per-account partial upload limit of ${formatBytes(Number(accountBytes))}. Reduce its size.`
+          )
+        }
         if (BigInt(total.account) > accountBytes) {
           throw new PartialUploadQuotaExceededError(
             'bytes_per_account',

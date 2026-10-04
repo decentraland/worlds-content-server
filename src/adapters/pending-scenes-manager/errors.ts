@@ -9,7 +9,7 @@ export class PartialUploadExpiredError extends InvalidRequestError {
 }
 
 /** Which partial-upload quota rejected a batch. */
-export type PartialUploadQuota = 'uploads_per_account' | 'bytes_per_account' | 'bytes_per_server' | 'bytes_per_minute'
+type PartialUploadQuota = 'uploads_per_account' | 'bytes_per_account' | 'bytes_per_server' | 'bytes_per_minute'
 
 /** A partial-upload quota is full for now; the batch may be retried after `retryAfterSeconds`. */
 export class PartialUploadQuotaExceededError extends Error {
@@ -20,5 +20,16 @@ export class PartialUploadQuotaExceededError extends Error {
   ) {
     super(message)
     this.name = 'PartialUploadQuotaExceededError'
+  }
+}
+
+/** A batch or upload exceeds a partial-upload quota on its own, so no retry can succeed. */
+export class PartialUploadTooLargeError extends InvalidRequestError {
+  constructor(
+    readonly quota: Extract<PartialUploadQuota, 'bytes_per_account' | 'bytes_per_minute'>,
+    message: string
+  ) {
+    super(message)
+    this.name = 'PartialUploadTooLargeError'
   }
 }

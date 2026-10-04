@@ -41,6 +41,8 @@ export interface IPendingScenesManager extends IBaseComponent {
   /**
    * Reserves bytes before writes, including concurrent account/global budgets and incoming byte rate.
    * @throws PartialUploadExpiredError when the upload has expired; nothing is charged then.
+   * @throws PartialUploadTooLargeError when the batch or the upload alone exceeds a budget.
+   * @throws PartialUploadQuotaExceededError when other uploads or traffic fill a budget for now.
    */
   reserve(
     entityId: string,
