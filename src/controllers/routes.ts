@@ -144,6 +144,19 @@ export async function createMultipartUploadGuard(
   return { inFlightUploadBudget, uploadTimeoutMs, onTelemetry, onCleanupError }
 }
 
+/**
+ * Runs a handler under the shared content lock; a client disconnect stops waiting for the lock.
+ * @param contentLocks The content locks.
+ * @param handler The handler to run while holding the lock.
+ * @returns The wrapped handler.
+ */
+export function withSharedContentLock<C extends { request: { signal?: AbortSignal } }, R>(
+  contentLocks: Pick<BaseComponents['contentLocks'], 'withRead'>,
+  handler: (ctx: C) => Promise<R>
+): (ctx: C) => Promise<R> {
+  return (ctx) => contentLocks.withRead(() => handler(ctx), ctx.request.signal)
+}
+
 export async function setupRouter(globalContext: GlobalContext): Promise<Router<GlobalContext>> {
   const { fetch, schemaValidator, config } = globalContext.components
 
@@ -299,19 +312,15 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
       maxRequestBytes: MAX_WORLD_SETTINGS_UPLOAD_SIZE_IN_BYTES
     }),
     signedFetchMiddleware,
-    multipartParserWrapper(
-      (ctx: Parameters<typeof updateWorldSettingsHandler>[0]) =>
-        globalContext.components.contentLocks.withRead(() => updateWorldSettingsHandler(ctx)),
-      {
-        inFlightUploadBudget,
-        maxSizeInBytes: MAX_WORLD_SETTINGS_UPLOAD_SIZE_IN_BYTES,
-        uploadTimeoutMs,
-        route: 'world-settings',
-        onTelemetry,
-        onCleanupError,
-        repeatableFields: ['categories']
-      }
-    )
+    multipartParserWrapper(withSharedContentLock(globalContext.components.contentLocks, updateWorldSettingsHandler), {
+      inFlightUploadBudget,
+      maxSizeInBytes: MAX_WORLD_SETTINGS_UPLOAD_SIZE_IN_BYTES,
+      uploadTimeoutMs,
+      route: 'world-settings',
+      onTelemetry,
+      onCleanupError,
+      repeatableFields: ['categories']
+    })
   )
 
   // World manifest
