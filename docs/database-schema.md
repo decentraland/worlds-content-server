@@ -268,7 +268,6 @@ Stores individual scene deployments within worlds. Each world can have multiple 
 - **Index**: `world_scenes_deployer_idx` on `deployer` column
 - **Partial Index**: `world_scenes_status_idx` on `status` WHERE `status = 'DEPLOYED'` (hot-path reads)
 - **Partial Index**: `world_scenes_undeployed_updated_at_idx` on `updated_at` WHERE `status = 'UNDEPLOYED'` (eviction job)
-- **Index**: `world_scenes_updated_at_idx` on `updated_at` (garbage collection's deployed-since re-check)
 
 ### Constraints
 
