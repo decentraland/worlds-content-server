@@ -336,7 +336,10 @@ paths:
         completes the set runs full validation, deploys, and returns `200`. Uploads are identified by
         entity ID and may overlap parcels; starting one does not remove another. Publication follows
         entity timestamp ordering (entity ID breaks ties), so an older upload cannot replace a newer
-        deployed scene. Parallel requests for the same entity are processed serially by the server.
+        deployed scene. The timestamp is chosen by the signer and may be up to 15 minutes in the future
+        (as on Catalyst), so a collaborator with deploy permission can hold off a redeploy on the same
+        parcels for at most that long. Parallel requests for the same entity are processed serially by
+        the server.
 
         Successful completion is recorded atomically with publication. The original signer can replay
         a completed partial request without the manifest and receive the same `200` body and timestamp
@@ -350,8 +353,10 @@ paths:
 
         Upload count, aggregate reserved bytes, and accepted byte rate are limited per deployer; an
         additional byte budget applies server-wide. Reservations precede storage writes and abandoned
-        bytes remain charged until cleanup succeeds. Exceeding a budget returns `400`; clients should
-        stop sending batches until capacity is available (byte-rate windows reset after one minute).
+        bytes remain charged until cleanup succeeds. A budget full because of other uploads or traffic
+        returns `429` with `Retry-After`; clients should stop sending batches until then (byte-rate
+        windows reset after one minute). A batch or upload that alone exceeds a budget returns `400`,
+        since no retry can succeed.
         The `missing` list is authoritative for subsequent batches; send the requested files even if
         a separate availability check reports them as stored by another upload.
       operationId: worldsContentServer_deployEntity
@@ -408,7 +413,10 @@ paths:
                       type: string
                     description: Content hashes still missing before the scene can go live
         '400':
-          description: Invalid request or deployment failed validation
+          description: >-
+            Invalid request or deployment failed validation, an expired partial upload, or a partial
+            batch or upload that alone exceeds a byte budget (bytes per minute or staged bytes per
+            account).
           content:
             application/json:
               schema:
@@ -431,8 +439,9 @@ paths:
         '429':
           description: >-
             The client source already has its share of uploads in flight, or a partial-upload quota is
-            full (uploads per account, staged bytes per account or per server, bytes per minute). The
-            message names the quota with its measured and allowed values.
+            full because of other uploads or traffic (uploads per account, staged bytes per account or
+            per server, bytes per minute). The message names the quota with its measured and allowed
+            values.
           headers:
             Retry-After:
               description: >-

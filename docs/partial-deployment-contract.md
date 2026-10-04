@@ -16,10 +16,16 @@ ID as the upload identifier; there is no session creation or explicit commit end
 6. An expired upload needs a newly timestamped/signed entity. Retries do not extend upload lifetime.
 7. Overlapping uploads coexist within quotas. Publication uses entity timestamp ordering, breaking
    ties by entity ID; completion order never lets an older entity overwrite a newer deployed entity.
+   The timestamp is chosen by the signer and may be up to 15 minutes in the future (as on Catalyst),
+   so a collaborator with deploy permission can hold off a redeploy on the same parcels for at most
+   that long.
 
-`400` covers validation, expiry and admission failures. `408` covers processing deadlines. Clients
-must distinguish `200` from `202`, handle terminal validation failures, retry transient transport
-failures, and use the returned missing list rather than subtracting a new global availability result.
+`400` covers validation, expiry and requests that alone exceed a budget (a batch above the per-minute
+byte rate, or an upload above the per-account staging budget); no retry can succeed. `429` with
+`Retry-After` means a budget is full because of other uploads or traffic. `408` covers processing
+deadlines. Clients must distinguish `200` from `202`, handle terminal validation failures, retry
+transient transport failures, and use the returned missing list rather than subtracting a new global
+availability result.
 A rate rejection uses a fixed one-minute accounting window; repeated requests within it will not help.
 
 ## Catalyst adapter
@@ -42,10 +48,8 @@ batch bytes/account/minute, 1-hour pending lifetime (expired uploads cleaned up 
 24-hour completion retention. All are configured in `.env.default`. Staging charges manifest bytes and referenced content; reused content is charged
 conservatively per upload. Expired slots and bytes remain charged if physical cleanup fails.
 
-Migration `0028_partial_upload_progress` adds receipt/accounting tables. Quiesce GC and finish or drain
-old pending uploads before rolling out: older binaries do not honor the content lock or populate byte
-reservations. All replicas accessing the same storage must use this protocol and database lock key.
-The lock pool uses `CONTENT_LOCK_CONNECTIONS` connections per replica in addition to the query pool.
+Migrations run at startup. Worlds runs as a single instance behind Cloudflare, so a normal deploy is
+enough. The content lock uses `CONTENT_LOCK_CONNECTIONS` connections in addition to the query pool.
 Uploads share the lock; GC briefly excludes uploads per 1,000-key batch. Requests for one entity are
 serialized, while separate entities can upload concurrently. This favors correctness over maximum
 same-entity batch parallelism. Storage transports must have timeouts and honor write cancellation;
