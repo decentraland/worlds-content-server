@@ -15,6 +15,7 @@ describe('when staging a partial deployment', () => {
   let getProgress: jest.Mock
   let getPending: jest.Mock
   let reserve: jest.Mock
+  let recordStored: jest.Mock
   let storeStream: jest.Mock
   let validateStaging: jest.Mock
   let validate: jest.Mock
@@ -52,6 +53,7 @@ describe('when staging a partial deployment', () => {
     getProgress = jest.fn().mockResolvedValue(new Map([['a', 300]]))
     getPending = jest.fn().mockResolvedValue(undefined)
     reserve = jest.fn().mockResolvedValue(undefined)
+    recordStored = jest.fn().mockResolvedValue(2)
     storeStream = jest.fn().mockResolvedValue(undefined)
     validateStaging = jest.fn().mockResolvedValue({ ok: () => true, errors: [] })
     validate = jest.fn(async (deployment: DeploymentToValidate) => {
@@ -79,7 +81,7 @@ describe('when staging a partial deployment', () => {
         getByEntityId: getPending,
         upsert,
         reserve,
-        recordStored: jest.fn().mockResolvedValue(2),
+        recordStored,
         getProgress,
         markMissing: jest.fn(),
         getCompleted,
@@ -170,6 +172,7 @@ describe('when staging a partial deployment', () => {
   describe('and a resumed batch is still incomplete', () => {
     beforeEach(() => {
       getPending.mockResolvedValueOnce({ createdAt: new Date(), deployer: 'deployer', initialized: true })
+      getProgress.mockResolvedValueOnce(new Map())
     })
     it('should report missing hashes without querying storage metadata', async () => {
       expect(await stage(input)).toEqual({ complete: false, missing: ['b'] })
@@ -190,7 +193,7 @@ describe('when staging a partial deployment', () => {
   describe('and a resumed batch completes the manifest', () => {
     beforeEach(() => {
       getPending.mockResolvedValueOnce({ createdAt: new Date(), deployer: 'deployer', initialized: true })
-      getProgress.mockResolvedValueOnce(
+      getProgress.mockResolvedValueOnce(new Map([['b', 500]])).mockResolvedValueOnce(
         new Map([
           ['a', 300],
           ['b', 500]
@@ -273,6 +276,7 @@ describe('when staging a partial deployment', () => {
 
     beforeEach(async () => {
       getPending.mockResolvedValueOnce({ createdAt: new Date(), deployer: 'deployer', initialized: true })
+      getProgress.mockResolvedValueOnce(new Map())
       input.manifest = { size: 40, getStream: jest.fn(), getHash: jest.fn(), asBuffer: jest.fn() }
       await stage(input)
       validatedFiles = Array.from((validateStaging.mock.calls[0][0] as DeploymentToValidate).files.keys())
@@ -285,6 +289,62 @@ describe('when staging a partial deployment', () => {
         stored: storeStream.mock.calls.map(([hash]) => hash)
       }).toEqual({ validatedFiles: ['a', 'entity'], incomingBytes: 300, stored: ['a'] })
     })
+
+    it('should charge the uploaded file it stores', () => {
+      expect(reserve.mock.calls[0][1]).toEqual([{ hash: 'a', size: 300, stored: false, charged: true }])
+    })
+  })
+
+  describe('and the first batch re-sends content already in storage', () => {
+    beforeEach(async () => {
+      fileInfo.mockImplementation(async (hash) => (hash === 'a' ? { size: 300 } : undefined))
+      await stage(input)
+    })
+
+    it('should record it as stored without charging, storing or recording a write for it', () => {
+      expect({
+        receipts: reserve.mock.calls[0][1],
+        stored: storeStream.mock.calls.length,
+        recorded: recordStored.mock.calls[0][1]
+      }).toEqual({ receipts: [{ hash: 'a', size: 300, stored: true, charged: false }], stored: 0, recorded: [] })
+    })
+
+    it('should still count its bytes against the byte rate', () => {
+      expect(reserve.mock.calls[0][3]).toBe(300)
+    })
+  })
+
+  describe('and a resumed batch re-sends a file an earlier batch stored', () => {
+    beforeEach(async () => {
+      getPending.mockResolvedValueOnce({ createdAt: new Date(), deployer: 'deployer', initialized: true })
+      getProgress.mockResolvedValueOnce(new Map([['a', 300]]))
+      await stage(input)
+    })
+
+    it('should neither charge nor store it again', () => {
+      expect({ receipts: reserve.mock.calls[0][1], stored: storeStream.mock.calls.length }).toEqual({
+        receipts: [],
+        stored: 0
+      })
+    })
+  })
+
+  describe('and a new upload has content already in storage', () => {
+    beforeEach(async () => {
+      fileInfo.mockImplementation(async (hash) => (hash === 'b' ? { size: 500 } : undefined))
+      await stage(input)
+    })
+
+    it('should not look up stored progress for an upload that has none', () => {
+      expect(getProgress.mock.calls).toEqual([['entity', undefined]])
+    })
+
+    it('should charge the received file but not the stored content', () => {
+      expect(reserve.mock.calls[0][1]).toEqual([
+        { hash: 'b', size: 500, stored: true, charged: false },
+        { hash: 'a', size: 300, stored: false, charged: true }
+      ])
+    })
   })
 
   describe('and publication collides with a concurrent publication of the same entity', () => {
@@ -292,7 +352,7 @@ describe('when staging a partial deployment', () => {
 
     beforeEach(async () => {
       getPending.mockResolvedValueOnce({ createdAt: new Date(), deployer: 'deployer', initialized: true })
-      getProgress.mockResolvedValueOnce(
+      getProgress.mockResolvedValueOnce(new Map([['b', 500]])).mockResolvedValueOnce(
         new Map([
           ['a', 300],
           ['b', 500]
@@ -334,7 +394,7 @@ describe('when staging a partial deployment', () => {
 
     beforeEach(async () => {
       getPending.mockResolvedValueOnce({ createdAt: new Date(), deployer: 'deployer', initialized: true })
-      getProgress.mockResolvedValueOnce(
+      getProgress.mockResolvedValueOnce(new Map([['b', 500]])).mockResolvedValueOnce(
         new Map([
           ['a', 300],
           ['b', 500]

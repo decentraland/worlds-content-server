@@ -194,15 +194,18 @@ export async function createPendingScenesManager(
         await query(SQL`SELECT pg_advisory_xact_lock(hashtextextended('partial-upload-budget', 0))`)
         assertLive()
         if (receipts.length) {
-          await query(SQL`INSERT INTO pending_scene_files (entity_id, hash, size, stored)
-          SELECT ${entityId}, r.hash, r.size, r.stored
-          FROM jsonb_to_recordset(${JSON.stringify(receipts)}::jsonb) AS r(hash text, size bigint, stored boolean)
+          // A file re-uploaded after its stored copy went missing becomes charged.
+          await query(SQL`INSERT INTO pending_scene_files (entity_id, hash, size, stored, charged)
+          SELECT ${entityId}, r.hash, r.size, r.stored, r.charged
+          FROM jsonb_to_recordset(${JSON.stringify(receipts)}::jsonb)
+            AS r(hash text, size bigint, stored boolean, charged boolean)
           ON CONFLICT (entity_id, hash) DO UPDATE
           SET size = GREATEST(pending_scene_files.size, EXCLUDED.size),
-              stored = pending_scene_files.stored OR EXCLUDED.stored`)
+              stored = pending_scene_files.stored OR EXCLUDED.stored,
+              charged = pending_scene_files.charged OR EXCLUDED.charged`)
         }
         await query(SQL`UPDATE pending_scenes SET reserved_bytes = (
-        SELECT COALESCE(SUM(size), 0) FROM pending_scene_files WHERE entity_id = ${entityId}
+        SELECT COALESCE(SUM(size) FILTER (WHERE charged), 0) FROM pending_scene_files WHERE entity_id = ${entityId}
       ) WHERE entity_id = ${entityId}`)
         const totals = await query<{
           account: string
@@ -364,8 +367,8 @@ export async function createPendingScenesManager(
     )
     await database.query(SQL`DELETE FROM partial_upload_rates WHERE window_started < now() - interval '1 minute'`)
     const totals = await database.query<{ bytes: string; expired: string }>(SQL`
-      SELECT COALESCE(SUM(f.size), 0)::text AS bytes,
-        COALESCE(SUM(f.size) FILTER (WHERE p.created_at < ${new Date(Date.now() - ttlMs)}), 0)::text AS expired
+      SELECT COALESCE(SUM(f.size) FILTER (WHERE f.charged), 0)::text AS bytes,
+        COALESCE(SUM(f.size) FILTER (WHERE f.charged AND p.created_at < ${new Date(Date.now() - ttlMs)}), 0)::text AS expired
       FROM pending_scene_files f JOIN pending_scenes p USING (entity_id)`)
     metrics.observe('partial_upload_reserved_bytes', {}, Number(totals.rows[0].bytes))
     metrics.observe('partial_upload_cleanup_backlog_bytes', {}, Number(totals.rows[0].expired))

@@ -8,6 +8,7 @@ import { getIdentity, Identity, makeid, cleanup, signThroughChainOf } from '../u
 import { MAX_DEPLOYMENT_AUTH_CHAIN_LINKS, MAX_DEPLOYMENT_FIELD_SIZE_IN_BYTES } from '../../src/logic/multipart'
 import FormData from 'form-data'
 import { request } from 'http'
+import { bufferToStream } from '@dcl/catalyst-storage'
 import SQL from 'sql-template-strings'
 
 // Lower the per-deployer concurrent-pending cap so it's exercisable without staging 10+ uploads.
@@ -149,6 +150,95 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
         initialChecks: contentHashes.length,
         middleChecks: 0,
         finalChecks: contentHashes.length
+      })
+    })
+  })
+
+  describe('when an upload re-sends content already in storage', () => {
+    let authChain: AuthChain
+    let storeSpy: jest.SpyInstance
+    let response: Awaited<ReturnType<typeof post>>
+    let body: unknown
+    let accounting: unknown
+
+    async function readAccounting(): Promise<unknown> {
+      const { database } = components
+      const reserved = await database.query(
+        SQL`SELECT reserved_bytes FROM pending_scenes WHERE entity_id = ${entityId}`
+      )
+      const rate = await database.query('SELECT bytes FROM partial_upload_rates')
+      const receipts = await database.query<{ hash: string; charged: boolean }>(
+        SQL`SELECT hash, charged FROM pending_scene_files WHERE entity_id = ${entityId}`
+      )
+      return {
+        reserved: reserved.rows,
+        rate: rate.rows,
+        charged: Object.fromEntries(receipts.rows.map((row) => [row.hash, row.charged]))
+      }
+    }
+
+    function sizeOf(...keys: string[]): number {
+      return keys.reduce((sum, key) => sum + files.get(key)!.byteLength, 0)
+    }
+
+    beforeEach(async () => {
+      authChain = Authenticator.signPayload(identity.authChain, entityId)
+      await components.storage.storeStream(contentHashes[0], bufferToStream(Buffer.from(files.get(contentHashes[0])!)))
+      storeSpy = jest.spyOn(components.storage, 'storeStream')
+      response = await post(buildForm([entityId, contentHashes[0]], authChain))
+      body = await response.json()
+      accounting = await readAccounting()
+    })
+
+    afterEach(() => {
+      storeSpy.mockRestore()
+    })
+
+    it('should store and charge only the manifest, counting every received byte against the rate', () => {
+      expect({ status: response.status, body, stored: storeSpy.mock.calls.map(([hash]) => hash), accounting }).toEqual({
+        status: 202,
+        body: { missing: [contentHashes[1]] },
+        stored: [entityId],
+        accounting: {
+          reserved: [{ reserved_bytes: String(sizeOf(entityId)) }],
+          rate: [{ bytes: String(sizeOf(entityId, contentHashes[0])) }],
+          charged: { [entityId]: true, [contentHashes[0]]: false }
+        }
+      })
+    })
+
+    describe('and a later batch re-sends a file an earlier batch stored', () => {
+      beforeEach(async () => {
+        storeSpy.mockClear()
+        response = await post(buildForm([entityId], authChain))
+        body = await response.json()
+        accounting = await readAccounting()
+      })
+
+      it('should neither store nor charge it again', () => {
+        expect({ status: response.status, body, stored: storeSpy.mock.calls.length, accounting }).toEqual({
+          status: 202,
+          body: { missing: [contentHashes[1]] },
+          stored: 0,
+          accounting: {
+            reserved: [{ reserved_bytes: String(sizeOf(entityId)) }],
+            rate: [{ bytes: String(sizeOf(entityId, entityId, contentHashes[0])) }],
+            charged: { [entityId]: true, [contentHashes[0]]: false }
+          }
+        })
+      })
+    })
+
+    describe('and the last batch uploads the remaining content', () => {
+      beforeEach(async () => {
+        response = await post(buildForm([contentHashes[1]], authChain))
+      })
+
+      it('should publish the scene', async () => {
+        expect({ status: response.status, deployed: await countDeployedScenes() }).toEqual({
+          status: 200,
+          deployed: 1
+        })
       })
     })
   })

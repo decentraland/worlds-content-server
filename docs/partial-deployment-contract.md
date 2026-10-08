@@ -45,8 +45,12 @@ staging sweep; files never attached to a deployment would otherwise be invisible
 
 Default limits: 10 uploads/account, 1 GiB staged/account, 50 GiB staged/server database, 512 MiB accepted
 batch bytes/account/minute, 1-hour pending lifetime (expired uploads cleaned up every 5 minutes) and
-24-hour completion retention. All are configured in `.env.default`. Staging charges manifest bytes and referenced content; reused content is charged
-conservatively per upload. Expired slots and bytes remain charged if physical cleanup fails.
+24-hour completion retention. All are configured in `.env.default`. The staging budgets charge only the
+bytes an upload stores itself: the manifest and content that was not already in storage. Content already
+in storage is not charged; the pending upload's manifest protects it from garbage collection. A batch file
+that is already stored, before the upload or by an earlier batch, is dropped without being stored or
+charged again, but every received byte counts against the per-minute rate. The scene size limit still
+counts every file of the scene. Expired slots and bytes remain charged if physical cleanup fails.
 
 Migrations run at startup. Worlds runs as a single instance behind Cloudflare, so a normal deploy is
 enough. The content lock uses `CONTENT_LOCK_CONNECTIONS` connections in addition to the query pool.

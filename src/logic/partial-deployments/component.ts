@@ -94,15 +94,19 @@ export async function createPartialDeploymentsComponent(
     const initialInfos = pending?.initialized
       ? new Map<string, FileInfo | undefined>()
       : await metadata(contentHashes, signal)
+    // Content already in storage is never charged; the pending row's manifest protects it from GC.
     const receipts = new Map<string, FileReceipt>()
     for (const [hash, info] of initialInfos) {
-      if (info?.size !== undefined && info.size !== null) receipts.set(hash, { hash, size: info.size, stored: true })
+      if (info?.size !== undefined && info.size !== null) {
+        receipts.set(hash, { hash, size: info.size, stored: true, charged: false })
+      }
     }
+    // Files already present, before the upload or from an earlier batch, are dropped; only the rate counts them.
+    const stored = pending ? await pendingScenesManager.getProgress(entity.id, signal) : new Map<string, number>()
+    const toStore = new Map([...files].filter(([hash]) => !stored.has(hash) && !receipts.has(hash)))
     let incomingBytes = 0
-    for (const [hash, file] of files) {
-      incomingBytes += file.size
-      receipts.set(hash, { hash, size: file.size, stored: receipts.get(hash)?.stored ?? false })
-    }
+    for (const file of files.values()) incomingBytes += file.size
+    for (const [hash, file] of toStore) receipts.set(hash, { hash, size: file.size, stored: false, charged: true })
     const knownSceneBytes = [...receipts.values()]
       .filter((receipt) => receipt.hash !== entity.id)
       .reduce((sum, receipt) => sum + BigInt(receipt.size), 0n)
@@ -133,9 +137,9 @@ export async function createPartialDeploymentsComponent(
     if (Date.now() >= pendingRow.createdAt.getTime() + pendingScenesManager.ttlMs) {
       throw new PartialUploadExpiredError()
     }
-    await deploymentProcessing.trackStage('storage', files.size, () =>
+    await deploymentProcessing.trackStage('storage', toStore.size, () =>
       mapWithConcurrency(
-        Array.from(files),
+        Array.from(toStore),
         deploymentProcessing.storageConcurrency,
         ([hash, file]) =>
           deploymentProcessing.trackWorker('storage', () => storage.storeStream(hash, file.getStream(signal), signal)),
@@ -143,7 +147,7 @@ export async function createPartialDeploymentsComponent(
         { signal }
       )
     )
-    const batches = await pendingScenesManager.recordStored(entity.id, [...files.keys()], true, signal)
+    const batches = await pendingScenesManager.recordStored(entity.id, [...toStore.keys()], true, signal)
     const progress = await pendingScenesManager.getProgress(entity.id, signal)
     const missing = contentHashes.filter((hash) => !progress.has(hash))
     metrics.increment('partial_upload_batches', { outcome: missing.length ? 'incomplete' : 'finalizing' })

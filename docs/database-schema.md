@@ -23,19 +23,22 @@ not create a `worlds` row (which would leak into listings and world-validity che
 The authoritative entity bytes live in content storage under the entity id; the `entity` JSONB here is a
 copy used by garbage collection. Columns: `entity_id` (PK), `world_name`, `parcels` (TEXT[]), `entity`
 (JSONB), `deployer`, `created_at`/`updated_at` (TIMESTAMPTZ), `initialized` (BOOLEAN),
-`reserved_bytes` (BIGINT), and `batches` (INTEGER, stored batches so far, reported on publication). Uploads may overlap parcels and never replace another pending row.
+`reserved_bytes` (BIGINT, charged staging bytes), and `batches` (INTEGER, stored batches so far, reported on publication). Uploads may overlap parcels and never replace another pending row.
 `created_at` anchors freshness and the fixed `PENDING_DEPLOYMENT_TTL` (default 1h). Expired rows stay
 charged until the cleanup job (every `PARTIAL_UPLOAD_CLEANUP_INTERVAL_MS`, default 5 minutes) or GC
 reclaims their objects, then removes their accounting.
 
 ### Table: `pending_scene_files`
 
-Primary key `(entity_id, hash)`, with a cascading FK to `pending_scenes`. `size` is the reserved byte
-count; `stored` distinguishes successful writes/verified reused content from reservations. Reserves
-are atomic under a database admission lock. The pending-row `reserved_bytes` caches the sum so global
-admission scans session totals instead of every content receipt. Failed writes remain conservatively
-charged; retrying a hash does not reserve its storage twice. Incoming bytes, including retries, are
-also counted in `partial_upload_rates` (`deployer` PK, `window_started`, `bytes`).
+Primary key `(entity_id, hash)`, with a cascading FK to `pending_scenes`. `size` is the file's byte
+count; `stored` distinguishes successful writes/verified reused content from reservations. `charged`
+(BOOLEAN, default true) marks bytes the upload stores itself: content already in storage when the upload
+started is recorded with `charged = false` and counts only toward the scene size limit. A file re-uploaded
+after its stored copy went missing becomes charged. Reserves are atomic under a database admission lock.
+The pending-row `reserved_bytes` caches the sum of charged sizes so global admission scans session totals
+instead of every content receipt. Failed writes remain conservatively charged; retrying a hash does not
+reserve its storage twice. Incoming bytes, including retries and dropped already-stored files, are also
+counted in `partial_upload_rates` (`deployer` PK, `window_started`, `bytes`).
 
 ### Table: `completed_scene_uploads`
 

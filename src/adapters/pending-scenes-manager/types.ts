@@ -23,7 +23,8 @@ export type UpsertPendingScene = {
   resumes: boolean
 }
 
-export type FileReceipt = { hash: string; size: number; stored: boolean }
+/** `charged`: the upload stores these bytes itself; content already in storage is never charged. */
+export type FileReceipt = { hash: string; size: number; stored: boolean; charged: boolean }
 type CompletedUpload = { worldName: string; parcels: string[]; creationTimestamp: number }
 
 export interface IPendingScenesManager extends IBaseComponent {
@@ -40,6 +41,7 @@ export interface IPendingScenesManager extends IBaseComponent {
   ): Promise<PendingScene>
   /**
    * Reserves bytes before writes, including concurrent account/global budgets and incoming byte rate.
+   * Only charged receipts count toward the budgets; every receipt counts toward the scene size.
    * @throws PartialUploadExpiredError when the upload has expired; nothing is charged then.
    * @throws PartialUploadTooLargeError when the batch or the upload alone exceeds a budget.
    * @throws PartialUploadQuotaExceededError when other uploads or traffic fill a budget for now.

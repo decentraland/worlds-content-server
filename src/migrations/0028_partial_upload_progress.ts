@@ -11,6 +11,8 @@ export const migration: Migration = {
         hash VARCHAR NOT NULL,
         size BIGINT NOT NULL CHECK (size >= 0),
         stored BOOLEAN NOT NULL DEFAULT false,
+        -- Only bytes the upload itself stores count against the staging budgets.
+        charged BOOLEAN NOT NULL DEFAULT true,
         PRIMARY KEY (entity_id, hash)
       );
       CREATE TABLE IF NOT EXISTS completed_scene_uploads (
