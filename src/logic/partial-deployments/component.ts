@@ -4,9 +4,15 @@ import { FileInfo } from '@dcl/catalyst-storage'
 import { AppComponents, DeploymentToValidate, MissingSceneReplacementAuthorizationError, WorldScene } from '../../types'
 import { getPositiveInteger, mapWithConcurrency, raceWithSignal } from '../concurrency'
 import { calculateDeploymentSizeFromFileInfos } from '../validations/scene'
-import { FileReceipt } from '../../adapters/pending-scenes-manager/types'
 import { PartialUploadExpiredError } from '../../adapters/pending-scenes-manager/errors'
-import { IPartialDeploymentsComponent, StageDeploymentInput, StageDeploymentResult } from './types'
+import { FileReceipt, PendingScene } from '../../adapters/pending-scenes-manager/types'
+import {
+  IPartialDeploymentsComponent,
+  PrevalidateStagingInput,
+  StageDeploymentInput,
+  StageDeploymentResult,
+  StagingPrevalidation
+} from './types'
 
 /**
  * Stages authenticated, entity-keyed upload batches. The HTTP handler holds the shared content lock
@@ -58,14 +64,15 @@ export async function createPartialDeploymentsComponent(
     })
   }
 
-  async function stage(input: StageDeploymentInput): Promise<StageDeploymentResult> {
-    const { baseUrl, entity, entityRaw, authChain, files, manifest, signal, deadlineAt, requestArrivedAt } = input
-    signal?.throwIfAborted()
-    // Validation and publication see the manifest; accounting and storage only see uploaded files.
+  async function validateStaging(
+    input: PrevalidateStagingInput,
+    pending: PendingScene | undefined,
+    admittedAt: Date
+  ): Promise<boolean> {
+    const { entity, authChain, files, manifest, signal } = input
+    // Validation sees the manifest; accounting and storage only see uploaded files.
     const deploymentFiles = manifest ? new Map([...files, [entity.id, manifest]]) : files
-    const pending = await pendingScenesManager.getByEntityId(entity.id, signal)
-    // One admission instant, the request's arrival, anchors both freshness and the upload's lifetime.
-    const admittedAt = pending?.createdAt ?? new Date(requestArrivedAt)
+    const skipPermissionCheck = !!pending && pending.deployer === authChain[0]?.payload?.toLowerCase()
     const validation: DeploymentToValidate = {
       entity,
       files: deploymentFiles,
@@ -74,12 +81,32 @@ export async function createPartialDeploymentsComponent(
       pendingCreatedAt: admittedAt,
       signal
     }
-    const stagingValidation = await validator.validateStaging(validation, {
-      skipPermissionCheck: !!pending && pending.deployer === authChain[0]?.payload?.toLowerCase()
-    })
+    const stagingValidation = await validator.validateStaging(validation, { skipPermissionCheck })
     if (!stagingValidation.ok()) {
       throw new InvalidRequestError(`Deployment failed: ${stagingValidation.errors.join(', ')}`)
     }
+    return skipPermissionCheck
+  }
+
+  async function prevalidate(
+    input: PrevalidateStagingInput,
+    pending: PendingScene | undefined
+  ): Promise<StagingPrevalidation> {
+    input.signal?.throwIfAborted()
+    const admittedAt = pending?.createdAt ?? new Date(input.requestArrivedAt)
+    return { sawPending: await validateStaging(input, pending, admittedAt) }
+  }
+
+  async function stage(input: StageDeploymentInput): Promise<StageDeploymentResult> {
+    const { baseUrl, entity, entityRaw, authChain, files, manifest, signal, deadlineAt, requestArrivedAt } = input
+    signal?.throwIfAborted()
+    const deploymentFiles = manifest ? new Map([...files, [entity.id, manifest]]) : files
+    const pending = await pendingScenesManager.getByEntityId(entity.id, signal)
+    // Permission was skipped for the signer's own upload; only expiry cleanup removes it in between.
+    if (input.prevalidation?.sawPending && !pending) throw new PartialUploadExpiredError()
+    // One admission instant, the request's arrival, anchors both freshness and the upload's lifetime.
+    const admittedAt = pending?.createdAt ?? new Date(requestArrivedAt)
+    if (!input.prevalidation) await validateStaging(input, pending, admittedAt)
 
     // Only validated manifests may cause storage lookups or affect staging state.
     const contentHashes = Array.from(new Set((entity.content ?? []).map((content) => content.hash)))
@@ -227,5 +254,5 @@ export async function createPartialDeploymentsComponent(
     }
   }
 
-  return { stage, findPublication }
+  return { stage, prevalidate, findPublication }
 }

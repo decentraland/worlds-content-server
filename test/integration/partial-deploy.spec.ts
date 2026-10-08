@@ -595,6 +595,111 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
     })
   })
 
+  describe('when a request is rejected before it needs the content lock', () => {
+    let withRead: jest.SpyInstance
+    let response: Awaited<ReturnType<typeof post>>
+    let body: { message?: string }
+
+    beforeEach(() => {
+      withRead = jest.spyOn(components.contentLocks, 'withRead')
+    })
+
+    afterEach(() => {
+      withRead.mockRestore()
+    })
+
+    describe('and a partial batch is signed by an account without deployment permission', () => {
+      beforeEach(async () => {
+        const other = await getIdentity()
+        response = await post(
+          buildForm([entityId, contentHashes[0]], Authenticator.signPayload(other.authChain, entityId))
+        )
+        body = await response.json()
+      })
+
+      it('should reject it without taking the content lock', () => {
+        expect({ status: response.status, message: body.message, locks: withRead.mock.calls.length }).toEqual({
+          status: 400,
+          message: expect.stringContaining('Your wallet has no permission to publish this scene'),
+          locks: 0
+        })
+      })
+    })
+
+    describe("and a partial batch carries a file that doesn't match its hash", () => {
+      beforeEach(async () => {
+        files.set(contentHashes[0], stringToUtf8Bytes('tampered'))
+        response = await post(
+          buildForm([entityId, contentHashes[0]], Authenticator.signPayload(identity.authChain, entityId))
+        )
+        body = await response.json()
+      })
+
+      it('should reject it without taking the content lock', () => {
+        expect({ status: response.status, message: body.message, locks: withRead.mock.calls.length }).toEqual({
+          status: 400,
+          message: expect.stringContaining("The hashed file doesn't match the provided content"),
+          locks: 0
+        })
+      })
+    })
+
+    describe('and a regular deployment is signed by an account without deployment permission', () => {
+      beforeEach(async () => {
+        const other = await getIdentity()
+        response = await post(
+          buildForm([entityId, ...contentHashes], Authenticator.signPayload(other.authChain, entityId), false)
+        )
+        body = await response.json()
+      })
+
+      it('should reject it without taking the content lock', () => {
+        expect({ status: response.status, message: body.message, locks: withRead.mock.calls.length }).toEqual({
+          status: 400,
+          message: expect.stringContaining('Your wallet has no permission to publish this scene'),
+          locks: 0
+        })
+      })
+    })
+  })
+
+  describe('when cleanup removes an upload after its next batch skipped the permission check', () => {
+    let response: Awaited<ReturnType<typeof post>>
+    let body: { message?: string }
+    let pending: number
+    let permissionChecks: number
+    let withReadSpy: jest.SpyInstance
+
+    beforeEach(async () => {
+      const { contentLocks, database } = components
+      const authChain = Authenticator.signPayload(identity.authChain, entityId)
+      await post(buildForm([entityId], authChain))
+      stubComponents.namePermissionChecker.checkPermission.mockClear()
+      const withRead = contentLocks.withRead.bind(contentLocks)
+      withReadSpy = jest.spyOn(contentLocks, 'withRead').mockImplementationOnce(async (operation, signal, id) => {
+        await database.query(SQL`DELETE FROM pending_scenes WHERE entity_id = ${entityId}`)
+        return withRead(operation, signal, id)
+      })
+      response = await post(buildForm([entityId, contentHashes[0]], authChain))
+      body = await response.json()
+      pending = await countPending()
+      permissionChecks = stubComponents.namePermissionChecker.checkPermission.mock.calls.length
+    })
+
+    afterEach(() => {
+      withReadSpy.mockRestore()
+    })
+
+    it('should reject the batch as expired without starting a new upload', () => {
+      expect({ status: response.status, message: body.message, pending, permissionChecks }).toEqual({
+        status: 400,
+        message: 'This upload expired. Create a new entity with a fresh timestamp.',
+        pending: 0,
+        permissionChecks: 0
+      })
+    })
+  })
+
   describe('when the same partial request is replayed', () => {
     let firstResponse: Awaited<ReturnType<typeof post>>
     let secondResponse: Awaited<ReturnType<typeof post>>

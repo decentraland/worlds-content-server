@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'fs'
 import os from 'os'
 import path from 'path'
-import { FileInfo, IContentStorageComponent } from '@dcl/catalyst-storage'
+import { bufferToStream, FileInfo, IContentStorageComponent } from '@dcl/catalyst-storage'
 import {
   DEFAULT_CONTENT_FILE_INFO_CONCURRENCY,
   deployEntity,
@@ -85,7 +85,11 @@ describe('deployEntity', () => {
           getCompleted: jest.fn().mockResolvedValue(undefined),
           deleteByEntityId: jest.fn().mockResolvedValue(undefined)
         },
-        partialDeployments: { findPublication: jest.fn().mockResolvedValue(undefined) },
+        partialDeployments: {
+          findPublication: jest.fn().mockResolvedValue(undefined),
+          prevalidate: jest.fn().mockResolvedValue({ sawPending: false })
+        },
+        validator: { validateBeforeStorage: jest.fn().mockResolvedValue({ ok: () => true, errors: [] }) },
         metrics: { increment: jest.fn() },
         logs: {
           getLogger: jest.fn().mockReturnValue({ debug: jest.fn(), error: jest.fn(), info: jest.fn(), warn: jest.fn() })
@@ -101,6 +105,7 @@ describe('deployEntity', () => {
         files
       },
       request: { signal: new AbortController().signal },
+      requestArrivedAt: Date.now(),
       url: new URL('https://request.example/entities')
     } as unknown as DeployContext
   }
@@ -193,6 +198,138 @@ describe('deployEntity', () => {
     it('should reject it without taking any content lock', () => {
       expect({ caughtError, locks: withRead.mock.calls.length }).toEqual({
         caughtError: new InvalidRequestError('Invalid auth chain: bad signature'),
+        locks: 0
+      })
+    })
+  })
+
+  describe('when a partial batch carrying the manifest fails its staging validation', () => {
+    let withRead: jest.Mock
+    let prevalidate: jest.Mock
+    let caughtError: unknown
+
+    beforeEach(async () => {
+      withRead = jest.fn()
+      prevalidate = jest.fn().mockRejectedValue(new InvalidRequestError('Deployment failed: no permission'))
+      const context = createContext(entityId, { [entityId]: makeFile(Buffer.from('{}')) })
+      context.formData.fields.partial = makeField('true')
+      context.components.contentLocks = { withRead } as unknown as DeployContext['components']['contentLocks']
+      ;(context.components.partialDeployments as unknown as { prevalidate: jest.Mock }).prevalidate = prevalidate
+      caughtError = await deployEntity(context).catch((error) => error)
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should reject it without taking any content lock', () => {
+      expect({ caughtError, locks: withRead.mock.calls.length }).toEqual({
+        caughtError: new InvalidRequestError('Deployment failed: no permission'),
+        locks: 0
+      })
+    })
+  })
+
+  describe('when a partial batch carrying the manifest passes its staging validation', () => {
+    let pending: { deployer: string; createdAt: Date }
+    let prevalidate: jest.Mock
+    let stage: jest.Mock
+    let getByEntityId: jest.Mock
+    let findPublication: jest.Mock
+    let response: Awaited<ReturnType<typeof deployEntity>>
+
+    beforeEach(async () => {
+      pending = { deployer: '0x0000000000000000000000000000000000000001', createdAt: new Date(1_000) }
+      prevalidate = jest.fn().mockResolvedValue({ sawPending: true })
+      stage = jest.fn().mockResolvedValue({ complete: false, missing: ['missing-hash'] })
+      getByEntityId = jest.fn().mockResolvedValue(pending)
+      findPublication = jest.fn().mockResolvedValue(undefined)
+      const context = createContext(entityId, { [entityId]: makeFile(Buffer.from('{}')) })
+      context.formData.fields.partial = makeField('true')
+      ;(context.components.pendingScenesManager as unknown as { getByEntityId: jest.Mock }).getByEntityId =
+        getByEntityId
+      context.components.partialDeployments = {
+        findPublication,
+        prevalidate,
+        stage
+      } as unknown as DeployContext['components']['partialDeployments']
+      response = await deployEntity(context)
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should validate it against the pending upload read before the lock', () => {
+      expect(prevalidate.mock.calls[0][1]).toBe(pending)
+    })
+
+    it('should read the pending upload before looking for a publication', () => {
+      expect(getByEntityId.mock.invocationCallOrder[0]).toBeLessThan(findPublication.mock.invocationCallOrder[0])
+    })
+
+    it('should stage it with the outcome of that validation', () => {
+      expect({ prevalidation: stage.mock.calls[0][0].prevalidation, response }).toEqual({
+        prevalidation: { sawPending: true },
+        response: { status: 202, body: { missing: ['missing-hash'] } }
+      })
+    })
+  })
+
+  describe('when a regular deployment fails its pre-storage validation', () => {
+    let withRead: jest.Mock
+    let caughtError: unknown
+
+    beforeEach(async () => {
+      withRead = jest.fn()
+      const context = createContext(entityId, { [entityId]: makeFile(Buffer.from('{}')) })
+      context.components.contentLocks = { withRead } as unknown as DeployContext['components']['contentLocks']
+      context.components.validator = {
+        validateBeforeStorage: jest.fn().mockResolvedValue({ ok: () => false, errors: ['no permission'] })
+      } as unknown as DeployContext['components']['validator']
+      caughtError = await deployEntity(context).catch((error) => error)
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should reject it without taking any content lock', () => {
+      expect({ caughtError, locks: withRead.mock.calls.length }).toEqual({
+        caughtError: new InvalidRequestError('Deployment failed: no permission'),
+        locks: 0
+      })
+    })
+  })
+
+  describe('when a partial batch carrying the manifest targets an entity published before the lock', () => {
+    let withRead: jest.Mock
+    let prevalidate: jest.Mock
+    let response: Awaited<ReturnType<typeof deployEntity>>
+
+    beforeEach(async () => {
+      withRead = jest.fn()
+      prevalidate = jest.fn()
+      const context = createContext(entityId, { [entityId]: makeFile(Buffer.from('{}')) })
+      context.formData.fields.partial = makeField('true')
+      context.components.contentLocks = { withRead } as unknown as DeployContext['components']['contentLocks']
+      context.components.partialDeployments = {
+        findPublication: jest
+          .fn()
+          .mockResolvedValue({ complete: true, creationTimestamp: 789, result: { message: 'published' } }),
+        prevalidate
+      } as unknown as DeployContext['components']['partialDeployments']
+      response = await deployEntity(context)
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should answer with the publication without validating it or taking any content lock', () => {
+      expect({ response, validations: prevalidate.mock.calls.length, locks: withRead.mock.calls.length }).toEqual({
+        response: { status: 200, body: { creationTimestamp: 789, message: 'published' } },
+        validations: 0,
         locks: 0
       })
     })
@@ -444,6 +581,63 @@ describe('deployEntity', () => {
       })
     })
 
+    describe('and the signer resumes its upload with a content file', () => {
+      let content: ReturnType<typeof makeFile>
+      let stagedHash: unknown
+      let expectedHash: string
+
+      beforeEach(async () => {
+        getByEntityId = jest
+          .fn()
+          .mockResolvedValue({ deployer: '0x0000000000000000000000000000000000000001', createdAt: new Date() })
+        retrieve = jest.fn().mockResolvedValue({ asStream: async () => bufferToStream(Buffer.from('{}')) })
+        content = makeFile(Buffer.from('content'))
+        expectedHash = await hashV1(Buffer.from('content'))
+        const context = createResumeContext()
+        context.formData.files = { [expectedHash]: content }
+        // The temp file is gone once the lock is taken, so only a hash computed before it can be read.
+        context.components.contentLocks = {
+          withRead: async (operation: (signal: AbortSignal) => Promise<unknown>, signal: AbortSignal) => {
+            rmSync(content.filepath)
+            return operation(signal)
+          }
+        } as unknown as DeployContext['components']['contentLocks']
+        context.components.partialDeployments = {
+          findPublication: jest.fn().mockResolvedValue(undefined),
+          stage: jest.fn(async (input: { files: Map<string, { getHash(): Promise<string> }> }) => {
+            stagedHash = await input.files
+              .get(expectedHash)!
+              .getHash()
+              .catch((error: Error) => error.message)
+            return { complete: false, missing: [] }
+          })
+        } as unknown as DeployContext['components']['partialDeployments']
+        await deployEntity(context)
+      })
+
+      it('should hash the content file before taking the content lock', () => {
+        expect(stagedHash).toBe(expectedHash)
+      })
+    })
+
+    describe('and another signer sends a content file whose upload it does not own', () => {
+      beforeEach(async () => {
+        getByEntityId = jest.fn().mockResolvedValue({ deployer: '0xsomeoneelse', createdAt: new Date() })
+        const content = makeFile(Buffer.from('content'))
+        // Unreadable: hashing it before the lock would fail the request with a read error.
+        rmSync(content.filepath)
+        const context = createResumeContext()
+        context.formData.files = { 'content-hash': content }
+        caughtError = await deployEntity(context).catch((error) => error)
+      })
+
+      it('should not hash it, asking for the entity file instead', () => {
+        expect(caughtError).toEqual(
+          new InvalidRequestError(`The first partial request for an entity must include the entity file "${entityId}".`)
+        )
+      })
+    })
+
     describe('and the entity is already published', () => {
       let response: Awaited<ReturnType<typeof deployEntity>>
       let findPublication: jest.Mock
@@ -633,6 +827,8 @@ describe('deployEntity', () => {
   describe('when after-storage validation rejects the deployment', () => {
     let caughtError: unknown
     let entityDeployerDeploy: jest.Mock
+    let validateAfterStorage: jest.Mock
+    let lockSignal: AbortSignal
 
     beforeEach(async () => {
       const entity = {
@@ -643,6 +839,11 @@ describe('deployEntity', () => {
         metadata: { worldConfiguration: { name: 'world.dcl.eth' }, scene: { parcels: ['0,0'] } }
       }
       entityDeployerDeploy = jest.fn()
+      lockSignal = new AbortController().signal
+      validateAfterStorage = jest.fn().mockResolvedValue({
+        errors: ["The hashed file doesn't match the provided content: uploaded-hash"],
+        ok: () => false
+      })
       const baseContext = createContext(entityId, {
         [entityId]: makeFile(Buffer.from(JSON.stringify(entity))),
         'uploaded-hash': makeFile(Buffer.from('12345'))
@@ -652,18 +853,14 @@ describe('deployEntity', () => {
         components: {
           ...baseContext.components,
           contentLocks: {
-            withRead: async (operation: (signal: AbortSignal) => Promise<unknown>, signal: AbortSignal) =>
-              operation(signal)
+            withRead: async (operation: (signal: AbortSignal) => Promise<unknown>) => operation(lockSignal)
           },
           config: { getString: jest.fn().mockResolvedValue(undefined) },
           entityDeployer: { deployEntity: entityDeployerDeploy },
           storage: { fileInfo: jest.fn().mockResolvedValue(undefined) },
           validator: {
             validateBeforeStorage: jest.fn().mockResolvedValue({ errors: [], ok: () => true }),
-            validateAfterStorage: jest.fn().mockResolvedValue({
-              errors: ["The hashed file doesn't match the provided content: uploaded-hash"],
-              ok: () => false
-            })
+            validateAfterStorage
           }
         }
       } as unknown as DeployContext
@@ -682,6 +879,10 @@ describe('deployEntity', () => {
         ),
         deployments: 0
       })
+    })
+
+    it("should validate the stored content under the content lock's signal", () => {
+      expect(validateAfterStorage.mock.calls[0][0].signal).toBe(lockSignal)
     })
   })
 

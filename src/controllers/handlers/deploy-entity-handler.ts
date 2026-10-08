@@ -21,6 +21,7 @@ import { Readable } from 'stream'
 import { mapWithConcurrency, raceWithSignal } from '../../logic/concurrency'
 import { getRequestArrival } from '../request-arrival'
 import { PartialUploadQuotaExceededError } from '../../adapters/pending-scenes-manager'
+import { StagingPrevalidation } from '../../logic/partial-deployments'
 import {
   DEFAULT_CONTENT_FILE_INFO_CONCURRENCY,
   DeploymentProcessingAbortedError,
@@ -143,117 +144,203 @@ async function authenticateRequest(ctx: DeployEntityContext): Promise<Authentica
   return { entityId, authChain, isPartial }
 }
 
-async function deployEntityWithSignal(
-  ctx: DeployEntityContext,
-  { entityId, authChain, isPartial }: AuthenticatedRequest,
-  signal: AbortSignal,
-  deadlineAt: number
-): Promise<IHttpServerComponent.IResponse> {
-  const { deploymentProcessing } = ctx.components
-  if (isPartial) {
-    const baseUrl = (await ctx.components.config.getString('HTTP_BASE_URL')) || `https://${ctx.url.host}`
-    // The receipt keeps answering the finalizer after an undeploy or replacement.
-    const completed = await ctx.components.pendingScenesManager.getCompleted(entityId, authChain[0].payload, signal)
-    if (completed) {
-      return {
-        status: 200,
-        body: {
-          creationTimestamp: completed.creationTimestamp,
-          message: buildSceneDeploymentMessage(baseUrl, completed.worldName, completed.parcels)
-        }
-      }
-    }
-    // A live entity is never restaged: any signer's batch, with or without the manifest, gets its publication.
-    const published = await ctx.components.partialDeployments.findPublication(baseUrl, entityId, signal)
-    if (published) {
-      return { status: 200, body: { creationTimestamp: published.creationTimestamp, ...published.result } }
-    }
-  }
+type ParsedEntity = { entity: Entity; entityRaw: string }
 
-  // Resolve the entity file. It must be uploaded on the first request; a later partial (resume) request
-  // may omit it, in which case it is read back from storage where the first request stored it.
-  let entityFile: DeploymentFile | undefined = ctx.formData.files[entityId]
-    ? toDeploymentFile(ctx.formData.files[entityId])
-    : undefined
-  // Set when a resume batch omits the manifest: it is validated but never charged or stored again.
-  let manifest: DeploymentFile | undefined
-  if (!entityFile && isPartial) {
-    // Resume request: read the entity back from storage for an entity id the CLIENT supplied. The resume
-    // body is tiny, so this read is NOT covered by the multipart in-flight-bytes budget — it must be
-    // gated before any storage I/O or an attacker could turn cheap requests into concurrent
-    // MAX_ENTITY_FILE_SIZE_IN_BYTES reads + buffers (memory + egress amplification). Two gates, cheap first:
-    // 1. The local signature check (authenticateRequest): the request is validly signed for this entity
-    //    id. Alone this is NOT sufficient — any keypair can sign any entity id — so also:
-    // 2. A live pending upload for this entity, created by this same signer, must exist. Creating a
-    //    pending row required passing the full staging validation (including the deployment-permission
-    //    check) and rows are capped per deployer, so read-backs are bounded to in-flight uploads by
-    //    their own permission-validated deployer. Any other signer (or an expired upload) must re-send
-    //    the entity file instead, which restarts/joins the upload through the fully-validated path.
-    const pendingForResume = await ctx.components.pendingScenesManager.getByEntityId(entityId, signal)
-    if (pendingForResume && pendingForResume.deployer === authChain[0].payload.toLowerCase()) {
-      const stored = await raceWithSignal(ctx.components.storage.retrieve(entityId), signal)
-      if (stored) {
-        // streamToBufferCapped aborts past the cap while reading, so storage reporting size as null (the
-        // metadata is not trustworthy for enforcement) can't let an oversized blob through.
-        const buf = await streamToBufferCapped(
-          await raceWithSignal(stored.asStream(), signal),
-          MAX_ENTITY_FILE_SIZE_IN_BYTES,
-          signal
-        )
-        entityFile = {
-          size: buf.length,
-          getStream: () => bufferToStream(buf),
-          getHash: () => hashV1(buf),
-          asBuffer: async () => buf
-        }
-        manifest = entityFile
-      }
+/** Request work done before the content lock: only the request's own temp files and database reads. */
+type PreparedDeployment =
+  | {
+      kind: 'partial'
+      uploadedFiles: Map<string, DeploymentFile>
+      /** Unset for a resume batch that omits the entity file. */
+      parsed?: ParsedEntity
+      /** Set when the batch passed its staging validation. */
+      prevalidation?: StagingPrevalidation
     }
-    // When either gate fails, entityFile stays unset and the error below tells the client to re-send
-    // the entity file — the correct recovery in every one of those cases.
-  }
-  if (!entityFile) {
-    throw new InvalidRequestError(
-      isPartial
-        ? `The first partial request for an entity must include the entity file "${entityId}".`
-        : `Entity file "${entityId}" is missing from the request.`
-    )
-  }
+  | {
+      kind: 'regular'
+      uploadedFiles: Map<string, DeploymentFile>
+      parsed: ParsedEntity
+      /** Passed its pre-storage validation. */
+      deployment: DeploymentToValidate
+    }
+
+async function getBaseUrl(ctx: DeployEntityContext): Promise<string> {
+  return (await ctx.components.config.getString('HTTP_BASE_URL')) || `https://${ctx.url.host}`
+}
+
+// Reads the entity JSON, small whatever the content size, from the object validation later hashes so the
+// buffer is memoized on it. `id` is spread last so scene metadata cannot override the authenticated id.
+async function readEntity(file: DeploymentFile, entityId: string, signal: AbortSignal): Promise<ParsedEntity> {
   // The entity file is read fully into memory on both paths.
-  if (entityFile.size > MAX_ENTITY_FILE_SIZE_IN_BYTES) {
+  if (file.size > MAX_ENTITY_FILE_SIZE_IN_BYTES) {
     throw new InvalidRequestError(
       `The entity file is too large. The maximum allowed size is ${MAX_ENTITY_FILE_SIZE_IN_BYTES} bytes.`
     )
   }
+  const entityRaw = (await file.asBuffer(signal)).toString()
+  return { entity: { ...parseEntityJson(entityRaw), id: entityId }, entityRaw }
+}
 
+/** Answers a partial batch of an entity that is already published, from receipts or the live scene. */
+async function findPartialReplay(
+  ctx: DeployEntityContext,
+  { entityId, authChain }: AuthenticatedRequest,
+  signal: AbortSignal
+): Promise<IHttpServerComponent.IResponse | undefined> {
+  const baseUrl = await getBaseUrl(ctx)
+  // The receipt keeps answering the finalizer after an undeploy or replacement.
+  const completed = await ctx.components.pendingScenesManager.getCompleted(entityId, authChain[0].payload, signal)
+  if (completed) {
+    return {
+      status: 200,
+      body: {
+        creationTimestamp: completed.creationTimestamp,
+        message: buildSceneDeploymentMessage(baseUrl, completed.worldName, completed.parcels)
+      }
+    }
+  }
+  // A live entity is never restaged: any signer's batch, with or without the manifest, gets its publication.
+  const published = await ctx.components.partialDeployments.findPublication(baseUrl, entityId, signal)
+  if (published) {
+    return { status: 200, body: { creationTimestamp: published.creationTimestamp, ...published.result } }
+  }
+  return undefined
+}
+
+/**
+ * Validates what needs neither storage nor the content lock, so an invalid or unauthorized request never
+ * holds a lock connection while its files are hashed or its permission is checked.
+ */
+async function prepareDeployment(
+  ctx: DeployEntityContext,
+  request: AuthenticatedRequest,
+  signal: AbortSignal
+): Promise<{ response: IHttpServerComponent.IResponse } | { prepared: PreparedDeployment }> {
+  const { entityId, authChain, isPartial } = request
+  const { deploymentProcessing, partialDeployments, pendingScenesManager, validator } = ctx.components
+  signal.throwIfAborted()
   const uploadedFiles: Map<string, DeploymentFile> = new Map()
   for (const filesKey in ctx.formData.files) {
     uploadedFiles.set(filesKey, toDeploymentFile(ctx.formData.files[filesKey]))
   }
-
-  // The entity JSON is small, so it is safe to buffer. Both the partial and vanilla paths need it, and
-  // the hash reuses this same read. Read from the object validation later hashes (the map entry, or the
-  // manifest read back from storage) so the buffer is memoized on it. `id` is spread last so scene
-  // metadata cannot override the id the client authenticated against.
-  const entityRaw = (await (uploadedFiles.get(entityId) ?? entityFile).asBuffer(signal)).toString()
-  const entityMetadataJson = parseEntityJson(entityRaw)
-  const entity: Entity = { ...entityMetadataJson, id: entityId }
+  const uploadedEntity = uploadedFiles.get(entityId)
 
   if (isPartial) {
-    const baseUrl = (await ctx.components.config.getString('HTTP_BASE_URL')) || `https://${ctx.url.host}`
+    // Read before the replay checks: a publication in between is then answered as a replay instead of
+    // validating a long upload's entity against now. Staging re-reads it under the lock.
+    const pending = await pendingScenesManager.getByEntityId(entityId, signal)
+    const replay = await findPartialReplay(ctx, request, signal)
+    if (replay) return { response: replay }
+    if (!uploadedEntity) {
+      // The manifest is read back from storage under the lock; only its own signer's resume is hashed now.
+      if (pending?.deployer === authChain[0].payload.toLowerCase()) {
+        await mapWithConcurrency(
+          Array.from(uploadedFiles.values()),
+          deploymentProcessing.hashConcurrency,
+          (file) => file.getHash(signal),
+          { signal }
+        )
+      }
+      return { prepared: { kind: 'partial', uploadedFiles } }
+    }
+    const parsed = await readEntity(uploadedEntity, entityId, signal)
+    const prevalidation = await partialDeployments.prevalidate(
+      { entity: parsed.entity, authChain, files: uploadedFiles, signal, requestArrivedAt: getRequestArrival(ctx) },
+      pending
+    )
+    return { prepared: { kind: 'partial', uploadedFiles, parsed, prevalidation } }
+  }
+
+  if (!uploadedEntity) throw new InvalidRequestError(`Entity file "${entityId}" is missing from the request.`)
+  const parsed = await readEntity(uploadedEntity, entityId, signal)
+  // Always validated against now, even while a partial upload of the same entity is pending, whose
+  // staging state the publication then drops.
+  const deployment: DeploymentToValidate = {
+    entity: parsed.entity,
+    files: uploadedFiles,
+    authChain,
+    contentHashesInStorage: new Map<string, boolean>(),
+    signal
+  }
+  const preStorageValidationResult = await validator.validateBeforeStorage(deployment)
+  if (!preStorageValidationResult.ok()) {
+    throw new InvalidRequestError(`Deployment failed: ${preStorageValidationResult.errors.join(', ')}`)
+  }
+  return { prepared: { kind: 'regular', uploadedFiles, parsed, deployment } }
+}
+
+async function deployEntityWithSignal(
+  ctx: DeployEntityContext,
+  request: AuthenticatedRequest,
+  prepared: PreparedDeployment,
+  signal: AbortSignal,
+  deadlineAt: number
+): Promise<IHttpServerComponent.IResponse> {
+  const { entityId, authChain } = request
+  const { deploymentProcessing } = ctx.components
+  const { uploadedFiles } = prepared
+  if (prepared.kind === 'partial') {
+    // Re-checked under the per-entity lock: a concurrent batch may have published it meanwhile.
+    const replay = await findPartialReplay(ctx, request, signal)
+    if (replay) return replay
+
+    let parsed = prepared.parsed
+    // Set when a resume batch omits the manifest: it is validated but never charged or stored again.
+    let manifest: DeploymentFile | undefined
+    if (!parsed) {
+      // Resume request: read the entity back from storage for an entity id the CLIENT supplied. The resume
+      // body is tiny, so this read is NOT covered by the multipart in-flight-bytes budget — it must be
+      // gated before any storage I/O or an attacker could turn cheap requests into concurrent
+      // MAX_ENTITY_FILE_SIZE_IN_BYTES reads + buffers (memory + egress amplification). Two gates, cheap first:
+      // 1. The local signature check (authenticateRequest): the request is validly signed for this entity
+      //    id. Alone this is NOT sufficient — any keypair can sign any entity id — so also:
+      // 2. A live pending upload for this entity, created by this same signer, must exist. Creating a
+      //    pending row required passing the full staging validation (including the deployment-permission
+      //    check) and rows are capped per deployer, so read-backs are bounded to in-flight uploads by
+      //    their own permission-validated deployer. Any other signer (or an expired upload) must re-send
+      //    the entity file instead, which restarts/joins the upload through the fully-validated path.
+      const pendingForResume = await ctx.components.pendingScenesManager.getByEntityId(entityId, signal)
+      if (pendingForResume && pendingForResume.deployer === authChain[0].payload.toLowerCase()) {
+        const stored = await raceWithSignal(ctx.components.storage.retrieve(entityId), signal)
+        if (stored) {
+          // streamToBufferCapped aborts past the cap while reading, so storage reporting size as null (the
+          // metadata is not trustworthy for enforcement) can't let an oversized blob through.
+          const buf = await streamToBufferCapped(
+            await raceWithSignal(stored.asStream(), signal),
+            MAX_ENTITY_FILE_SIZE_IN_BYTES,
+            signal
+          )
+          manifest = {
+            size: buf.length,
+            getStream: () => bufferToStream(buf),
+            getHash: () => hashV1(buf),
+            asBuffer: async () => buf
+          }
+        }
+      }
+      // When either gate fails, the manifest stays unset and the error below tells the client to re-send
+      // the entity file — the correct recovery in every one of those cases.
+      if (!manifest) {
+        throw new InvalidRequestError(
+          `The first partial request for an entity must include the entity file "${entityId}".`
+        )
+      }
+      parsed = await readEntity(manifest, entityId, signal)
+    }
+
     // The abort context bounds each staging request like a vanilla deploy: a disconnect or the
     // processing deadline cancels validation/hashing/storing (the pending row survives, so the client
     // resumes), and bounds the deploy transaction when this request finalizes.
     const result = await ctx.components.partialDeployments.stage({
-      baseUrl,
-      entity,
-      entityRaw,
+      baseUrl: await getBaseUrl(ctx),
+      ...parsed,
       authChain,
       files: uploadedFiles,
       manifest,
       signal,
       deadlineAt,
-      requestArrivedAt: getRequestArrival(ctx)
+      requestArrivedAt: getRequestArrival(ctx),
+      prevalidation: prepared.prevalidation
     })
     if (result.complete) {
       return {
@@ -267,21 +354,9 @@ async function deployEntityWithSignal(
     return { status: 202, body: { missing: result.missing ?? [] } }
   }
 
-  // Vanilla (single-request) deployment: always validated against now, even while a partial upload of
-  // the same entity is pending, whose staging state the publication then drops.
-  const deployment: DeploymentToValidate = {
-    entity,
-    files: uploadedFiles,
-    authChain,
-    contentHashesInStorage: new Map<string, boolean>(),
-    signal
-  }
-
-  const preStorageValidationResult = await ctx.components.validator.validateBeforeStorage(deployment)
-  if (!preStorageValidationResult.ok()) {
-    throw new InvalidRequestError(`Deployment failed: ${preStorageValidationResult.errors.join(', ')}`)
-  }
-
+  // Vanilla (single-request) deployment, validated before the lock up to its storage-backed checks.
+  const { entity, entityRaw } = prepared.parsed
+  const { deployment } = prepared
   signal.throwIfAborted()
   const contentHashes = entity.content!.map(($) => $.hash)
   const contentFileInfos = await deploymentProcessing.trackStage('metadata', new Set(contentHashes).size, () =>
@@ -298,7 +373,8 @@ async function deployEntityWithSignal(
   const validationResult = await ctx.components.validator.validateAfterStorage({
     ...deployment,
     contentHashesInStorage,
-    contentFileInfos
+    contentFileInfos,
+    signal
   })
 
   if (!validationResult.ok()) {
@@ -310,7 +386,7 @@ async function deployEntityWithSignal(
   }
 
   // Store the entity
-  const baseUrl = (await ctx.components.config.getString('HTTP_BASE_URL')) || `https://${ctx.url.host}`
+  const baseUrl = await getBaseUrl(ctx)
   const deploymentSize = calculateDeploymentSizeFromFileInfos(entity, uploadedFiles, contentFileInfos)
   signal.throwIfAborted()
   let message: { message?: string; creationTimestamp?: number }
@@ -398,12 +474,25 @@ async function handleDeployment(ctx: DeployEntityContext): Promise<IHttpServerCo
   const abortContext = ctx.components.deploymentProcessing.createAbortContext(ctx.request?.signal)
   try {
     const request = await authenticateRequest(ctx)
-    return await ctx.components.deploymentProcessing.trackStage('total', Object.keys(ctx.formData.files).length, () =>
-      ctx.components.contentLocks.withRead(
-        (signal) => deployEntityWithSignal(ctx, request, signal ?? abortContext.signal, abortContext.deadlineAt),
-        abortContext.signal,
-        request.entityId
-      )
+    return await ctx.components.deploymentProcessing.trackStage(
+      'total',
+      Object.keys(ctx.formData.files).length,
+      async () => {
+        const preparation = await prepareDeployment(ctx, request, abortContext.signal)
+        if ('response' in preparation) return preparation.response
+        return ctx.components.contentLocks.withRead(
+          (signal) =>
+            deployEntityWithSignal(
+              ctx,
+              request,
+              preparation.prepared,
+              signal ?? abortContext.signal,
+              abortContext.deadlineAt
+            ),
+          abortContext.signal,
+          request.entityId
+        )
+      }
     )
   } catch (error) {
     const abortedError =

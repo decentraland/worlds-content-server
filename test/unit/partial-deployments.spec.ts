@@ -1,4 +1,5 @@
 import { AuthLinkType, EntityType } from '@dcl/schemas'
+import { InvalidRequestError } from '@dcl/http-commons'
 import { createPartialDeploymentsComponent } from '../../src/logic/partial-deployments'
 import { createCoordinatesComponent } from '../../src/logic/coordinates'
 import { createDeploymentProcessingMock } from '../mocks/deployment-processing-mock'
@@ -28,6 +29,7 @@ describe('when staging a partial deployment', () => {
   let increment: jest.Mock
   let observe: jest.Mock
   let stage: Awaited<ReturnType<typeof createPartialDeploymentsComponent>>['stage']
+  let prevalidate: Awaited<ReturnType<typeof createPartialDeploymentsComponent>>['prevalidate']
 
   beforeEach(async () => {
     input = {
@@ -92,7 +94,7 @@ describe('when staging a partial deployment', () => {
       validator: { validateStaging, validate },
       worldsManager: { hasNewerDeployedScene: jest.fn().mockResolvedValue(false), getWorldScenes }
     } as unknown as Components
-    ;({ stage } = await createPartialDeploymentsComponent(components))
+    ;({ stage, prevalidate } = await createPartialDeploymentsComponent(components))
   })
 
   afterEach(() => {
@@ -108,6 +110,142 @@ describe('when staging a partial deployment', () => {
       expect({ metadata: fileInfo.mock.calls.length, reservations: reserve.mock.calls.length }).toEqual({
         metadata: 0,
         reservations: 0
+      })
+    })
+  })
+
+  describe('and the batch was validated before the content lock', () => {
+    beforeEach(async () => {
+      input.prevalidation = { sawPending: false }
+      await stage(input)
+    })
+
+    it('should not validate it again', () => {
+      expect(validateStaging).not.toHaveBeenCalled()
+    })
+
+    it('should still create the upload', () => {
+      expect(upsert.mock.calls[0][0].resumes).toBe(false)
+    })
+  })
+
+  describe("and the signer's upload seen before the content lock is gone under it", () => {
+    let caughtError: unknown
+
+    beforeEach(async () => {
+      input.prevalidation = { sawPending: true }
+      caughtError = await stage(input).catch((error: unknown) => error)
+    })
+
+    it('should reject the batch as expired', () => {
+      expect(caughtError).toBeInstanceOf(PartialUploadExpiredError)
+    })
+
+    it('should neither validate, look up storage nor create an upload', () => {
+      expect({
+        validations: validateStaging.mock.calls.length,
+        metadata: fileInfo.mock.calls.length,
+        upserts: upsert.mock.calls.length
+      }).toEqual({ validations: 0, metadata: 0, upserts: 0 })
+    })
+  })
+
+  describe("and the signer's upload seen before the content lock is still live", () => {
+    beforeEach(async () => {
+      input.prevalidation = { sawPending: true }
+      getPending.mockResolvedValueOnce({ createdAt: new Date(), deployer: 'deployer', initialized: true })
+      getProgress.mockResolvedValueOnce(new Map())
+      await stage(input)
+    })
+
+    it('should resume it', () => {
+      expect(upsert.mock.calls[0][0].resumes).toBe(true)
+    })
+  })
+
+  describe('and the batch is validated ahead of staging', () => {
+    describe('and the signer has a live upload of the entity', () => {
+      let createdAt: Date
+      let result: Awaited<ReturnType<typeof prevalidate>>
+
+      beforeEach(async () => {
+        createdAt = new Date(5_000)
+        result = await prevalidate(input, {
+          entityId: 'entity',
+          worldName: 'world.dcl.eth',
+          parcels: ['0,0'],
+          deployer: 'deployer',
+          createdAt,
+          updatedAt: createdAt,
+          initialized: true
+        })
+      })
+
+      it('should skip the permission check and report the upload as seen', () => {
+        expect({ options: validateStaging.mock.calls[0][1], result }).toEqual({
+          options: { skipPermissionCheck: true },
+          result: { sawPending: true }
+        })
+      })
+
+      it('should validate freshness against the upload admission', () => {
+        expect(validateStaging.mock.calls[0][0].pendingCreatedAt).toBe(createdAt)
+      })
+    })
+
+    describe('and another signer has a live upload of the entity', () => {
+      let result: Awaited<ReturnType<typeof prevalidate>>
+
+      beforeEach(async () => {
+        result = await prevalidate(input, {
+          entityId: 'entity',
+          worldName: 'world.dcl.eth',
+          parcels: ['0,0'],
+          deployer: 'other',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          initialized: true
+        })
+      })
+
+      it('should check permission and not report the upload as seen', () => {
+        expect({ options: validateStaging.mock.calls[0][1], result }).toEqual({
+          options: { skipPermissionCheck: false },
+          result: { sawPending: false }
+        })
+      })
+    })
+
+    describe('and there is no live upload of the entity', () => {
+      let result: Awaited<ReturnType<typeof prevalidate>>
+
+      beforeEach(async () => {
+        result = await prevalidate(input, undefined)
+      })
+
+      it('should check permission against the request arrival', () => {
+        expect({
+          options: validateStaging.mock.calls[0][1],
+          anchor: validateStaging.mock.calls[0][0].pendingCreatedAt,
+          result
+        }).toEqual({
+          options: { skipPermissionCheck: false },
+          anchor: new Date(input.requestArrivedAt),
+          result: { sawPending: false }
+        })
+      })
+    })
+
+    describe('and validation rejects the batch', () => {
+      let caughtError: unknown
+
+      beforeEach(async () => {
+        validateStaging.mockResolvedValueOnce({ ok: () => false, errors: ['no permission'] })
+        caughtError = await prevalidate(input, undefined).catch((error: unknown) => error)
+      })
+
+      it('should reject it as an invalid request', () => {
+        expect(caughtError).toEqual(new InvalidRequestError('Deployment failed: no permission'))
       })
     })
   })

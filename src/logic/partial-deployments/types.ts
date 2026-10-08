@@ -3,6 +3,7 @@ import { AuthChain, Entity } from '@dcl/schemas'
 // in turn references IPartialDeploymentsComponent for AppComponents — keeping this import type-only
 // erases the edge so there is no runtime import cycle.
 import type { DeploymentFile, DeploymentResult } from '../../types'
+import type { PendingScene } from '../../adapters/pending-scenes-manager/types'
 
 export type StageDeploymentInput = {
   baseUrl: string
@@ -23,6 +24,19 @@ export type StageDeploymentInput = {
   deadlineAt?: number
   /** When the request arrived, before its body was read; admits a new upload at that instant. */
   requestArrivedAt: number
+  /** Set when the batch was validated before the content lock; staging then skips its validation. */
+  prevalidation?: StagingPrevalidation
+}
+
+/** The parts of a staging request its validation needs; none of them requires the content lock. */
+export type PrevalidateStagingInput = Pick<
+  StageDeploymentInput,
+  'entity' | 'authChain' | 'files' | 'manifest' | 'signal' | 'requestArrivedAt'
+>
+
+export type StagingPrevalidation = {
+  /** A live upload of this signer was seen, so the permission check was skipped; staging requires it to remain. */
+  sawPending: boolean
 }
 
 export type StageDeploymentResult = {
@@ -39,12 +53,19 @@ export type StageDeploymentResult = {
 export type IPartialDeploymentsComponent = {
   /**
    * Stages one request of a partial scene deployment: validates everything that doesn't need the full
-   * content set, stores the uploaded files, records/refreshes the pending scene, and — when this
-   * request completes the content set — runs the full validation + deploy and returns the result.
-   * Throws `InvalidRequestError` (HTTP 400) on client errors and `PartialUploadQuotaExceededError`
-   * (HTTP 429) when a partial-upload quota is full.
+   * content set (unless `prevalidation` says it already did), stores the uploaded files, records/refreshes
+   * the pending scene, and — when this request completes the content set — runs the full validation +
+   * deploy and returns the result. Throws `InvalidRequestError` (HTTP 400) on client errors, including
+   * `PartialUploadExpiredError` when the upload `prevalidation` saw is gone, and
+   * `PartialUploadQuotaExceededError` (HTTP 429) when a partial-upload quota is full.
    */
   stage(input: StageDeploymentInput): Promise<StageDeploymentResult>
+  /**
+   * Runs the staging validation of {@link IPartialDeploymentsComponent.stage} ahead of it, anchored on a
+   * pending upload read beforehand. Hashes the uploaded files and checks permission unless `pending` is
+   * the signer's own upload. Throws `InvalidRequestError` (HTTP 400) when the batch is invalid.
+   */
+  prevalidate(input: PrevalidateStagingInput, pending: PendingScene | undefined): Promise<StagingPrevalidation>
   /**
    * Returns the live publication of an entity as a completed result, or undefined when it isn't
    * published. The entity id is the entity file's hash, so the live entity is exactly what any

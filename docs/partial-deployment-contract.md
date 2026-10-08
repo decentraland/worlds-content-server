@@ -54,6 +54,9 @@ counts every file of the scene. Expired slots and bytes remain charged if physic
 
 Migrations run at startup. Worlds runs as a single instance behind Cloudflare, so a normal deploy is
 enough. The content lock uses `CONTENT_LOCK_CONNECTIONS` connections in addition to the query pool.
+Partial batches hash their files and, when they carry the manifest, run their staging validation
+(including the permission check) before taking it; regular deployments first run their pre-storage
+validation.
 Uploads share the lock; GC briefly excludes uploads per 1,000-key batch. Requests for one entity are
 serialized, while separate entities can upload concurrently. This favors correctness over maximum
 same-entity batch parallelism. Storage transports must have timeouts and honor write cancellation;
