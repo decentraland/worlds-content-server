@@ -83,38 +83,56 @@ test('POST /entities multipart error handling', function ({ components }) {
   })
 
   describe('when the request has more fields than allowed', () => {
-    it('responds with 400 and a too-many-fields error', async () => {
+    let response: Response
+
+    beforeEach(async () => {
       const { localFetch } = components
       const form = new FormData()
       for (let i = 0; i < 200; i++) {
         form.append(`field${i}`, 'x')
       }
 
-      const response = await localFetch.fetch('/entities', {
+      response = await localFetch.fetch('/entities', {
         method: 'POST',
         headers: form.getHeaders(),
         body: form.getBuffer()
       })
+    })
 
-      expect(response.status).toBe(400)
-      expect((await response.json()).message).toContain('too many fields')
+    it('should respond with 413 and a too-many-fields error', async () => {
+      expect({ status: response.status, body: await response.json() }).toEqual({
+        status: 413,
+        body: {
+          error: 'Payload Too Large',
+          message: 'The multipart request has too many fields. The maximum allowed is 32.'
+        }
+      })
     })
   })
 
   describe('when a field exceeds the maximum field size', () => {
-    it('responds with 400 and a too-large error', async () => {
+    let response: Response
+
+    beforeEach(async () => {
       const { localFetch } = components
       const form = new FormData()
       form.append('entityId', 'x'.repeat(2 * 1024 * 1024))
 
-      const response = await localFetch.fetch('/entities', {
+      response = await localFetch.fetch('/entities', {
         method: 'POST',
         headers: form.getHeaders(),
         body: form.getBuffer()
       })
+    })
 
-      expect(response.status).toBe(400)
-      expect((await response.json()).message).toContain('too large')
+    it('should respond with 413 and a too-large error', async () => {
+      expect({ status: response.status, body: await response.json() }).toEqual({
+        status: 413,
+        body: {
+          error: 'Payload Too Large',
+          message: "Field 'entityId' is too large. The maximum allowed size per field is 32768 bytes."
+        }
+      })
     })
   })
 

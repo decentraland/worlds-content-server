@@ -422,9 +422,9 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
 
     it('should reject the request naming the field limit', async () => {
       expect({ status: response.status, body: await response.json() }).toEqual({
-        status: 400,
+        status: 413,
         body: {
-          error: 'Bad request',
+          error: 'Payload Too Large',
           message: 'The multipart request has too many fields. The maximum allowed is 32.'
         }
       })
@@ -445,9 +445,9 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
 
     it('should reject the request naming the field and its size limit', async () => {
       expect({ status: response.status, body: await response.json() }).toEqual({
-        status: 400,
+        status: 413,
         body: {
-          error: 'Bad request',
+          error: 'Payload Too Large',
           message: "Field 'authChain[1][payload]' is too large. The maximum allowed size per field is 32768 bytes."
         }
       })

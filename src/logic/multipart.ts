@@ -12,6 +12,14 @@ import { pipeline } from 'stream/promises'
 import { DeploymentFile } from '../types'
 import { hashV1 } from '@dcl/hashing'
 
+/** A multipart body over a size or count limit; answered with 413, as on Catalyst. */
+export class PayloadTooLargeError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'PayloadTooLargeError'
+  }
+}
+
 /**
  * An uploaded file. The bytes are streamed to a temp file on disk rather than buffered in memory,
  * so a deployment of large content files never holds them all in RAM at once. Consumers stream
@@ -326,13 +334,16 @@ class UploadTimeoutError extends MultipartRejectionError {
   }
 }
 
-class UploadWireSizeError extends MultipartRejectionError {
+/** A size or count limit violation, answered with 413 rather than 400. */
+class UploadLimitError extends MultipartRejectionError {}
+
+class UploadWireSizeError extends UploadLimitError {
   constructor(actualBytes: number) {
     super('wire_size', 'The multipart request is too large.', actualBytes)
   }
 }
 
-class UploadPayloadSizeError extends MultipartRejectionError {
+class UploadPayloadSizeError extends UploadLimitError {
   constructor(message: string, actualBytes: number) {
     super('payload_size', message, actualBytes)
   }
@@ -347,6 +358,12 @@ class UploadStorageError extends MultipartRejectionError {
 class UploadFileCapacityError extends MultipartRejectionError {
   constructor(actualBytes: number) {
     super('files', 'Server is buffering too many upload files, please retry shortly.', actualBytes)
+  }
+}
+
+class UploadCountLimitError extends UploadLimitError {
+  constructor(message: string, actualBytes: number) {
+    super('invalid_multipart', message, actualBytes)
   }
 }
 
@@ -583,9 +600,12 @@ export function multipartParserWrapper<Ctx extends FormDataContext, T extends IH
     validateReservationBytes('multipart cleanup retry delay', delayMs)
   }
   const limits: busboy.Limits = { ...DEFAULT_LIMITS, fileSize: maxSizeInBytes, ...options?.limits }
-  // busboy marks a value that reaches `fieldSize` as truncated, so allow one more byte.
-  const parserLimits: busboy.Limits =
-    limits.fieldSize === undefined ? limits : { ...limits, fieldSize: limits.fieldSize + 1 }
+  // busboy truncates a field or file that reaches its size limit, so allow one more byte.
+  const parserLimits: busboy.Limits = {
+    ...limits,
+    ...(limits.fieldSize !== undefined && { fieldSize: limits.fieldSize + 1 }),
+    ...(limits.fileSize !== undefined && { fileSize: limits.fileSize + 1 })
+  }
   const maxFilesPerRequest = limits.files ?? Infinity
   // One maximum-size upload with every file part it may carry must fit the budget on its own.
   const maxRequestCharge = maxSizeInBytes + maxFilesPerRequest * inFlightUploadBudget.uploadFileOverheadBytes
@@ -629,7 +649,7 @@ export function multipartParserWrapper<Ctx extends FormDataContext, T extends IH
     if (declaredSize !== undefined && (!Number.isSafeInteger(declaredSize) || declaredSize > maxWireSizeInBytes)) {
       drainRequestBody(ctx.request.body, uploadTimeoutMs, inFlightUploadBudget)
       emitRejection('wire_size', 0, true)
-      throw new InvalidRequestError('The multipart request is too large.')
+      throw new PayloadTooLargeError('The multipart request is too large.')
     }
 
     // Bound aggregate temporary disk usage: this parser runs before any auth on POST /entities, so
@@ -669,6 +689,9 @@ export function multipartParserWrapper<Ctx extends FormDataContext, T extends IH
     } catch (error) {
       if (error instanceof MultipartRejectionError) {
         emitRejection(error.reason, error.actualBytes, declaredSize !== undefined)
+        if (error instanceof UploadLimitError) {
+          throw new PayloadTooLargeError(error.message)
+        }
         if (
           error.reason !== 'bytes' &&
           error.reason !== 'files' &&
@@ -791,14 +814,14 @@ export function multipartParserWrapper<Ctx extends FormDataContext, T extends IH
     }
 
     formDataParser.on('partsLimit', () =>
-      abortParsing(new InvalidMultipartBodyError('The multipart request has too many parts.', totalBytes))
+      abortParsing(new UploadCountLimitError('The multipart request has too many parts.', totalBytes))
     )
     formDataParser.on('filesLimit', () =>
-      abortParsing(new InvalidMultipartBodyError('The multipart request has too many files.', totalBytes))
+      abortParsing(new UploadCountLimitError('The multipart request has too many files.', totalBytes))
     )
     formDataParser.on('fieldsLimit', () =>
       abortParsing(
-        new InvalidMultipartBodyError(
+        new UploadCountLimitError(
           `The multipart request has too many fields. The maximum allowed is ${limits.fields}.`,
           totalBytes
         )

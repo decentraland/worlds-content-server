@@ -436,6 +436,15 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: >-
+            The multipart body exceeds a parser limit: total size (declared Content-Length or bytes
+            received), a single file or field value, or the number of files, fields or parts. The
+            message names the limit. Send smaller batches.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '429':
           description: >-
             The client source already has its share of uploads in flight, or a partial-upload quota is
@@ -1271,6 +1280,14 @@ paths:
           description: >-
             The body did not arrive within the upload deadline; the message states the deadline, the
             bytes received (of those declared) and the measured rate.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: >-
+            The multipart body exceeds a parser limit: total size (2 MiB), a single file or field value,
+            or the number of files, fields or parts. The message names the limit.
           content:
             application/json:
               schema:

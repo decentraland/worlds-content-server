@@ -23,8 +23,9 @@ ID as the upload identifier; there is no session creation or explicit commit end
 `400` covers validation, expiry and requests that alone exceed a budget (a batch above the per-minute
 byte rate, or an upload above the per-account staging budget); no retry can succeed. `429` with
 `Retry-After` means a budget is full because of other uploads or traffic. `408` covers processing
-deadlines. Clients must distinguish `200` from `202`, handle terminal validation failures, retry
-transient transport failures, and use the returned missing list rather than subtracting a new global
+deadlines. `413` means the body exceeds a multipart size or count limit; send smaller batches.
+Clients must distinguish `200` from `202`, handle terminal validation failures, retry transient
+transport failures, and use the returned missing list rather than subtracting a new global
 availability result.
 A rate rejection uses a fixed one-minute accounting window; repeated requests within it will not help.
 

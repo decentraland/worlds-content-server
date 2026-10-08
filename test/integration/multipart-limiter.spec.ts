@@ -4,6 +4,7 @@ import { defaultServerConfig } from '@dcl/test-helpers'
 import { createRecordConfigComponent } from '@well-known-components/env-config-provider'
 import { createLogComponent } from '@well-known-components/logger'
 import { errorHandler } from '@dcl/http-commons'
+import { payloadTooLargeHandler } from '../../src/controllers/payload-too-large-handler'
 import { ClientRequest, request } from 'http'
 import {
   createInFlightUploadBudget,
@@ -50,6 +51,7 @@ async function startMultipartServer(options: {
   const handler = options.handler ?? (async () => ({ status: 200 }))
 
   router.use(errorHandler as any)
+  router.use(payloadTooLargeHandler())
   router.post(
     '/upload',
     multipartParserWrapper(handler, {
@@ -490,8 +492,8 @@ describe('multipart limiter over HTTP', () => {
       jest.clearAllMocks()
     })
 
-    it('should respond with 400 without waiting for the upload timeout', () => {
-      expect(result.status).toBe(400)
+    it('should respond with 413 without waiting for the upload timeout', () => {
+      expect(result.status).toBe(413)
     })
 
     it('should report a payload-size rejection', () => {
@@ -522,8 +524,8 @@ describe('multipart limiter over HTTP', () => {
       jest.clearAllMocks()
     })
 
-    it('should respond with 400 without waiting for the upload timeout', () => {
-      expect(result.status).toBe(400)
+    it('should respond with 413 without waiting for the upload timeout', () => {
+      expect(result.status).toBe(413)
     })
 
     it('should release all reserved bytes and the upload slot', () => {

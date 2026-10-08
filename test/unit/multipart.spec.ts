@@ -18,6 +18,7 @@ import {
   MAX_DEPLOYMENT_FIELD_SIZE_IN_BYTES,
   MAX_DEPLOYMENT_FIELDS,
   multipartParserWrapper,
+  PayloadTooLargeError,
   readUploadedFile,
   toDeploymentFile,
   UploadedFile
@@ -80,8 +81,14 @@ describe('multipartParserWrapper', function () {
       context = createMultipartContext(form)
     })
 
-    it('should reject the request', async () => {
-      await expect(parse(context)).rejects.toThrow()
+    it('should reject the request as too large', async () => {
+      await expect(parse(context)).rejects.toThrow(
+        new PayloadTooLargeError('An uploaded file exceeds the maximum allowed size.')
+      )
+    })
+
+    it('should reject it with a payload-too-large error', async () => {
+      await expect(parse(context)).rejects.toBeInstanceOf(PayloadTooLargeError)
     })
 
     it('should not invoke the handler', async () => {
@@ -113,8 +120,12 @@ describe('multipartParserWrapper', function () {
       context = createMultipartContext(form)
     })
 
-    it('should reject the request', async () => {
-      await expect(parse(context)).rejects.toThrow()
+    it('should reject the request as too large', async () => {
+      await expect(parse(context)).rejects.toThrow(new PayloadTooLargeError('The multipart request is too large.'))
+    })
+
+    it('should reject it with a payload-too-large error', async () => {
+      await expect(parse(context)).rejects.toBeInstanceOf(PayloadTooLargeError)
     })
 
     it('should not invoke the handler', async () => {
@@ -144,8 +155,14 @@ describe('multipartParserWrapper', function () {
       context = createMultipartContext(form)
     })
 
-    it('should reject the request', async () => {
-      await expect(parse(context)).rejects.toThrow()
+    it('should reject the request naming the file limit', async () => {
+      await expect(parse(context)).rejects.toThrow(
+        new PayloadTooLargeError('The multipart request has too many files.')
+      )
+    })
+
+    it('should reject it with a payload-too-large error', async () => {
+      await expect(parse(context)).rejects.toBeInstanceOf(PayloadTooLargeError)
     })
 
     it('should not invoke the handler', async () => {
@@ -158,6 +175,100 @@ describe('multipartParserWrapper', function () {
       expect(onTelemetry).toHaveBeenCalledWith(
         expect.objectContaining({ kind: 'rejected', reason: 'invalid_multipart' })
       )
+    })
+  })
+
+  describe('when the request has more parts than allowed', () => {
+    let handler: jest.Mock
+    let error: unknown
+
+    beforeEach(async () => {
+      handler = jest.fn(async () => ({ status: 200 }))
+      const parse = multipartParserWrapper(handler, { limits: { parts: 2 } })
+      const form = new FormData()
+      form.append('a', 'x')
+      form.append('b', 'x')
+      form.append('c', 'x')
+      error = await parse(createMultipartContext(form)).catch((e) => e)
+    })
+
+    it('should reject the request as too large naming the part limit without invoking the handler', () => {
+      expect({
+        error,
+        tooLarge: error instanceof PayloadTooLargeError,
+        handled: handler.mock.calls.length
+      }).toEqual({
+        error: new PayloadTooLargeError('The multipart request has too many parts.'),
+        tooLarge: true,
+        handled: 0
+      })
+    })
+  })
+
+  describe('when a file is exactly the per-file size limit', () => {
+    let handler: jest.Mock
+    let parse: (ctx: any) => Promise<any>
+    let context: any
+
+    beforeEach(() => {
+      handler = jest.fn(async () => ({ status: 200 }))
+      parse = multipartParserWrapper(handler, { maxSizeInBytes: 1000, limits: { fileSize: 10 } })
+      const form = new FormData()
+      form.append('file', Buffer.alloc(10), { filename: 'exact.bin' })
+      context = createMultipartContext(form)
+    })
+
+    it('should pass the whole file to the handler', async () => {
+      await parse(context)
+      expect(handler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          formData: expect.objectContaining({ files: { file: expect.objectContaining({ size: 10 }) } })
+        })
+      )
+    })
+  })
+
+  describe('when a file is one byte over the per-file size limit', () => {
+    let handler: jest.Mock
+    let error: unknown
+
+    beforeEach(async () => {
+      handler = jest.fn(async () => ({ status: 200 }))
+      const parse = multipartParserWrapper(handler, { maxSizeInBytes: 1000, limits: { fileSize: 10 } })
+      const form = new FormData()
+      form.append('file', Buffer.alloc(11), { filename: 'over.bin' })
+      error = await parse(createMultipartContext(form)).catch((e) => e)
+    })
+
+    it('should reject the request as too large without invoking the handler', () => {
+      expect({
+        error,
+        tooLarge: error instanceof PayloadTooLargeError,
+        handled: handler.mock.calls.length
+      }).toEqual({
+        error: new PayloadTooLargeError('An uploaded file exceeds the maximum allowed size.'),
+        tooLarge: true,
+        handled: 0
+      })
+    })
+  })
+
+  describe('when a lone file is exactly the maximum allowed size', () => {
+    let handler: jest.Mock
+    let parse: (ctx: any) => Promise<any>
+    let context: any
+
+    beforeEach(() => {
+      handler = jest.fn(async () => ({ status: 200 }))
+      parse = multipartParserWrapper(handler, { maxSizeInBytes: 100 })
+      const form = new FormData()
+      form.append('file', Buffer.alloc(100), { filename: 'exact.bin' })
+      context = createMultipartContext(form)
+    })
+
+    it('should invoke the handler', async () => {
+      await parse(context)
+      expect(handler).toHaveBeenCalledTimes(1)
     })
   })
 
@@ -276,6 +387,10 @@ describe('multipartParserWrapper', function () {
 
     it('should reject the request before reading the body', async () => {
       await expect(parse(context)).rejects.toThrow('The multipart request is too large.')
+    })
+
+    it('should reject it with a payload-too-large error', async () => {
+      await expect(parse(context)).rejects.toBeInstanceOf(PayloadTooLargeError)
     })
 
     it('should not invoke the handler', async () => {
@@ -453,6 +568,10 @@ describe('multipartParserWrapper', function () {
       await expect(parse(context)).rejects.toThrow('The multipart request is too large.')
     })
 
+    it('should reject it with a payload-too-large error', async () => {
+      await expect(parse(context)).rejects.toBeInstanceOf(PayloadTooLargeError)
+    })
+
     it('should report a wire-size rejection', async () => {
       await parse(context).catch(() => undefined)
       expect(onTelemetry).toHaveBeenCalledWith(expect.objectContaining({ kind: 'rejected', reason: 'wire_size' }))
@@ -499,7 +618,10 @@ describe('multipartParserWrapper', function () {
     })
 
     it('should reject immediately with the wire-size error instead of timing out', () => {
-      expect(error?.message).toBe('The multipart request is too large.')
+      expect({ message: error?.message, tooLarge: error instanceof PayloadTooLargeError }).toEqual({
+        message: 'The multipart request is too large.',
+        tooLarge: true
+      })
     })
   })
 
@@ -595,7 +717,10 @@ describe('multipartParserWrapper', function () {
     })
 
     it('should preserve the payload-size error instead of reporting a timeout', () => {
-      expect(error?.message).toBe('An uploaded file exceeds the maximum allowed size.')
+      expect({ message: error?.message, tooLarge: error instanceof PayloadTooLargeError }).toEqual({
+        message: 'An uploaded file exceeds the maximum allowed size.',
+        tooLarge: true
+      })
     })
 
     it('should report a payload-size rejection', () => {
@@ -693,11 +818,16 @@ describe('multipartParserWrapper', function () {
         error = await parse(createMultipartContext(form)).catch((e) => e)
       })
 
-      it('should reject the request naming the field limit without invoking the handler', () => {
-        expect({ error, handled: handler.mock.calls.length }).toEqual({
-          error: new InvalidRequestError(
+      it('should reject the request as too large naming the field limit without invoking the handler', () => {
+        expect({
+          error,
+          tooLarge: error instanceof PayloadTooLargeError,
+          handled: handler.mock.calls.length
+        }).toEqual({
+          error: new PayloadTooLargeError(
             `The multipart request has too many fields. The maximum allowed is ${MAX_DEPLOYMENT_FIELDS}.`
           ),
+          tooLarge: true,
           handled: 0
         })
       })
@@ -711,11 +841,16 @@ describe('multipartParserWrapper', function () {
         error = await parse(createMultipartContext(form)).catch((e) => e)
       })
 
-      it('should reject the request naming the field and its size limit without invoking the handler', () => {
-        expect({ error, handled: handler.mock.calls.length }).toEqual({
-          error: new InvalidRequestError(
+      it('should reject the request as too large naming the field and its size limit without invoking the handler', () => {
+        expect({
+          error,
+          tooLarge: error instanceof PayloadTooLargeError,
+          handled: handler.mock.calls.length
+        }).toEqual({
+          error: new PayloadTooLargeError(
             `Field 'entityId' is too large. The maximum allowed size per field is ${MAX_DEPLOYMENT_FIELD_SIZE_IN_BYTES} bytes.`
           ),
+          tooLarge: true,
           handled: 0
         })
       })
@@ -735,9 +870,10 @@ describe('multipartParserWrapper', function () {
       error = await parse(createMultipartContext(form)).catch((e) => e)
     })
 
-    it('should reject the request without invoking the handler', () => {
-      expect({ error, handled: handler.mock.calls.length }).toEqual({
+    it('should reject the request as malformed without invoking the handler', () => {
+      expect({ error, badRequest: error instanceof InvalidRequestError, handled: handler.mock.calls.length }).toEqual({
         error: new InvalidRequestError("Duplicate form field 'partial'"),
+        badRequest: true,
         handled: 0
       })
     })

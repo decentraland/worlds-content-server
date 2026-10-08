@@ -12,6 +12,7 @@ import {
 } from '../logic/multipart'
 import { BaseComponents, GlobalContext } from '../types'
 import { stampRequestArrival } from './request-arrival'
+import { payloadTooLargeHandler } from './payload-too-large-handler'
 import { createSourceUploadAdmission } from './source-upload-admission'
 import { availableContentHandler, getContentFile, headContentFile } from './handlers/content-file-handler'
 import { deployEntity } from './handlers/deploy-entity-handler'
@@ -262,6 +263,7 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
 
   const router = new Router<GlobalContext>()
   router.use(errorHandler)
+  router.use(payloadTooLargeHandler())
 
   // Aggregate buffered-bytes budget for multipart uploads. Tune per container ephemeral storage;
   // falls back to the parser's default when unset.

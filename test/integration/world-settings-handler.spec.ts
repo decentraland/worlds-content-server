@@ -1067,8 +1067,8 @@ test('WorldSettingsHandler', ({ components, stubComponents }) => {
           }
         })
 
-        it('should respond with 400', () => {
-          expect(response.status).toBe(400)
+        it('should respond with 413', () => {
+          expect(response.status).toBe(413)
         })
 
         it('should report that the uploaded file is too large', async () => {
