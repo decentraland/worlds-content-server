@@ -10,10 +10,13 @@ import { hashV1 } from '@dcl/hashing'
 import { InvalidRequestError } from '@dcl/http-commons'
 import {
   createInFlightUploadBudget,
+  DEPLOYMENT_FIELD_LIMITS,
   formatBytes,
   InFlightUploadBudget,
   InFlightUploadBudgetOptions,
   InFlightUploadBudgetSnapshot,
+  MAX_DEPLOYMENT_FIELD_SIZE_IN_BYTES,
+  MAX_DEPLOYMENT_FIELDS,
   multipartParserWrapper,
   readUploadedFile,
   toDeploymentFile,
@@ -646,6 +649,75 @@ describe('multipartParserWrapper', function () {
           snapshot: expect.objectContaining({ reservedFiles: 1 })
         }),
         state: expect.objectContaining({ reservedBytes: 0, activeUploads: 0 })
+      })
+    })
+  })
+
+  describe('when a request is parsed with the deployment field limits', () => {
+    let handler: jest.Mock
+    let parse: (ctx: any) => Promise<any>
+    let form: FormData
+
+    beforeEach(() => {
+      handler = jest.fn(async () => ({ status: 200 }))
+      parse = multipartParserWrapper(handler, { limits: DEPLOYMENT_FIELD_LIMITS })
+      form = new FormData()
+    })
+
+    describe('and it carries the maximum number of fields, each of the maximum size', () => {
+      let fieldSizes: number[]
+
+      beforeEach(async () => {
+        for (let i = 0; i < MAX_DEPLOYMENT_FIELDS; i++) {
+          form.append(`field${i}`, 'x'.repeat(MAX_DEPLOYMENT_FIELD_SIZE_IN_BYTES))
+        }
+        handler.mockImplementationOnce(async (ctx: any) => {
+          fieldSizes = Object.values(ctx.formData.fields).map((field: any) => field.value[0].length)
+          return { status: 200 }
+        })
+        await parse(createMultipartContext(form))
+      })
+
+      it('should pass every field whole to the handler', () => {
+        expect(fieldSizes).toEqual(new Array(MAX_DEPLOYMENT_FIELDS).fill(MAX_DEPLOYMENT_FIELD_SIZE_IN_BYTES))
+      })
+    })
+
+    describe('and it carries one field more than allowed', () => {
+      let error: unknown
+
+      beforeEach(async () => {
+        for (let i = 0; i <= MAX_DEPLOYMENT_FIELDS; i++) {
+          form.append(`field${i}`, 'x')
+        }
+        error = await parse(createMultipartContext(form)).catch((e) => e)
+      })
+
+      it('should reject the request naming the field limit without invoking the handler', () => {
+        expect({ error, handled: handler.mock.calls.length }).toEqual({
+          error: new InvalidRequestError(
+            `The multipart request has too many fields. The maximum allowed is ${MAX_DEPLOYMENT_FIELDS}.`
+          ),
+          handled: 0
+        })
+      })
+    })
+
+    describe('and a field is one byte over the maximum size', () => {
+      let error: unknown
+
+      beforeEach(async () => {
+        form.append('entityId', 'x'.repeat(MAX_DEPLOYMENT_FIELD_SIZE_IN_BYTES + 1))
+        error = await parse(createMultipartContext(form)).catch((e) => e)
+      })
+
+      it('should reject the request naming the field and its size limit without invoking the handler', () => {
+        expect({ error, handled: handler.mock.calls.length }).toEqual({
+          error: new InvalidRequestError(
+            `Field 'entityId' is too large. The maximum allowed size per field is ${MAX_DEPLOYMENT_FIELD_SIZE_IN_BYTES} bytes.`
+          ),
+          handled: 0
+        })
       })
     })
   })

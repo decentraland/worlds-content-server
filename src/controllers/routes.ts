@@ -2,6 +2,7 @@ import { Router } from '@dcl/http-server'
 import {
   createInFlightUploadBudget,
   DEFAULT_MAX_UPLOAD_SIZE_IN_BYTES,
+  DEPLOYMENT_FIELD_LIMITS,
   InFlightUploadBudget,
   InFlightUploadBudgetSnapshot,
   MAX_WORLD_SETTINGS_UPLOAD_SIZE_IN_BYTES,
@@ -281,6 +282,7 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
       maxRequestBytes: DEFAULT_MAX_UPLOAD_SIZE_IN_BYTES
     }),
     multipartParserWrapper(deployEntity, {
+      limits: DEPLOYMENT_FIELD_LIMITS,
       inFlightUploadBudget,
       uploadTimeoutMs,
       route: 'entities',

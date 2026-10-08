@@ -89,12 +89,26 @@ const MB = 1024 * 1024
  * are still enforced afterwards by the deployment validator.
  */
 export const DEFAULT_MAX_UPLOAD_SIZE_IN_BYTES = 350 * MB
+const DEFAULT_MAX_FILES = 10_000
 const DEFAULT_LIMITS: busboy.Limits = {
   fieldNameSize: 200,
   fieldSize: MB,
   fields: 100,
-  files: 10_000,
-  parts: 10_100
+  files: DEFAULT_MAX_FILES,
+  parts: DEFAULT_MAX_FILES + 100
+}
+
+/** Longest auth chain a deployment may carry, as on Catalyst (real chains have 2-3 links). */
+export const MAX_DEPLOYMENT_AUTH_CHAIN_LINKS = 10
+/** Non-file fields of a deployment: `entityId`, `partial` and `authChain[i][type|payload|signature]`. */
+export const MAX_DEPLOYMENT_FIELDS = 2 + 3 * MAX_DEPLOYMENT_AUTH_CHAIN_LINKS
+/** Largest legitimate value is an EIP-1654 signature of a few KiB; ephemeral payloads are ~120 bytes. */
+export const MAX_DEPLOYMENT_FIELD_SIZE_IN_BYTES = 32 * 1024
+/** Field caps for POST /entities, so a request holds at most 32 x 32 KiB = 1 MiB of fields in memory. */
+export const DEPLOYMENT_FIELD_LIMITS: busboy.Limits = {
+  fields: MAX_DEPLOYMENT_FIELDS,
+  fieldSize: MAX_DEPLOYMENT_FIELD_SIZE_IN_BYTES,
+  parts: DEFAULT_MAX_FILES + MAX_DEPLOYMENT_FIELDS
 }
 
 /**
@@ -569,6 +583,9 @@ export function multipartParserWrapper<Ctx extends FormDataContext, T extends IH
     validateReservationBytes('multipart cleanup retry delay', delayMs)
   }
   const limits: busboy.Limits = { ...DEFAULT_LIMITS, fileSize: maxSizeInBytes, ...options?.limits }
+  // busboy marks a value that reaches `fieldSize` as truncated, so allow one more byte.
+  const parserLimits: busboy.Limits =
+    limits.fieldSize === undefined ? limits : { ...limits, fieldSize: limits.fieldSize + 1 }
   const maxFilesPerRequest = limits.files ?? Infinity
   // One maximum-size upload with every file part it may carry must fit the budget on its own.
   const maxRequestCharge = maxSizeInBytes + maxFilesPerRequest * inFlightUploadBudget.uploadFileOverheadBytes
@@ -687,7 +704,7 @@ export function multipartParserWrapper<Ctx extends FormDataContext, T extends IH
         headers: {
           'content-type': ctx.request.headers.get('content-type') || undefined
         },
-        limits
+        limits: parserLimits
       })
     } catch (error: any) {
       throw new InvalidMultipartBodyError(error.message || 'Invalid multipart form data', 0)
@@ -780,7 +797,12 @@ export function multipartParserWrapper<Ctx extends FormDataContext, T extends IH
       abortParsing(new InvalidMultipartBodyError('The multipart request has too many files.', totalBytes))
     )
     formDataParser.on('fieldsLimit', () =>
-      abortParsing(new InvalidMultipartBodyError('The multipart request has too many fields.', totalBytes))
+      abortParsing(
+        new InvalidMultipartBodyError(
+          `The multipart request has too many fields. The maximum allowed is ${limits.fields}.`,
+          totalBytes
+        )
+      )
     )
 
     /**
@@ -793,7 +815,12 @@ export function multipartParserWrapper<Ctx extends FormDataContext, T extends IH
         return
       }
       if (info.valueTruncated) {
-        abortParsing(new UploadPayloadSizeError('The multipart request is too large.', totalBytes + bytes))
+        abortParsing(
+          new UploadPayloadSizeError(
+            `Field '${name}' is too large. The maximum allowed size per field is ${limits.fieldSize} bytes.`,
+            totalBytes + bytes
+          )
+        )
         return
       }
       if (rejectIfDuplicate(name, 'field') || !accountBytes(bytes)) {

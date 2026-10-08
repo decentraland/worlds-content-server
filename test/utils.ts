@@ -1,8 +1,9 @@
-import { Authenticator } from '@dcl/crypto'
+import { Authenticator, IdentityType } from '@dcl/crypto'
+import { createUnsafeIdentity } from '@dcl/crypto/dist/crypto'
 import { Readable } from 'stream'
 import { IContentStorageComponent } from '@dcl/catalyst-storage'
 import { stringToUtf8Bytes } from 'eth-connect'
-import { AuthChain } from '@dcl/schemas'
+import { AuthChain, AuthLinkType } from '@dcl/schemas'
 import { AUTH_CHAIN_HEADER_PREFIX, AUTH_METADATA_HEADER, AUTH_TIMESTAMP_HEADER } from '@dcl/crypto-middleware'
 import { IPgComponent } from '@dcl/pg-component'
 import { getAuthHeaders, getIdentity, type Identity } from '@dcl/test-helpers'
@@ -147,4 +148,39 @@ export function makePngBytes(length: number = 500): Uint8Array {
   const signature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
   const filler = Buffer.from(makeid(Math.max(0, length - signature.length)), 'utf8')
   return new Uint8Array(Buffer.concat([signature, filler]))
+}
+
+/**
+ * Signs `payload` for `owner` through a chain of `links` links: the signer, `links - 2` ephemeral
+ * hops and the signed payload. The first ephemeral payload's free-text line is padded so the
+ * payload takes `firstEphemeralPayloadBytes` bytes, still forming a valid chain.
+ */
+export function signThroughChainOf(
+  links: number,
+  owner: IdentityType,
+  payload: string,
+  firstEphemeralPayloadBytes?: number
+): AuthChain {
+  const expiration = new Date(Date.now() + 10 * 60 * 1000)
+  const chain: AuthChain = [{ type: AuthLinkType.SIGNER, payload: owner.address, signature: '' }]
+  let authority = owner
+  for (let hop = 0; hop < links - 2; hop++) {
+    const ephemeral = createUnsafeIdentity()
+    let message = Authenticator.getEphemeralMessage(ephemeral.address, expiration)
+    if (hop === 0 && firstEphemeralPayloadBytes !== undefined) {
+      message = 'x'.repeat(firstEphemeralPayloadBytes - Buffer.byteLength(message)) + message
+    }
+    chain.push({
+      type: AuthLinkType.ECDSA_PERSONAL_EPHEMERAL,
+      payload: message,
+      signature: Authenticator.createSignature(authority, message)
+    })
+    authority = ephemeral
+  }
+  chain.push({
+    type: AuthLinkType.ECDSA_PERSONAL_SIGNED_ENTITY,
+    payload,
+    signature: Authenticator.createSignature(authority, payload)
+  })
+  return chain
 }

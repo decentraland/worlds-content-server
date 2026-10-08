@@ -4,7 +4,8 @@ import { DeploymentBuilder } from 'dcl-catalyst-client'
 import { AuthChain, EntityType } from '@dcl/schemas'
 import { Authenticator } from '@dcl/crypto'
 import { stringToUtf8Bytes } from 'eth-connect'
-import { getIdentity, Identity, makeid, cleanup } from '../utils'
+import { getIdentity, Identity, makeid, cleanup, signThroughChainOf } from '../utils'
+import { MAX_DEPLOYMENT_AUTH_CHAIN_LINKS, MAX_DEPLOYMENT_FIELD_SIZE_IN_BYTES } from '../../src/logic/multipart'
 import FormData from 'form-data'
 import { request } from 'http'
 import SQL from 'sql-template-strings'
@@ -299,6 +300,71 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
       expect(response.status).toBe(200)
       expect(await countPending()).toBe(0)
       expect(await components.worldsManager.getMetadataForWorld(worldName)).toBeDefined()
+    })
+  })
+
+  describe('when a request carries the most form fields a deployment may send', () => {
+    let response: Awaited<ReturnType<typeof post>>
+
+    beforeEach(async () => {
+      // entityId, partial and a 10-link chain fill the field cap; one payload fills the size cap.
+      const authChain = signThroughChainOf(
+        MAX_DEPLOYMENT_AUTH_CHAIN_LINKS,
+        identity.realAccount,
+        entityId,
+        MAX_DEPLOYMENT_FIELD_SIZE_IN_BYTES
+      )
+      response = await post(buildForm([entityId, ...contentHashes], authChain))
+    })
+
+    it('should deploy the scene', async () => {
+      expect({ status: response.status, deployed: await countDeployedScenes() }).toEqual({ status: 200, deployed: 1 })
+    })
+  })
+
+  describe('when the auth chain has one link more than the field cap allows', () => {
+    let response: Awaited<ReturnType<typeof post>>
+
+    beforeEach(async () => {
+      const authChain = signThroughChainOf(MAX_DEPLOYMENT_AUTH_CHAIN_LINKS + 1, identity.realAccount, entityId)
+      response = await post(buildForm([entityId, ...contentHashes], authChain))
+    })
+
+    it('should reject the request naming the field limit', async () => {
+      expect({ status: response.status, body: await response.json() }).toEqual({
+        status: 400,
+        body: {
+          error: 'Bad request',
+          message: 'The multipart request has too many fields. The maximum allowed is 32.'
+        }
+      })
+    })
+
+    it('should not stage the upload', async () => {
+      expect(await countPending()).toBe(0)
+    })
+  })
+
+  describe('when a field is one byte over the per-field size cap', () => {
+    let response: Awaited<ReturnType<typeof post>>
+
+    beforeEach(async () => {
+      const authChain = signThroughChainOf(3, identity.realAccount, entityId, 32 * 1024 + 1)
+      response = await post(buildForm([entityId, ...contentHashes], authChain))
+    })
+
+    it('should reject the request naming the field and its size limit', async () => {
+      expect({ status: response.status, body: await response.json() }).toEqual({
+        status: 400,
+        body: {
+          error: 'Bad request',
+          message: "Field 'authChain[1][payload]' is too large. The maximum allowed size per field is 32768 bytes."
+        }
+      })
+    })
+
+    it('should not stage the upload', async () => {
+      expect(await countPending()).toBe(0)
     })
   })
 
