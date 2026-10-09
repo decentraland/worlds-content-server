@@ -318,8 +318,47 @@ paths:
         - Content Server
       summary: /entities
       description: |
-        Deploy a new scene to a world. The deployment must include entity metadata and all content files.
-        Requires authentication via auth chain.
+        Deploy a new scene to a world. Requires authentication via auth chain.
+
+        A standard deployment includes the entity metadata file and every content file it references
+        in a single request, and returns `200`.
+
+        **Partial (multi-request) deployments.** For scenes too large for one request, send `partial`
+        set to `"true"` and split the content files across several requests. The first partial request
+        must include the entity metadata file. Later requests may omit it (it is read back from
+        storage) only while a still-live pending upload for this entity exists AND the request is
+        signed by the same address that started it; otherwise — including a resume after the pending
+        upload expired, or a request signed by a different authorized deployer — the entity file must
+        be re-sent (a request omitting it is rejected with `400`, except when the entity is published
+        or the signer holds a retained successful completion). An expired upload cannot be revived by resending its old manifest. Each request stores the files it
+        carries; the scene only goes live once every referenced file is present. A request that still
+        leaves files missing returns `202` with the list of outstanding hashes; the request that
+        completes the set runs full validation, deploys, and returns `200`. Uploads are identified by
+        entity ID and may overlap parcels; starting one does not remove another. Publication follows
+        entity timestamp ordering (entity ID breaks ties), so an older upload cannot replace a newer
+        deployed scene. The timestamp is chosen by the signer and may be up to 15 minutes in the future
+        (as on Catalyst), so a collaborator with deploy permission can hold off a redeploy on the same
+        parcels for at most that long. Parallel requests for the same entity are processed serially by
+        the server.
+
+        Successful completion is recorded atomically with publication. The original signer can replay
+        a completed partial request without the manifest and receive the same `200` body and timestamp
+        for `COMPLETED_UPLOAD_TTL` (default 24 hours), even after that scene is replaced or undeployed.
+        This acknowledges the original publication; it does not publish the scene again. Authentication
+        must still be valid. While the entity is published, any validly signed partial request for it,
+        from any signer and with or without the manifest, returns `200` with the publication's
+        `creationTimestamp` (the entity ID is the hash of the entity file, so the live entity is exactly
+        what was uploaded). Uploads expire `PENDING_DEPLOYMENT_TTL` (default 1 hour) after their first
+        request; expired, uncompleted uploads require a new entity with a fresh timestamp.
+
+        Upload count, aggregate reserved bytes, and accepted byte rate are limited per deployer; an
+        additional byte budget applies server-wide. Reservations precede storage writes and abandoned
+        bytes remain charged until cleanup succeeds. A budget full because of other uploads or traffic
+        returns `429` with `Retry-After`; clients should stop sending batches until then (byte-rate
+        windows reset after one minute). A batch or upload that alone exceeds a budget returns `400`,
+        since no retry can succeed.
+        The `missing` list is authoritative for subsequent batches; send the requested files even if
+        a separate availability check reports them as stored by another upload.
       operationId: worldsContentServer_deployEntity
       requestBody:
         required: true
@@ -334,13 +373,19 @@ paths:
                   type: string
                   description: The entity ID (IPFS hash)
                   example: bafkreiabi74jam7uh5gmm6x4hox664j53bmt7dy4alrltkhyj3ozcxs2iu
+                partial:
+                  type: string
+                  enum: ['true']
+                  description: >
+                    Set to "true" to mark this request as a staging request of a partial
+                    (multi-request) deployment. Omit for a standard single-request deployment.
               additionalProperties:
                 type: string
                 format: binary
                 description: Content files referenced by the entity
       responses:
         '200':
-          description: Entity deployed successfully
+          description: Entity deployed successfully (all content present)
           content:
             application/json:
               schema:
@@ -352,20 +397,70 @@ paths:
                   message:
                     type: string
                     description: Deployment confirmation message
+        '202':
+          description: >
+            Partial deployment accepted but not yet complete: some referenced content files are still
+            missing. Send them in further requests to complete the deployment. Only a `200` means the
+            scene is live — clients must never treat a `202` as completion.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  missing:
+                    type: array
+                    items:
+                      type: string
+                    description: Content hashes still missing before the scene can go live
         '400':
-          description: Invalid request or deployment failed validation
+          description: >-
+            Invalid request or deployment failed validation, an expired partial upload, or a partial
+            batch or upload that alone exceeds a byte budget (bytes per minute or staged bytes per
+            account).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '408':
-          description: Multipart upload or post-body deployment processing timed out
+          description: >-
+            The body did not arrive within the upload deadline, or processing did not finish within the
+            post-body deadline. The message says which, with the deadline and, for an upload, the bytes
+            received (of those declared) and the measured rate.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
           description: Scene replacement authorization changed during deployment; retry authorization and deployment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: >-
+            The multipart body exceeds a parser limit: total size (declared Content-Length or bytes
+            received), a single file or field value, or the number of files, fields or parts. The
+            message names the limit. Send smaller batches.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: >-
+            The client source already has its share of uploads in flight, or a partial-upload quota is
+            full because of other uploads or traffic (uploads per account, staged bytes per account or
+            per server, bytes per minute). The message names the quota with its measured and allowed
+            values.
+          headers:
+            Retry-After:
+              description: >-
+                Seconds to wait. Byte rate: until the account's one-minute window resets. Other partial
+                quotas: until the oldest upload holding that quota expires or, when it has already
+                expired and only cleanup can free it, until the next cleanup run (at most
+                `PARTIAL_UPLOAD_CLEANUP_INTERVAL_MS`, default 5 minutes).
+              schema:
+                type: integer
+                example: 60
           content:
             application/json:
               schema:
@@ -380,6 +475,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '503':
           description: Multipart upload capacity is temporarily exhausted or temporary storage is unavailable
+          headers:
+            Retry-After:
+              description: Seconds after which the client should retry the upload
+              schema:
+                type: integer
+                example: 5
           content:
             application/json:
               schema:
@@ -452,27 +553,48 @@ paths:
       tags:
         - Content Server
       summary: /available-content
-      description: Retrieve list of available content hashes
+      description: Check which of the given content hashes are present in storage
       operationId: worldsContentServer_getAvailableContent
+      parameters:
+        - name: cid
+          in: query
+          required: true
+          description: Content hash to check. Repeat the parameter for multiple hashes (max 500).
+          schema:
+            type: array
+            items:
+              type: string
+          explode: true
       responses:
         '200':
-          description: Available content retrieved successfully
+          description: Availability of every requested content hash
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  cid:
-                    type: array
-                    items:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    cid:
                       type: string
+                    available:
+                      type: boolean
+        '400':
+          description: Missing cid parameter, more than 500 cids, or an invalid CID format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /ipfs/{hashId}:
     get:
       tags:
         - Content Server
       summary: /ipfs/{hashId}
-      description: Retrieve a content file by its IPFS hash
+      description: >-
+        Retrieve a content file by its IPFS hash. The Content-Type is detected from the file's magic
+        bytes (e.g. image/png, video/mp4), defaulting to application/octet-stream when unrecognized
+        or compressed. Supports HTTP range requests.
       operationId: worldsContentServer_getContentFileIpfs
       parameters:
         - name: hashId
@@ -482,16 +604,35 @@ paths:
           schema:
             type: string
             example: bafkreiabi74jam7uh5gmm6x4hox664j53bmt7dy4alrltkhyj3ozcxs2iu
+        - name: Range
+          in: header
+          required: false
+          description: Byte range to retrieve (e.g. `bytes=0-1023`)
+          schema:
+            type: string
       responses:
         '200':
-          description: Content file retrieved successfully
+          description: >-
+            Content file retrieved successfully. Includes ETag, Accept-Ranges, and immutable
+            Cache-Control headers; Content-Type reflects the detected MIME type.
           content:
             application/octet-stream:
               schema:
                 type: string
                 format: binary
+        '206':
+          description: Partial content for a satisfiable Range request, with a Content-Range header
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: Malformed content hash
         '404':
           description: Content not found
+        '416':
+          description: Range not satisfiable (Content-Range reports the full size)
     head:
       tags:
         - Content Server
@@ -507,7 +648,9 @@ paths:
             type: string
       responses:
         '200':
-          description: Content exists
+          description: Content exists (same headers as the GET, no body)
+        '400':
+          description: Malformed content hash
         '404':
           description: Content not found
 
@@ -516,7 +659,10 @@ paths:
       tags:
         - Content Server
       summary: /contents/{hashId}
-      description: Retrieve a content file by its hash
+      description: >-
+        Retrieve a content file by its hash. The Content-Type is detected from the file's magic
+        bytes (e.g. image/png, video/mp4), defaulting to application/octet-stream when unrecognized
+        or compressed. Supports HTTP range requests.
       operationId: worldsContentServer_getContentFile
       parameters:
         - name: hashId
@@ -526,16 +672,35 @@ paths:
           schema:
             type: string
             example: bafkreiabi74jam7uh5gmm6x4hox664j53bmt7dy4alrltkhyj3ozcxs2iu
+        - name: Range
+          in: header
+          required: false
+          description: Byte range to retrieve (e.g. `bytes=0-1023`)
+          schema:
+            type: string
       responses:
         '200':
-          description: Content file retrieved successfully
+          description: >-
+            Content file retrieved successfully. Includes ETag, Accept-Ranges, and immutable
+            Cache-Control headers; Content-Type reflects the detected MIME type.
           content:
             application/octet-stream:
               schema:
                 type: string
                 format: binary
+        '206':
+          description: Partial content for a satisfiable Range request, with a Content-Range header
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: Malformed content hash
         '404':
           description: Content not found
+        '416':
+          description: Range not satisfiable (Content-Range reports the full size)
     head:
       tags:
         - Content Server
@@ -551,7 +716,9 @@ paths:
             type: string
       responses:
         '200':
-          description: Content exists
+          description: Content exists (same headers as the GET, no body)
+        '400':
+          description: Malformed content hash
         '404':
           description: Content not found
 
@@ -1110,13 +1277,29 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '408':
-          description: Multipart upload timed out
+          description: >-
+            The body did not arrive within the upload deadline; the message states the deadline, the
+            bytes received (of those declared) and the measured rate.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: >-
+            The multipart body exceeds a parser limit: total size (2 MiB), a single file or field value,
+            or the number of files, fields or parts. The message names the limit.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '503':
           description: Multipart upload capacity is temporarily exhausted or temporary storage is unavailable
+          headers:
+            Retry-After:
+              description: Seconds after which the client should retry the upload
+              schema:
+                type: integer
+                example: 5
           content:
             application/json:
               schema:

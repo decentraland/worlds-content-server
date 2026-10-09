@@ -5,7 +5,15 @@ import { createMockWalletStatsComponent } from '../mocks/wallet-stats-mock'
 import { createMockWhitelistComponent } from '../mocks/whitelist-mock'
 import { createMockedWorldsManager } from '../mocks/worlds-manager-mock'
 import { EthAddress } from '@dcl/schemas'
-import { ILimitsManager, INameOwnership, IWalletStats, IWorldsManager, MB_BigInt, WalletStats } from '../../src/types'
+import {
+  ILimitsManager,
+  INameOwnership,
+  IWalletStats,
+  IWorldsManager,
+  MB_BigInt,
+  WalletStats,
+  Whitelist
+} from '../../src/types'
 import { IWhitelistComponent } from '../../src/adapters/whitelist'
 import { IConfigComponent } from '@well-known-components/interfaces'
 
@@ -147,5 +155,171 @@ describe('limits manager', function () {
 
     await expect(limitsManager.getMaxAllowedSizeInBytesFor('any-name.dcl.eth')).resolves.toBe(200n * MB_BigInt)
     expect(nameOwnership.findOwners).not.toHaveBeenCalled()
+  })
+})
+
+describe('when computing the per-scene size limit', () => {
+  const owner = '0xowner'
+  let configValues: Record<string, string>
+  let whitelistEntries: Whitelist
+  let maxAllowedSpace: bigint
+  let nameOwnership: jest.Mocked<INameOwnership>
+  let worldName: string
+  let result: bigint
+
+  async function build(): Promise<ILimitsManager> {
+    nameOwnership = createMockedNameOwnership()
+    nameOwnership.findOwners.mockResolvedValue(new Map([[worldName, owner]]))
+    return createLimitsManagerComponent({
+      config: createConfigComponent(configValues),
+      nameOwnership,
+      walletStats: createMockWalletStatsComponent(
+        new Map<EthAddress, WalletStats>([
+          [owner, { wallet: owner, dclNames: [], ensNames: [], usedSpace: 0n, maxAllowedSpace }]
+        ])
+      ),
+      whitelist: createMockWhitelistComponent(whitelistEntries),
+      worldsManager: createMockedWorldsManager()
+    })
+  }
+
+  beforeEach(() => {
+    configValues = { MAX_PARCELS: '4', MAX_SIZE: '200', ENS_MAX_SIZE: '36', ALLOW_SDK6: 'false', MAX_SCENE_SIZE: '150' }
+    whitelistEntries = {}
+    maxAllowedSpace = 100n * MB_BigInt
+    worldName = 'owned.dcl.eth'
+  })
+
+  describe('and the world is a DCL name whose owner has less remaining allowance than the cap', () => {
+    beforeEach(async () => {
+      result = await (await build()).getMaxAllowedSizeInBytesFor(worldName)
+    })
+
+    it('should return the remaining allowance', () => {
+      expect(result).toBe(100n * MB_BigInt)
+    })
+  })
+
+  describe('and the world is a DCL name whose owner has more remaining allowance than the cap', () => {
+    beforeEach(async () => {
+      maxAllowedSpace = 800n * MB_BigInt
+      result = await (await build()).getMaxAllowedSizeInBytesFor(worldName)
+    })
+
+    it('should return the cap', () => {
+      expect(result).toBe(150n * MB_BigInt)
+    })
+  })
+
+  describe('and the cap is not configured', () => {
+    beforeEach(async () => {
+      delete configValues.MAX_SCENE_SIZE
+      maxAllowedSpace = 800n * MB_BigInt
+      result = await (await build()).getMaxAllowedSizeInBytesFor(worldName)
+    })
+
+    it('should cap at the default of 500 MiB', () => {
+      expect(result).toBe(500n * MB_BigInt)
+    })
+  })
+
+  describe('and the world is whitelisted with a size above the cap', () => {
+    beforeEach(async () => {
+      whitelistEntries = { [worldName]: { max_size_in_mb: 300 } }
+      result = await (await build()).getMaxAllowedSizeInBytesFor(worldName)
+    })
+
+    it('should return the whitelisted size', () => {
+      expect(result).toBe(300n * MB_BigInt)
+    })
+  })
+
+  describe('and the world is whitelisted without a size', () => {
+    beforeEach(async () => {
+      whitelistEntries = { [worldName]: { max_parcels: 10 } }
+      result = await (await build()).getMaxAllowedSizeInBytesFor(worldName)
+    })
+
+    it('should return MAX_SIZE', () => {
+      expect(result).toBe(200n * MB_BigInt)
+    })
+  })
+
+  describe('and the world is an ENS name', () => {
+    beforeEach(async () => {
+      worldName = 'cool.eth'
+      result = await (await build()).getMaxAllowedSizeInBytesFor(worldName)
+    })
+
+    it('should return ENS_MAX_SIZE', () => {
+      expect(result).toBe(36n * MB_BigInt)
+    })
+  })
+
+  describe('and name ownership validation is ignored', () => {
+    beforeEach(async () => {
+      configValues.IGNORE_NAME_OWNERSHIP_VALIDATION = 'true'
+      result = await (await build()).getMaxAllowedSizeInBytesFor(worldName)
+    })
+
+    it('should return MAX_SIZE', () => {
+      expect(result).toBe(200n * MB_BigInt)
+    })
+  })
+})
+
+describe('when creating the limits manager with an invalid scene size configuration', () => {
+  let configValues: Record<string, string>
+  let error: unknown
+
+  async function build(): Promise<unknown> {
+    return createLimitsManagerComponent({
+      config: createConfigComponent(configValues),
+      nameOwnership: createMockedNameOwnership(),
+      walletStats: createMockWalletStatsComponent(),
+      whitelist: createMockWhitelistComponent(),
+      worldsManager: createMockedWorldsManager()
+    }).catch((e: unknown) => e)
+  }
+
+  beforeEach(() => {
+    configValues = { MAX_PARCELS: '4', MAX_SIZE: '200', ENS_MAX_SIZE: '36', ALLOW_SDK6: 'false' }
+  })
+
+  describe.each(['0', '-1', '1.5', 'abc'])('and MAX_SCENE_SIZE is %s', (value) => {
+    beforeEach(async () => {
+      configValues.MAX_SCENE_SIZE = value
+      error = await build()
+    })
+
+    it('should fail to start naming MAX_SCENE_SIZE', () => {
+      expect((error as Error).message).toContain('MAX_SCENE_SIZE')
+    })
+  })
+
+  describe('and the cap does not fit the per-deployer staging budget', () => {
+    beforeEach(async () => {
+      configValues.MAX_SCENE_SIZE = '2'
+      configValues.MAX_PENDING_BYTES_PER_DEPLOYER = String(2 * 1024 * 1024 - 1)
+      error = await build()
+    })
+
+    it('should fail to start naming both limits', () => {
+      expect((error as Error).message).toBe(
+        `MAX_PENDING_BYTES_PER_DEPLOYER (${2 * 1024 * 1024 - 1}) must be at least MAX_SCENE_SIZE (${2 * 1024 * 1024} bytes).`
+      )
+    })
+  })
+
+  describe('and the cap exactly fits the per-deployer staging budget', () => {
+    beforeEach(async () => {
+      configValues.MAX_SCENE_SIZE = '2'
+      configValues.MAX_PENDING_BYTES_PER_DEPLOYER = String(2 * 1024 * 1024)
+      error = await build()
+    })
+
+    it('should create the manager', () => {
+      expect(error).not.toBeInstanceOf(Error)
+    })
   })
 })

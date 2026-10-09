@@ -1,7 +1,13 @@
 import { AppComponents, ILimitsManager, MB_BigInt, Whitelist } from '../types'
 import { isNameOwnershipValidationIgnored } from '../logic/name-ownership-validation'
+import { getPositiveInteger } from '../logic/concurrency'
+import { DEFAULT_MAX_PENDING_BYTES_PER_DEPLOYER } from './pending-scenes-manager'
+
+/** Default per-scene size cap for DCL-name worlds, in MiB. */
+export const DEFAULT_MAX_SCENE_SIZE_MB = 500
 
 const bigIntMax = (...args: bigint[]) => args.reduce((m, e) => (e > m ? e : m))
+const bigIntMin = (...args: bigint[]) => args.reduce((m, e) => (e < m ? e : m))
 
 export async function createLimitsManagerComponent({
   config,
@@ -17,6 +23,17 @@ export async function createLimitsManagerComponent({
   const hardMaxSize = await config.requireNumber('MAX_SIZE')
   const hardMaxSizeForEns = await config.requireNumber('ENS_MAX_SIZE')
   const hardAllowSdk6 = (await config.requireString('ALLOW_SDK6')) === 'true'
+  const maxSceneSizeInBytes =
+    BigInt(await getPositiveInteger(config, 'MAX_SCENE_SIZE', DEFAULT_MAX_SCENE_SIZE_MB)) * MB_BigInt
+  const pendingBytesPerDeployer = BigInt(
+    await getPositiveInteger(config, 'MAX_PENDING_BYTES_PER_DEPLOYER', DEFAULT_MAX_PENDING_BYTES_PER_DEPLOYER)
+  )
+  // A capped scene uploaded in batches must always fit the deployer's staging budget.
+  if (pendingBytesPerDeployer < maxSceneSizeInBytes) {
+    throw new Error(
+      `MAX_PENDING_BYTES_PER_DEPLOYER (${pendingBytesPerDeployer}) must be at least MAX_SCENE_SIZE (${maxSceneSizeInBytes} bytes).`
+    )
+  }
 
   // Limits fall back to the hard defaults when the whitelist is unavailable, so deployments keep
   // working during a whitelist outage instead of erroring on a missing override.
@@ -31,11 +48,13 @@ export async function createLimitsManagerComponent({
   return {
     async getAllowSdk6For(worldName: string): Promise<boolean> {
       const currentWhitelist = await resolveWhitelist()
-      return currentWhitelist[worldName]?.allow_sdk6 || hardAllowSdk6
+      // World names arrive with arbitrary casing (entity.metadata.worldConfiguration.name); the
+      // whitelist is keyed lowercased, so the lookup key must be too.
+      return currentWhitelist[worldName.toLowerCase()]?.allow_sdk6 || hardAllowSdk6
     },
     async getMaxAllowedParcelsFor(worldName: string): Promise<number> {
       const currentWhitelist = await resolveWhitelist()
-      return currentWhitelist[worldName]?.max_parcels || hardMaxParcels
+      return currentWhitelist[worldName.toLowerCase()]?.max_parcels || hardMaxParcels
     },
     async getMaxAllowedSizeInBytesFor(worldName: string, parcels?: string[]): Promise<bigint> {
       if (await isNameOwnershipValidationIgnored(config)) {
@@ -49,8 +68,9 @@ export async function createLimitsManagerComponent({
       }
 
       const currentWhitelist = await resolveWhitelist()
-      if (currentWhitelist[worldName]) {
-        return BigInt(currentWhitelist[worldName]!.max_size_in_mb || hardMaxSize) * MB_BigInt
+      const whitelistEntry = currentWhitelist[worldName.toLowerCase()]
+      if (whitelistEntry) {
+        return BigInt(whitelistEntry.max_size_in_mb || hardMaxSize) * MB_BigInt
       }
 
       const owners = await nameOwnership.findOwners([worldName])
@@ -70,8 +90,8 @@ export async function createLimitsManagerComponent({
 
       const usedSpace = stats.usedSpace - creditedBackSize
 
-      // We get the remaining space for the account (if any) or 0 if the space is already exceeded
-      return bigIntMax(stats.maxAllowedSpace - usedSpace, 0n)
+      // The owner's remaining allowance (0 if exceeded), capped per scene
+      return bigIntMin(bigIntMax(stats.maxAllowedSpace - usedSpace, 0n), maxSceneSizeInBytes)
     }
   }
 }
