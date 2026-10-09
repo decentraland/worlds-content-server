@@ -21,6 +21,8 @@ type PendingSceneRow = {
 
 /** Default lifetime of a pending (partial) upload, anchored at its first request. */
 export const DEFAULT_PENDING_DEPLOYMENT_TTL_MS = 60 * 60 * 1000
+/** Default staged/reserved bytes per deployer. */
+export const DEFAULT_MAX_PENDING_BYTES_PER_DEPLOYER = 1024 ** 3
 /** Default interval between expired-upload cleanup runs. */
 export const DEFAULT_PARTIAL_UPLOAD_CLEANUP_INTERVAL_MS = 5 * 60 * 1000
 
@@ -53,7 +55,9 @@ export async function createPendingScenesManager(
     'PARTIAL_UPLOAD_CLEANUP_INTERVAL_MS',
     DEFAULT_PARTIAL_UPLOAD_CLEANUP_INTERVAL_MS
   )
-  const accountBytes = BigInt(await getPositiveInteger(config, 'MAX_PENDING_BYTES_PER_DEPLOYER', 1024 ** 3))
+  const accountBytes = BigInt(
+    await getPositiveInteger(config, 'MAX_PENDING_BYTES_PER_DEPLOYER', DEFAULT_MAX_PENDING_BYTES_PER_DEPLOYER)
+  )
   const globalBytes = BigInt(await getPositiveInteger(config, 'MAX_PENDING_BYTES', 50 * 1024 ** 3))
   const bytesPerMinute = await getPositiveInteger(config, 'MAX_PARTIAL_UPLOAD_BYTES_PER_MINUTE', 512 * 1024 ** 2)
   const completionTtl = await getPositiveInteger(config, 'COMPLETED_UPLOAD_TTL', 24 * 60 * 60 * 1000)

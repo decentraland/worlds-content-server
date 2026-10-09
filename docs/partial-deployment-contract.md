@@ -51,7 +51,9 @@ bytes an upload stores itself: the manifest and content that was not already in 
 in storage is not charged; the pending upload's manifest protects it from garbage collection. A batch file
 that is already stored, before the upload or by an earlier batch, is dropped without being stored or
 charged again, but every received byte counts against the per-minute rate. The scene size limit still
-counts every file of the scene. Expired slots and bytes remain charged if physical cleanup fails.
+counts every file of the scene; for DCL-name worlds it is the owner's remaining allowance capped at
+`MAX_SCENE_SIZE` (500 MiB), which startup requires to fit `MAX_PENDING_BYTES_PER_DEPLOYER`. Expired
+slots and bytes remain charged if physical cleanup fails.
 
 Migrations run at startup. Worlds runs as a single instance behind Cloudflare, so a normal deploy is
 enough. The content lock uses `CONTENT_LOCK_CONNECTIONS` connections in addition to the query pool.

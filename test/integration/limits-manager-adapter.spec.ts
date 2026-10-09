@@ -21,6 +21,7 @@ test('LimitsManagerAdapter', function ({ components }) {
     let worldName: string
     let firstSceneSize: bigint
     let secondSceneSize: bigint
+    let buildLimitsManager: (overrides?: Record<string, string>) => Promise<ILimitsManager>
 
     beforeEach(async () => {
       const { worldCreator, worldsManager } = components
@@ -58,12 +59,12 @@ test('LimitsManagerAdapter', function ({ components }) {
 
       // Only the external pieces (account holdings, name ownership and whitelist) are mocked;
       // the real limits-manager runs against the real worldsManager and DB.
-      const config = createConfigComponent({
+      const config = {
         MAX_PARCELS: '4',
         MAX_SIZE: '100',
         ENS_MAX_SIZE: '36',
         ALLOW_SDK6: 'false'
-      })
+      }
       const nameOwnership = createMockedNameOwnership()
       nameOwnership.findOwners.mockResolvedValue(new Map([[worldName, owner]]))
       const walletStats = createMockWalletStatsComponent(
@@ -81,13 +82,15 @@ test('LimitsManagerAdapter', function ({ components }) {
         ])
       )
 
-      limitsManager = await createLimitsManagerComponent({
-        config,
-        nameOwnership,
-        walletStats,
-        whitelist: createMockWhitelistComponent(),
-        worldsManager
-      })
+      buildLimitsManager = (overrides = {}) =>
+        createLimitsManagerComponent({
+          config: createConfigComponent({ ...config, ...overrides }),
+          nameOwnership,
+          walletStats,
+          whitelist: createMockWhitelistComponent(),
+          worldsManager
+        })
+      limitsManager = await buildLimitsManager()
     })
 
     describe('and the deployment overlaps one of the existing scenes', () => {
@@ -97,6 +100,19 @@ test('LimitsManagerAdapter', function ({ components }) {
         const remaining = await limitsManager.getMaxAllowedSizeInBytesFor(worldName, ['1,1'])
 
         expect(remaining).toBe(maxAllowedSpace - firstSceneSize)
+      })
+    })
+
+    describe('and the remaining allowance exceeds the per-scene cap', () => {
+      let remaining: bigint
+
+      beforeEach(async () => {
+        limitsManager = await buildLimitsManager({ MAX_SCENE_SIZE: '1' })
+        remaining = await limitsManager.getMaxAllowedSizeInBytesFor(worldName, ['1,1'])
+      })
+
+      it('should return the cap', () => {
+        expect(remaining).toBe(MB_BigInt)
       })
     })
 
