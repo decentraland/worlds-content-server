@@ -3,7 +3,7 @@ import { createPgComponent } from '@dcl/pg-component'
 import SQL, { SQLStatement } from 'sql-template-strings'
 import { AppComponents } from '../../types'
 import { getPositiveInteger, raceWithSignal } from '../../logic/concurrency'
-import { UploadClient } from '../upload-transaction'
+import { connectWithSignal, PgClient } from '../pg-client'
 import { ContentLockTimeoutError } from './errors'
 import { ContentLocksOptions, IContentLocks } from './types'
 
@@ -71,15 +71,10 @@ export async function createContentLocks(
     entityId?: string
   ): Promise<{ acquired: false } | { acquired: true; value: T }> {
     signal?.throwIfAborted()
-    const acquisition: Promise<UploadClient> = pg.getPool().connect()
-    let client: UploadClient
+    let client: PgClient
     try {
-      client = await raceWithSignal(acquisition, signal)
+      client = await connectWithSignal(pg.getPool(), signal)
     } catch (error) {
-      void acquisition.then(
-        (lateClient) => lateClient.release(),
-        () => undefined
-      )
       // A saturated pool is busy like a held lock: retried until the request's own deadline.
       if (isPoolTimeout(error)) {
         return { acquired: false }

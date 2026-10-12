@@ -16,9 +16,8 @@ import { IBlockingComponent } from './adapters/blocking'
 import { IWhitelistComponent } from './adapters/whitelist'
 import { AuthChain, AuthLink, Entity, EthAddress, IPFSv2 } from '@dcl/schemas'
 import { Readable } from 'stream'
-import { MigrationExecutor } from './adapters/migration-executor'
+import { MigrationDatabase, MigrationExecutor } from './adapters/migration-executor'
 import { IPgComponent } from '@dcl/pg-component'
-import type { SQLStatement } from 'sql-template-strings'
 import { AuthIdentity } from '@dcl/crypto'
 import { IFetchComponent } from '@dcl/core-commons'
 import { INatsComponent } from '@well-known-components/nats-component/dist/types'
@@ -139,12 +138,12 @@ export type SceneDeploymentData = {
   deadlineAt?: number
   /** Cancels persistence until the transaction reaches its commit boundary. */
   signal?: AbortSignal
-  /**
-   * Set when this publication finalizes a partial upload, so its signer gets a completion receipt.
-   * Publication is refused once the upload is gone or `expiresAt` (epoch ms) has passed.
-   */
-  completesPartialUpload?: { expiresAt: number }
+  /** Set when this publication finalizes a partial upload, so its signer gets a completion receipt. */
+  completesPartialUpload?: PartialUploadCompletion
 }
+
+/** Publication is refused once the upload is gone or `expiresAt` (epoch ms) has passed. */
+export type PartialUploadCompletion = { expiresAt: number }
 
 export type SceneReplacementAuthorization = { mode: 'unrestricted-owner' } | { mode: 'scoped'; entityIds: string[] }
 
@@ -380,13 +379,6 @@ export type ValidatorComponents = Pick<
   | 'storage'
   | 'worldsManager'
 >
-
-/** The database handle migrations receive: bound to the session that holds the migrations lock. */
-export type MigrationDatabase = {
-  query<T extends Record<string, any> = Record<string, any>>(
-    sql: string | SQLStatement
-  ): Promise<{ rows: T[]; rowCount: number }>
-}
 
 /** No pool-backed component on purpose: every migration statement must run on the lock session. */
 export type MigratorComponents = Pick<AppComponents, 'config' | 'logs' | 'nameOwnership' | 'storage'> & {
@@ -632,16 +624,19 @@ export type IEntityDeployer = {
     entityJson: string,
     authChain: AuthLink[],
     deploymentSize: number,
-    signal?: AbortSignal,
-    deadlineAt?: number,
-    sceneReplacementAuthorization?: SceneReplacementAuthorization,
     options?: DeployEntityOptions
   ): Promise<DeploymentResult>
 }
 
 export type DeployEntityOptions = {
+  /** Cancels storage writes and persistence until the commit boundary. */
+  signal?: AbortSignal
+  /** Absolute processing deadline used to bound the persistence transaction. */
+  deadlineAt?: number
+  /** Required for scenes; checked by persistence against the parcels being replaced. */
+  sceneReplacementAuthorization?: SceneReplacementAuthorization
   /** The publication finalizes a partial upload; see SceneDeploymentData.completesPartialUpload. */
-  completesPartialUpload?: { expiresAt: number }
+  completesPartialUpload?: PartialUploadCompletion
 }
 
 export type AwsConfig = {

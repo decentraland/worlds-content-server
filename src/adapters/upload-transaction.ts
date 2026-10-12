@@ -1,15 +1,6 @@
 import SQL, { SQLStatement } from 'sql-template-strings'
 import { IPgComponent } from '@dcl/pg-component'
-import { raceWithSignal } from '../logic/concurrency'
-
-export type UploadClient = {
-  query<T extends Record<string, unknown> = Record<string, unknown>>(
-    sql: string | SQLStatement
-  ): Promise<{ rows: T[]; rowCount: number | null }>
-  release(destroy?: boolean): void
-  on(event: 'error', listener: (error: Error) => void): void
-  removeListener(event: 'error', listener: (error: Error) => void): void
-}
+import { connectWithSignal } from './pg-client'
 
 type Query = <T extends Record<string, unknown>>(sql: SQLStatement) => Promise<{ rows: T[]; rowCount: number | null }>
 
@@ -25,15 +16,7 @@ export async function withUploadTransaction<T>(
   operation: (query: Query) => Promise<T>,
   signal?: AbortSignal
 ): Promise<T> {
-  signal?.throwIfAborted()
-  const acquisition: Promise<UploadClient> = database.getPool().connect()
-  const client = await raceWithSignal(acquisition, signal).catch((error: unknown) => {
-    void acquisition.then(
-      (lateClient) => lateClient.release(),
-      () => undefined
-    )
-    throw error
-  })
+  const client = await connectWithSignal(database.getPool(), signal)
   let released = false
   const abort = (): void => {
     if (!released) {

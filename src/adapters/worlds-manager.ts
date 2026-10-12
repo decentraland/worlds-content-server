@@ -37,7 +37,7 @@ import { InvalidRequestError } from '@dcl/http-commons'
 import SQL, { type SQLStatement } from 'sql-template-strings'
 import { buildWorldRuntimeMetadata } from '../logic/world-runtime-metadata-utils'
 import { AccessSetting, defaultAccess } from '../logic/access'
-import { raceWithSignal } from '../logic/concurrency'
+import { connectWithSignal } from './pg-client'
 import { PartialUploadExpiredError } from './pending-scenes-manager/errors'
 
 type BoundingRow = { min_x: number; max_x: number; min_y: number; max_y: number }
@@ -195,12 +195,6 @@ export async function createWorldsManagerComponent({
   type DeploymentTransactionQuery = <T extends Record<string, unknown> = Record<string, never>>(
     statement: SQLStatement
   ) => Promise<DeploymentTransactionResult<T>>
-  type DeploymentTransactionClient = {
-    query<T extends Record<string, unknown> = Record<string, never>>(
-      statement: string | SQLStatement
-    ): Promise<DeploymentTransactionResult<T>>
-    release(error?: Error): void
-  }
 
   /**
    * Runs deployment persistence on a dedicated connection which is destroyed on cancellation.
@@ -218,20 +212,8 @@ export async function createWorldsManagerComponent({
       return
     }
 
-    signal.throwIfAborted()
-    const acquireClient = database.getPool().connect() as Promise<DeploymentTransactionClient>
-    let client: Awaited<typeof acquireClient>
-    try {
-      client = await raceWithSignal(acquireClient, signal)
-    } catch (error) {
-      // If cancellation wins while the pool is saturated, release the eventual acquisition instead
-      // of leaking a checked-out connection after this request has already returned.
-      void acquireClient.then(
-        (acquiredClient) => acquiredClient.release(),
-        () => undefined
-      )
-      throw error
-    }
+    // A connection acquired after cancellation is released rather than leaked.
+    const client = await connectWithSignal(database.getPool(), signal)
 
     let released = false
     let commitStarted = false

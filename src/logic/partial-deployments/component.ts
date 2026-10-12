@@ -166,7 +166,7 @@ export async function createPartialDeploymentsComponent(
     if (!pending) metrics.increment('partial_uploads_started')
 
     // Re-checked right before storing: a batch admitted just before expiry must store nothing.
-    if (Date.now() >= pendingRow.createdAt.getTime() + pendingScenesManager.ttlMs) {
+    if (Date.now() >= pendingRow.expiresAt.getTime()) {
       throw new PartialUploadExpiredError()
     }
     await deploymentProcessing.trackStage('storage', toStore.size, () =>
@@ -179,7 +179,7 @@ export async function createPartialDeploymentsComponent(
         { signal }
       )
     )
-    const batches = await pendingScenesManager.recordStored(entity.id, [...toStore.keys()], true, signal)
+    const batches = await pendingScenesManager.recordStored(entity.id, [...toStore.keys()], signal)
     const progress = await pendingScenesManager.getProgress(entity.id, signal)
     const missing = contentHashes.filter((hash) => !progress.has(hash))
     metrics.increment('partial_upload_batches', { outcome: missing.length ? 'incomplete' : 'finalizing' })
@@ -217,10 +217,12 @@ export async function createPartialDeploymentsComponent(
         entityRaw,
         authChain,
         calculateDeploymentSizeFromFileInfos(entity, deploymentFiles, presentInfos),
-        signal,
-        deadlineAt,
-        deployment.sceneReplacementAuthorization,
-        { completesPartialUpload: { expiresAt: pendingRow.createdAt.getTime() + pendingScenesManager.ttlMs } }
+        {
+          signal,
+          deadlineAt,
+          sceneReplacementAuthorization: deployment.sceneReplacementAuthorization,
+          completesPartialUpload: { expiresAt: pendingRow.expiresAt.getTime() }
+        }
       )
     } catch (error) {
       const concurrent = isUniqueViolation(error)
