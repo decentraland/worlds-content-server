@@ -4,7 +4,7 @@ import { hashV1 } from '@dcl/hashing'
 import { bufferToStream } from '@dcl/catalyst-storage'
 import { makeid } from '../utils'
 import { defaultAccess } from '../../src/logic/access'
-import { NoDeployedScenesError } from '../../src/types'
+import { NoDeployedScenesError, SceneAlreadyDeployedError } from '../../src/types'
 import { PartialUploadExpiredError } from '../../src/logic/partial-upload-admission'
 import SQL from 'sql-template-strings'
 
@@ -101,6 +101,32 @@ test('WorldManagerAdapter', function ({ components }) {
         }),
         deployedEntityIds: [originalEntityId]
       })
+    })
+  })
+
+  describe('when the same entity is already deployed', () => {
+    let caughtError: unknown
+
+    beforeEach(async () => {
+      const { worldCreator, worldsManager } = components
+      const created = await worldCreator.createWorldWithScene()
+
+      caughtError = await worldsManager
+        .deployScene(
+          created.worldName,
+          created.entity,
+          created.owner.authChain[0].payload,
+          { mode: 'unrestricted-owner' },
+          { authChain: created.owner.authChain, size: 123 }
+        )
+        .catch((error) => error)
+    })
+
+    it('should reject it as already deployed, keeping the unique violation as its cause', () => {
+      expect({
+        isAlreadyDeployed: caughtError instanceof SceneAlreadyDeployedError,
+        cause: (caughtError as SceneAlreadyDeployedError).cause
+      }).toEqual({ isAlreadyDeployed: true, cause: expect.objectContaining({ code: '23505' }) })
     })
   })
 

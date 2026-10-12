@@ -35,7 +35,7 @@ import type { IContentGcComponent } from './logic/content-gc/types'
 import type { UploadLimits } from './logic/upload-limits/types'
 import type { ISourceUploadLimits } from './adapters/source-upload-limits/types'
 import type { IClientSourceComponent } from './logic/client-source/types'
-import type { IPartialDeploymentsComponent } from './logic/partial-deployments/types'
+import type { ISceneDeploymentsComponent } from './logic/scene-deployments/types'
 import { ISearchComponent } from './adapters/search'
 import {
   IPermissionsComponent,
@@ -392,8 +392,8 @@ export type Validation = (deployment: DeploymentToValidate) => ValidationResult 
 
 // IPendingScenesRepository lives in ./adapters/pending-scenes-repository/types; PendingScene / UpsertPendingScene /
 // IPartialUploadAdmission live in ./logic/partial-upload-admission/types
-// StageDeploymentInput / StageDeploymentResult / IPartialDeploymentsComponent live in
-// ./logic/partial-deployments/types (both imported above for AppComponents).
+// StageDeploymentInput / StageDeploymentResult / ISceneDeploymentsComponent live in
+// ./logic/scene-deployments/types (both imported above for AppComponents).
 
 export type INameOwnership = {
   findOwners(worldNames: string[]): Promise<ReadonlyMap<string, EthAddress | undefined>>
@@ -498,6 +498,21 @@ export class SceneReplacementConflictError extends Error {
   }
 }
 
+/**
+ * The publication hit a unique constraint (SQLSTATE 23505), most commonly because the same entity is already
+ * deployed. Callers verify the publication before answering with it, and otherwise rethrow `cause`.
+ */
+export class SceneAlreadyDeployedError extends Error {
+  constructor(
+    entityId: string,
+    /** The original database error. */
+    readonly cause: unknown
+  ) {
+    super(`Scene "${entityId}" is already deployed.`)
+    this.name = 'SceneAlreadyDeployedError'
+  }
+}
+
 export class MissingSceneReplacementAuthorizationError extends Error {
   constructor(entityId: string) {
     super(`Cannot deploy scene "${entityId}": replacement authorization is missing.`)
@@ -524,7 +539,10 @@ export type IWorldsManager = {
    * performs the authoritative, race-free check under a per-world lock.
    */
   hasNewerDeployedScene(worldName: string, scene: Entity): Promise<boolean>
-  /** Persists a scene and its already-calculated deployment metadata. */
+  /**
+   * Persists a scene and its already-calculated deployment metadata.
+   * @throws SceneAlreadyDeployedError when the publication hits a unique constraint.
+   */
   deployScene(
     worldName: string,
     scene: Entity,
@@ -708,7 +726,7 @@ export type BaseComponents = {
   marketplaceSubGraph: ISubgraphComponent
   metrics: IMetricsComponent<keyof typeof metricDeclarations>
   migrationExecutor: MigrationExecutor
-  partialDeployments: IPartialDeploymentsComponent
+  sceneDeployments: ISceneDeploymentsComponent
   partialUploadAdmission: IPartialUploadAdmission
   pendingScenesRepository: IPendingScenesRepository
   sourceUploadLimits: ISourceUploadLimits

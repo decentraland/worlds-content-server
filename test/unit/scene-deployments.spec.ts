@@ -1,13 +1,23 @@
-import { AuthLinkType, EntityType } from '@dcl/schemas'
+import { AuthLinkType, Entity, EntityType } from '@dcl/schemas'
 import { InvalidRequestError } from '@dcl/http-commons'
-import { createPartialDeploymentsComponent } from '../../src/logic/partial-deployments'
+import { FileInfo, IContentStorageComponent } from '@dcl/catalyst-storage'
+import { createSceneDeploymentsComponent, DeployResult, getContentFileInfos } from '../../src/logic/scene-deployments'
 import { createCoordinatesComponent } from '../../src/logic/coordinates'
 import { createDeploymentProcessingMock } from '../mocks/deployment-processing-mock'
-import { DeploymentToValidate } from '../../src/types'
-import { StageDeploymentInput } from '../../src/logic/partial-deployments/types'
+import {
+  DeploymentFile,
+  DeploymentToValidate,
+  MissingSceneReplacementAuthorizationError,
+  SceneAlreadyDeployedError
+} from '../../src/types'
+import {
+  DEFAULT_CONTENT_FILE_INFO_CONCURRENCY,
+  DeploymentProcessingTimeoutError
+} from '../../src/logic/deployment-processing'
+import { StageDeploymentInput } from '../../src/logic/scene-deployments/types'
 import { PartialUploadExpiredError } from '../../src/logic/partial-upload-admission'
 
-type Components = Parameters<typeof createPartialDeploymentsComponent>[0]
+type Components = Parameters<typeof createSceneDeploymentsComponent>[0]
 
 describe('when staging a partial deployment', () => {
   let components: Components
@@ -27,8 +37,8 @@ describe('when staging a partial deployment', () => {
   let deleteByEntityId: jest.Mock
   let increment: jest.Mock
   let observe: jest.Mock
-  let stage: Awaited<ReturnType<typeof createPartialDeploymentsComponent>>['stage']
-  let prevalidate: Awaited<ReturnType<typeof createPartialDeploymentsComponent>>['prevalidate']
+  let stage: Awaited<ReturnType<typeof createSceneDeploymentsComponent>>['stage']
+  let prevalidate: Awaited<ReturnType<typeof createSceneDeploymentsComponent>>['prevalidate']
 
   beforeEach(async () => {
     input = {
@@ -91,7 +101,7 @@ describe('when staging a partial deployment', () => {
       validator: { validateStaging, validate },
       worldsManager: { hasNewerDeployedScene: jest.fn().mockResolvedValue(false), getWorldScenes }
     } as unknown as Components
-    ;({ stage, prevalidate } = await createPartialDeploymentsComponent(components))
+    ;({ stage, prevalidate } = await createSceneDeploymentsComponent(components))
   })
 
   afterEach(() => {
@@ -123,6 +133,10 @@ describe('when staging a partial deployment', () => {
 
     it('should still create the upload', () => {
       expect(admitBatch.mock.calls[0][0].upload.resumes).toBe(false)
+    })
+
+    it('should count the metadata checks of its content', () => {
+      expect(increment).toHaveBeenCalledWith('partial_upload_metadata_checks', {}, 2)
     })
   })
 
@@ -518,7 +532,9 @@ describe('when staging a partial deployment', () => {
         ])
       )
       fileInfo.mockImplementation(async (hash) => ({ size: hash === 'a' ? 300 : 500 }))
-      deployEntity.mockRejectedValueOnce(Object.assign(new Error('duplicate key'), { code: '23505' }))
+      deployEntity.mockRejectedValueOnce(
+        new SceneAlreadyDeployedError('entity', Object.assign(new Error('duplicate key'), { code: '23505' }))
+      )
       getWorldScenes.mockResolvedValueOnce({
         scenes: [
           {
@@ -560,7 +576,9 @@ describe('when staging a partial deployment', () => {
         ])
       )
       fileInfo.mockImplementation(async (hash) => ({ size: hash === 'a' ? 300 : 500 }))
-      deployEntity.mockRejectedValueOnce(Object.assign(new Error('duplicate key'), { code: '23505' }))
+      deployEntity.mockRejectedValueOnce(
+        new SceneAlreadyDeployedError('entity', Object.assign(new Error('duplicate key'), { code: '23505' }))
+      )
       error = await stage(input).catch((e) => e)
     })
 
@@ -572,11 +590,12 @@ describe('when staging a partial deployment', () => {
 
 describe('when finding the publication of an entity', () => {
   let getWorldScenes: jest.Mock
-  let findPublication: Awaited<ReturnType<typeof createPartialDeploymentsComponent>>['findPublication']
+  let findPublication: Awaited<ReturnType<typeof createSceneDeploymentsComponent>>['findPublication']
 
   beforeEach(async () => {
     getWorldScenes = jest.fn()
-    ;({ findPublication } = await createPartialDeploymentsComponent({
+    ;({ findPublication } = await createSceneDeploymentsComponent({
+      logs: { getLogger: jest.fn() },
       worldsManager: { getWorldScenes }
     } as unknown as Components))
   })
@@ -627,6 +646,438 @@ describe('when finding the publication of an entity', () => {
 
     it('should return nothing', () => {
       expect(result).toBeUndefined()
+    })
+  })
+})
+
+describe('when prevalidating a single-request deployment', () => {
+  let validateBeforeStorage: jest.Mock
+  let entity: Entity
+  let files: Map<string, DeploymentFile>
+  let signal: AbortSignal
+  let prevalidateDeployment: Awaited<ReturnType<typeof createSceneDeploymentsComponent>>['prevalidateDeployment']
+
+  beforeEach(async () => {
+    validateBeforeStorage = jest.fn().mockResolvedValue({ ok: () => true, errors: [] })
+    entity = { version: 'v3', id: 'entity', type: EntityType.SCENE, timestamp: 1, pointers: ['0,0'], content: [] }
+    files = new Map()
+    signal = new AbortController().signal
+    ;({ prevalidateDeployment } = await createSceneDeploymentsComponent({
+      logs: { getLogger: jest.fn() },
+      validator: { validateBeforeStorage }
+    } as unknown as Components))
+  })
+
+  afterEach(() => {
+    jest.resetAllMocks()
+  })
+
+  describe('and it passes the pre-storage validation', () => {
+    let deployment: DeploymentToValidate
+
+    beforeEach(async () => {
+      deployment = await prevalidateDeployment({ entity, authChain: [], files, signal })
+    })
+
+    it('should return the validated deployment, with nothing known to be in storage yet', () => {
+      expect({ deployment, validated: validateBeforeStorage.mock.calls[0][0] }).toEqual({
+        deployment: { entity, files, authChain: [], contentHashesInStorage: new Map(), signal },
+        validated: deployment
+      })
+    })
+  })
+
+  describe('and it fails the pre-storage validation', () => {
+    let error: unknown
+
+    beforeEach(async () => {
+      validateBeforeStorage.mockResolvedValueOnce({ ok: () => false, errors: ['no permission', 'too big'] })
+      error = await prevalidateDeployment({ entity, authChain: [], files, signal }).catch((e: unknown) => e)
+    })
+
+    it('should reject it as an invalid request with every validation error', () => {
+      expect(error).toEqual(new InvalidRequestError('Deployment failed: no permission, too big'))
+    })
+  })
+})
+
+describe('when deploying a single-request deployment', () => {
+  let deployment: DeploymentToValidate
+  let fileInfo: jest.Mock
+  let validateAfterStorage: jest.Mock
+  let deployEntity: jest.Mock
+  let getWorldScenes: jest.Mock
+  let info: jest.Mock
+  let increment: jest.Mock
+  let signal: AbortSignal
+  let deploy: Awaited<ReturnType<typeof createSceneDeploymentsComponent>>['deploy']
+
+  beforeEach(async () => {
+    deployment = {
+      entity: {
+        version: 'v3',
+        id: 'entity',
+        type: EntityType.SCENE,
+        timestamp: 1,
+        pointers: ['0,0'],
+        content: [
+          { file: 'a.bin', hash: 'a' },
+          { file: 'b.bin', hash: 'b' },
+          { file: 'b-copy.bin', hash: 'b' }
+        ],
+        metadata: { worldConfiguration: { name: 'World.dcl.eth' }, scene: { base: '0,0', parcels: ['0,0'] } }
+      },
+      files: new Map([['a', { size: 5, getStream: jest.fn(), getHash: jest.fn(), asBuffer: jest.fn() }]]),
+      authChain: [{ type: AuthLinkType.SIGNER, payload: 'deployer', signature: '' }],
+      contentHashesInStorage: new Map(),
+      signal: new AbortController().signal,
+      sceneReplacementAuthorization: { mode: 'unrestricted-owner' }
+    }
+    signal = new AbortController().signal
+    fileInfo = jest.fn(async (hash: string) => (hash === 'b' ? { size: 7, contentSize: 7, encoding: null } : undefined))
+    validateAfterStorage = jest.fn().mockResolvedValue({ ok: () => true, errors: [] })
+    deployEntity = jest.fn().mockResolvedValue({ message: 'deployed', creationTimestamp: 123 })
+    getWorldScenes = jest.fn().mockResolvedValue({ scenes: [], total: 0 })
+    info = jest.fn()
+    increment = jest.fn()
+    ;({ deploy } = await createSceneDeploymentsComponent({
+      deploymentProcessing: createDeploymentProcessingMock(),
+      entityDeployer: { deployEntity },
+      logs: { getLogger: jest.fn().mockReturnValue({ info }) },
+      metrics: { increment },
+      storage: { fileInfo },
+      validator: { validateAfterStorage },
+      worldsManager: { getWorldScenes }
+    } as unknown as Components))
+  })
+
+  afterEach(() => {
+    jest.restoreAllMocks()
+    jest.resetAllMocks()
+  })
+
+  describe('and it is published', () => {
+    let result: DeployResult
+
+    beforeEach(async () => {
+      result = await deploy({ baseUrl: 'https://worlds.example', entityRaw: '{}', deployment, signal, deadlineAt: 99 })
+    })
+
+    it('should look up the metadata of each unique content hash once', () => {
+      expect(fileInfo.mock.calls).toEqual([['a'], ['b']])
+    })
+
+    it('should not count it as a partial upload', () => {
+      expect(increment).not.toHaveBeenCalled()
+    })
+
+    it('should validate the content against its storage metadata', () => {
+      expect(validateAfterStorage.mock.calls[0][0]).toEqual({
+        ...deployment,
+        contentHashesInStorage: new Map([
+          ['a', false],
+          ['b', true]
+        ]),
+        contentFileInfos: new Map([
+          ['a', undefined],
+          ['b', { size: 7, contentSize: 7, encoding: null }]
+        ]),
+        signal
+      })
+    })
+
+    it("should validate and publish it under the request's signal", () => {
+      expect({
+        validated: validateAfterStorage.mock.calls[0][0].signal === signal,
+        published: deployEntity.mock.calls[0][7].signal === signal
+      }).toEqual({ validated: true, published: true })
+    })
+
+    it('should publish it with its uploaded and stored size and the replacement authorization', () => {
+      expect(deployEntity.mock.calls[0]).toEqual([
+        'https://worlds.example',
+        deployment.entity,
+        new Map([
+          ['a', false],
+          ['b', true]
+        ]),
+        deployment.files,
+        '{}',
+        deployment.authChain,
+        12,
+        { signal, deadlineAt: 99, sceneReplacementAuthorization: { mode: 'unrestricted-owner' } }
+      ])
+    })
+
+    it("should answer with the deployer's result", () => {
+      expect(result).toEqual({ creationTimestamp: 123, message: 'deployed' })
+    })
+  })
+
+  describe('and the deployer reports no creation timestamp', () => {
+    let result: DeployResult
+
+    beforeEach(async () => {
+      jest.spyOn(Date, 'now').mockReturnValue(4242)
+      deployEntity.mockResolvedValueOnce({ message: 'deployed' })
+      result = await deploy({ baseUrl: 'https://worlds.example', entityRaw: '{}', deployment, signal, deadlineAt: 99 })
+    })
+
+    it('should answer with the current time', () => {
+      expect(result).toEqual({ creationTimestamp: 4242, message: 'deployed' })
+    })
+  })
+
+  describe('and the after-storage validation rejects it', () => {
+    let error: unknown
+
+    beforeEach(async () => {
+      validateAfterStorage.mockResolvedValueOnce({ ok: () => false, errors: ['hash mismatch'] })
+      error = await deploy({
+        baseUrl: 'https://worlds.example',
+        entityRaw: '{}',
+        deployment,
+        signal,
+        deadlineAt: 99
+      }).catch((e: unknown) => e)
+    })
+
+    it('should reject it as an invalid request without publishing it', () => {
+      expect({ error, published: deployEntity.mock.calls.length }).toEqual({
+        error: new InvalidRequestError('Deployment failed: hash mismatch'),
+        published: 0
+      })
+    })
+  })
+
+  describe('and the scene has no replacement authorization', () => {
+    let error: unknown
+
+    beforeEach(async () => {
+      deployment.sceneReplacementAuthorization = undefined
+      error = await deploy({
+        baseUrl: 'https://worlds.example',
+        entityRaw: '{}',
+        deployment,
+        signal,
+        deadlineAt: 99
+      }).catch((e: unknown) => e)
+    })
+
+    it('should reject it without publishing it', () => {
+      expect({ error, published: deployEntity.mock.calls.length }).toEqual({
+        error: new MissingSceneReplacementAuthorizationError('entity'),
+        published: 0
+      })
+    })
+  })
+
+  describe('and the publication collides with an already deployed entity', () => {
+    let collision: Error
+
+    beforeEach(() => {
+      collision = Object.assign(new Error('duplicate key'), { code: '23505' })
+      deployEntity.mockRejectedValueOnce(new SceneAlreadyDeployedError('entity', collision))
+    })
+
+    describe('and the entity is live in its world', () => {
+      let result: DeployResult
+
+      beforeEach(async () => {
+        getWorldScenes.mockResolvedValueOnce({ scenes: [{ entityId: 'entity', createdAt: new Date(321) }], total: 1 })
+        result = await deploy({
+          baseUrl: 'https://worlds.example',
+          entityRaw: '{}',
+          deployment,
+          signal,
+          deadlineAt: 99
+        })
+      })
+
+      it('should verify it among the deployed scenes of its world', () => {
+        expect(getWorldScenes.mock.calls).toEqual([[{ worldName: 'world.dcl.eth', entityId: 'entity' }, { limit: 1 }]])
+      })
+
+      it("should answer with the live publication's timestamp and this deployment's message", () => {
+        expect(result).toEqual({
+          creationTimestamp: 321,
+          message: expect.stringContaining('Your scene was deployed to World "World.dcl.eth" at parcels: 0,0!')
+        })
+      })
+
+      it('should log the idempotent success', () => {
+        expect(info.mock.calls).toEqual([
+          [
+            'Deployment finalized concurrently; returning idempotent success',
+            { entityId: 'entity', worldName: 'world.dcl.eth' }
+          ]
+        ])
+      })
+    })
+
+    describe('and the entity is not deployed', () => {
+      let error: unknown
+
+      beforeEach(async () => {
+        error = await deploy({
+          baseUrl: 'https://worlds.example',
+          entityRaw: '{}',
+          deployment,
+          signal,
+          deadlineAt: 99
+        }).catch((e: unknown) => e)
+      })
+
+      it('should propagate the original database error', () => {
+        expect(error).toBe(collision)
+      })
+    })
+
+    describe('and the publication lookup fails', () => {
+      let error: unknown
+
+      beforeEach(async () => {
+        getWorldScenes.mockRejectedValueOnce(new Error('database unavailable'))
+        error = await deploy({
+          baseUrl: 'https://worlds.example',
+          entityRaw: '{}',
+          deployment,
+          signal,
+          deadlineAt: 99
+        }).catch((e: unknown) => e)
+      })
+
+      it('should propagate the original database error', () => {
+        expect(error).toBe(collision)
+      })
+    })
+
+    describe('and the entity has no world name', () => {
+      let error: unknown
+
+      beforeEach(async () => {
+        deployment.entity.metadata = { scene: { base: '0,0', parcels: ['0,0'] } }
+        error = await deploy({
+          baseUrl: 'https://worlds.example',
+          entityRaw: '{}',
+          deployment,
+          signal,
+          deadlineAt: 99
+        }).catch((e: unknown) => e)
+      })
+
+      it('should propagate the original database error without looking it up', () => {
+        expect({ error, lookups: getWorldScenes.mock.calls.length }).toEqual({ error: collision, lookups: 0 })
+      })
+    })
+  })
+
+  describe('and the publication fails for another reason', () => {
+    let failure: Error
+    let error: unknown
+
+    beforeEach(async () => {
+      failure = new Error('storage unavailable')
+      deployEntity.mockRejectedValueOnce(failure)
+      error = await deploy({
+        baseUrl: 'https://worlds.example',
+        entityRaw: '{}',
+        deployment,
+        signal,
+        deadlineAt: 99
+      }).catch((e: unknown) => e)
+    })
+
+    it('should propagate it without looking up the publication', () => {
+      expect({ error, lookups: getWorldScenes.mock.calls.length }).toEqual({ error: failure, lookups: 0 })
+    })
+  })
+})
+
+describe('getContentFileInfos', () => {
+  describe('when the deployment references more hashes than the metadata concurrency limit', () => {
+    let storage: Pick<IContentStorageComponent, 'fileInfo'>
+    let fileInfo: jest.Mock
+    let hashes: string[]
+    let fileInfos: Map<string, FileInfo | undefined>
+    let activeChecks: number
+    let maximumActiveChecks: number
+
+    beforeEach(async () => {
+      hashes = Array.from({ length: DEFAULT_CONTENT_FILE_INFO_CONCURRENCY * 2 + 2 }, (_, index) => `hash-${index}`)
+      activeChecks = 0
+      maximumActiveChecks = 0
+      fileInfo = jest.fn(async () => {
+        activeChecks++
+        maximumActiveChecks = Math.max(maximumActiveChecks, activeChecks)
+        await new Promise<void>((resolve) => setImmediate(resolve))
+        activeChecks--
+        return { encoding: null, size: 1, contentSize: 1 }
+      })
+      storage = { fileInfo }
+
+      fileInfos = await getContentFileInfos(storage, hashes)
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should query every hash with bounded concurrency and combine every result', () => {
+      expect({
+        calls: fileInfo.mock.calls.length,
+        maximumActiveChecks,
+        results: fileInfos.size
+      }).toEqual({
+        calls: hashes.length,
+        maximumActiveChecks: DEFAULT_CONTENT_FILE_INFO_CONCURRENCY,
+        results: hashes.length
+      })
+    })
+  })
+
+  describe('when duplicate hashes are provided', () => {
+    let fileInfo: jest.Mock
+    let fileInfos: Map<string, FileInfo | undefined>
+
+    beforeEach(async () => {
+      fileInfo = jest.fn().mockResolvedValue(undefined)
+      fileInfos = await getContentFileInfos({ fileInfo }, ['a', 'a', 'b'])
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should query each content hash only once', () => {
+      expect({ requested: fileInfo.mock.calls.map(([hash]) => hash), results: Array.from(fileInfos.keys()) }).toEqual({
+        requested: ['a', 'b'],
+        results: ['a', 'b']
+      })
+    })
+  })
+
+  describe('when an active metadata request outlives the processing deadline', () => {
+    let caughtError: unknown
+    let fileInfo: jest.Mock
+
+    beforeEach(async () => {
+      const controller = new AbortController()
+      fileInfo = jest.fn(async () => new Promise<never>(() => undefined))
+      const result = getContentFileInfos({ fileInfo }, ['a', 'b'], 1, controller.signal)
+      controller.abort(new DeploymentProcessingTimeoutError(10))
+      caughtError = await result.catch((error) => error)
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should reject promptly and leave queued metadata requests unstarted', () => {
+      expect({ caughtError, requests: fileInfo.mock.calls.length }).toEqual({
+        caughtError: new DeploymentProcessingTimeoutError(10),
+        requests: 1
+      })
     })
   })
 })

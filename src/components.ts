@@ -31,7 +31,7 @@ import { createPendingScenesRepository } from './adapters/pending-scenes-reposit
 import { createPartialUploadAdmission } from './logic/partial-upload-admission'
 import { createContentGcComponent } from './logic/content-gc'
 import { loadUploadLimits } from './logic/upload-limits'
-import { createPartialDeploymentsComponent } from './logic/partial-deployments'
+import { createSceneDeploymentsComponent } from './logic/scene-deployments'
 import { createMigrationExecutor } from './adapters/migration-executor'
 import { createNameDenyListChecker } from './adapters/name-deny-list-checker'
 import { createDatabaseComponent } from './adapters/database-component'
@@ -300,7 +300,7 @@ export async function initComponents(): Promise<AppComponents> {
     uploadLimits
   })
 
-  const partialDeployments = await createPartialDeploymentsComponent({
+  const sceneDeployments = await createSceneDeploymentsComponent({
     coordinates,
     entityDeployer,
     limitsManager,
@@ -409,7 +409,7 @@ export async function initComponents(): Promise<AppComponents> {
     nats,
     notificationService,
     participantKicker,
-    partialDeployments,
+    sceneDeployments,
     partialUploadAdmission,
     pendingScenesRepository,
     peersRegistry,

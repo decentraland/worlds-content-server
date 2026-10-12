@@ -1,25 +1,34 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'fs'
 import os from 'os'
 import path from 'path'
-import { bufferToStream, FileInfo, IContentStorageComponent } from '@dcl/catalyst-storage'
+import { bufferToStream, FileInfo } from '@dcl/catalyst-storage'
 import {
-  deployEntity,
-  getContentFileInfos,
+  deployEntity as deployEntityHandler,
   MAX_ENTITY_FILE_SIZE_IN_BYTES
 } from '../../src/controllers/handlers/deploy-entity-handler'
 import { InvalidRequestError } from '@dcl/http-commons'
 import { createDeploymentProcessingMock } from '../mocks/deployment-processing-mock'
 import {
-  DEFAULT_CONTENT_FILE_INFO_CONCURRENCY,
   DeploymentProcessingAbortedError,
   DeploymentProcessingTimeoutError
 } from '../../src/logic/deployment-processing'
 import { hashV1 } from '@dcl/hashing'
 import { Authenticator } from '@dcl/crypto'
-import { DeploymentToValidate, SceneReplacementConflictError } from '../../src/types'
+import { DeploymentToValidate, SceneAlreadyDeployedError, SceneReplacementConflictError } from '../../src/types'
 import { PartialUploadQuotaExceededError, PartialUploadTooLargeError } from '../../src/logic/partial-upload-admission'
+import { createSceneDeploymentsComponent } from '../../src/logic/scene-deployments'
 
-type DeployContext = Parameters<typeof deployEntity>[0]
+type HandlerContext = Parameters<typeof deployEntityHandler>[0]
+type SceneDeploymentsComponents = Parameters<typeof createSceneDeploymentsComponent>[0]
+// The context also carries the components the real scene-deployments flow needs.
+type DeployContext = HandlerContext & { components: HandlerContext['components'] & SceneDeploymentsComponents }
+
+/** Runs the handler with the real scene-deployments flow built from the context's mocks; methods it mocks win. */
+async function deployEntity(context: DeployContext): ReturnType<typeof deployEntityHandler> {
+  const sceneDeployments = await createSceneDeploymentsComponent(context.components)
+  context.components.sceneDeployments = { ...sceneDeployments, ...context.components.sceneDeployments }
+  return deployEntityHandler(context)
+}
 
 describe('deployEntity', () => {
   const entityId = 'bafkreiahsvnr4x4rnskhkwfbnbplkbqhzb3xagdwpyfy44lgcndmhyizde'
@@ -84,7 +93,7 @@ describe('deployEntity', () => {
           getByEntityId: jest.fn().mockResolvedValue(undefined),
           getCompleted: jest.fn().mockResolvedValue(undefined)
         },
-        partialDeployments: {
+        sceneDeployments: {
           findPublication: jest.fn().mockResolvedValue(undefined),
           prevalidate: jest.fn().mockResolvedValue({ sawPending: false })
         },
@@ -213,7 +222,7 @@ describe('deployEntity', () => {
       const context = createContext(entityId, { [entityId]: makeFile(Buffer.from('{}')) })
       context.formData.fields.partial = makeField('true')
       context.components.contentLocks = { withRead } as unknown as DeployContext['components']['contentLocks']
-      ;(context.components.partialDeployments as unknown as { prevalidate: jest.Mock }).prevalidate = prevalidate
+      ;(context.components.sceneDeployments as unknown as { prevalidate: jest.Mock }).prevalidate = prevalidate
       caughtError = await deployEntity(context).catch((error) => error)
     })
 
@@ -247,11 +256,11 @@ describe('deployEntity', () => {
       context.formData.fields.partial = makeField('true')
       ;(context.components.partialUploadAdmission as unknown as { getByEntityId: jest.Mock }).getByEntityId =
         getByEntityId
-      context.components.partialDeployments = {
+      context.components.sceneDeployments = {
         findPublication,
         prevalidate,
         stage
-      } as unknown as DeployContext['components']['partialDeployments']
+      } as unknown as DeployContext['components']['sceneDeployments']
       response = await deployEntity(context)
     })
 
@@ -312,12 +321,12 @@ describe('deployEntity', () => {
       const context = createContext(entityId, { [entityId]: makeFile(Buffer.from('{}')) })
       context.formData.fields.partial = makeField('true')
       context.components.contentLocks = { withRead } as unknown as DeployContext['components']['contentLocks']
-      context.components.partialDeployments = {
+      context.components.sceneDeployments = {
         findPublication: jest
           .fn()
           .mockResolvedValue({ complete: true, creationTimestamp: 789, result: { message: 'published' } }),
         prevalidate
-      } as unknown as DeployContext['components']['partialDeployments']
+      } as unknown as DeployContext['components']['sceneDeployments']
       response = await deployEntity(context)
     })
 
@@ -400,7 +409,7 @@ describe('deployEntity', () => {
         components: {
           ...baseContext.components,
           metrics: { increment },
-          partialDeployments: {
+          sceneDeployments: {
             stage,
             findPublication: jest
               .fn()
@@ -600,7 +609,7 @@ describe('deployEntity', () => {
             return operation(signal)
           }
         } as unknown as DeployContext['components']['contentLocks']
-        context.components.partialDeployments = {
+        context.components.sceneDeployments = {
           findPublication: jest.fn().mockResolvedValue(undefined),
           stage: jest.fn(async (input: { files: Map<string, { getHash(): Promise<string> }> }) => {
             stagedHash = await input.files
@@ -609,7 +618,7 @@ describe('deployEntity', () => {
               .catch((error: Error) => error.message)
             return { complete: false, missing: [] }
           })
-        } as unknown as DeployContext['components']['partialDeployments']
+        } as unknown as DeployContext['components']['sceneDeployments']
         await deployEntity(context)
       })
 
@@ -646,7 +655,7 @@ describe('deployEntity', () => {
           .fn()
           .mockResolvedValue({ complete: true, creationTimestamp: 789, result: { message: 'published' } })
         const context = createResumeContext()
-        ;(context.components as any).partialDeployments = { findPublication }
+        ;(context.components as any).sceneDeployments = { findPublication }
         response = await deployEntity(context)
       })
 
@@ -666,7 +675,7 @@ describe('deployEntity', () => {
         getByEntityId = jest.fn().mockResolvedValue(undefined)
         findPublication = jest.fn()
         const context = createResumeContext()
-        ;(context.components as any).partialDeployments = { findPublication }
+        ;(context.components as any).sceneDeployments = { findPublication }
         ;(context.components as any).partialUploadAdmission.getCompleted = jest
           .fn()
           .mockResolvedValue({ creationTimestamp: 456, worldName: 'world.dcl.eth', parcels: ['0,0'] })
@@ -772,6 +781,7 @@ describe('deployEntity', () => {
           },
           deploymentProcessing: createDeploymentProcessingMock({ fileInfoConcurrency: 2 }),
           entityDeployer: { deployEntity: entityDeployerDeploy },
+          logs: { getLogger: jest.fn().mockReturnValue({ info: jest.fn() }) },
           partialUploadAdmission: {
             getByEntityId: jest.fn().mockResolvedValue(undefined),
             getCompleted: jest.fn().mockResolvedValue(undefined)
@@ -907,7 +917,11 @@ describe('deployEntity', () => {
           },
           config: { getString: jest.fn().mockResolvedValue(undefined) },
           entityDeployer: {
-            deployEntity: jest.fn().mockRejectedValue(Object.assign(new Error('duplicate key'), { code: '23505' }))
+            deployEntity: jest
+              .fn()
+              .mockRejectedValue(
+                new SceneAlreadyDeployedError(entityId, Object.assign(new Error('duplicate key'), { code: '23505' }))
+              )
           },
           storage: { fileInfo: jest.fn().mockResolvedValue(undefined) },
           validator: {
@@ -962,7 +976,11 @@ describe('deployEntity', () => {
           },
           config: { getString: jest.fn().mockResolvedValue(undefined) },
           entityDeployer: {
-            deployEntity: jest.fn().mockRejectedValue(Object.assign(new Error('duplicate key'), { code: '23505' }))
+            deployEntity: jest
+              .fn()
+              .mockRejectedValue(
+                new SceneAlreadyDeployedError(entityId, Object.assign(new Error('duplicate key'), { code: '23505' }))
+              )
           },
           storage: { fileInfo: jest.fn().mockResolvedValue(undefined) },
           validator: {
@@ -1198,6 +1216,47 @@ describe('deployEntity', () => {
     })
   })
 
+  describe('when the client disconnects after the processing deadline passed', () => {
+    let response: Awaited<ReturnType<typeof deployEntity>>
+
+    beforeEach(async () => {
+      const controller = new AbortController()
+      const baseContext = createContext(entityId, { [entityId]: makeFile(Buffer.from('{}')) })
+      const context = {
+        ...baseContext,
+        components: {
+          ...baseContext.components,
+          deploymentProcessing: createDeploymentProcessingMock({
+            createAbortContext: jest.fn(() => ({
+              signal: controller.signal,
+              deadlineAt: Date.now(),
+              dispose: jest.fn()
+            }))
+          }),
+          validator: {
+            validateBeforeStorage: jest.fn(async () => {
+              controller.abort(new DeploymentProcessingTimeoutError(10))
+              throw new DeploymentProcessingAbortedError(new DOMException('Client disconnected.', 'AbortError'))
+            })
+          }
+        }
+      } as unknown as DeployContext
+
+      response = await deployEntity(context)
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should answer the disconnect rather than the timeout', () => {
+      expect(response).toEqual({
+        status: 499,
+        body: { error: 'Client Closed Request', message: 'Client disconnected.' }
+      })
+    })
+  })
+
   describe('when a genuine failure races with a client disconnect', () => {
     let loggerError: jest.Mock
     let response: Awaited<ReturnType<typeof deployEntity>>
@@ -1247,94 +1306,6 @@ describe('deployEntity', () => {
       expect({ logged: loggerError.mock.calls[0], status: response.status }).toEqual({
         logged: ['Deployment failed while cancelled', { entityId, error: 'database exploded' }],
         status: 499
-      })
-    })
-  })
-})
-
-describe('getContentFileInfos', () => {
-  describe('when the deployment references more hashes than the metadata concurrency limit', () => {
-    let storage: Pick<IContentStorageComponent, 'fileInfo'>
-    let fileInfo: jest.Mock
-    let hashes: string[]
-    let fileInfos: Map<string, FileInfo | undefined>
-    let activeChecks: number
-    let maximumActiveChecks: number
-
-    beforeEach(async () => {
-      hashes = Array.from({ length: DEFAULT_CONTENT_FILE_INFO_CONCURRENCY * 2 + 2 }, (_, index) => `hash-${index}`)
-      activeChecks = 0
-      maximumActiveChecks = 0
-      fileInfo = jest.fn(async () => {
-        activeChecks++
-        maximumActiveChecks = Math.max(maximumActiveChecks, activeChecks)
-        await new Promise<void>((resolve) => setImmediate(resolve))
-        activeChecks--
-        return { encoding: null, size: 1, contentSize: 1 }
-      })
-      storage = { fileInfo }
-
-      fileInfos = await getContentFileInfos(storage, hashes)
-    })
-
-    afterEach(() => {
-      jest.resetAllMocks()
-    })
-
-    it('should query every hash with bounded concurrency and combine every result', () => {
-      expect({
-        calls: fileInfo.mock.calls.length,
-        maximumActiveChecks,
-        results: fileInfos.size
-      }).toEqual({
-        calls: hashes.length,
-        maximumActiveChecks: DEFAULT_CONTENT_FILE_INFO_CONCURRENCY,
-        results: hashes.length
-      })
-    })
-  })
-
-  describe('when duplicate hashes are provided', () => {
-    let fileInfo: jest.Mock
-    let fileInfos: Map<string, FileInfo | undefined>
-
-    beforeEach(async () => {
-      fileInfo = jest.fn().mockResolvedValue(undefined)
-      fileInfos = await getContentFileInfos({ fileInfo }, ['a', 'a', 'b'])
-    })
-
-    afterEach(() => {
-      jest.resetAllMocks()
-    })
-
-    it('should query each content hash only once', () => {
-      expect({ requested: fileInfo.mock.calls.map(([hash]) => hash), results: Array.from(fileInfos.keys()) }).toEqual({
-        requested: ['a', 'b'],
-        results: ['a', 'b']
-      })
-    })
-  })
-
-  describe('when an active metadata request outlives the processing deadline', () => {
-    let caughtError: unknown
-    let fileInfo: jest.Mock
-
-    beforeEach(async () => {
-      const controller = new AbortController()
-      fileInfo = jest.fn(async () => new Promise<never>(() => undefined))
-      const result = getContentFileInfos({ fileInfo }, ['a', 'b'], 1, controller.signal)
-      controller.abort(new DeploymentProcessingTimeoutError(10))
-      caughtError = await result.catch((error) => error)
-    })
-
-    afterEach(() => {
-      jest.resetAllMocks()
-    })
-
-    it('should reject promptly and leave queued metadata requests unstarted', () => {
-      expect({ caughtError, requests: fileInfo.mock.calls.length }).toEqual({
-        caughtError: new DeploymentProcessingTimeoutError(10),
-        requests: 1
       })
     })
   })
