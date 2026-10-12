@@ -48,7 +48,7 @@ export async function createPendingScenesRepository(
 ): Promise<IPendingScenesRepository> {
   const { database } = components
 
-  async function getCreatedSince(
+  async function getLive(
     entityId: string,
     cutoff: Date,
     signal?: AbortSignal
@@ -300,7 +300,7 @@ export async function createPendingScenesRepository(
   }
 
   return {
-    getCreatedSince,
+    getLive,
     getPublishedContent,
     getReferencedContentKeys,
     lockDeployer,

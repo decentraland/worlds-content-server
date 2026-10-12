@@ -552,6 +552,55 @@ describe('entity deployer', () => {
     })
   })
 
+  describe('when a scene is deployed to a world', () => {
+    let increment: jest.Mock
+    let worldName: string
+
+    async function deployTo(name: string): Promise<void> {
+      const setup = createComponents(jest.fn().mockResolvedValue(undefined), 2)
+      ;(setup.components.nameOwnership.findOwners as jest.Mock).mockResolvedValue(new Map([[name, '0xowner']]))
+      increment = setup.components.metrics.increment as jest.Mock
+      const entity = createScene([])
+      entity.metadata.worldConfiguration.name = name
+      await createEntityDeployer(setup.components).deployEntity(
+        'https://worlds.example',
+        entity,
+        new Map(),
+        new Map(),
+        JSON.stringify(entity),
+        [],
+        0,
+        { sceneReplacementAuthorization: unrestrictedReplacementAuthorization }
+      )
+    }
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    describe('and its DCL name is mixed case', () => {
+      beforeEach(async () => {
+        worldName = 'Foo.DCL.eth'
+        await deployTo(worldName)
+      })
+
+      it('should count the deployment as a dcl-name world', () => {
+        expect(increment).toHaveBeenCalledWith('world_deployments_counter', { kind: 'dcl-name' })
+      })
+    })
+
+    describe('and its ENS name only ends in dcl.eth without the dot', () => {
+      beforeEach(async () => {
+        worldName = 'foodcl.eth'
+        await deployTo(worldName)
+      })
+
+      it('should count the deployment as an ens-name world', () => {
+        expect(increment).toHaveBeenCalledWith('world_deployments_counter', { kind: 'ens-name' })
+      })
+    })
+  })
+
   describe('when the world name has no resolvable owner', () => {
     let caughtError: unknown
     let worldsDeployScene: jest.Mock

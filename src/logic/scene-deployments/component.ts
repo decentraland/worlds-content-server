@@ -317,7 +317,7 @@ export async function createSceneDeploymentsComponent(
     if (!pending) metrics.increment('partial_uploads_started')
 
     // Re-checked right before storing: a batch admitted just before expiry must store nothing.
-    if (isPastExpiry(pendingRow.expiresAt.getTime())) {
+    if (isPastExpiry(pendingRow.expiresAt)) {
       throw new PartialUploadExpiredError()
     }
     await deploymentProcessing.trackStage('storage', toStore.size, () =>

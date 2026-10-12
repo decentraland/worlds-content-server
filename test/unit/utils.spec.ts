@@ -1,4 +1,4 @@
-import { chunks, deepEqual } from '../../src/logic/utils'
+import { chunks, deepEqual, isPastExpiry } from '../../src/logic/utils'
 
 describe('utils', function () {
   describe('deepEqual', function () {
@@ -99,6 +99,43 @@ describe('utils', function () {
       expect(chunks(names, 8)).toEqual([['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'], ['i']])
       expect(chunks(names, 9)).toEqual([['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i']])
       expect(chunks(names, 10)).toEqual([['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i']])
+    })
+  })
+
+  describe('when checking whether an upload is past its expiry', () => {
+    let expiresAt: Date
+    let now: number
+
+    beforeEach(() => {
+      expiresAt = new Date('2026-01-01T00:00:00.000Z')
+    })
+
+    describe('and the clock is exactly at the expiry', () => {
+      beforeEach(() => {
+        now = expiresAt.getTime()
+      })
+
+      it('should report it expired given the expiry as a Date', () => {
+        expect(isPastExpiry(expiresAt, now)).toBe(true)
+      })
+
+      it('should report it expired given the expiry in milliseconds', () => {
+        expect(isPastExpiry(expiresAt.getTime(), now)).toBe(true)
+      })
+    })
+
+    describe('and the clock is one millisecond before the expiry', () => {
+      beforeEach(() => {
+        now = expiresAt.getTime() - 1
+      })
+
+      it('should report it live given the expiry as a Date', () => {
+        expect(isPastExpiry(expiresAt, now)).toBe(false)
+      })
+
+      it('should report it live given the expiry in milliseconds', () => {
+        expect(isPastExpiry(expiresAt.getTime(), now)).toBe(false)
+      })
     })
   })
 })

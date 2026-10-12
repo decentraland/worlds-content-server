@@ -64,7 +64,7 @@ describe('when admitting partial uploads', () => {
     clientQuery = jest.fn().mockResolvedValue({ rows: [], rowCount: 0 })
     observe = jest.fn()
     repository = {
-      getCreatedSince: jest.fn().mockResolvedValue(undefined),
+      getLive: jest.fn().mockResolvedValue(undefined),
       getCompleted: jest.fn().mockResolvedValue(undefined),
       lockDeployer: jest.fn().mockResolvedValue(undefined),
       findRecord: jest.fn().mockResolvedValue(undefined),
@@ -109,12 +109,12 @@ describe('when admitting partial uploads', () => {
     let pending: PendingScene | undefined
 
     beforeEach(async () => {
-      repository.getCreatedSince.mockResolvedValueOnce(record)
+      repository.getLive.mockResolvedValueOnce(record)
       pending = await admission.getByEntityId('entity')
     })
 
     it('should only accept uploads created within their lifetime', () => {
-      expect(repository.getCreatedSince).toHaveBeenCalledWith('entity', new Date(NOW - TTL_MS), undefined)
+      expect(repository.getLive).toHaveBeenCalledWith('entity', new Date(NOW - TTL_MS), undefined)
     })
 
     it('should report when its lifetime ends', () => {

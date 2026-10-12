@@ -620,7 +620,7 @@ test('when accounting for independent partial uploads', ({ components }) => {
       counts = await repository.countUploads(cutoff)
       charged = await repository.getChargedBytes(cutoff)
       referenced = await repository.getReferencedContentKeys(cutoff, ['at-cutoff', 'after-cutoff'])
-      atCutoffLive = await repository.getCreatedSince('at-cutoff', cutoff)
+      atCutoffLive = await repository.getLive('at-cutoff', cutoff)
       await repository.releaseExpired('at-cutoff', cutoff)
       await repository.releaseExpired('after-cutoff', cutoff)
       const result = await components.database.query<{ entity_id: string }>('SELECT entity_id FROM pending_scenes')

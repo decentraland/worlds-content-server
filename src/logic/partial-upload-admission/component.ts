@@ -44,14 +44,14 @@ export async function createPartialUploadAdmission(
   // Capacity held by the oldest charged upload frees no earlier than its expiry; once it has expired,
   // only the next cleanup run frees it.
   function retryAfterOldest(oldestCreatedAt: Date | null): number {
-    const untilExpiry = oldestCreatedAt ? oldestCreatedAt.getTime() + ttlMs - Date.now() : 0
+    const untilExpiry = oldestCreatedAt ? expiresAt(oldestCreatedAt) - Date.now() : 0
     const untilCleanup =
       lastCleanupFinishedAt === undefined ? cleanupIntervalMs : lastCleanupFinishedAt + cleanupIntervalMs - Date.now()
     return Math.max(1, Math.ceil((untilExpiry > 0 ? untilExpiry : untilCleanup) / 1000))
   }
 
   async function getByEntityId(entityId: string, signal?: AbortSignal): Promise<PendingScene | undefined> {
-    const record = await repository.getCreatedSince(entityId, new Date(Date.now() - ttlMs), signal)
+    const record = await repository.getLive(entityId, new Date(Date.now() - ttlMs), signal)
     return record ? toPendingScene(record) : undefined
   }
 

@@ -68,7 +68,7 @@ export type BudgetTotals = {
  */
 export interface IPendingScenesRepository extends IBaseComponent {
   /** Retrieves an upload still live at `cutoff` (`now - ttl`): created after it. */
-  getCreatedSince(entityId: string, cutoff: Date, signal?: AbortSignal): Promise<PendingSceneRecord | undefined>
+  getLive(entityId: string, cutoff: Date, signal?: AbortSignal): Promise<PendingSceneRecord | undefined>
   /**
    * Returns the given hashes referenced by published content (world scenes, including soft-deleted ones
    * awaiting eviction, or world thumbnails). References from pending uploads don't count.

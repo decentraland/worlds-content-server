@@ -12,8 +12,8 @@ export function errorMessage(error: unknown): string {
  * The single expiry rule of partial uploads: expired from `createdAt + ttl` on, live strictly before.
  * SQL mirrors it with `cutoff = now - ttl`: live `created_at > cutoff`, expired `created_at <= cutoff`.
  */
-export function isPastExpiry(expiresAtMs: number, nowMs: number = Date.now()): boolean {
-  return nowMs >= expiresAtMs
+export function isPastExpiry(expiresAt: Date | number, now: number = Date.now()): boolean {
+  return now >= (typeof expiresAt === 'number' ? expiresAt : expiresAt.getTime())
 }
 
 /** Formats a byte count for client-facing messages. */
