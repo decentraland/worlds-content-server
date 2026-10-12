@@ -8,10 +8,7 @@ import { IBlockingComponent } from '../../src/adapters/blocking'
 import { createConfigComponent } from '@well-known-components/env-config-provider'
 import { IConfigComponent } from '@well-known-components/interfaces'
 import { SQLStatement } from 'sql-template-strings'
-
-function sqlText(sql: string | SQLStatement): string {
-  return typeof sql === 'string' ? sql : sql.text
-}
+import { sqlText } from '../utils'
 
 describe('UpdateOwnerJob', () => {
   const badOwner = '0xbad0000000000000000000000000000000000001'
@@ -92,6 +89,17 @@ describe('UpdateOwnerJob', () => {
 
     beforeEach(async () => {
       blocking = createMockBlockingComponent()
+      // A spare result so a stray write would succeed and only the query assertion can catch it.
+      database = createDatabaseMock([
+        {
+          rows: [
+            { name: 'bad-world.dcl.eth', owner: badOwner, size: '100' },
+            { name: 'good-world.dcl.eth', owner: goodOwner, size: '100' }
+          ],
+          rowCount: 2
+        },
+        { rows: [], rowCount: 1 }
+      ])
       querySpy = jest.spyOn(database, 'query')
 
       // bad-world's owner cannot be resolved (subgraph lag / partial RPC degradation) — the resolver
@@ -114,7 +122,12 @@ describe('UpdateOwnerJob', () => {
     })
 
     it('should not overwrite the stored owner with the resolution gap', () => {
-      expect(querySpy.mock.calls.filter(([sql]) => sqlText(sql).includes('UPDATE'))).toEqual([])
+      // Only the worlds enumeration may run: any write, whatever its casing or verb, fails this.
+      expect(querySpy.mock.calls.map(([sql]) => sqlText(sql).trim())).toEqual([
+        expect.stringMatching(
+          /^SELECT w\.name, w\.owner, COALESCE\(SUM\(ws\.size\), 0\)::text as size\s+FROM worlds w\s/
+        )
+      ])
     })
 
     it('should protect the unresolved wallet from the stale-record cleanup', () => {

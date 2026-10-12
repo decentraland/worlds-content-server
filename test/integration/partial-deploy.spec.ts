@@ -1473,6 +1473,7 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
     let olderBody: unknown
     let deployed: string[]
     let olderContentStored: boolean[]
+    let deploySceneSpy: jest.SpyInstance
 
     beforeEach(async () => {
       const now = Date.now()
@@ -1486,6 +1487,7 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
       )
 
       // Then a vanilla deploy of the older scene on the same parcels.
+      deploySceneSpy = jest.spyOn(components.worldsManager, 'deployScene')
       const olderAuth = Authenticator.signPayload(identity.authChain, older.entityId)
       olderResponse = await post(
         buildDeploymentForm(older.entityId, olderAuth, older.files, [older.entityId, ...older.contentHashes], false)
@@ -1495,13 +1497,21 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
       olderContentStored = [...(await components.storage.existMultiple(older.contentHashes)).values()]
     })
 
-    it('should reject the older vanilla deploy with 400 in the pre-storage fast-fail', () => {
+    afterEach(() => {
+      deploySceneSpy.mockRestore()
+    })
+
+    it('should reject the older vanilla deploy with 400', () => {
       expect({ status: olderResponse.status, body: olderBody }).toEqual({
         status: 400,
         body: expect.objectContaining({
           message: 'Deployment failed: a newer scene is already deployed on one or more of these parcels.'
         })
       })
+    })
+
+    it('should reject it in the pre-storage fast-fail without reaching the atomic deploy', () => {
+      expect(deploySceneSpy).not.toHaveBeenCalled()
     })
 
     it('should keep the newer scene deployed', () => {

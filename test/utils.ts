@@ -6,7 +6,7 @@ import { stringToUtf8Bytes } from 'eth-connect'
 import { AuthChain, AuthLinkType } from '@dcl/schemas'
 import { AUTH_CHAIN_HEADER_PREFIX, AUTH_METADATA_HEADER, AUTH_TIMESTAMP_HEADER } from '@dcl/crypto-middleware'
 import { IPgComponent } from '@dcl/pg-component'
-import SQL from 'sql-template-strings'
+import SQL, { SQLStatement } from 'sql-template-strings'
 import FormData from 'form-data'
 import { getAuthHeaders, getIdentity, type Identity } from '@dcl/test-helpers'
 import { IWorldsManager } from '../src/types'
@@ -15,6 +15,11 @@ import { IWorldsManager } from '../src/types'
 // stays in step with `@dcl/crypto-middleware` instead of drifting in a hand-rolled copy per repo.
 export { getAuthHeaders, getIdentity }
 export type { Identity }
+
+// Text of a query issued either as a plain string or a SQL template.
+export function sqlText(sql: string | SQLStatement): string {
+  return typeof sql === 'string' ? sql : sql.text
+}
 
 export async function storeJson(storage: IContentStorageComponent, fileId: string, data: any) {
   const buffer = stringToUtf8Bytes(JSON.stringify(data))
