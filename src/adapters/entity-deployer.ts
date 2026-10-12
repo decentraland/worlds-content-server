@@ -24,9 +24,6 @@ type PostDeploymentHook = (
   options: DeployEntityOptions
 ) => Promise<DeploymentResult>
 
-/** Maximum number of independent content-addressed objects uploaded concurrently. */
-export { DEFAULT_STORAGE_UPLOAD_CONCURRENCY } from '../logic/deployment-processing'
-
 /**
  * Creates the deployment component that uploads content and commits validated scenes.
  *
