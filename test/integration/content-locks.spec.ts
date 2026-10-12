@@ -3,6 +3,24 @@ import { test } from '../components'
 import { createContentLocks } from '../../src/adapters/content-locks/component'
 import { ContentLockTimeoutError } from '../../src/adapters/content-locks/errors'
 import { IContentLocks } from '../../src/adapters/content-locks/types'
+import { countAdvisoryLocks, waitForAdvisoryLocks } from '../utils'
+
+const GATE = 'worlds-content-gc'
+
+// Samples the queued sessions on `keyName` across `windowMs` and returns the most seen at once.
+async function maxAdvisoryWaiters(
+  db: Parameters<typeof countAdvisoryLocks>[0],
+  keyName: string,
+  windowMs: number
+): Promise<number> {
+  const deadline = Date.now() + windowMs
+  let max = 0
+  do {
+    max = Math.max(max, await countAdvisoryLocks(db, keyName, 'waiting'))
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  } while (Date.now() < deadline)
+  return max
+}
 
 test('when requests wait for a busy entity lock', ({ components }) => {
   let locks: IContentLocks
@@ -10,6 +28,7 @@ test('when requests wait for a busy entity lock', ({ components }) => {
   let holder: Promise<string>
   let waiter: Promise<string>
   let otherEntity: string
+  let results: string[]
 
   beforeEach(async () => {
     // Two connections: one held by the busy entity, one that must stay free while others wait on it.
@@ -31,14 +50,16 @@ test('when requests wait for a busy entity lock', ({ components }) => {
       undefined,
       'busy-entity'
     )
-    await new Promise((resolve) => setTimeout(resolve, 100))
+    await waitForAdvisoryLocks(components.database, 'partial-entity:busy-entity', 'granted')
     waiter = locks.withRead(async () => 'waiter', undefined, 'busy-entity')
+    // Lets the waiter retry against the busy entity before the free one is requested.
     await new Promise((resolve) => setTimeout(resolve, 100))
     otherEntity = await Promise.race([
       locks.withRead(async () => 'other entity', undefined, 'free-entity'),
       new Promise<string>((resolve) => setTimeout(() => resolve('blocked'), 3000))
     ])
     releaseHolder()
+    results = await Promise.all([holder, waiter])
   })
 
   afterEach(async () => {
@@ -46,12 +67,12 @@ test('when requests wait for a busy entity lock', ({ components }) => {
     await locks[STOP_COMPONENT]?.()
   })
 
-  it('should keep a connection free for other entities and run the waiter once the lock is released', async () => {
-    expect({ otherEntity, holder: await holder, waiter: await waiter }).toEqual({
-      otherEntity: 'other entity',
-      holder: 'holder',
-      waiter: 'waiter'
-    })
+  it('should keep a connection free for other entities', () => {
+    expect(otherEntity).toBe('other entity')
+  })
+
+  it('should run the waiter once the lock is released', () => {
+    expect(results).toEqual(['holder', 'waiter'])
   })
 })
 
@@ -60,6 +81,7 @@ test('when uploads arrive while garbage collection holds the exclusive lock', ({
   let gc: Promise<string>
   let uploads: Promise<string[]>
   let lockWaiters: number
+  let results: [string, string[]]
 
   beforeEach(async () => {
     locks = await createContentLocks({
@@ -77,14 +99,11 @@ test('when uploads arrive while garbage collection holds the exclusive lock', ({
       await held
       return 'gc'
     })
-    await new Promise((resolve) => setTimeout(resolve, 100))
+    await waitForAdvisoryLocks(components.database, GATE, 'granted')
     uploads = Promise.all([1, 2, 3].map((i) => locks.withRead(async () => `upload ${i}`)))
-    await new Promise((resolve) => setTimeout(resolve, 300))
-    const waiting = await components.database.query<{ count: string }>(
-      `SELECT COUNT(*) AS count FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND wait_event = 'advisory'`
-    )
-    lockWaiters = Number(waiting.rows[0].count)
+    lockWaiters = await maxAdvisoryWaiters(components.database, GATE, 300)
     releaseGc()
+    results = await Promise.all([gc, uploads])
   })
 
   afterEach(async () => {
@@ -92,12 +111,12 @@ test('when uploads arrive while garbage collection holds the exclusive lock', ({
     await locks[STOP_COMPONENT]?.()
   })
 
-  it('should not hold connections waiting on the lock and run every upload once GC finishes', async () => {
-    expect({ lockWaiters, gc: await gc, uploads: await uploads }).toEqual({
-      lockWaiters: 0,
-      gc: 'gc',
-      uploads: ['upload 1', 'upload 2', 'upload 3']
-    })
+  it('should not hold connections waiting on the lock', () => {
+    expect(lockWaiters).toBe(0)
+  })
+
+  it('should run every upload once GC finishes', () => {
+    expect(results).toEqual(['gc', ['upload 1', 'upload 2', 'upload 3']])
   })
 })
 
@@ -106,6 +125,7 @@ test('when several writers wait behind an upload holding the shared lock', ({ co
   let upload: Promise<string>
   let writers: Promise<string[]>
   let lockWaiters: number
+  let writerResults: string[]
 
   beforeEach(async () => {
     locks = await createContentLocks({
@@ -123,14 +143,11 @@ test('when several writers wait behind an upload holding the shared lock', ({ co
       await held
       return 'upload'
     })
-    await new Promise((resolve) => setTimeout(resolve, 100))
+    await waitForAdvisoryLocks(components.database, GATE, 'granted')
     writers = Promise.all([1, 2, 3].map((i) => locks.withWrite(async () => `writer ${i}`)))
-    await new Promise((resolve) => setTimeout(resolve, 300))
-    const waiting = await components.database.query<{ count: string }>(
-      `SELECT COUNT(*) AS count FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND wait_event = 'advisory'`
-    )
-    lockWaiters = Number(waiting.rows[0].count)
+    lockWaiters = await maxAdvisoryWaiters(components.database, GATE, 300)
     releaseUpload()
+    writerResults = await writers
   })
 
   afterEach(async () => {
@@ -138,11 +155,12 @@ test('when several writers wait behind an upload holding the shared lock', ({ co
     await locks[STOP_COMPONENT]?.()
   })
 
-  it('should keep every writer off the lock queue and run all of them once the upload ends', async () => {
-    expect({ lockWaiters, writers: await writers }).toEqual({
-      lockWaiters: 0,
-      writers: ['writer 1', 'writer 2', 'writer 3']
-    })
+  it('should keep every writer off the lock queue', () => {
+    expect(lockWaiters).toBe(0)
+  })
+
+  it('should run all of the writers once the upload ends', () => {
+    expect(writerResults).toEqual(['writer 1', 'writer 2', 'writer 3'])
   })
 })
 
@@ -151,6 +169,7 @@ test('when an upload arrives while a writer waits behind another upload', ({ com
   let upload: Promise<string>
   let writer: Promise<string>
   let laterUpload: string
+  let writerResult: string
 
   beforeEach(async () => {
     locks = await createContentLocks({
@@ -168,14 +187,16 @@ test('when an upload arrives while a writer waits behind another upload', ({ com
       await held
       return 'upload'
     })
-    await new Promise((resolve) => setTimeout(resolve, 100))
+    await waitForAdvisoryLocks(components.database, GATE, 'granted')
     writer = locks.withWrite(async () => 'writer')
+    // Lets the writer start retrying before the later upload arrives.
     await new Promise((resolve) => setTimeout(resolve, 300))
     laterUpload = await Promise.race([
       locks.withRead(async () => 'later upload'),
       new Promise<string>((resolve) => setTimeout(() => resolve('blocked'), 1_000))
     ])
     releaseUpload()
+    writerResult = await writer
   })
 
   afterEach(async () => {
@@ -187,8 +208,8 @@ test('when an upload arrives while a writer waits behind another upload', ({ com
     expect(laterUpload).toBe('later upload')
   })
 
-  it('should run the writer once the uploads end', async () => {
-    expect(await writer).toBe('writer')
+  it('should run the writer once the uploads end', () => {
+    expect(writerResult).toBe('writer')
   })
 })
 
@@ -217,7 +238,7 @@ test('when a writer waits behind an upload that keeps the shared lock past the b
       await held
       return 'upload'
     })
-    await new Promise((resolve) => setTimeout(resolve, 100))
+    await waitForAdvisoryLocks(components.database, GATE, 'granted')
     writerError = await locks.withWrite(async () => 'writer').catch((e) => e)
     laterUpload = await Promise.race([
       locks.withRead(async () => 'later upload'),
@@ -264,7 +285,7 @@ test('when the lock pool stays saturated until the request deadline', ({ compone
       await held
       return 'holder'
     })
-    await new Promise((resolve) => setTimeout(resolve, 100))
+    await waitForAdvisoryLocks(components.database, GATE, 'granted')
     deadline = new Error('processing deadline')
     const controller = new AbortController()
     setTimeout(() => controller.abort(deadline), 400)

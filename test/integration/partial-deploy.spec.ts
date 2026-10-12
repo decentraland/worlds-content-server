@@ -4,7 +4,7 @@ import { DeploymentBuilder } from 'dcl-catalyst-client'
 import { AuthChain, EntityType } from '@dcl/schemas'
 import { Authenticator } from '@dcl/crypto'
 import { stringToUtf8Bytes } from 'eth-connect'
-import { getIdentity, Identity, makeid, cleanup, signThroughChainOf } from '../utils'
+import { buildDeploymentForm, getIdentity, Identity, makeid, cleanup, signThroughChainOf } from '../utils'
 import { MAX_DEPLOYMENT_AUTH_CHAIN_LINKS, MAX_DEPLOYMENT_FIELD_SIZE_IN_BYTES } from '../../src/controllers/multipart'
 import FormData from 'form-data'
 import { request } from 'http'
@@ -34,20 +34,7 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
     partial = true,
     upload: { id: string; files: Map<string, Uint8Array> } = { id: entityId, files }
   ): FormData {
-    const form = new FormData()
-    form.append('entityId', upload.id)
-    if (partial) {
-      form.append('partial', 'true')
-    }
-    authChain.forEach((link, i) => {
-      form.append(`authChain[${i}][type]`, link.type)
-      form.append(`authChain[${i}][payload]`, link.payload)
-      form.append(`authChain[${i}][signature]`, link.signature ?? '')
-    })
-    for (const key of keysToInclude) {
-      form.append(key, Buffer.from(upload.files.get(key)!), { filename: key })
-    }
-    return form
+    return buildDeploymentForm(upload.id, authChain, upload.files, keysToInclude, partial)
   }
 
   async function post(form: FormData, path = '/entities') {
@@ -1296,30 +1283,6 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
     })
   })
 
-  // Generic form builder for a second entity (the module-level buildForm is bound to the beforeEach one).
-  function makeForm(
-    id: string,
-    fileMap: Map<string, Uint8Array>,
-    keys: string[],
-    authChain: AuthChain,
-    partial = true
-  ): FormData {
-    const form = new FormData()
-    form.append('entityId', id)
-    if (partial) {
-      form.append('partial', 'true')
-    }
-    authChain.forEach((link, i) => {
-      form.append(`authChain[${i}][type]`, link.type)
-      form.append(`authChain[${i}][payload]`, link.payload)
-      form.append(`authChain[${i}][signature]`, link.signature ?? '')
-    })
-    for (const key of keys) {
-      form.append(key, Buffer.from(fileMap.get(key)!), { filename: key })
-    }
-    return form
-  }
-
   // Builds a scene for the current world on the given parcels at an explicit timestamp (so two scenes
   // can differ only by timestamp, producing distinct entity ids that order deterministically).
   async function buildScene(pointers: string[], timestamp: number) {
@@ -1364,7 +1327,9 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
 
       // Stage the older scene partially (entity only) — no newer scene exists yet, so this is accepted.
       olderAuth = Authenticator.signPayload(identity.authChain, older.entityId)
-      stageOlderResponse = await post(makeForm(older.entityId, older.files, [older.entityId], olderAuth))
+      stageOlderResponse = await post(
+        buildDeploymentForm(older.entityId, olderAuth, older.files, [older.entityId], true)
+      )
     })
 
     it('should accept staging the older scene with 202', () => {
@@ -1377,17 +1342,9 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
       beforeEach(async () => {
         // The newer scene is deployed on the same parcels via a normal single-request deploy.
         const newerAuth = Authenticator.signPayload(identity.authChain, newer.entityId)
-        const newerForm = new FormData()
-        newerForm.append('entityId', newer.entityId)
-        newerAuth.forEach((link, i) => {
-          newerForm.append(`authChain[${i}][type]`, link.type)
-          newerForm.append(`authChain[${i}][payload]`, link.payload)
-          newerForm.append(`authChain[${i}][signature]`, link.signature ?? '')
-        })
-        for (const key of [newer.entityId, ...newer.contentHashes]) {
-          newerForm.append(key, Buffer.from(newer.files.get(key)!), { filename: key })
-        }
-        newerDeployResponse = await post(newerForm)
+        newerDeployResponse = await post(
+          buildDeploymentForm(newer.entityId, newerAuth, newer.files, [newer.entityId, ...newer.contentHashes])
+        )
       })
 
       it('should deploy the newer scene with 200', () => {
@@ -1398,7 +1355,9 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
         let completeResponse: Awaited<ReturnType<typeof post>>
 
         beforeEach(async () => {
-          completeResponse = await post(makeForm(older.entityId, older.files, older.contentHashes, olderAuth))
+          completeResponse = await post(
+            buildDeploymentForm(older.entityId, olderAuth, older.files, older.contentHashes, true)
+          )
         })
 
         it('should reject the stale finalize', () => {
@@ -1436,7 +1395,9 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
         // budget and must be rejected WITHOUT destroying A's pending row.
         const b = await buildScene(['20,24'], Date.now() + 1000)
         const bAuth = Authenticator.signPayload(identity.authChain, b.entityId)
-        overBudgetResponse = await post(makeForm(b.entityId, b.files, [b.entityId, ...b.contentHashes], bAuth))
+        overBudgetResponse = await post(
+          buildDeploymentForm(b.entityId, bAuth, b.files, [b.entityId, ...b.contentHashes], true)
+        )
       })
 
       it('should reject the over-budget request', () => {
@@ -1467,8 +1428,10 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
       let replaceResponse: Awaited<ReturnType<typeof post>>
 
       beforeEach(async () => {
-        await post(makeForm(older.entityId, older.files, [older.entityId], olderAuth))
-        replaceResponse = await post(makeForm(newer.entityId, newer.files, [newer.entityId], newerAuth))
+        await post(buildDeploymentForm(older.entityId, olderAuth, older.files, [older.entityId], true))
+        replaceResponse = await post(
+          buildDeploymentForm(newer.entityId, newerAuth, newer.files, [newer.entityId], true)
+        )
       })
 
       it('should accept it without replacing the older pending upload', async () => {
@@ -1487,8 +1450,8 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
       let rejectResponse: Awaited<ReturnType<typeof post>>
 
       beforeEach(async () => {
-        await post(makeForm(newer.entityId, newer.files, [newer.entityId], newerAuth))
-        rejectResponse = await post(makeForm(older.entityId, older.files, [older.entityId], olderAuth))
+        await post(buildDeploymentForm(newer.entityId, newerAuth, newer.files, [newer.entityId], true))
+        rejectResponse = await post(buildDeploymentForm(older.entityId, olderAuth, older.files, [older.entityId], true))
       })
 
       it('should accept the older upload without publishing it', () => {
@@ -1518,12 +1481,14 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
 
       // Deploy the newer scene first (full, single-request vanilla deploy).
       const newerAuth = Authenticator.signPayload(identity.authChain, newer.entityId)
-      await post(makeForm(newer.entityId, newer.files, [newer.entityId, ...newer.contentHashes], newerAuth, false))
+      await post(
+        buildDeploymentForm(newer.entityId, newerAuth, newer.files, [newer.entityId, ...newer.contentHashes], false)
+      )
 
       // Then a vanilla deploy of the older scene on the same parcels.
       const olderAuth = Authenticator.signPayload(identity.authChain, older.entityId)
       olderResponse = await post(
-        makeForm(older.entityId, older.files, [older.entityId, ...older.contentHashes], olderAuth, false)
+        buildDeploymentForm(older.entityId, olderAuth, older.files, [older.entityId, ...older.contentHashes], false)
       )
       olderBody = await olderResponse.json()
       deployed = await deployedEntityIds()
@@ -1559,12 +1524,14 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
       const scenes = await Promise.all(parcels.map((p) => buildScene(p, now)))
       for (const scene of scenes) {
         const auth = Authenticator.signPayload(identity.authChain, scene.entityId)
-        await post(makeForm(scene.entityId, scene.files, [scene.entityId], auth))
+        await post(buildDeploymentForm(scene.entityId, auth, scene.files, [scene.entityId], true))
       }
       // Overlapping uploads are independent and must each consume an admission slot.
       const replacement = await buildScene(['20,24'], now + 1000)
       const replAuth = Authenticator.signPayload(identity.authChain, replacement.entityId)
-      replaceResponse = await post(makeForm(replacement.entityId, replacement.files, [replacement.entityId], replAuth))
+      replaceResponse = await post(
+        buildDeploymentForm(replacement.entityId, replAuth, replacement.files, [replacement.entityId], true)
+      )
     })
 
     it('should reject the additional upload with 429 even though its parcels overlap', () => {
@@ -1589,11 +1556,13 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
       const scenes = await Promise.all(parcels.map((p, i) => buildScene(p, Date.now() + i)))
       for (let i = 0; i < 3; i++) {
         const auth = Authenticator.signPayload(identity.authChain, scenes[i].entityId)
-        await post(makeForm(scenes[i].entityId, scenes[i].files, [scenes[i].entityId], auth))
+        await post(buildDeploymentForm(scenes[i].entityId, auth, scenes[i].files, [scenes[i].entityId], true))
       }
       // The fourth new upload exceeds the cap.
       const fourthAuth = Authenticator.signPayload(identity.authChain, scenes[3].entityId)
-      overCapResponse = await post(makeForm(scenes[3].entityId, scenes[3].files, [scenes[3].entityId], fourthAuth))
+      overCapResponse = await post(
+        buildDeploymentForm(scenes[3].entityId, fourthAuth, scenes[3].files, [scenes[3].entityId], true)
+      )
       overCapBody = await overCapResponse.json()
       retryAfter = Number(overCapResponse.headers.get('retry-after'))
       pending = await countPending()

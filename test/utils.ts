@@ -7,6 +7,7 @@ import { AuthChain, AuthLinkType } from '@dcl/schemas'
 import { AUTH_CHAIN_HEADER_PREFIX, AUTH_METADATA_HEADER, AUTH_TIMESTAMP_HEADER } from '@dcl/crypto-middleware'
 import { IPgComponent } from '@dcl/pg-component'
 import SQL from 'sql-template-strings'
+import FormData from 'form-data'
 import { getAuthHeaders, getIdentity, type Identity } from '@dcl/test-helpers'
 import { IWorldsManager } from '../src/types'
 
@@ -222,4 +223,29 @@ export async function waitForAdvisoryLocks(
       throw new Error(`Timed out waiting for ${count} ${state} advisory lock(s) on ${keyName}`)
     await new Promise((resolve) => setTimeout(resolve, 10))
   }
+}
+
+/**
+ * Builds a POST /entities multipart body: the entity id, the `partial` flag when set, the auth chain
+ * and the files under `keys`, in the order clients send them.
+ */
+export function buildDeploymentForm(
+  entityId: string,
+  authChain: AuthChain,
+  files: Map<string, Uint8Array>,
+  keys: string[],
+  partial = false
+): FormData {
+  const form = new FormData()
+  form.append('entityId', entityId)
+  if (partial) form.append('partial', 'true')
+  authChain.forEach((link, i) => {
+    form.append(`authChain[${i}][type]`, link.type)
+    form.append(`authChain[${i}][payload]`, link.payload)
+    form.append(`authChain[${i}][signature]`, link.signature ?? '')
+  })
+  for (const key of keys) {
+    form.append(key, Buffer.from(files.get(key)!), { filename: key })
+  }
+  return form
 }

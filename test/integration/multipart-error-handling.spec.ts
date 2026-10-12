@@ -1,6 +1,6 @@
 import { test } from '../components'
 import { Authenticator } from '@dcl/crypto'
-import { cleanup, getIdentity } from '../utils'
+import { buildDeploymentForm, cleanup, getIdentity } from '../utils'
 import FormData from 'form-data'
 import { hashV1 } from '@dcl/hashing'
 import { MAX_ENTITY_FILE_SIZE_IN_BYTES } from '../../src/controllers/handlers/deploy-entity-handler'
@@ -249,15 +249,13 @@ test('POST /entities multipart error handling', function ({ components }) {
       const { localFetch, metrics, storage } = components
       const entityId = 'oversized-entity'
       const identity = await getIdentity()
-      const form = new FormData()
-      form.append('entityId', entityId)
       // Validly signed, so the request reaches the entity size check.
-      Authenticator.signPayload(identity.authChain, entityId).forEach((link, i) => {
-        form.append(`authChain[${i}][type]`, link.type)
-        form.append(`authChain[${i}][payload]`, link.payload)
-        form.append(`authChain[${i}][signature]`, link.signature)
-      })
-      form.append(entityId, Buffer.alloc(MAX_ENTITY_FILE_SIZE_IN_BYTES + 1), { filename: entityId })
+      const form = buildDeploymentForm(
+        entityId,
+        Authenticator.signPayload(identity.authChain, entityId),
+        new Map([[entityId, new Uint8Array(MAX_ENTITY_FILE_SIZE_IN_BYTES + 1)]]),
+        [entityId]
+      )
       storageLookup = jest.spyOn(storage, 'existMultiple')
 
       response = await localFetch.fetch('/entities', {

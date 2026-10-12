@@ -1,3 +1,4 @@
+import { IBaseComponent, Lifecycle, START_COMPONENT } from '@well-known-components/interfaces'
 import { test } from '../components'
 import { initComponents } from '../../src/components'
 import { allMigrations } from '../../src/migrations/all-migrations'
@@ -7,11 +8,22 @@ test('Service startup', function ({ components }) {
     let startOrder: string[]
     let appliedMigrations: string[]
 
+    beforeAll(async () => {
+      // Built, never started: each component is replaced by a recorder so the real Lifecycle reports the order.
+      const built = await initComponents()
+      startOrder = []
+      const recorders: Record<string, IBaseComponent> = Object.fromEntries(
+        Object.keys(built).map((name) => [name, { [START_COMPONENT]: async () => void startOrder.push(name) }])
+      )
+      const program = await Lifecycle.run({
+        initComponents: async () => recorders,
+        main: async ({ startComponents }) => startComponents()
+      })
+      await program.stop()
+    })
+
     beforeEach(async () => {
-      const { database } = components
-      // Lifecycle starts components in declaration order; this set is only built, never started.
-      startOrder = Object.keys(await initComponents())
-      const result = await database.query<{ name: string }>('SELECT name FROM migrations')
+      const result = await components.database.query<{ name: string }>('SELECT name FROM migrations ORDER BY id')
       appliedMigrations = result.rows.map((row) => row.name)
     })
 
@@ -19,8 +31,8 @@ test('Service startup', function ({ components }) {
       expect(startOrder.slice(0, 2)).toEqual(['database', 'migrationExecutor'])
     })
 
-    it('should have applied every migration', () => {
-      expect(appliedMigrations).toEqual(expect.arrayContaining(allMigrations.map((migration) => migration.id)))
+    it('should have applied every migration once, in order', () => {
+      expect(appliedMigrations).toEqual(allMigrations.map((migration) => migration.id))
     })
   })
 })
