@@ -7,6 +7,8 @@ export type PendingScene = {
   parcels: string[]
   deployer: string
   createdAt: Date
+  /** When the upload's fixed lifetime, anchored at `createdAt`, ends. */
+  expiresAt: Date
   updatedAt: Date
   initialized: boolean
 }
@@ -28,7 +30,7 @@ export type UpsertPendingScene = {
  * content is free; content held only by pending uploads is charged even though it isn't stored again.
  */
 export type FileReceipt = { hash: string; size: number; stored: boolean; charged: boolean }
-type CompletedUpload = { worldName: string; parcels: string[]; creationTimestamp: number }
+export type CompletedUpload = { worldName: string; parcels: string[]; creationTimestamp: number }
 
 /**
  * Result of an expired-upload cleanup run. `success`: every visited upload was reclaimed; `deferred`:
@@ -71,10 +73,10 @@ export interface IPendingScenesManager extends IBaseComponent {
   /** Removes an upload whose first batch was never admitted, so it doesn't hold a slot of its deployer's cap. */
   discardUnadmitted(entityId: string): Promise<void>
   /**
-   * Records successful writes and counts the batch; initialized means the initial stored-content
-   * inventory is complete. Returns the upload's stored batches so far.
+   * Records successful writes, counts the batch and marks the initial stored-content inventory as
+   * complete. Returns the upload's stored batches so far.
    */
-  recordStored(entityId: string, hashes: string[], initialized: boolean, signal?: AbortSignal): Promise<number>
+  recordStored(entityId: string, hashes: string[], signal?: AbortSignal): Promise<number>
   /** Returns successfully stored file sizes, never treating reservations as completed writes. */
   getProgress(entityId: string, signal?: AbortSignal): Promise<Map<string, number>>
   /** Forgets receipts invalidated by a final storage verification. Reservations remain charged. */
@@ -90,7 +92,7 @@ export interface IPendingScenesManager extends IBaseComponent {
    * @throws Error only when pruning or reporting fails.
    */
   deleteExpired(): Promise<ExpiredUploadsCleanup>
-  /** The fixed pending upload lifetime used by GC. */
+  /** The fixed pending upload lifetime; GC keeps content referenced by uploads younger than it. */
   readonly ttlMs: number
   /** How often the scheduled job runs {@link IPendingScenesManager.deleteExpired}. */
   readonly cleanupIntervalMs: number

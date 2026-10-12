@@ -3,7 +3,6 @@ import os from 'os'
 import path from 'path'
 import { bufferToStream, FileInfo, IContentStorageComponent } from '@dcl/catalyst-storage'
 import {
-  DEFAULT_CONTENT_FILE_INFO_CONCURRENCY,
   deployEntity,
   getContentFileInfos,
   MAX_ENTITY_FILE_SIZE_IN_BYTES
@@ -11,6 +10,7 @@ import {
 import { InvalidRequestError } from '@dcl/http-commons'
 import { createDeploymentProcessingMock } from '../mocks/deployment-processing-mock'
 import {
+  DEFAULT_CONTENT_FILE_INFO_CONCURRENCY,
   DeploymentProcessingAbortedError,
   DeploymentProcessingTimeoutError
 } from '../../src/logic/deployment-processing'

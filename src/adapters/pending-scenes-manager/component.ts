@@ -8,6 +8,7 @@ import { ExpiredUploadsCleanup, IPendingScenesManager, PendingScene, UpsertPendi
 import { PartialUploadExpiredError, PartialUploadQuotaExceededError, PartialUploadTooLargeError } from './errors'
 import { ContentLockTimeoutError } from '../content-locks/errors'
 import { DEFAULT_MAX_UPLOAD_SIZE_IN_BYTES, formatBytes } from '../../logic/multipart'
+import { errorMessage } from '../../logic/utils'
 
 type PendingSceneRow = {
   entity_id: string
@@ -28,17 +29,14 @@ export const DEFAULT_PARTIAL_UPLOAD_CLEANUP_INTERVAL_MS = 5 * 60 * 1000
 /** Expired uploads fetched per cleanup query. */
 export const CLEANUP_PAGE_SIZE = 100
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
-
-function toPendingScene(row: PendingSceneRow): PendingScene {
+function toPendingScene(row: PendingSceneRow, ttlMs: number): PendingScene {
   return {
     entityId: row.entity_id,
     worldName: row.world_name,
     parcels: row.parcels,
     deployer: row.deployer,
     createdAt: row.created_at,
+    expiresAt: new Date(row.created_at.getTime() + ttlMs),
     updatedAt: row.updated_at,
     initialized: row.initialized
   }
@@ -99,7 +97,7 @@ export async function createPendingScenesManager(
       FROM pending_scenes WHERE entity_id = ${entityId} AND created_at >= ${new Date(Date.now() - ttlMs)}`),
       signal
     )
-    return result.rows[0] ? toPendingScene(result.rows[0]) : undefined
+    return result.rows[0] ? toPendingScene(result.rows[0], ttlMs) : undefined
   }
 
   async function getPublishedContent(hashes: string[], signal?: AbortSignal): Promise<Set<string>> {
@@ -127,7 +125,7 @@ export async function createPendingScenesManager(
           if (existing.rows[0].deployer !== deployer) {
             throw new InvalidRequestError('This upload was started by another account.')
           }
-          return toPendingScene(existing.rows[0])
+          return toPendingScene(existing.rows[0], ttlMs)
         }
         // Only cleanup of an expired upload removes one seen earlier; re-creating it would restart it.
         if (input.resumes) throw new PartialUploadExpiredError()
@@ -147,7 +145,7 @@ export async function createPendingScenesManager(
         INSERT INTO pending_scenes (entity_id, world_name, parcels, entity, deployer, created_at)
         VALUES (${input.entityId}, ${input.worldName.toLowerCase()}, ${input.parcels}::text[], ${input.entity}::jsonb, ${deployer}, ${input.admittedAt})
         RETURNING entity_id, world_name, parcels, deployer, created_at, updated_at, initialized`)
-        return toPendingScene(result.rows[0])
+        return toPendingScene(result.rows[0], ttlMs)
       },
       signal
     )
@@ -273,12 +271,7 @@ export async function createPendingScenesManager(
       AND NOT EXISTS (SELECT 1 FROM pending_scene_files WHERE entity_id = ${entityId})`)
   }
 
-  async function recordStored(
-    entityId: string,
-    hashes: string[],
-    initialized: boolean,
-    signal?: AbortSignal
-  ): Promise<number> {
+  async function recordStored(entityId: string, hashes: string[], signal?: AbortSignal): Promise<number> {
     return withUploadTransaction(
       database,
       async (query) => {
@@ -286,7 +279,7 @@ export async function createPendingScenesManager(
           SQL`UPDATE pending_scene_files SET stored = true WHERE entity_id = ${entityId} AND hash = ANY(${hashes}::text[])`
         )
         const batches = await query<{ batches: number }>(SQL`UPDATE pending_scenes
-          SET batches = batches + 1, initialized = initialized OR ${initialized}
+          SET batches = batches + 1, initialized = true
           WHERE entity_id = ${entityId} RETURNING batches`)
         return batches.rows[0]?.batches ?? 0
       },

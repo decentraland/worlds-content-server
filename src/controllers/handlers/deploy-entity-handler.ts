@@ -13,13 +13,13 @@ import {
 } from '../../types'
 import { extractAuthChain } from '../../logic/extract-auth-chain'
 import { validateAuthChain, validateSignature, validateSigner } from '../../logic/validations/common'
-import { buildSceneDeploymentMessage, isUniqueViolation } from '../../logic/utils'
+import { buildSceneDeploymentMessage, isUniqueViolation, requireString } from '../../logic/utils'
 import { InvalidRequestError } from '@dcl/http-commons'
 import { FileInfo, IContentStorageComponent } from '@dcl/catalyst-storage'
 import { calculateDeploymentSizeFromFileInfos } from '../../logic/validations/scene'
 import { Readable } from 'stream'
 import { mapWithConcurrency, raceWithSignal } from '../../logic/concurrency'
-import { getRequestArrival } from '../request-arrival'
+import { getRequestArrival, RequestArrivalContext } from '../request-arrival'
 import { PartialUploadQuotaExceededError } from '../../adapters/pending-scenes-manager'
 import { StagingPrevalidation } from '../../logic/partial-deployments'
 import {
@@ -29,13 +29,14 @@ import {
   isProcessingCancellationError
 } from '../../logic/deployment-processing'
 
-export { DEFAULT_CONTENT_FILE_INFO_CONCURRENCY } from '../../logic/deployment-processing'
 // The entity file is the scene manifest (JSON), small whatever the content size, so it is buffered
 // in full. Capped (5 MiB) because a partial resume reads it back from storage outside the multipart
 // in-flight-bytes budget, so concurrent resumes could otherwise each buffer a large stored entity.
 export const MAX_ENTITY_FILE_SIZE_IN_BYTES = 5 * 1024 * 1024
 
+// The arrival stamp is optional: only routes behind stampRequestArrival carry it.
 type DeployEntityContext = FormDataContext &
+  Partial<RequestArrivalContext> &
   HandlerContextWithPath<
     | 'contentLocks'
     | 'config'
@@ -50,11 +51,6 @@ type DeployEntityContext = FormDataContext &
     | 'worldsManager',
     '/entities'
   >
-
-export function requireString(val: string | null | undefined): string {
-  if (typeof val !== 'string') throw new InvalidRequestError('A string was expected')
-  return val
-}
 
 function parseEntityJson(raw: string) {
   try {
@@ -399,9 +395,7 @@ async function deployEntityWithSignal(
       entityRaw,
       authChain,
       deploymentSize,
-      signal,
-      deadlineAt,
-      deployment.sceneReplacementAuthorization
+      { signal, deadlineAt, sceneReplacementAuthorization: deployment.sceneReplacementAuthorization }
     )
   } catch (error) {
     // This same entity is already DEPLOYED — a concurrent duplicate (most commonly a client retry of a

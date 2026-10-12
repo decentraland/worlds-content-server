@@ -65,7 +65,7 @@ describe('when staging a partial deployment', () => {
       return { ok: () => true, errors: [] }
     })
     deployEntity = jest.fn().mockResolvedValue({ message: 'deployed', creationTimestamp: 123 })
-    upsert = jest.fn().mockResolvedValue({ createdAt: new Date() })
+    upsert = jest.fn().mockResolvedValue({ createdAt: new Date(), expiresAt: new Date(Date.now() + 86_400_000) })
     getWorldScenes = jest.fn().mockResolvedValue({ scenes: [], total: 0 })
     getCompleted = jest.fn().mockResolvedValue({ creationTimestamp: 123 })
     deleteByEntityId = jest.fn().mockResolvedValue(undefined)
@@ -179,6 +179,7 @@ describe('when staging a partial deployment', () => {
           parcels: ['0,0'],
           deployer: 'deployer',
           createdAt,
+          expiresAt: new Date(createdAt.getTime() + 86_400_000),
           updatedAt: createdAt,
           initialized: true
         })
@@ -206,6 +207,7 @@ describe('when staging a partial deployment', () => {
           parcels: ['0,0'],
           deployer: 'other',
           createdAt: new Date(),
+          expiresAt: new Date(Date.now() + 86_400_000),
           updatedAt: new Date(),
           initialized: true
         })
@@ -279,7 +281,7 @@ describe('when staging a partial deployment', () => {
     let caughtError: unknown
 
     beforeEach(async () => {
-      upsert.mockResolvedValueOnce({ createdAt: new Date(Date.now() - 86_400_000) })
+      upsert.mockResolvedValueOnce({ createdAt: new Date(Date.now() - 86_400_000), expiresAt: new Date() })
       caughtError = await stage(input).catch((error: unknown) => error)
     })
 
@@ -350,7 +352,8 @@ describe('when staging a partial deployment', () => {
         result: { message: 'deployed', creationTimestamp: 123 },
         creationTimestamp: 123
       })
-      expect(deployEntity.mock.calls[0].slice(6, 9)).toEqual([800, input.signal, input.deadlineAt])
+      const [, , , , , , size, options] = deployEntity.mock.calls[0]
+      expect([size, options.signal, options.deadlineAt]).toEqual([800, input.signal, input.deadlineAt])
     })
     it('should perform only one final metadata pass', async () => {
       await stage(input)
@@ -365,13 +368,13 @@ describe('when staging a partial deployment', () => {
 
       beforeEach(async () => {
         createdAt = new Date(Date.now() - 5_000)
-        upsert.mockResolvedValueOnce({ createdAt })
+        upsert.mockResolvedValueOnce({ createdAt, expiresAt: new Date(createdAt.getTime() + 86_400_000) })
         await stage(input)
       })
 
       it('should mark the publication as a partial finalization that expires with the upload', () => {
-        expect(deployEntity.mock.calls[0][10]).toEqual({
-          completesPartialUpload: { expiresAt: createdAt.getTime() + 86_400_000 }
+        expect(deployEntity.mock.calls[0][7].completesPartialUpload).toEqual({
+          expiresAt: createdAt.getTime() + 86_400_000
         })
       })
 

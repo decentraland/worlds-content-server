@@ -4,8 +4,7 @@ import {
   DeployEntityOptions,
   DeploymentResult,
   IEntityDeployer,
-  MissingSceneReplacementAuthorizationError,
-  SceneReplacementAuthorization
+  MissingSceneReplacementAuthorizationError
 } from '../types'
 import { AuthLink, Entity, EntityType, Events, WorldDeploymentEvent } from '@dcl/schemas'
 import { bufferToStream } from '@dcl/catalyst-storage'
@@ -22,10 +21,7 @@ type PostDeploymentHook = (
   entity: Entity,
   authChain: AuthLink[],
   deploymentSize: number,
-  signal?: AbortSignal,
-  deadlineAt?: number,
-  sceneReplacementAuthorization?: SceneReplacementAuthorization,
-  options?: DeployEntityOptions
+  options: DeployEntityOptions
 ) => Promise<DeploymentResult>
 
 /** Maximum number of independent content-addressed objects uploaded concurrently. */
@@ -66,11 +62,9 @@ export function createEntityDeployer(
     entityJson: string,
     authChain: AuthLink[],
     deploymentSize: number,
-    signal?: AbortSignal,
-    deadlineAt?: number,
-    sceneReplacementAuthorization?: SceneReplacementAuthorization,
-    options?: DeployEntityOptions
+    options: DeployEntityOptions = {}
   ): Promise<DeploymentResult> {
+    const { signal } = options
     // Fast-fail BEFORE writing anything to storage if a newer scene already holds these parcels. This is
     // non-authoritative (deployScene re-checks atomically under a lock), but it keeps a rejected older
     // deploy from leaving its content/entity/auth objects orphaned in storage until the next GC. Only
@@ -120,16 +114,7 @@ export function createEntityDeployer(
 
     signal?.throwIfAborted()
     return await deploymentProcessing.trackStage('persistence', 1, () =>
-      postDeployment(
-        baseUrl,
-        entity,
-        authChain,
-        deploymentSize,
-        signal,
-        deadlineAt,
-        sceneReplacementAuthorization,
-        options
-      )
+      postDeployment(baseUrl, entity, authChain, deploymentSize, options)
     )
   }
 
@@ -142,22 +127,10 @@ export function createEntityDeployer(
     entity: Entity,
     authChain: AuthLink[],
     deploymentSize: number,
-    signal?: AbortSignal,
-    deadlineAt?: number,
-    sceneReplacementAuthorization?: SceneReplacementAuthorization,
-    options?: DeployEntityOptions
+    options: DeployEntityOptions
   ): Promise<DeploymentResult> {
     const hookForType = postDeploymentHooks[entity.type] || noPostDeploymentHook
-    return hookForType(
-      baseUrl,
-      entity,
-      authChain,
-      deploymentSize,
-      signal,
-      deadlineAt,
-      sceneReplacementAuthorization,
-      options
-    )
+    return hookForType(baseUrl, entity, authChain, deploymentSize, options)
   }
 
   async function noPostDeploymentHook(
@@ -165,9 +138,7 @@ export function createEntityDeployer(
     _entity: Entity,
     _authChain: AuthLink[],
     _deploymentSize: number,
-    _signal?: AbortSignal,
-    _deadlineAt?: number,
-    _sceneReplacementAuthorization?: SceneReplacementAuthorization
+    _options: DeployEntityOptions
   ): Promise<DeploymentResult> {
     return { message: 'No post deployment hook for this entity type' }
   }
@@ -177,12 +148,10 @@ export function createEntityDeployer(
     entity: Entity,
     authChain: AuthLink[],
     deploymentSize: number,
-    signal?: AbortSignal,
-    deadlineAt?: number,
-    sceneReplacementAuthorization?: SceneReplacementAuthorization,
-    options?: DeployEntityOptions
+    options: DeployEntityOptions
   ) {
     const { config, metrics, snsClient } = components
+    const { signal, deadlineAt, sceneReplacementAuthorization, completesPartialUpload } = options
 
     // determine the name to use for deploying the world
     const worldName = entity.metadata.worldConfiguration.name
@@ -213,7 +182,7 @@ export function createEntityDeployer(
         size: deploymentSize,
         ...(deadlineAt === undefined ? {} : { deadlineAt }),
         ...(signal === undefined ? {} : { signal }),
-        ...(options?.completesPartialUpload ? { completesPartialUpload: options.completesPartialUpload } : {})
+        ...(completesPartialUpload ? { completesPartialUpload } : {})
       }
     )
 

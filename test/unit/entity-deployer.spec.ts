@@ -124,9 +124,7 @@ describe('entity deployer', () => {
         JSON.stringify(entity),
         [],
         12,
-        undefined,
-        undefined,
-        unrestrictedReplacementAuthorization
+        { sceneReplacementAuthorization: unrestrictedReplacementAuthorization }
       )
       contentUploadCalls = storageStoreStream.mock.calls.filter(([hash]) => contentHashes.includes(hash)).length
       // The real-timer paced uploads can exceed the default 5s hook budget when jest runs the
@@ -238,9 +236,7 @@ describe('entity deployer', () => {
         JSON.stringify(entity),
         [],
         2,
-        undefined,
-        undefined,
-        unrestrictedReplacementAuthorization
+        { sceneReplacementAuthorization: unrestrictedReplacementAuthorization }
       )
       uploadedContentHashes = storageStoreStream.mock.calls
         .map(([hash]) => hash)
@@ -301,7 +297,7 @@ describe('entity deployer', () => {
           JSON.stringify(entity),
           [],
           3,
-          controller.signal
+          { signal: controller.signal }
         )
         .catch((error) => error)
     })
@@ -356,7 +352,7 @@ describe('entity deployer', () => {
           JSON.stringify(entity),
           [],
           2,
-          controller.signal
+          { signal: controller.signal }
         )
         .catch((error) => {
           settledBeforeWriter = true
@@ -418,9 +414,11 @@ describe('entity deployer', () => {
         JSON.stringify(entity),
         [],
         0,
-        controller.signal,
-        Date.now() + 10,
-        unrestrictedReplacementAuthorization
+        {
+          signal: controller.signal,
+          deadlineAt: Date.now() + 10,
+          sceneReplacementAuthorization: unrestrictedReplacementAuthorization
+        }
       )
     })
 
@@ -459,9 +457,7 @@ describe('entity deployer', () => {
         JSON.stringify(entity),
         [],
         0,
-        undefined,
-        undefined,
-        unrestrictedReplacementAuthorization
+        { sceneReplacementAuthorization: unrestrictedReplacementAuthorization }
       )
     })
 
@@ -537,10 +533,10 @@ describe('entity deployer', () => {
         JSON.stringify(entity),
         [],
         0,
-        undefined,
-        undefined,
-        unrestrictedReplacementAuthorization,
-        { completesPartialUpload: { expiresAt: 42 } }
+        {
+          sceneReplacementAuthorization: unrestrictedReplacementAuthorization,
+          completesPartialUpload: { expiresAt: 42 }
+        }
       )
     })
 
@@ -617,9 +613,7 @@ describe('entity deployer', () => {
         JSON.stringify(entity),
         [],
         12,
-        undefined,
-        undefined,
-        unrestrictedReplacementAuthorization
+        { sceneReplacementAuthorization: unrestrictedReplacementAuthorization }
       )
     })
 
@@ -695,9 +689,7 @@ describe('entity deployer', () => {
         JSON.stringify(entity),
         [],
         12,
-        undefined,
-        undefined,
-        unrestrictedReplacementAuthorization
+        { sceneReplacementAuthorization: unrestrictedReplacementAuthorization }
       )
     })
 
@@ -741,9 +733,7 @@ describe('entity deployer', () => {
         JSON.stringify(entity),
         [],
         12,
-        undefined,
-        undefined,
-        unrestrictedReplacementAuthorization
+        { sceneReplacementAuthorization: unrestrictedReplacementAuthorization }
       )
     })
 
@@ -780,9 +770,7 @@ describe('entity deployer', () => {
       JSON.stringify(deployment.entity),
       deployment.authChain,
       0,
-      undefined,
-      undefined,
-      unrestrictedReplacementAuthorization
+      { sceneReplacementAuthorization: unrestrictedReplacementAuthorization }
     )
 
     expect(setup.worldsDeployScene).toHaveBeenCalledWith(

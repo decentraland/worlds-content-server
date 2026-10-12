@@ -2,9 +2,15 @@ import { bufferToStream, IContentStorageComponent, streamToBuffer } from '@dcl/c
 import { ILoggerComponent } from '@well-known-components/interfaces'
 import { WorldMetadata } from '../types'
 import { stringToUtf8Bytes } from 'eth-connect'
+import { InvalidRequestError } from '@dcl/http-commons'
 
 export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+export function requireString(val: string | null | undefined): string {
+  if (typeof val !== 'string') throw new InvalidRequestError('A string was expected')
+  return val
 }
 
 /** Whether a database error is a unique-constraint violation (SQLSTATE 23505). */

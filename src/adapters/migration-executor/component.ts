@@ -1,37 +1,14 @@
 import { setTimeout as sleep } from 'timers/promises'
-import { IBaseComponent, START_COMPONENT } from '@well-known-components/interfaces'
+import { START_COMPONENT } from '@well-known-components/interfaces'
 import SQL, { SQLStatement } from 'sql-template-strings'
-import { AppComponents, Migration, MigrationDatabase, MigratorComponents } from '../types'
-import { allMigrations } from '../migrations/all-migrations'
-import { UploadClient } from './upload-transaction'
+import { Migration, MigratorComponents } from '../../types'
+import { allMigrations } from '../../migrations/all-migrations'
+import { PgClient } from '../pg-client'
+import { MigrationsLockLostError } from './errors'
+import { MigrationDatabase, MigrationExecutor, MigrationExecutorComponents, MigrationExecutorOptions } from './types'
 
 const MIGRATIONS_LOCK_KEY = "hashtextextended('worlds-content-server:migrations', 0)"
 const LOCK_RETRY_INTERVAL_MS = 1_000
-
-/**
- * Applies pending migrations when started. Lifecycle starts components one at a time in their
- * declaration order, so every component declared after this one (the HTTP server, consumers and jobs)
- * only starts once the schema is current.
- */
-export type MigrationExecutor = IBaseComponent
-
-export type MigrationExecutorOptions = {
-  /** Migrations to apply, in order. Defaults to every migration in the codebase. */
-  migrations?: Migration[]
-  /** Pause between attempts to take the lock while another instance is migrating. */
-  lockRetryIntervalMs?: number
-}
-
-/** Components the executor needs: the pool to check out its session plus what migrations receive. */
-export type MigrationExecutorComponents = Pick<AppComponents, 'database'> & Omit<MigratorComponents, 'database'>
-
-/** Thrown once the session holding the migrations lock is gone, so no further migration SQL runs unlocked. */
-export class MigrationsLockLostError extends Error {
-  constructor() {
-    super('Lost the migrations lock, stopping migrations')
-    this.name = 'MigrationsLockLostError'
-  }
-}
 
 /**
  * Creates the migration executor. Instances sharing a database serialize on a session-level advisory
@@ -105,7 +82,7 @@ export function createMigrationExecutor(
   }
 
   async function start(): Promise<void> {
-    const client: UploadClient = await database.getPool().connect()
+    const client: PgClient = await database.getPool().connect()
     let lockLost = false
     // Stays attached until the connection is destroyed: an unhandled 'error' event would crash the process.
     client.on('error', (error: Error) => {

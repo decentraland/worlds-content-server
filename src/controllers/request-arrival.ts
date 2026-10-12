@@ -25,8 +25,8 @@ export function stampRequestArrival(): (
  * @returns Arrival time in epoch milliseconds.
  * @throws Error when the route did not stamp the request.
  */
-export function getRequestArrival(context: object): number {
-  const arrivedAt = (context as Partial<RequestArrivalContext>).requestArrivedAt
+export function getRequestArrival(context: Partial<RequestArrivalContext>): number {
+  const arrivedAt = context.requestArrivedAt
   if (typeof arrivedAt !== 'number') throw new Error('The request was not stamped with its arrival time')
   return arrivedAt
 }
