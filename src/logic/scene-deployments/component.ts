@@ -1,6 +1,6 @@
 import { InvalidRequestError } from '@dcl/http-commons'
 import { Entity, EntityType } from '@dcl/schemas'
-import { buildSceneDeploymentMessage } from '../utils'
+import { buildSceneDeploymentMessage, isPastExpiry } from '../utils'
 import { FileInfo, IContentStorageComponent } from '@dcl/catalyst-storage'
 import {
   AppComponents,
@@ -317,7 +317,7 @@ export async function createSceneDeploymentsComponent(
     if (!pending) metrics.increment('partial_uploads_started')
 
     // Re-checked right before storing: a batch admitted just before expiry must store nothing.
-    if (Date.now() >= pendingRow.expiresAt.getTime()) {
+    if (isPastExpiry(pendingRow.expiresAt.getTime())) {
       throw new PartialUploadExpiredError()
     }
     await deploymentProcessing.trackStage('storage', toStore.size, () =>

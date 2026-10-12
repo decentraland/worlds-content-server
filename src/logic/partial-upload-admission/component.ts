@@ -2,7 +2,7 @@ import { InvalidRequestError } from '@dcl/http-commons'
 import { AppComponents } from '../../types'
 import { withUploadTransaction } from '../../adapters/upload-transaction'
 import { CompletedUpload, FileReceipt, PendingSceneRecord } from '../../adapters/pending-scenes-repository/types'
-import { formatBytes } from '../utils'
+import { formatBytes, isPastExpiry } from '../utils'
 import {
   PartialUploadExpiredError,
   PartialUploadNotFoundError,
@@ -35,8 +35,10 @@ export async function createPartialUploadAdmission(
   let lastCleanupFinishedAt: number | undefined
   metrics.observe('partial_upload_capacity_bytes', {}, Number(globalBytes))
 
+  const expiresAt = (createdAt: Date): number => createdAt.getTime() + ttlMs
+
   function toPendingScene(record: PendingSceneRecord): PendingScene {
-    return { ...record, expiresAt: new Date(record.createdAt.getTime() + ttlMs) }
+    return { ...record, expiresAt: new Date(expiresAt(record.createdAt)) }
   }
 
   // Capacity held by the oldest charged upload frees no earlier than its expiry; once it has expired,
@@ -69,7 +71,7 @@ export async function createPartialUploadAdmission(
         await repository.lockDeployer(query, deployer)
         const existing = await repository.findRecord(query, input.entityId)
         if (existing) {
-          if (existing.createdAt.getTime() < Date.now() - ttlMs) {
+          if (isPastExpiry(expiresAt(existing.createdAt))) {
             throw new PartialUploadExpiredError()
           }
           // Reservations are charged to the upload's creator, so nobody else may add batches to it.
@@ -81,7 +83,7 @@ export async function createPartialUploadAdmission(
         // Only cleanup of an expired upload removes one seen earlier; re-creating it would restart it.
         if (input.resumes) throw new PartialUploadExpiredError()
         // A delayed first batch (slow validation or lock waits) may arrive already past its deadline.
-        if (input.admittedAt.getTime() < Date.now() - ttlMs) throw new PartialUploadExpiredError()
+        if (isPastExpiry(expiresAt(input.admittedAt))) throw new PartialUploadExpiredError()
         const { count, oldest } = await repository.countByDeployer(query, deployer)
         if (count >= maxPendingPerDeployer) {
           throw new PartialUploadQuotaExceededError(
@@ -116,7 +118,7 @@ export async function createPartialUploadAdmission(
     const { deployer, createdAt } = owner
     // Nothing is charged to an upload past its deadline.
     const assertLive = (): void => {
-      if (createdAt.getTime() < Date.now() - ttlMs) throw new PartialUploadExpiredError()
+      if (isPastExpiry(expiresAt(createdAt))) throw new PartialUploadExpiredError()
     }
     assertLive()
     // Committed on its own, before admission: the batch was received and processed even if it is then
@@ -200,10 +202,11 @@ export async function createPartialUploadAdmission(
   async function pruneAndReport(): Promise<void> {
     await repository.pruneCompleted(new Date(Date.now() - completionTtl))
     await repository.pruneByteRates()
-    const charged = await repository.getChargedBytes(new Date(Date.now() - ttlMs))
+    const cutoff = new Date(Date.now() - ttlMs)
+    const charged = await repository.getChargedBytes(cutoff)
     metrics.observe('partial_upload_reserved_bytes', {}, charged.bytes)
     metrics.observe('partial_upload_cleanup_backlog_bytes', {}, charged.expired)
-    const uploads = await repository.countUploads(new Date(Date.now() - ttlMs), new Date(Date.now() - ttlMs))
+    const uploads = await repository.countUploads(cutoff)
     metrics.observe('partial_uploads_pending', { state: 'live' }, uploads.live)
     metrics.observe('partial_uploads_pending', { state: 'expired' }, uploads.expired)
   }

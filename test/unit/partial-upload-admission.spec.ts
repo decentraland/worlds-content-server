@@ -201,6 +201,45 @@ describe('when admitting partial uploads', () => {
     })
   })
 
+  describe('and the existing upload reaches exactly the end of its lifetime', () => {
+    let error: unknown
+
+    beforeEach(async () => {
+      repository.findRecord.mockResolvedValueOnce({ ...record, createdAt: new Date(NOW - TTL_MS) })
+      error = await admission.upsert(upload).catch((e: unknown) => e)
+    })
+
+    it('should reject the batch as expired', () => {
+      expect(error).toBeInstanceOf(PartialUploadExpiredError)
+    })
+  })
+
+  describe('and the existing upload is one millisecond before the end of its lifetime', () => {
+    let pending: PendingScene
+
+    beforeEach(async () => {
+      repository.findRecord.mockResolvedValueOnce({ ...record, createdAt: new Date(NOW - TTL_MS + 1) })
+      pending = await admission.upsert(upload)
+    })
+
+    it('should resume it', () => {
+      expect(pending.expiresAt).toEqual(new Date(NOW + 1))
+    })
+  })
+
+  describe('and a new upload is admitted exactly at the end of its lifetime', () => {
+    let error: unknown
+
+    beforeEach(async () => {
+      upload.admittedAt = new Date(NOW - TTL_MS)
+      error = await admission.upsert(upload).catch((e: unknown) => e)
+    })
+
+    it('should reject the batch as expired', () => {
+      expect(error).toBeInstanceOf(PartialUploadExpiredError)
+    })
+  })
+
   describe('and a resumed upload is gone', () => {
     let error: unknown
 
@@ -273,6 +312,22 @@ describe('when admitting partial uploads', () => {
 
     beforeEach(async () => {
       repository.getOwner.mockResolvedValueOnce({ deployer: '0xaccount', createdAt: new Date(NOW - TTL_MS - 1) })
+      error = await admission.reserve('entity', [], 1000n, 100).catch((e: unknown) => e)
+    })
+
+    it('should reject it as expired without charging the byte rate', () => {
+      expect({
+        expired: error instanceof PartialUploadExpiredError,
+        charged: repository.chargeByteRate.mock.calls
+      }).toEqual({ expired: true, charged: [] })
+    })
+  })
+
+  describe('and a batch is reserved for an upload exactly at the end of its lifetime', () => {
+    let error: unknown
+
+    beforeEach(async () => {
+      repository.getOwner.mockResolvedValueOnce({ deployer: '0xaccount', createdAt: new Date(NOW - TTL_MS) })
       error = await admission.reserve('entity', [], 1000n, 100).catch((e: unknown) => e)
     })
 

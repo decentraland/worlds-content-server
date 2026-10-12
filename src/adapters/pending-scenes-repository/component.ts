@@ -50,13 +50,13 @@ export async function createPendingScenesRepository(
 
   async function getCreatedSince(
     entityId: string,
-    createdSince: Date,
+    cutoff: Date,
     signal?: AbortSignal
   ): Promise<PendingSceneRecord | undefined> {
     const result = await raceWithSignal(
       database.query<PendingSceneRow>(SQL`
       SELECT entity_id, world_name, parcels, deployer, created_at, updated_at, initialized
-      FROM pending_scenes WHERE entity_id = ${entityId} AND created_at >= ${createdSince}`),
+      FROM pending_scenes WHERE entity_id = ${entityId} AND created_at > ${cutoff}`),
       signal
     )
     return result.rows[0] ? toRecord(result.rows[0]) : undefined
@@ -255,7 +255,7 @@ export async function createPendingScenesRepository(
     after: ExpiredUploadCursor | undefined,
     limit: number
   ): Promise<ExpiredUploadCursor[]> {
-    const query = SQL`SELECT entity_id, created_at::text AS cursor FROM pending_scenes WHERE created_at < ${cutoff}`
+    const query = SQL`SELECT entity_id, created_at::text AS cursor FROM pending_scenes WHERE created_at <= ${cutoff}`
     if (after) {
       query.append(SQL` AND (created_at, entity_id) > (${after.createdAt}::timestamptz, ${after.entityId})`)
     }
@@ -272,7 +272,7 @@ export async function createPendingScenesRepository(
   }
 
   async function releaseExpired(entityId: string, cutoff: Date): Promise<void> {
-    await database.query(SQL`DELETE FROM pending_scenes WHERE entity_id = ${entityId} AND created_at < ${cutoff}`)
+    await database.query(SQL`DELETE FROM pending_scenes WHERE entity_id = ${entityId} AND created_at <= ${cutoff}`)
   }
 
   async function pruneCompleted(before: Date): Promise<void> {
@@ -283,18 +283,18 @@ export async function createPendingScenesRepository(
     await database.query(SQL`DELETE FROM partial_upload_rates WHERE window_started < now() - interval '1 minute'`)
   }
 
-  async function getChargedBytes(expiredBefore: Date): Promise<{ bytes: number; expired: number }> {
+  async function getChargedBytes(cutoff: Date): Promise<{ bytes: number; expired: number }> {
     const totals = await database.query<{ bytes: string; expired: string }>(SQL`
       SELECT COALESCE(SUM(f.size) FILTER (WHERE f.charged), 0)::text AS bytes,
-        COALESCE(SUM(f.size) FILTER (WHERE f.charged AND p.created_at < ${expiredBefore}), 0)::text AS expired
+        COALESCE(SUM(f.size) FILTER (WHERE f.charged AND p.created_at <= ${cutoff}), 0)::text AS expired
       FROM pending_scene_files f JOIN pending_scenes p USING (entity_id)`)
     return { bytes: Number(totals.rows[0].bytes), expired: Number(totals.rows[0].expired) }
   }
 
-  async function countUploads(liveSince: Date, expiredBefore: Date): Promise<{ live: number; expired: number }> {
+  async function countUploads(cutoff: Date): Promise<{ live: number; expired: number }> {
     const uploads = await database.query<{ live: string; expired: string }>(SQL`
-      SELECT COUNT(*) FILTER (WHERE created_at >= ${liveSince})::text AS live,
-        COUNT(*) FILTER (WHERE created_at < ${expiredBefore})::text AS expired
+      SELECT COUNT(*) FILTER (WHERE created_at > ${cutoff})::text AS live,
+        COUNT(*) FILTER (WHERE created_at <= ${cutoff})::text AS expired
       FROM pending_scenes`)
     return { live: Number(uploads.rows[0].live), expired: Number(uploads.rows[0].expired) }
   }

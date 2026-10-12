@@ -591,6 +591,67 @@ test('when accounting for independent partial uploads', ({ components }) => {
     })
   })
 
+  describe('and one upload was created exactly one lifetime before the cutoff instant and another just after', () => {
+    let cutoff: Date
+    let listed: string[]
+    let counts: { live: number; expired: number }
+    let charged: { bytes: number; expired: number }
+    let referenced: Set<string>
+    let atCutoffLive: unknown
+    let remaining: string[]
+
+    beforeEach(async () => {
+      cutoff = new Date('2026-01-01T00:00:00.000Z')
+      const justAfter = new Date(cutoff.getTime() + 1)
+      const uploads: { entityId: string; createdAt: Date; size: number }[] = [
+        { entityId: 'at-cutoff', createdAt: cutoff, size: 100 },
+        { entityId: 'after-cutoff', createdAt: justAfter, size: 50 }
+      ]
+      for (const { entityId, createdAt, size } of uploads) {
+        await components.database.query(SQL`
+          INSERT INTO pending_scenes (entity_id, world_name, parcels, entity, deployer, created_at)
+          VALUES (${entityId}, 'test.dcl.eth', '{0,0}', ${JSON.stringify({ ...first, id: entityId })}::jsonb,
+            ${signer}, ${createdAt})`)
+        await components.database.query(SQL`
+          INSERT INTO pending_scene_files (entity_id, hash, size, stored, charged)
+          VALUES (${entityId}, ${entityId + '-file'}, ${size}, true, true)`)
+      }
+      listed = (await repository.listExpired(cutoff, undefined, 10)).map((upload) => upload.entityId)
+      counts = await repository.countUploads(cutoff)
+      charged = await repository.getChargedBytes(cutoff)
+      referenced = await repository.getReferencedContentKeys(cutoff, ['at-cutoff', 'after-cutoff'])
+      atCutoffLive = await repository.getCreatedSince('at-cutoff', cutoff)
+      await repository.releaseExpired('at-cutoff', cutoff)
+      await repository.releaseExpired('after-cutoff', cutoff)
+      const result = await components.database.query<{ entity_id: string }>('SELECT entity_id FROM pending_scenes')
+      remaining = result.rows.map((row) => row.entity_id)
+    })
+
+    it('should list only the upload created at the cutoff as expired', () => {
+      expect(listed).toEqual(['at-cutoff'])
+    })
+
+    it('should count the upload created at the cutoff as expired and the other as live', () => {
+      expect(counts).toEqual({ live: 1, expired: 1 })
+    })
+
+    it('should report only the charged bytes of the upload created at the cutoff as expired', () => {
+      expect(charged).toEqual({ bytes: 150, expired: 100 })
+    })
+
+    it('should keep only the upload created after the cutoff referencing its content', () => {
+      expect(referenced).toEqual(new Set(['after-cutoff']))
+    })
+
+    it('should not return the upload created at the cutoff as live', () => {
+      expect(atCutoffLive).toBeUndefined()
+    })
+
+    it('should release only the upload created at the cutoff', () => {
+      expect(remaining).toEqual(['after-cutoff'])
+    })
+  })
+
   describe('and pending uploads are deleted by entity id', () => {
     let entityIds: string[]
 

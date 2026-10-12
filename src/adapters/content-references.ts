@@ -31,7 +31,7 @@ export async function getPublishedContentKeys(
  * Reads all sources of content references in one SQL snapshot. Call under the exclusive content
  * lock before deleting candidates, so publication cannot race either this read or physical deletion.
  * @param database Application database.
- * @param pendingCutoff Oldest live pending upload.
+ * @param pendingCutoff `now - ttl`: pending uploads created after it are live.
  * @param candidates Optional storage keys to check.
  * @returns Referenced keys, including soft-deleted scenes awaiting eviction.
  */
@@ -44,7 +44,7 @@ export async function getReferencedContentKeys(
     WITH entities AS (
       SELECT entity_id, entity FROM world_scenes WHERE entity IS NOT NULL
       UNION ALL
-      SELECT entity_id, entity FROM pending_scenes WHERE created_at >= ${pendingCutoff}
+      SELECT entity_id, entity FROM pending_scenes WHERE created_at > ${pendingCutoff}
     ), refs AS (
       SELECT entity_id AS hash FROM entities
       UNION ALL SELECT entity_id || '.auth' FROM entities

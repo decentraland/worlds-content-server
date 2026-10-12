@@ -37,6 +37,7 @@ import { Entity, EthAddress } from '@dcl/schemas'
 import { InvalidRequestError } from '@dcl/http-commons'
 import SQL, { type SQLStatement } from 'sql-template-strings'
 import { buildWorldRuntimeMetadata } from '../logic/world-runtime-metadata-utils'
+import { isPastExpiry } from '../logic/utils'
 import { AccessSetting, defaultAccess } from '../logic/access'
 import { connectWithSignal, isUniqueViolation } from './pg-client'
 import { PartialUploadExpiredError } from './pending-scenes-repository/errors'
@@ -714,7 +715,7 @@ export async function createWorldsManagerComponent({
         completesPartialUpload: !!partialUpload
       })
       // Re-checked at the commit boundary: a batch admitted just before expiry must not publish after it.
-      if (partialUpload && (!consumed || Date.now() >= partialUpload.expiresAt)) {
+      if (partialUpload && (!consumed || isPastExpiry(partialUpload.expiresAt))) {
         throw new PartialUploadExpiredError()
       }
 
