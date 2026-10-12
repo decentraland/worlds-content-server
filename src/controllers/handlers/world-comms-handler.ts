@@ -19,11 +19,11 @@ type CommsMetadata = {
 }
 
 function extractSubject(context: HandlerContext): string {
-  return extractCommsRateLimitSubject(context.request, context.verification!.auth)
+  return extractCommsRateLimitSubject(context.components.clientSource, context.request, context.verification!.auth)
 }
 
 type HandlerContext = HandlerContextWithPath<
-  'access' | 'comms' | 'rateLimiter',
+  'access' | 'clientSource' | 'comms' | 'rateLimiter',
   '/worlds/:worldName/comms' | '/worlds/:worldName/scenes/:sceneId/comms'
 > &
   DecentralandSignatureContext<CommsMetadata>

@@ -256,7 +256,9 @@ describe('deployment processing component', () => {
           .map(([, , value]) => value)
       }).toEqual({
         durationLabels: { outcome: 'timeout', stage: 'storage' },
-        error: 'Deployment processing exceeded the 10ms deadline.',
+        error:
+          'The server could not finish processing the deployment within 0.01 s after receiving it. ' +
+          'Retry the deployment; if it keeps timing out, report it.',
         failure: ['deployment_processing_failures', { outcome: 'timeout', stage: 'storage' }],
         stageActivity: [1, 0]
       })

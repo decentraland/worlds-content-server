@@ -4,7 +4,7 @@ import SQL from 'sql-template-strings'
 
 export const migration: Migration = {
   id: '0014_permissions_set_addresses_lowercase',
-  run: async (components: Pick<MigratorComponents, 'database' | 'nameOwnership' | 'storage' | 'worldsManager'>) => {
+  run: async (components: Pick<MigratorComponents, 'database' | 'nameOwnership' | 'storage'>) => {
     const worlds = await components.database.query('SELECT name, permissions FROM worlds ORDER BY name')
 
     for (const world of worlds.rows) {
