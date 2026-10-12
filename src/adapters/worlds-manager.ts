@@ -38,7 +38,7 @@ import SQL, { type SQLStatement } from 'sql-template-strings'
 import { buildWorldRuntimeMetadata } from '../logic/world-runtime-metadata-utils'
 import { AccessSetting, defaultAccess } from '../logic/access'
 import { connectWithSignal } from './pg-client'
-import { PartialUploadExpiredError } from './pending-scenes-manager/errors'
+import { PartialUploadExpiredError } from './pending-scenes-repository/errors'
 
 type BoundingRow = { min_x: number; max_x: number; min_y: number; max_y: number }
 
@@ -171,12 +171,21 @@ export async function createWorldsManagerComponent({
   logs,
   database,
   nameDenyListChecker,
+  pendingScenesRepository,
   search,
   storage,
   thumbnails
 }: Pick<
   AppComponents,
-  'settingsPolicy' | 'coordinates' | 'logs' | 'database' | 'nameDenyListChecker' | 'search' | 'storage' | 'thumbnails'
+  | 'settingsPolicy'
+  | 'coordinates'
+  | 'logs'
+  | 'database'
+  | 'nameDenyListChecker'
+  | 'pendingScenesRepository'
+  | 'search'
+  | 'storage'
+  | 'thumbnails'
 >): Promise<IWorldsManager> {
   const logger = logs.getLogger('worlds-manager')
   const {
@@ -694,25 +703,17 @@ export async function createWorldsManagerComponent({
         )
       `)
 
-      // The completion receipt commits with the publication and survives pending cleanup, replacement,
-      // undeployment and disconnects; only a partial finalizer gets one. It tracks the entity's latest
-      // publication, so re-publishing the entity after an undeploy replaces or drops it.
-      if (deployment?.completesPartialUpload) {
-        await query(SQL`
-          INSERT INTO completed_scene_uploads (entity_id, deployer, world_name, parcels, completed_at)
-          VALUES (${scene.id}, ${deployer}, ${worldName}, ${scene.metadata?.scene?.parcels || []}::text[],
-            ${new Date(creationTimestamp)})
-          ON CONFLICT (entity_id) DO UPDATE SET deployer = EXCLUDED.deployer, world_name = EXCLUDED.world_name,
-            parcels = EXCLUDED.parcels, completed_at = EXCLUDED.completed_at
-        `)
-      } else {
-        await query(SQL`DELETE FROM completed_scene_uploads WHERE entity_id = ${scene.id}`)
-      }
-      // Any publication of the entity supersedes its pending upload, whose staged files are now stored.
-      const pendingUpload = await query(SQL`DELETE FROM pending_scenes WHERE entity_id = ${scene.id} RETURNING 1`)
-      // Re-checked at the commit boundary: a batch admitted just before expiry must not publish after it.
       const partialUpload = deployment?.completesPartialUpload
-      if (partialUpload && (pendingUpload.rows.length === 0 || Date.now() >= partialUpload.expiresAt)) {
+      const { consumed } = await pendingScenesRepository.recordPublication(query, {
+        entityId: scene.id,
+        deployer,
+        worldName,
+        parcels: scene.metadata?.scene?.parcels || [],
+        publishedAt: new Date(creationTimestamp),
+        completesPartialUpload: !!partialUpload
+      })
+      // Re-checked at the commit boundary: a batch admitted just before expiry must not publish after it.
+      if (partialUpload && (!consumed || Date.now() >= partialUpload.expiresAt)) {
         throw new PartialUploadExpiredError()
       }
 

@@ -5,7 +5,7 @@ import { bufferToStream } from '@dcl/catalyst-storage'
 import { makeid } from '../utils'
 import { defaultAccess } from '../../src/logic/access'
 import { NoDeployedScenesError } from '../../src/types'
-import { PartialUploadExpiredError } from '../../src/adapters/pending-scenes-manager'
+import { PartialUploadExpiredError } from '../../src/logic/partial-upload-admission'
 import SQL from 'sql-template-strings'
 
 type LockClient = {

@@ -29,7 +29,8 @@ import { IWorldSettingsPolicyComponent } from './logic/world-settings-policy'
 import { ICoordinatesComponent } from './logic/coordinates'
 // Type-only imports so the central types module can reference these component interfaces (for
 // AppComponents below) without a runtime import cycle through their component.ts factories.
-import type { IPendingScenesManager } from './adapters/pending-scenes-manager/types'
+import type { IPendingScenesRepository } from './adapters/pending-scenes-repository/types'
+import type { IPartialUploadAdmission } from './logic/partial-upload-admission/types'
 import type { IContentGcComponent } from './logic/content-gc/types'
 import type { UploadLimits } from './logic/upload-limits/types'
 import type { ISourceUploadLimits } from './adapters/source-upload-limits/types'
@@ -389,7 +390,8 @@ export type MigratorComponents = Pick<AppComponents, 'config' | 'logs' | 'nameOw
 
 export type Validation = (deployment: DeploymentToValidate) => ValidationResult | Promise<ValidationResult>
 
-// PendingScene / UpsertPendingScene / IPendingScenesManager live in ./adapters/pending-scenes-manager/types
+// IPendingScenesRepository lives in ./adapters/pending-scenes-repository/types; PendingScene / UpsertPendingScene /
+// IPartialUploadAdmission live in ./logic/partial-upload-admission/types
 // StageDeploymentInput / StageDeploymentResult / IPartialDeploymentsComponent live in
 // ./logic/partial-deployments/types (both imported above for AppComponents).
 
@@ -707,7 +709,8 @@ export type BaseComponents = {
   metrics: IMetricsComponent<keyof typeof metricDeclarations>
   migrationExecutor: MigrationExecutor
   partialDeployments: IPartialDeploymentsComponent
-  pendingScenesManager: IPendingScenesManager
+  partialUploadAdmission: IPartialUploadAdmission
+  pendingScenesRepository: IPendingScenesRepository
   sourceUploadLimits: ISourceUploadLimits
   /** Validated upload size, quota and lifetime settings (plain values, no lifecycle). */
   uploadLimits: UploadLimits

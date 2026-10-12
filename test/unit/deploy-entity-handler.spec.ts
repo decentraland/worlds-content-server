@@ -17,7 +17,7 @@ import {
 import { hashV1 } from '@dcl/hashing'
 import { Authenticator } from '@dcl/crypto'
 import { DeploymentToValidate, SceneReplacementConflictError } from '../../src/types'
-import { PartialUploadQuotaExceededError, PartialUploadTooLargeError } from '../../src/adapters/pending-scenes-manager'
+import { PartialUploadQuotaExceededError, PartialUploadTooLargeError } from '../../src/logic/partial-upload-admission'
 
 type DeployContext = Parameters<typeof deployEntity>[0]
 
@@ -79,11 +79,10 @@ describe('deployEntity', () => {
         },
         deploymentProcessing: createDeploymentProcessingMock(),
         config: { getString: jest.fn().mockResolvedValue(undefined) },
-        // Default no-op pending-scenes manager; tests of partial requests that need a pending row override it.
-        pendingScenesManager: {
+        // Default no-op partial-upload admission; tests of partial requests that need a pending row override it.
+        partialUploadAdmission: {
           getByEntityId: jest.fn().mockResolvedValue(undefined),
-          getCompleted: jest.fn().mockResolvedValue(undefined),
-          deleteByEntityId: jest.fn().mockResolvedValue(undefined)
+          getCompleted: jest.fn().mockResolvedValue(undefined)
         },
         partialDeployments: {
           findPublication: jest.fn().mockResolvedValue(undefined),
@@ -246,7 +245,7 @@ describe('deployEntity', () => {
       findPublication = jest.fn().mockResolvedValue(undefined)
       const context = createContext(entityId, { [entityId]: makeFile(Buffer.from('{}')) })
       context.formData.fields.partial = makeField('true')
-      ;(context.components.pendingScenesManager as unknown as { getByEntityId: jest.Mock }).getByEntityId =
+      ;(context.components.partialUploadAdmission as unknown as { getByEntityId: jest.Mock }).getByEntityId =
         getByEntityId
       context.components.partialDeployments = {
         findPublication,
@@ -513,10 +512,9 @@ describe('deployEntity', () => {
         ...baseContext,
         components: {
           ...baseContext.components,
-          pendingScenesManager: {
+          partialUploadAdmission: {
             getByEntityId,
-            getCompleted: jest.fn().mockResolvedValue(undefined),
-            deleteByEntityId: jest.fn()
+            getCompleted: jest.fn().mockResolvedValue(undefined)
           },
           storage: { retrieve }
         }
@@ -669,7 +667,7 @@ describe('deployEntity', () => {
         findPublication = jest.fn()
         const context = createResumeContext()
         ;(context.components as any).partialDeployments = { findPublication }
-        ;(context.components as any).pendingScenesManager.getCompleted = jest
+        ;(context.components as any).partialUploadAdmission.getCompleted = jest
           .fn()
           .mockResolvedValue({ creationTimestamp: 456, worldName: 'world.dcl.eth', parcels: ['0,0'] })
         response = await deployEntity(context)
@@ -774,10 +772,9 @@ describe('deployEntity', () => {
           },
           deploymentProcessing: createDeploymentProcessingMock({ fileInfoConcurrency: 2 }),
           entityDeployer: { deployEntity: entityDeployerDeploy },
-          pendingScenesManager: {
+          partialUploadAdmission: {
             getByEntityId: jest.fn().mockResolvedValue(undefined),
-            getCompleted: jest.fn().mockResolvedValue(undefined),
-            deleteByEntityId: jest.fn().mockResolvedValue(undefined)
+            getCompleted: jest.fn().mockResolvedValue(undefined)
           },
           storage: { fileInfo },
           validator: { validateAfterStorage, validateBeforeStorage }

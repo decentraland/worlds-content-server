@@ -1,7 +1,6 @@
 import { AppComponents } from '../../types'
-import { getReferencedContentKeys } from '../../adapters/content-references'
 import { ContentLockTimeoutError } from '../../adapters/content-locks/errors'
-import { ExpiredUploadCursor } from '../../adapters/pending-scenes-manager/types'
+import { ExpiredUploadCursor } from '../../adapters/pending-scenes-repository/types'
 import { errorMessage } from '../utils'
 import { ExpiredUploadsCleanup, GarbageCollection, IContentGcComponent } from './types'
 
@@ -19,10 +18,17 @@ export const CLEANUP_PAGE_SIZE = 100
 export async function createContentGcComponent(
   components: Pick<
     AppComponents,
-    'database' | 'logs' | 'metrics' | 'storage' | 'contentLocks' | 'pendingScenesManager' | 'uploadLimits'
+    | 'logs'
+    | 'metrics'
+    | 'storage'
+    | 'contentLocks'
+    | 'partialUploadAdmission'
+    | 'pendingScenesRepository'
+    | 'uploadLimits'
   >
 ): Promise<IContentGcComponent> {
-  const { database, logs, metrics, storage, contentLocks, pendingScenesManager, uploadLimits } = components
+  const { logs, metrics, storage, contentLocks, partialUploadAdmission, pendingScenesRepository, uploadLimits } =
+    components
   const gcLogger = logs.getLogger('garbage-collection')
   // Keeps the cleanup's original logger name.
   const cleanupLogger = logs.getLogger('pending-scenes-manager')
@@ -33,7 +39,7 @@ export async function createContentGcComponent(
     for (let offset = 0; offset < keys.length; offset += GC_BATCH_SIZE) {
       const batch = keys.slice(offset, offset + GC_BATCH_SIZE)
       removed += await contentLocks.withWrite(async () => {
-        const referenced = await getReferencedContentKeys(database, new Date(Date.now() - ttlMs), batch)
+        const referenced = await pendingScenesRepository.getReferencedContentKeys(new Date(Date.now() - ttlMs), batch)
         const orphaned = batch.filter((key) => !referenced.has(key))
         if (orphaned.length) await storage.delete(orphaned)
         return orphaned.length
@@ -81,7 +87,7 @@ export async function createContentGcComponent(
     try {
       const sweep = await sweepExpired()
       // Runs whatever the sweep did, so receipts, rate windows and gauges never go stale.
-      await pendingScenesManager.pruneAndReport()
+      await partialUploadAdmission.pruneAndReport()
       outcome = sweep.outcome
       if (outcome === 'success') {
         metrics.observe('partial_upload_cleanup_last_success_timestamp_seconds', {}, Date.now() / 1000)
@@ -92,7 +98,7 @@ export async function createContentGcComponent(
       end()
       metrics.increment('partial_upload_cleanup_runs', { outcome })
       // Any finished run counts: the next one is scheduled an interval later regardless of its outcome.
-      pendingScenesManager.recordCleanupFinished()
+      partialUploadAdmission.recordCleanupFinished()
     }
   }
 
@@ -104,7 +110,7 @@ export async function createContentGcComponent(
     try {
       // Pages until a short one: every upload expired before the cutoff is visited once.
       for (;;) {
-        const page = await pendingScenesManager.listExpired(cutoff, after, CLEANUP_PAGE_SIZE)
+        const page = await pendingScenesRepository.listExpired(cutoff, after, CLEANUP_PAGE_SIZE)
         for (const upload of page) {
           after = upload
           const { entityId } = upload
@@ -141,8 +147,8 @@ export async function createContentGcComponent(
    * @throws ContentLockTimeoutError when uploads keep the content lock busy.
    */
   async function reclaimUpload(entityId: string, cutoff: Date): Promise<void> {
-    await deleteUnreferenced(await pendingScenesManager.getUploadKeys(entityId))
-    await pendingScenesManager.releaseExpired(entityId, cutoff)
+    await deleteUnreferenced(await pendingScenesRepository.getUploadKeys(entityId))
+    await pendingScenesRepository.releaseExpired(entityId, cutoff)
   }
 
   return { deleteUnreferenced, collectGarbage, deleteExpiredUploads }

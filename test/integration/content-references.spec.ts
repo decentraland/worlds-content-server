@@ -16,7 +16,7 @@ test('when looking up which stored content is published', ({ components }) => {
   let unreferencedHash: string
 
   beforeEach(async () => {
-    const { worldCreator, worldsManager, pendingScenesManager, database, storage } = components
+    const { worldCreator, worldsManager, partialUploadAdmission, database, storage } = components
 
     const created = await worldCreator.createWorldWithScene({
       files: new Map([['published.txt', stringToUtf8Bytes(makeid(50))]])
@@ -42,18 +42,15 @@ test('when looking up which stored content is published', ({ components }) => {
       content: [{ hash: `pending-content-${makeid(10)}`, file: 'pending.txt' }],
       metadata: { worldConfiguration: { name: 'pending.dcl.eth' } }
     }
-    await pendingScenesManager.upsert(
-      {
-        entityId: pendingOnly.id,
-        entity: pendingOnly,
-        deployer: '0xaccount',
-        worldName: 'pending.dcl.eth',
-        parcels: ['0,0'],
-        admittedAt: new Date(),
-        resumes: false
-      },
-      { maxPendingPerDeployer: 10 }
-    )
+    await partialUploadAdmission.upsert({
+      entityId: pendingOnly.id,
+      entity: pendingOnly,
+      deployer: '0xaccount',
+      worldName: 'pending.dcl.eth',
+      parcels: ['0,0'],
+      admittedAt: new Date(),
+      resumes: false
+    })
     unreferencedHash = `unreferenced-${makeid(10)}`
   })
 
