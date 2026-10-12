@@ -2,7 +2,7 @@ import SQL from 'sql-template-strings'
 import { AppComponents } from '../../types'
 import { raceWithSignal } from '../../logic/concurrency'
 import { Query } from '../upload-transaction'
-import { getPublishedContentKeys } from '../content-references'
+import { getPublishedContentKeys, getReferencedContentKeys as readReferencedContentKeys } from '../content-references'
 import {
   BudgetTotals,
   ByteRateWindow,
@@ -67,11 +67,15 @@ export async function createPendingScenesRepository(
     return raceWithSignal(getPublishedContentKeys(database, hashes), signal)
   }
 
+  async function getReferencedContentKeys(pendingCutoff: Date, candidates: string[]): Promise<Set<string>> {
+    return readReferencedContentKeys(database, pendingCutoff, candidates)
+  }
+
   async function lockDeployer(query: Query, deployer: string): Promise<void> {
     await query(SQL`SELECT pg_advisory_xact_lock(hashtextextended(${'pending_deployer:' + deployer}, 0))`)
   }
 
-  async function getByEntityId(query: Query, entityId: string): Promise<PendingSceneRecord | undefined> {
+  async function findRecord(query: Query, entityId: string): Promise<PendingSceneRecord | undefined> {
     const existing = await query<PendingSceneRow>(SQL`SELECT entity_id, world_name, parcels, deployer,
         created_at, updated_at, initialized FROM pending_scenes WHERE entity_id = ${entityId}`)
     return existing.rows[0] ? toRecord(existing.rows[0]) : undefined
@@ -298,8 +302,9 @@ export async function createPendingScenesRepository(
   return {
     getCreatedSince,
     getPublishedContent,
+    getReferencedContentKeys,
     lockDeployer,
-    getByEntityId,
+    findRecord,
     countByDeployer,
     insert,
     getOwner,

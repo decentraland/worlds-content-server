@@ -45,11 +45,7 @@ export interface IPartialUploadAdmission {
    * @throws PartialUploadOwnershipError when another account started the upload.
    * @throws PartialUploadQuotaExceededError when the account has its maximum of uploads.
    */
-  upsert(
-    input: UpsertPendingScene,
-    limit: { maxPendingPerDeployer: number },
-    signal?: AbortSignal
-  ): Promise<PendingScene>
+  upsert(input: UpsertPendingScene, signal?: AbortSignal): Promise<PendingScene>
   /**
    * Reserves bytes before writes, including concurrent account/global budgets and incoming byte rate.
    * Only charged receipts count toward the budgets; every receipt counts toward the scene size.

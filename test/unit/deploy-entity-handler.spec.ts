@@ -82,8 +82,7 @@ describe('deployEntity', () => {
         // Default no-op partial-upload admission; tests of partial requests that need a pending row override it.
         partialUploadAdmission: {
           getByEntityId: jest.fn().mockResolvedValue(undefined),
-          getCompleted: jest.fn().mockResolvedValue(undefined),
-          deleteByEntityId: jest.fn().mockResolvedValue(undefined)
+          getCompleted: jest.fn().mockResolvedValue(undefined)
         },
         partialDeployments: {
           findPublication: jest.fn().mockResolvedValue(undefined),
@@ -515,8 +514,7 @@ describe('deployEntity', () => {
           ...baseContext.components,
           partialUploadAdmission: {
             getByEntityId,
-            getCompleted: jest.fn().mockResolvedValue(undefined),
-            deleteByEntityId: jest.fn()
+            getCompleted: jest.fn().mockResolvedValue(undefined)
           },
           storage: { retrieve }
         }
@@ -776,8 +774,7 @@ describe('deployEntity', () => {
           entityDeployer: { deployEntity: entityDeployerDeploy },
           partialUploadAdmission: {
             getByEntityId: jest.fn().mockResolvedValue(undefined),
-            getCompleted: jest.fn().mockResolvedValue(undefined),
-            deleteByEntityId: jest.fn().mockResolvedValue(undefined)
+            getCompleted: jest.fn().mockResolvedValue(undefined)
           },
           storage: { fileInfo },
           validator: { validateAfterStorage, validateBeforeStorage }

@@ -2,18 +2,17 @@ import { ContentLockTimeoutError } from '../../src/adapters/content-locks/errors
 import { createContentGcComponent, GarbageCollection, IContentGcComponent } from '../../src/logic/content-gc'
 
 type Components = Parameters<typeof createContentGcComponent>[0]
-type Statement = { text: string; values: unknown[] }
 
 const NOW = 1_800_000_000_000
 const TTL_MS = 60_000
 
 describe('when collecting unreferenced content', () => {
-  let query: jest.Mock
   let withWrite: jest.Mock
   let storageDelete: jest.Mock
   let increment: jest.Mock
   let info: jest.Mock
   let pendingScenesRepository: {
+    getReferencedContentKeys: jest.Mock
     listExpired: jest.Mock
     getUploadKeys: jest.Mock
     releaseExpired: jest.Mock
@@ -32,10 +31,6 @@ describe('when collecting unreferenced content', () => {
     storedKeys = []
     referencedKeys = []
     calls = []
-    query = jest.fn(async (sql: Statement) => {
-      const candidates = sql.values[sql.values.length - 1] as string[]
-      return { rows: candidates.filter((key) => referencedKeys.includes(key)).map((hash) => ({ hash })) }
-    })
     withWrite = jest.fn((operation: () => Promise<unknown>) => operation())
     storageDelete = jest.fn(async (keys: string[]) => {
       calls.push(`delete:${keys.join(',')}`)
@@ -43,6 +38,9 @@ describe('when collecting unreferenced content', () => {
     increment = jest.fn()
     info = jest.fn()
     pendingScenesRepository = {
+      getReferencedContentKeys: jest.fn(
+        async (_cutoff: Date, candidates: string[]) => new Set(candidates.filter((key) => referencedKeys.includes(key)))
+      ),
       listExpired: jest.fn().mockResolvedValue([]),
       getUploadKeys: jest.fn(),
       releaseExpired: jest.fn(async (entityId: string) => {
@@ -54,7 +52,6 @@ describe('when collecting unreferenced content', () => {
       recordCleanupFinished: jest.fn()
     }
     contentGc = await createContentGcComponent({
-      database: { query },
       logs: { getLogger: () => ({ info, warn: jest.fn(), error: jest.fn(), debug: jest.fn(), log: jest.fn() }) },
       metrics: { increment, observe: jest.fn(), startTimer: jest.fn().mockReturnValue({ end: jest.fn() }) },
       storage: {
@@ -92,7 +89,7 @@ describe('when collecting unreferenced content', () => {
     })
 
     it('should keep content held by uploads younger than the pending lifetime', () => {
-      expect(query.mock.calls[0][0].values[0]).toEqual(new Date(NOW - TTL_MS))
+      expect(pendingScenesRepository.getReferencedContentKeys.mock.calls[0][0]).toEqual(new Date(NOW - TTL_MS))
     })
   })
 

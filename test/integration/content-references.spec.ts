@@ -42,18 +42,15 @@ test('when looking up which stored content is published', ({ components }) => {
       content: [{ hash: `pending-content-${makeid(10)}`, file: 'pending.txt' }],
       metadata: { worldConfiguration: { name: 'pending.dcl.eth' } }
     }
-    await partialUploadAdmission.upsert(
-      {
-        entityId: pendingOnly.id,
-        entity: pendingOnly,
-        deployer: '0xaccount',
-        worldName: 'pending.dcl.eth',
-        parcels: ['0,0'],
-        admittedAt: new Date(),
-        resumes: false
-      },
-      { maxPendingPerDeployer: 10 }
-    )
+    await partialUploadAdmission.upsert({
+      entityId: pendingOnly.id,
+      entity: pendingOnly,
+      deployer: '0xaccount',
+      worldName: 'pending.dcl.eth',
+      parcels: ['0,0'],
+      admittedAt: new Date(),
+      resumes: false
+    })
     unreferencedHash = `unreferenced-${makeid(10)}`
   })
 

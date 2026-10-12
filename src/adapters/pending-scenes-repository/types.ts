@@ -74,10 +74,16 @@ export interface IPendingScenesRepository extends IBaseComponent {
    * awaiting eviction, or world thumbnails). References from pending uploads don't count.
    */
   getPublishedContent(hashes: string[], signal?: AbortSignal): Promise<Set<string>>
+  /**
+   * Returns the given keys referenced by any content, in one snapshot: world scenes (including soft-deleted
+   * ones awaiting eviction), world thumbnails and uploads created at or after `pendingCutoff`. Call under the
+   * exclusive content lock before deleting them.
+   */
+  getReferencedContentKeys(pendingCutoff: Date, candidates: string[]): Promise<Set<string>>
   /** Serializes the transaction with every other one holding the same deployer's lock. */
   lockDeployer(query: Query, deployer: string): Promise<void>
   /** Retrieves an upload whatever its age. */
-  getByEntityId(query: Query, entityId: string): Promise<PendingSceneRecord | undefined>
+  findRecord(query: Query, entityId: string): Promise<PendingSceneRecord | undefined>
   /** Counts a deployer's uploads and finds the oldest one's creation. */
   countByDeployer(query: Query, deployer: string): Promise<{ count: number; oldest: Date | null }>
   insert(query: Query, scene: NewPendingScene): Promise<PendingSceneRecord>

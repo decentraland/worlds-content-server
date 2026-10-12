@@ -97,7 +97,6 @@ async function build(mocks: Mocks): Promise<IContentGcComponent> {
     uploadLimits: UPLOAD_LIMITS
   } as any)
   return createContentGcComponent({
-    database: { query: mocks.query },
     logs: { getLogger: () => ({ info: jest.fn(), warn: jest.fn(), error: mocks.logError, debug: jest.fn() }) },
     metrics,
     storage: { delete: mocks.storageDelete },

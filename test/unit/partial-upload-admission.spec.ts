@@ -67,7 +67,7 @@ describe('when admitting partial uploads', () => {
       getCreatedSince: jest.fn().mockResolvedValue(undefined),
       getCompleted: jest.fn().mockResolvedValue(undefined),
       lockDeployer: jest.fn().mockResolvedValue(undefined),
-      getByEntityId: jest.fn().mockResolvedValue(undefined),
+      findRecord: jest.fn().mockResolvedValue(undefined),
       countByDeployer: jest.fn().mockResolvedValue({ count: 0, oldest: null }),
       insert: jest.fn().mockResolvedValue(record),
       getOwner: jest.fn().mockResolvedValue({ deployer: '0xaccount', createdAt: new Date(NOW - 1_000) }),
@@ -136,7 +136,7 @@ describe('when admitting partial uploads', () => {
     let pending: PendingScene
 
     beforeEach(async () => {
-      pending = await admission.upsert(upload, { maxPendingPerDeployer: 2 })
+      pending = await admission.upsert(upload)
     })
 
     it('should store it for the lowercased deployer and world, created at its admission', () => {
@@ -152,8 +152,18 @@ describe('when admitting partial uploads', () => {
 
     it('should take the deployer lock before reading the upload', () => {
       expect(repository.lockDeployer.mock.invocationCallOrder[0]).toBeLessThan(
-        repository.getByEntityId.mock.invocationCallOrder[0]
+        repository.findRecord.mock.invocationCallOrder[0]
       )
+    })
+
+    it('should run every statement in the same transaction', () => {
+      const [[query]] = repository.lockDeployer.mock.calls
+      expect({
+        query: typeof query,
+        findRecord: repository.findRecord.mock.calls[0][0],
+        countByDeployer: repository.countByDeployer.mock.calls[0][0],
+        insert: repository.insert.mock.calls[0][0]
+      }).toEqual({ query: 'function', findRecord: query, countByDeployer: query, insert: query })
     })
 
     it('should return it with its expiry', () => {
@@ -165,8 +175,8 @@ describe('when admitting partial uploads', () => {
     let error: unknown
 
     beforeEach(async () => {
-      repository.getByEntityId.mockResolvedValueOnce({ ...record, deployer: '0xother' })
-      error = await admission.upsert(upload, { maxPendingPerDeployer: 2 }).catch((e: unknown) => e)
+      repository.findRecord.mockResolvedValueOnce({ ...record, deployer: '0xother' })
+      error = await admission.upsert(upload).catch((e: unknown) => e)
     })
 
     it('should reject it as an invalid request from another account', () => {
@@ -182,8 +192,8 @@ describe('when admitting partial uploads', () => {
     let error: unknown
 
     beforeEach(async () => {
-      repository.getByEntityId.mockResolvedValueOnce({ ...record, createdAt: new Date(NOW - TTL_MS - 1) })
-      error = await admission.upsert(upload, { maxPendingPerDeployer: 2 }).catch((e: unknown) => e)
+      repository.findRecord.mockResolvedValueOnce({ ...record, createdAt: new Date(NOW - TTL_MS - 1) })
+      error = await admission.upsert(upload).catch((e: unknown) => e)
     })
 
     it('should reject the batch as expired', () => {
@@ -195,7 +205,7 @@ describe('when admitting partial uploads', () => {
     let error: unknown
 
     beforeEach(async () => {
-      error = await admission.upsert({ ...upload, resumes: true }, { maxPendingPerDeployer: 2 }).catch((e) => e)
+      error = await admission.upsert({ ...upload, resumes: true }).catch((e) => e)
     })
 
     it('should reject the batch as expired without creating the upload', () => {
@@ -211,7 +221,7 @@ describe('when admitting partial uploads', () => {
 
     beforeEach(async () => {
       upload.admittedAt = new Date(NOW - TTL_MS - 1)
-      error = await admission.upsert(upload, { maxPendingPerDeployer: 2 }).catch((e: unknown) => e)
+      error = await admission.upsert(upload).catch((e: unknown) => e)
     })
 
     it('should reject the batch as expired', () => {
@@ -224,7 +234,7 @@ describe('when admitting partial uploads', () => {
 
     beforeEach(async () => {
       repository.countByDeployer.mockResolvedValueOnce({ count: 2, oldest: new Date(NOW - 60_000) })
-      error = await admission.upsert(upload, { maxPendingPerDeployer: 2 }).catch((e: unknown) => e)
+      error = await admission.upsert(upload).catch((e: unknown) => e)
     })
 
     it('should reject with the upload-count quota, retrying when its oldest upload expires', () => {
@@ -429,6 +439,16 @@ describe('when admitting partial uploads', () => {
       )
     })
 
+    it('should run every statement in the same transaction', () => {
+      const [[query]] = repository.lockBudget.mock.calls
+      expect({
+        query: typeof query,
+        upsertFiles: repository.upsertFiles.mock.calls[0][0],
+        refreshReservedBytes: repository.refreshReservedBytes.mock.calls[0][0],
+        getBudgetTotals: repository.getBudgetTotals.mock.calls[0][0]
+      }).toEqual({ query: 'function', upsertFiles: query, refreshReservedBytes: query, getBudgetTotals: query })
+    })
+
     it('should report the reserved bytes', () => {
       expect(observe).toHaveBeenCalledWith('partial_upload_reserved_bytes', {}, 100)
     })
@@ -511,7 +531,7 @@ describe('when admitting partial uploads', () => {
 
   describe('and a later batch of an upload is not admitted', () => {
     beforeEach(async () => {
-      repository.getByEntityId.mockResolvedValueOnce(record)
+      repository.findRecord.mockResolvedValueOnce(record)
       repository.chargeByteRate.mockRejectedValueOnce(new Error('rate exceeded'))
       await admission
         .admitBatch({ upload: { ...upload, resumes: true }, receipts: [], maxSceneBytes: 1000n, incomingBytes: 100 })
@@ -525,7 +545,7 @@ describe('when admitting partial uploads', () => {
 
   describe('and the upload of a new batch is rejected', () => {
     beforeEach(async () => {
-      repository.getByEntityId.mockResolvedValueOnce({ ...record, deployer: '0xother' })
+      repository.findRecord.mockResolvedValueOnce({ ...record, deployer: '0xother' })
       await admission
         .admitBatch({ upload, receipts: [], maxSceneBytes: 1000n, incomingBytes: 100 })
         .catch(() => undefined)

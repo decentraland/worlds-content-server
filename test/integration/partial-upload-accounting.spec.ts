@@ -11,7 +11,7 @@ import {
   PartialUploadQuotaExceededError,
   PartialUploadTooLargeError
 } from '../../src/logic/partial-upload-admission'
-import { DEFAULT_MAX_UPLOAD_SIZE_IN_BYTES, loadUploadLimits } from '../../src/logic/upload-limits'
+import { DEFAULT_MAX_UPLOAD_SIZE_IN_BYTES, loadUploadLimits, UploadLimits } from '../../src/logic/upload-limits'
 import { createPendingScenesRepository, IPendingScenesRepository } from '../../src/adapters/pending-scenes-repository'
 import { CLEANUP_PAGE_SIZE, createContentGcComponent, IContentGcComponent } from '../../src/logic/content-gc'
 
@@ -23,18 +23,37 @@ test('when accounting for independent partial uploads', ({ components }) => {
   let second: Entity
   let signer: string
   let limits: Record<string, number>
+  let uploadLimits: UploadLimits
 
-  async function create(
-    entity: Entity,
-    deployer = signer,
-    admittedAt = new Date(),
-    resumes = false,
-    maxPendingPerDeployer = 10
-  ): Promise<void> {
-    await manager.upsert(
-      { entityId: entity.id, entity, deployer, worldName: 'test.dcl.eth', parcels: ['0,0'], admittedAt, resumes },
-      { maxPendingPerDeployer }
-    )
+  async function create(entity: Entity, deployer = signer, admittedAt = new Date(), resumes = false): Promise<void> {
+    await manager.upsert({
+      entityId: entity.id,
+      entity,
+      deployer,
+      worldName: 'test.dcl.eth',
+      parcels: ['0,0'],
+      admittedAt,
+      resumes
+    })
+  }
+
+  async function build(overrides: Partial<UploadLimits> = {}): Promise<void> {
+    const limitsInUse = { ...uploadLimits, ...overrides }
+    manager = await createPartialUploadAdmission({
+      database: components.database,
+      metrics: components.metrics,
+      pendingScenesRepository: repository,
+      uploadLimits: limitsInUse
+    })
+    gc = await createContentGcComponent({
+      logs: components.logs,
+      metrics: components.metrics,
+      storage: components.storage,
+      contentLocks: components.contentLocks,
+      partialUploadAdmission: manager,
+      pendingScenesRepository: repository,
+      uploadLimits: limitsInUse
+    })
   }
 
   async function pendingCount(): Promise<number> {
@@ -64,8 +83,9 @@ test('when accounting for independent partial uploads', ({ components }) => {
     // `components` is a get-only Proxy over an empty target, so it must be read key by key:
     // spreading it reads ownKeys from that empty target and yields nothing.
     // Built directly, bypassing loadUploadLimits' validation on purpose, to use tiny budgets.
-    const uploadLimits = {
+    uploadLimits = {
       ...components.uploadLimits,
+      maxPendingDeploymentsPerDeployer: 10,
       maxPendingBytesPerDeployer: BigInt(limits.MAX_PENDING_BYTES_PER_DEPLOYER),
       maxPendingBytes: BigInt(limits.MAX_PENDING_BYTES),
       maxPartialUploadBytesPerMinute: limits.MAX_PARTIAL_UPLOAD_BYTES_PER_MINUTE,
@@ -73,22 +93,7 @@ test('when accounting for independent partial uploads', ({ components }) => {
       partialUploadCleanupIntervalMs: limits.PARTIAL_UPLOAD_CLEANUP_INTERVAL_MS
     }
     repository = await createPendingScenesRepository({ database: components.database })
-    manager = await createPartialUploadAdmission({
-      database: components.database,
-      metrics: components.metrics,
-      pendingScenesRepository: repository,
-      uploadLimits
-    })
-    gc = await createContentGcComponent({
-      database: components.database,
-      logs: components.logs,
-      metrics: components.metrics,
-      storage: components.storage,
-      contentLocks: components.contentLocks,
-      partialUploadAdmission: manager,
-      pendingScenesRepository: repository,
-      uploadLimits
-    })
+    await build()
   })
 
   afterEach(async () => {
@@ -319,8 +324,9 @@ test('when accounting for independent partial uploads', ({ components }) => {
     let error: unknown
 
     beforeEach(async () => {
+      await build({ maxPendingDeploymentsPerDeployer: 1 })
       await create(first, signer, new Date(Date.now() - 60_000))
-      error = await create(second, signer, new Date(), false, 1).catch((e: unknown) => e)
+      error = await create(second).catch((e: unknown) => e)
     })
 
     it('should reject with the upload-count quota, retrying when its oldest upload expires', () => {
@@ -342,12 +348,13 @@ test('when accounting for independent partial uploads', ({ components }) => {
       let error: unknown
 
       beforeEach(async () => {
+        await build({ maxPendingDeploymentsPerDeployer: 1 })
         await create(first)
         // Expired uploads can't be created, so this one is aged past its lifetime after the fact.
         await components.database.query(
           SQL`UPDATE pending_scenes SET created_at = ${new Date(Date.now() - 400_000)} WHERE entity_id = ${first.id}`
         )
-        error = await create(second, signer, new Date(), false, 1).catch((e: unknown) => e)
+        error = await create(second).catch((e: unknown) => e)
       })
 
       it('should retry after one cleanup interval', () => {
@@ -359,6 +366,7 @@ test('when accounting for independent partial uploads', ({ components }) => {
       let error: unknown
 
       beforeEach(async () => {
+        await build({ maxPendingDeploymentsPerDeployer: 1 })
         await gc.deleteExpiredUploads()
         await create(first)
         // Expired uploads can't be created, so this one is aged past its lifetime after the fact.
@@ -367,7 +375,7 @@ test('when accounting for independent partial uploads', ({ components }) => {
         )
         const now = Date.now()
         jest.spyOn(Date, 'now').mockReturnValue(now + 50_000)
-        error = await create(second, signer, new Date(now + 50_000), false, 1).catch((e: unknown) => e)
+        error = await create(second, signer, new Date(now + 50_000)).catch((e: unknown) => e)
       })
 
       it('should retry when the next cleanup runs', () => {

@@ -61,17 +61,13 @@ export async function createPartialUploadAdmission(
     return repository.getCompleted(entityId, deployer.toLowerCase(), new Date(Date.now() - completionTtl), signal)
   }
 
-  async function upsert(
-    input: UpsertPendingScene,
-    limit: { maxPendingPerDeployer: number },
-    signal?: AbortSignal
-  ): Promise<PendingScene> {
+  async function upsert(input: UpsertPendingScene, signal?: AbortSignal): Promise<PendingScene> {
     const deployer = input.deployer.toLowerCase()
     return withUploadTransaction(
       database,
       async (query) => {
         await repository.lockDeployer(query, deployer)
-        const existing = await repository.getByEntityId(query, input.entityId)
+        const existing = await repository.findRecord(query, input.entityId)
         if (existing) {
           if (existing.createdAt.getTime() < Date.now() - ttlMs) {
             throw new PartialUploadExpiredError()
@@ -87,10 +83,10 @@ export async function createPartialUploadAdmission(
         // A delayed first batch (slow validation or lock waits) may arrive already past its deadline.
         if (input.admittedAt.getTime() < Date.now() - ttlMs) throw new PartialUploadExpiredError()
         const { count, oldest } = await repository.countByDeployer(query, deployer)
-        if (count >= limit.maxPendingPerDeployer) {
+        if (count >= maxPendingPerDeployer) {
           throw new PartialUploadQuotaExceededError(
             'uploads_per_account',
-            `Too many partial uploads in progress for this account: ${count} of the ${limit.maxPendingPerDeployer} allowed. Complete an upload or wait for expired uploads to be cleaned up.`,
+            `Too many partial uploads in progress for this account: ${count} of the ${maxPendingPerDeployer} allowed. Complete an upload or wait for expired uploads to be cleaned up.`,
             retryAfterOldest(oldest)
           )
         }
@@ -182,7 +178,7 @@ export async function createPartialUploadAdmission(
   async function admitBatch(input: AdmitBatchInput, signal?: AbortSignal): Promise<PendingScene> {
     const { upload, receipts, maxSceneBytes, incomingBytes } = input
     // Two transactions on purpose: the deployer lock is released before the budget lock is taken.
-    const pending = await upsert(upload, { maxPendingPerDeployer }, signal)
+    const pending = await upsert(upload, signal)
     try {
       await reserve(upload.entityId, receipts, maxSceneBytes, incomingBytes, signal)
     } catch (error) {

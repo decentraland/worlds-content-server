@@ -291,7 +291,6 @@ export async function initComponents(): Promise<AppComponents> {
     uploadLimits
   })
   const contentGc = await createContentGcComponent({
-    database,
     logs,
     metrics,
     storage,
