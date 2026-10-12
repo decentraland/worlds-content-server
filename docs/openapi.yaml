@@ -337,9 +337,10 @@ paths:
         entity ID and may overlap parcels; starting one does not remove another. Publication follows
         entity timestamp ordering (entity ID breaks ties), so an older upload cannot replace a newer
         deployed scene. The timestamp is chosen by the signer and may be up to 15 minutes in the future
-        (as on Catalyst), so a collaborator with deploy permission can hold off a redeploy on the same
-        parcels for at most that long. Parallel requests for the same entity are processed serially by
-        the server.
+        (as on Catalyst), so a collaborator with deploy permission who keeps redeploying with such
+        timestamps can keep blocking the owner's redeploys on those parcels indefinitely; the owner
+        recovers by revoking that collaborator's deploy permission. Parallel requests for the same
+        entity are processed serially by the server.
 
         Successful completion is recorded atomically with publication. The original signer can replay
         a completed partial request without the manifest and receive the same `200` body and timestamp

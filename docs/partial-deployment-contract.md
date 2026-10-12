@@ -17,8 +17,9 @@ ID as the upload identifier; there is no session creation or explicit commit end
 7. Overlapping uploads coexist within quotas. Publication uses entity timestamp ordering, breaking
    ties by entity ID; completion order never lets an older entity overwrite a newer deployed entity.
    The timestamp is chosen by the signer and may be up to 15 minutes in the future (as on Catalyst),
-   so a collaborator with deploy permission can hold off a redeploy on the same parcels for at most
-   that long.
+   so a collaborator with deploy permission who keeps redeploying with such timestamps can keep
+   blocking the owner's redeploys on those parcels indefinitely; the owner recovers by revoking that
+   collaborator's deploy permission.
 
 `400` covers validation, expiry and requests that alone exceed a budget (a batch above the per-minute
 byte rate, or an upload above the per-account staging budget); no retry can succeed. `429` with
