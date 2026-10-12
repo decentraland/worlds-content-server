@@ -2,9 +2,15 @@ import { HandlerContextWithPath } from '../../types'
 import { IHttpServerComponent } from '@dcl/core-commons'
 import { ContentLockTimeoutError } from '../../adapters/content-locks/errors'
 
+/** Retry hint when uploads keep the content lock busy. */
+export const GC_DEFERRED_RETRY_AFTER_SECONDS = 60
+
 type GarbageCollectionContext = HandlerContextWithPath<'contentGc' | 'metrics', '/gc'>
 
-/** Runs garbage collection, recording its outcome, duration and last success. */
+/**
+ * Runs garbage collection, recording its outcome, duration and last success. Answers 503 with
+ * Retry-After when uploads keep the content lock busy.
+ */
 export async function garbageCollectionHandler(
   context: GarbageCollectionContext
 ): Promise<IHttpServerComponent.IResponse> {
@@ -20,7 +26,14 @@ export async function garbageCollectionHandler(
       body: { message: `Garbage collection removed ${removed} unused keys.`, expiredUploads }
     }
   } catch (error) {
-    if (error instanceof ContentLockTimeoutError) outcome = 'deferred'
+    if (error instanceof ContentLockTimeoutError) {
+      outcome = 'deferred'
+      return {
+        status: 503,
+        headers: { 'Retry-After': String(GC_DEFERRED_RETRY_AFTER_SECONDS) },
+        body: { error: 'Service Unavailable', message: error.message }
+      }
+    }
     throw error
   } finally {
     end()

@@ -1,4 +1,7 @@
-import { garbageCollectionHandler } from '../../src/controllers/handlers/garbage-collection'
+import {
+  GC_DEFERRED_RETRY_AFTER_SECONDS,
+  garbageCollectionHandler
+} from '../../src/controllers/handlers/garbage-collection'
 import { ContentLockTimeoutError } from '../../src/adapters/content-locks/errors'
 import { ExpiredUploadsCleanup } from '../../src/logic/content-gc'
 
@@ -85,19 +88,28 @@ describe('when running garbage collection', () => {
   })
 
   describe('and uploads keep the content lock busy', () => {
-    let error: unknown
+    let response: Awaited<ReturnType<typeof garbageCollectionHandler>>
+    let lockError: ContentLockTimeoutError
 
     beforeEach(async () => {
-      collectGarbage.mockRejectedValueOnce(new ContentLockTimeoutError())
-      error = await garbageCollectionHandler(buildContext(increment, observe, collectGarbage)).catch((e) => e)
+      lockError = new ContentLockTimeoutError()
+      collectGarbage.mockRejectedValueOnce(lockError)
+      response = await garbageCollectionHandler(buildContext(increment, observe, collectGarbage))
     })
 
-    it('should rethrow after counting a deferred run without recording a success', () => {
+    it('should answer 503 with a retry hint and the lock error message', () => {
+      expect({ status: response.status, headers: response.headers, body: response.body }).toEqual({
+        status: 503,
+        headers: { 'Retry-After': String(GC_DEFERRED_RETRY_AFTER_SECONDS) },
+        body: { error: 'Service Unavailable', message: lockError.message }
+      })
+    })
+
+    it('should count a deferred run without recording a success', () => {
       expect({
-        error: error instanceof ContentLockTimeoutError,
         runs: callsOf(increment, 'garbage_collection_runs'),
         lastSuccess: callsOf(observe, 'garbage_collection_last_success_timestamp_seconds')
-      }).toEqual({ error: true, runs: [['garbage_collection_runs', { outcome: 'deferred' }]], lastSuccess: [] })
+      }).toEqual({ runs: [['garbage_collection_runs', { outcome: 'deferred' }]], lastSuccess: [] })
     })
   })
 

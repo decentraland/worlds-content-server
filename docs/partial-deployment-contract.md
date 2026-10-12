@@ -59,7 +59,8 @@ counts every file of the scene; for DCL-name worlds it is the owner's remaining 
 `MAX_SCENE_SIZE` (500 MiB), which startup requires to fit `MAX_PENDING_BYTES_PER_DEPLOYER`. Expired
 slots and bytes remain charged if physical cleanup fails; the failing upload is retried by the next run
 without holding back later ones. Each run visits every upload expired when it starts, unless uploads keep
-the content lock busy, and runs (scheduled or from `POST /gc`) never overlap.
+the content lock busy, and runs (scheduled or from `POST /gc`) never overlap. When uploads keep the content
+lock busy past the writer wait, `POST /gc` answers `503` with `Retry-After: 60`.
 
 Migrations run at startup. Worlds runs as a single instance behind Cloudflare, so a normal deploy is
 enough. The content lock uses `CONTENT_LOCK_CONNECTIONS` connections in addition to the query pool.
