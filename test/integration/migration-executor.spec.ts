@@ -1,14 +1,16 @@
 import { setTimeout as sleep } from 'timers/promises'
-import { START_COMPONENT } from '@well-known-components/interfaces'
+import { ILoggerComponent, START_COMPONENT } from '@well-known-components/interfaces'
 import SQL from 'sql-template-strings'
 import { test } from '../components'
 import { createMigrationExecutor, MigrationsLockLostError } from '../../src/adapters/migration-executor'
 import { Migration } from '../../src/types'
+import { migration as contentHashesIndexMigration } from '../../src/migrations/0030_add_world_scenes_content_hashes_index'
 
 const TABLE_MIGRATION = 'test_concurrent_startup_table'
 const INDEX_MIGRATION = 'test_concurrent_startup_index'
 const LOCK_LOSS_MIGRATION = 'test_lock_loss_table'
 const TRANSACTION_MIGRATION = 'test_transaction_table'
+const CONTENT_HASHES_INDEX_RERUN = 'test_0030_rerun'
 
 test('MigrationExecutor', function ({ components }) {
   describe('when two instances start at the same time', () => {
@@ -16,18 +18,45 @@ test('MigrationExecutor', function ({ components }) {
     let results: PromiseSettledResult<void>[]
     let recordedNames: string[]
     let indexIsValid: boolean
+    let waitLogs: number
 
     beforeEach(async () => {
-      const { database } = components
+      const { config, database, logs, nameOwnership, storage } = components
       runs = { [TABLE_MIGRATION]: 0, [INDEX_MIGRATION]: 0 }
+      waitLogs = 0
+      let signalWaiting!: () => void
+      const otherInstanceWaiting = new Promise<void>((resolve) => (signalWaiting = resolve))
+      const countingLogs: ILoggerComponent = {
+        getLogger: (name) => {
+          const logger = logs.getLogger(name)
+          return {
+            ...logger,
+            info: (message, extra) => {
+              if (message.startsWith('Another instance is running migrations')) {
+                waitLogs++
+                signalWaiting()
+              }
+              logger.info(message, extra)
+            }
+          }
+        }
+      }
       const migrations: Migration[] = [
         {
           id: TABLE_MIGRATION,
           run: async ({ database }) => {
             runs[TABLE_MIGRATION]++
             await database.query('CREATE TABLE test_concurrent_startup (id SERIAL PRIMARY KEY, value INT)')
-            // Keeps the lock held long enough for the other instance to be waiting on it.
-            await sleep(500)
+            // Holds the lock until the other instance waits on it; bounded so a non-waiting one can't hang.
+            const bound = new AbortController()
+            try {
+              await Promise.race([
+                otherInstanceWaiting,
+                sleep(5_000, undefined, { signal: bound.signal }).catch(() => undefined)
+              ])
+            } finally {
+              bound.abort()
+            }
           }
         },
         {
@@ -40,7 +69,12 @@ test('MigrationExecutor', function ({ components }) {
           }
         }
       ]
-      const executors = [0, 1].map(() => createMigrationExecutor(components, { migrations, lockRetryIntervalMs: 50 }))
+      const executors = [0, 1].map(() =>
+        createMigrationExecutor(
+          { config, database, logs: countingLogs, nameOwnership, storage },
+          { migrations, lockRetryIntervalMs: 50 }
+        )
+      )
       results = await Promise.allSettled(executors.map((executor) => executor[START_COMPONENT]!({} as never)))
       const recorded = await database.query<{ name: string }>(
         SQL`SELECT name FROM migrations WHERE name IN (${TABLE_MIGRATION}, ${INDEX_MIGRATION}) ORDER BY id`
@@ -58,6 +92,10 @@ test('MigrationExecutor', function ({ components }) {
       await components.database.query(
         SQL`DELETE FROM migrations WHERE name IN (${TABLE_MIGRATION}, ${INDEX_MIGRATION})`
       )
+    })
+
+    it('should make the second instance wait for the first one', () => {
+      expect(waitLogs).toBe(1)
     })
 
     it('should start both instances successfully', () => {
@@ -187,6 +225,46 @@ test('MigrationExecutor', function ({ components }) {
         visibleBeforeCommit: false,
         visibleAfterCommit: true
       })
+    })
+  })
+
+  describe('when the content hashes index was left invalid by a failed concurrent build', () => {
+    let indexes: { indisvalid: boolean }[]
+
+    beforeEach(async () => {
+      const { database } = components
+      await database.query(
+        `UPDATE pg_index SET indisvalid = false WHERE indexrelid = 'world_scenes_content_hashes_idx'::regclass`
+      )
+      const migrations: Migration[] = [{ id: CONTENT_HASHES_INDEX_RERUN, run: contentHashesIndexMigration.run }]
+      await createMigrationExecutor(components, { migrations })[START_COMPONENT]!({} as never)
+      const result = await database.query<{ indisvalid: boolean }>(`
+        SELECT i.indisvalid FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+        WHERE c.relname = 'world_scenes_content_hashes_idx'
+      `)
+      indexes = result.rows
+    }, 30_000)
+
+    afterEach(async () => {
+      const { database } = components
+      // Rebuild rather than flip the flag back: a failed rerun could leave a half-built index.
+      const { rows } = await database.query<{ indisvalid: boolean }>(`
+        SELECT i.indisvalid FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+        WHERE c.relname = 'world_scenes_content_hashes_idx'
+      `)
+      if (rows.length === 0) {
+        await database.query(`
+          CREATE INDEX world_scenes_content_hashes_idx
+          ON world_scenes USING GIN (jsonb_path_query_array(entity, '$.content[*].hash'))
+        `)
+      } else if (!rows[0].indisvalid) {
+        await database.query('REINDEX INDEX world_scenes_content_hashes_idx')
+      }
+      await database.query(SQL`DELETE FROM migrations WHERE name = ${CONTENT_HASHES_INDEX_RERUN}`)
+    })
+
+    it('should rebuild it as a single valid index when the migration reruns', () => {
+      expect(indexes).toEqual([{ indisvalid: true }])
     })
   })
 

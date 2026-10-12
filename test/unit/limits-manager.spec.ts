@@ -98,6 +98,31 @@ describe('limits manager', function () {
     expect(await limitsManager.getMaxAllowedParcelsFor('whatever.dcl.eth')).toBe(4)
   })
 
+  describe('when a whitelisted world name arrives in mixed case', () => {
+    const worldName = 'Purchased.dcl.eth'
+    let maxSize: bigint
+    let maxParcels: number
+    let allowSdk6: boolean
+
+    beforeEach(async () => {
+      maxSize = await limitsManager.getMaxAllowedSizeInBytesFor(worldName)
+      maxParcels = await limitsManager.getMaxAllowedParcelsFor(worldName)
+      allowSdk6 = await limitsManager.getAllowSdk6For(worldName)
+    })
+
+    it('should return the whitelisted size', () => {
+      expect(maxSize).toBe(160n * MB_BigInt)
+    })
+
+    it('should return the whitelisted parcels', () => {
+      expect(maxParcels).toBe(44)
+    })
+
+    it('should return the whitelisted sdk6 permission', () => {
+      expect(allowSdk6).toBe(true)
+    })
+  })
+
   describe('when the whitelist source is unavailable', () => {
     beforeEach(async () => {
       const failingWhitelist: IWhitelistComponent = {

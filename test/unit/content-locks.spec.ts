@@ -11,6 +11,7 @@ describe('when the lock pool times out while opening a new connection', () => {
   let error: unknown
 
   beforeEach(async () => {
+    jest.useFakeTimers()
     connect = jest.fn().mockRejectedValue(new Error('Connection terminated due to connection timeout'))
     jest.mocked(createPgComponent).mockResolvedValue({ getPool: () => ({ connect }) } as any)
     operation = jest.fn()
@@ -22,10 +23,13 @@ describe('when the lock pool times out while opening a new connection', () => {
     deadline = new Error('processing deadline')
     const controller = new AbortController()
     setTimeout(() => controller.abort(deadline), 200)
-    error = await locks.withRead(operation, controller.signal, 'an-entity').catch((e) => e)
+    const pending = locks.withRead(operation, controller.signal, 'an-entity').catch((e) => e)
+    await jest.advanceTimersByTimeAsync(200)
+    error = await pending
   })
 
   afterEach(() => {
+    jest.useRealTimers()
     jest.resetAllMocks()
   })
 
@@ -143,14 +147,16 @@ describe('when the request is cancelled while a lock query is still running', ()
   let error: unknown
 
   beforeEach(async () => {
-    client = createFakeClient((sql) =>
-      sql.startsWith('SELECT pg_try_advisory') ? new Promise(() => undefined) : Promise.resolve({ rows: [] })
-    )
-    const locks = await createLocksWith(client)
-    operation = jest.fn()
     cancellation = new Error('client disconnected')
     const controller = new AbortController()
-    setTimeout(() => controller.abort(cancellation), 20)
+    // Cancels once the lock query has started and never settles.
+    client = createFakeClient((sql) => {
+      if (!sql.startsWith('SELECT pg_try_advisory')) return Promise.resolve({ rows: [] })
+      void Promise.resolve().then(() => controller.abort(cancellation))
+      return new Promise(() => undefined)
+    })
+    const locks = await createLocksWith(client)
+    operation = jest.fn()
     error = await locks.withRead(operation, controller.signal, 'an-entity').catch((e) => e)
   })
 
@@ -173,9 +179,11 @@ describe('when a writer gives up waiting for the exclusive gate', () => {
   let warn: jest.Mock
   let increment: jest.Mock
   let statements: string[]
+  let attempts: number
   let error: unknown
 
   beforeEach(async () => {
+    jest.useFakeTimers()
     client = createFakeClient(async (sql) =>
       sql.includes('pg_try_advisory_lock(') ? { rows: [{ acquired: false }], rowCount: 1 } : { rows: [], rowCount: 0 }
     )
@@ -191,11 +199,15 @@ describe('when a writer gives up waiting for the exclusive gate', () => {
       { writerRetryMaxMs: 10, writerMaxWaitMs: 100 }
     )
     operation = jest.fn()
-    error = await locks.withWrite(operation).catch((e) => e)
+    const pending = locks.withWrite(operation).catch((e) => e)
+    await jest.advanceTimersByTimeAsync(100)
+    error = await pending
     statements = client.query.mock.calls.map(([sql]) => statementText(sql))
+    attempts = statements.filter((sql) => sql.includes('pg_try_advisory_lock(')).length
   })
 
   afterEach(() => {
+    jest.useRealTimers()
     jest.resetAllMocks()
   })
 
@@ -208,13 +220,13 @@ describe('when a writer gives up waiting for the exclusive gate', () => {
 
   it('should only ever try the gate, never queue on it', () => {
     expect({
-      attempts: statements.filter((sql) => sql.includes('pg_try_advisory_lock(')).length > 1,
+      attempts: attempts > 1,
       queued: statements.some((sql) => sql.includes('pg_advisory_lock(') || sql.includes('lock_timeout'))
     }).toEqual({ attempts: true, queued: false })
   })
 
   it('should return the connection to the pool after every attempt', () => {
-    expect(client.release.mock.calls.every(([destroy]) => destroy === false)).toBe(true)
+    expect(client.release.mock.calls).toEqual(Array.from({ length: attempts }, () => [false]))
   })
 
   it('should count the deferred writer once', () => {
@@ -226,5 +238,67 @@ describe('when a writer gives up waiting for the exclusive gate', () => {
       'Gave up waiting for in-flight uploads to release the content lock',
       expect.objectContaining({ waitedMs: expect.any(Number) })
     )
+  })
+})
+
+describe('when unlocking the session fails after the operation succeeds', () => {
+  let client: FakeClient
+  let value: unknown
+
+  beforeEach(async () => {
+    client = createFakeClient(async (sql) => {
+      if (sql === 'SELECT pg_advisory_unlock_all()') throw new Error('unlock failed')
+      return { rows: [{ acquired: true }], rowCount: 1 }
+    })
+    const locks = await createLocksWith(client)
+    value = await locks.withRead(async () => 'stored', new AbortController().signal, 'an-entity')
+  })
+
+  afterEach(() => {
+    jest.resetAllMocks()
+  })
+
+  it("should still return the operation's value", () => {
+    expect(value).toBe('stored')
+  })
+
+  it('should destroy the connection so its locks cannot stay in the pool', () => {
+    expect(client.release.mock.calls).toEqual([[true]])
+  })
+})
+
+describe('when the lock pool fails to connect with an error other than a timeout', () => {
+  let connect: jest.Mock
+  let operation: jest.Mock
+  let connectError: Error
+  let error: unknown
+
+  beforeEach(async () => {
+    connectError = new Error('password authentication failed')
+    connect = jest.fn().mockRejectedValue(connectError)
+    jest.mocked(createPgComponent).mockResolvedValue({ getPool: () => ({ connect }) } as any)
+    operation = jest.fn()
+    const locks = await createContentLocks({
+      config: { getNumber: async () => undefined } as any,
+      logs: { getLogger: () => ({ warn: jest.fn() }) } as any,
+      metrics: {} as any
+    })
+    error = await locks.withRead(operation, new AbortController().signal, 'an-entity').catch((e) => e)
+  })
+
+  afterEach(() => {
+    jest.resetAllMocks()
+  })
+
+  it('should reject with the connection error', () => {
+    expect(error).toBe(connectError)
+  })
+
+  it('should not retry the connection', () => {
+    expect(connect).toHaveBeenCalledTimes(1)
+  })
+
+  it('should not run the operation', () => {
+    expect(operation).not.toHaveBeenCalled()
   })
 })

@@ -10,10 +10,26 @@ process.env.MAX_CONCURRENT_UPLOADS_PER_SOURCE = '2'
 const SOURCE = '203.0.113.10'
 const OTHER_SOURCE = '203.0.113.11'
 
+type PostResult = { status: number; retryAfter: string | null; body: unknown }
+
+const THROTTLED = {
+  status: 429,
+  retryAfter: '5',
+  body: { error: 'Too Many Requests', message: 'Too many uploads in progress from this client, please retry shortly.' }
+}
+
+// An admitted form carrying only an entity id is rejected by the deploy handler itself.
+const ADMITTED = {
+  status: 400,
+  retryAfter: null,
+  body: expect.objectContaining({ message: 'Missing auth chain' })
+}
+
 test('Per-source in-flight upload limits on POST /entities', function ({ components }) {
   let baseUrl: string
   let stalled: ClientRequest[]
   let acquireSpy: jest.SpyInstance
+  let incrementSpy: jest.SpyInstance
 
   function form(): FormData {
     const body = new FormData()
@@ -38,47 +54,56 @@ test('Per-source in-flight upload limits on POST /entities', function ({ compone
     return pending
   }
 
-  async function post(source: string | undefined): Promise<Response> {
+  async function post(source: string | undefined): Promise<PostResult> {
     const body = form()
     const response = await fetch(`${baseUrl}/entities`, {
       method: 'POST',
       body: new Uint8Array(body.getBuffer()),
       headers: { ...body.getHeaders(), ...(source ? { 'cf-connecting-ip': source } : {}) }
     })
-    // Only the status and headers are checked; release the body's connection.
-    await response.body?.cancel()
-    return response
+    return { status: response.status, retryAfter: response.headers.get('retry-after'), body: await response.json() }
   }
 
-  // Bounded, so a route that never admits fails the assertions instead of hanging.
-  async function waitForAdmissions(count: number): Promise<void> {
-    const deadline = Date.now() + 3_000
-    while (acquireSpy.mock.calls.length < count && Date.now() < deadline) await sleep(10)
+  // Bounded, so a route that never admits fails loudly instead of hanging.
+  async function waitUntil(condition: () => boolean, what: string, timeoutMs = 3_000): Promise<void> {
+    const deadline = Date.now() + timeoutMs
+    while (!condition()) {
+      if (Date.now() >= deadline) throw new Error(`Timed out waiting for ${what}`)
+      await sleep(10)
+    }
+  }
+
+  function unattributedAdmissions(): number {
+    return incrementSpy.mock.calls.filter(([name]) => name === 'multipart_upload_unattributed').length
   }
 
   beforeEach(async () => {
     baseUrl = `http://127.0.0.1:${await components.config.requireNumber('HTTP_SERVER_PORT')}`
     acquireSpy = jest.spyOn(components.sourceUploadLimits, 'acquire')
+    incrementSpy = jest.spyOn(components.metrics, 'increment')
     stalled = [startStalledUpload(SOURCE), startStalledUpload(SOURCE)]
-    await waitForAdmissions(2)
+    await waitUntil(() => acquireSpy.mock.calls.length >= 2, 'the stalled uploads to be admitted')
   })
 
   // The server frees a disconnected upload's share asynchronously; wait so it can't leak into the next test.
   async function waitForSharesReleased(): Promise<void> {
-    const deadline = Date.now() + 5_000
-    while (Date.now() < deadline) {
-      const leases: SourceUploadLease[] = []
-      try {
-        // One at a time, so a lease taken before a rejection is still released.
-        leases.push(components.sourceUploadLimits.acquire(SOURCE, 0))
-        leases.push(components.sourceUploadLimits.acquire(SOURCE, 0))
-        return
-      } catch {
-        await sleep(20)
-      } finally {
-        leases.forEach((lease) => lease.release())
-      }
-    }
+    await waitUntil(
+      () => {
+        const leases: SourceUploadLease[] = []
+        try {
+          // One at a time, so a lease taken before a rejection is still released.
+          leases.push(components.sourceUploadLimits.acquire(SOURCE, 0))
+          leases.push(components.sourceUploadLimits.acquire(SOURCE, 0))
+          return true
+        } catch {
+          return false
+        } finally {
+          leases.forEach((lease) => lease.release())
+        }
+      },
+      'the source share to be released',
+      5_000
+    )
   }
 
   afterEach(async () => {
@@ -88,80 +113,77 @@ test('Per-source in-flight upload limits on POST /entities', function ({ compone
   })
 
   describe('when a source already has its uploads in flight', () => {
-    let response: Response
+    let result: PostResult
 
     beforeEach(async () => {
-      response = await post(SOURCE)
+      result = await post(SOURCE)
     })
 
-    it('should reject its next upload with 429 and a retry hint', () => {
-      expect({ status: response.status, retryAfter: response.headers.get('retry-after') }).toEqual({
-        status: 429,
-        retryAfter: '5'
-      })
+    it('should reject its next upload with 429, a retry hint and the throttling message', () => {
+      expect(result).toEqual(THROTTLED)
     })
   })
 
   describe('when another source uploads meanwhile', () => {
-    let response: Response
+    let result: PostResult
 
     beforeEach(async () => {
-      response = await post(OTHER_SOURCE)
+      result = await post(OTHER_SOURCE)
     })
 
-    it('should admit it', () => {
-      expect(response.status).not.toBe(429)
+    it('should admit it to the deploy handler', () => {
+      expect(result).toEqual(ADMITTED)
     })
   })
 
   describe('when requests without a client source have more uploads in flight than one share', () => {
-    let response: Response
+    let result: PostResult
 
     beforeEach(async () => {
       stalled.push(startStalledUpload(undefined), startStalledUpload(undefined))
-      await sleep(200)
-      response = await post(undefined)
+      await waitUntil(() => unattributedAdmissions() >= 2, 'the unattributed stalled uploads to be admitted')
+      result = await post(undefined)
     })
 
     it('should not limit them per source', () => {
-      expect(response.status).not.toBe(429)
+      expect(result).toEqual(ADMITTED)
     })
   })
 
   describe('when the same source updates world settings meanwhile', () => {
-    let response: Response
+    let result: PostResult
 
     beforeEach(async () => {
       const body = new FormData()
       body.append('spawn_coordinates', '0,0')
-      response = await fetch(`${baseUrl}/world/limits.dcl.eth/settings`, {
+      const response = await fetch(`${baseUrl}/world/limits.dcl.eth/settings`, {
         method: 'PUT',
         body: new Uint8Array(body.getBuffer()),
         headers: { ...body.getHeaders(), 'cf-connecting-ip': SOURCE }
       })
-      await response.body?.cancel()
+      result = { status: response.status, retryAfter: response.headers.get('retry-after'), body: await response.json() }
     })
 
     it('should charge it to the same share and reject it with 429', () => {
-      expect(response.status).toBe(429)
+      expect(result).toEqual(THROTTLED)
     })
   })
 
   describe('when the stalled uploads of the source disconnect', () => {
-    let status: number
+    let result: PostResult
 
     beforeEach(async () => {
       stalled.forEach((pending) => pending.destroy())
       const deadline = Date.now() + 10_000
       do {
-        status = (await post(SOURCE)).status
-        if (status !== 429) break
+        result = await post(SOURCE)
+        if (result.status !== 429) break
         await sleep(50)
       } while (Date.now() < deadline)
     }, 15_000)
 
     it('should free their share for the next upload', () => {
-      expect(status).not.toBe(429)
+      expect(result).toEqual(ADMITTED)
     })
   })
 })

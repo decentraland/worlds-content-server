@@ -1,5 +1,10 @@
 import { ContentLockTimeoutError } from '../../src/adapters/content-locks/errors'
-import { createContentGcComponent, GarbageCollection, IContentGcComponent } from '../../src/logic/content-gc'
+import {
+  createContentGcComponent,
+  ExpiredUploadsCleanup,
+  GarbageCollection,
+  IContentGcComponent
+} from '../../src/logic/content-gc'
 
 type Components = Parameters<typeof createContentGcComponent>[0]
 
@@ -167,6 +172,96 @@ describe('when collecting unreferenced content', () => {
   describe('and an expired-upload cleanup runs', () => {
     beforeEach(async () => {
       await contentGc.deleteExpiredUploads()
+    })
+
+    it('should record that the cleanup finished', () => {
+      expect(partialUploadAdmission.recordCleanupFinished).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('and the storage holds one key more than a batch', () => {
+    beforeEach(async () => {
+      storedKeys = Array.from({ length: 1001 }, (_, i) => `key-${i}`)
+      await contentGc.collectGarbage()
+    })
+
+    it('should take the exclusive lock once per batch', () => {
+      expect(withWrite).toHaveBeenCalledTimes(2)
+    })
+
+    it('should delete a full batch and then the remainder', () => {
+      expect(storageDelete.mock.calls.map(([keys]) => keys.length)).toEqual([1000, 1])
+    })
+  })
+
+  describe('and the content lock times out after an earlier upload failed to be reclaimed', () => {
+    let result: ExpiredUploadsCleanup
+
+    beforeEach(async () => {
+      pendingScenesRepository.listExpired.mockResolvedValueOnce([
+        { entityId: 'failing', createdAt: '2027-01-01' },
+        { entityId: 'busy', createdAt: '2027-01-01' }
+      ])
+      pendingScenesRepository.getUploadKeys
+        .mockRejectedValueOnce(new Error('database down'))
+        .mockResolvedValueOnce(['busy'])
+      withWrite.mockRejectedValueOnce(new ContentLockTimeoutError())
+      result = await contentGc.deleteExpiredUploads()
+    })
+
+    it('should report the run as an error rather than deferred', () => {
+      expect(result).toEqual({ outcome: 'error', removed: 0, failed: 1 })
+    })
+
+    it('should count the run as an error', () => {
+      expect(increment).toHaveBeenCalledWith('partial_upload_cleanup_runs', { outcome: 'error' })
+    })
+  })
+
+  describe('and a cleanup run throws while another run is queued behind it', () => {
+    let firstError: unknown
+    let second: ExpiredUploadsCleanup
+
+    beforeEach(async () => {
+      partialUploadAdmission.pruneAndReport.mockRejectedValueOnce(new Error('prune failed'))
+      const first = contentGc.deleteExpiredUploads()
+      const queued = contentGc.deleteExpiredUploads()
+      firstError = await first.catch((e: unknown) => e)
+      second = await queued
+    })
+
+    it('should reject the failed run with its error', () => {
+      expect(firstError).toEqual(new Error('prune failed'))
+    })
+
+    it('should still run the queued cleanup', () => {
+      expect(second).toEqual({ outcome: 'success', removed: 0, failed: 0 })
+    })
+  })
+
+  describe('and an expired-upload cleanup run throws', () => {
+    beforeEach(async () => {
+      partialUploadAdmission.pruneAndReport.mockRejectedValueOnce(new Error('prune failed'))
+      await contentGc.deleteExpiredUploads().catch(() => undefined)
+    })
+
+    it('should record that the cleanup finished', () => {
+      expect(partialUploadAdmission.recordCleanupFinished).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('and an expired-upload cleanup run is deferred by a busy content lock', () => {
+    let result: ExpiredUploadsCleanup
+
+    beforeEach(async () => {
+      pendingScenesRepository.listExpired.mockResolvedValueOnce([{ entityId: 'busy', createdAt: '2027-01-01' }])
+      pendingScenesRepository.getUploadKeys.mockResolvedValueOnce(['busy'])
+      withWrite.mockRejectedValueOnce(new ContentLockTimeoutError())
+      result = await contentGc.deleteExpiredUploads()
+    })
+
+    it('should report the run as deferred', () => {
+      expect(result.outcome).toBe('deferred')
     })
 
     it('should record that the cleanup finished', () => {

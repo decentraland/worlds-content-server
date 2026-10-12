@@ -109,11 +109,22 @@ describe('when staging a partial deployment', () => {
   })
 
   describe('and validation rejects the manifest', () => {
-    beforeEach(() => {
+    let caughtError: unknown
+
+    beforeEach(async () => {
       validateStaging.mockResolvedValueOnce({ ok: () => false, errors: ['invalid manifest'] })
+      caughtError = await stage(input).catch((error: unknown) => error)
     })
-    it('should reject before looking up storage or reserving bytes', async () => {
-      await expect(stage(input)).rejects.toThrow('invalid manifest')
+
+    it('should reject it as an invalid request', () => {
+      expect(caughtError).toBeInstanceOf(InvalidRequestError)
+    })
+
+    it('should report the validation errors', () => {
+      expect((caughtError as Error).message).toBe('Deployment failed: invalid manifest')
+    })
+
+    it('should not look up storage or reserve bytes', () => {
       expect({ metadata: fileInfo.mock.calls.length, reservations: admitBatch.mock.calls.length }).toEqual({
         metadata: 0,
         reservations: 0
@@ -338,22 +349,36 @@ describe('when staging a partial deployment', () => {
   })
 
   describe('and a resumed batch is still incomplete', () => {
-    beforeEach(() => {
+    let result: Awaited<ReturnType<typeof stage>>
+
+    beforeEach(async () => {
       getPending.mockResolvedValueOnce({ createdAt: new Date(), deployer: 'deployer', initialized: true })
       getProgress.mockResolvedValueOnce(new Map())
+      result = await stage(input)
     })
-    it('should report missing hashes without querying storage metadata', async () => {
-      expect(await stage(input)).toEqual({ complete: false, missing: ['b'] })
+
+    it('should report the missing hashes', () => {
+      expect(result).toEqual({ complete: false, missing: ['b'] })
+    })
+
+    it('should not query storage metadata', () => {
       expect(fileInfo).not.toHaveBeenCalled()
     })
   })
 
   describe('and the staging budget is exhausted', () => {
-    beforeEach(() => {
+    let caughtError: unknown
+
+    beforeEach(async () => {
       admitBatch.mockRejectedValueOnce(new Error('budget exceeded'))
+      caughtError = await stage(input).catch((error: unknown) => error)
     })
-    it('should reject before any storage write', async () => {
-      await expect(stage(input)).rejects.toThrow('budget exceeded')
+
+    it('should reject with the admission error', () => {
+      expect(caughtError).toEqual(new Error('budget exceeded'))
+    })
+
+    it('should not write to storage', () => {
       expect(storeStream).not.toHaveBeenCalled()
     })
   })
@@ -371,23 +396,36 @@ describe('when staging a partial deployment', () => {
       input.signal = new AbortController().signal
       input.deadlineAt = Date.now() + 60000
     })
-    it('should persist verified total size and preserve the completion timestamp', async () => {
-      expect(await stage(input)).toEqual({
-        complete: true,
-        result: { message: 'deployed', creationTimestamp: 123 },
-        creationTimestamp: 123
+
+    describe('and it is staged', () => {
+      let result: Awaited<ReturnType<typeof stage>>
+
+      beforeEach(async () => {
+        result = await stage(input)
       })
-      const [, , , , , , size, options] = deployEntity.mock.calls[0]
-      expect([size, options.signal, options.deadlineAt]).toEqual([800, input.signal, input.deadlineAt])
+
+      it('should answer with the completion timestamp', () => {
+        expect(result).toEqual({
+          complete: true,
+          result: { message: 'deployed', creationTimestamp: 123 },
+          creationTimestamp: 123
+        })
+      })
+
+      it('should publish the verified total size under the request signal and deadline', () => {
+        const [, , , , , , size, options] = deployEntity.mock.calls[0]
+        expect([size, options.signal, options.deadlineAt]).toEqual([800, input.signal, input.deadlineAt])
+      })
+
+      it('should perform only one final metadata pass', () => {
+        expect(fileInfo.mock.calls.map(([hash]) => hash)).toEqual(['a', 'b'])
+      })
+
+      it('should pass the request signal into storage writes', () => {
+        expect(storeStream.mock.calls[0][2]).toBe(input.signal)
+      })
     })
-    it('should perform only one final metadata pass', async () => {
-      await stage(input)
-      expect(fileInfo.mock.calls.map(([hash]) => hash)).toEqual(['a', 'b'])
-    })
-    it('should pass the request signal into storage writes', async () => {
-      await stage(input)
-      expect(storeStream.mock.calls[0][2]).toBe(input.signal)
-    })
+
     describe('and the upload is published', () => {
       let createdAt: Date
 
@@ -420,24 +458,85 @@ describe('when staging a partial deployment', () => {
       })
     })
     describe('and storage has lost a previously acknowledged file', () => {
-      beforeEach(() => {
+      let result: Awaited<ReturnType<typeof stage>>
+
+      beforeEach(async () => {
         fileInfo.mockResolvedValueOnce(undefined)
+        result = await stage(input)
       })
-      it('should invalidate its receipt and request that file again', async () => {
-        expect(await stage(input)).toEqual({ complete: false, missing: ['a'] })
+
+      it('should request that file again', () => {
+        expect(result).toEqual({ complete: false, missing: ['a'] })
+      })
+
+      it('should invalidate its receipt', () => {
         expect(components.partialUploadAdmission.markMissing).toHaveBeenCalledWith('entity', ['a'], input.signal)
+      })
+
+      it('should not publish the entity', () => {
         expect(deployEntity).not.toHaveBeenCalled()
       })
     })
   })
 
   describe('and the request is already cancelled', () => {
-    beforeEach(() => {
+    let caughtError: unknown
+
+    beforeEach(async () => {
       input.signal = AbortSignal.abort(new Error('cancelled'))
+      caughtError = await stage(input).catch((error: unknown) => error)
     })
-    it('should reject without looking up pending state', async () => {
-      await expect(stage(input)).rejects.toThrow('cancelled')
+
+    it('should reject with the cancellation reason', () => {
+      expect(caughtError).toEqual(new Error('cancelled'))
+    })
+
+    it('should not look up pending state', () => {
       expect(getPending).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('and there is no live upload while a newer scene is deployed on its parcels', () => {
+    let caughtError: unknown
+
+    beforeEach(async () => {
+      input.entity.metadata.worldConfiguration.name = 'World.dcl.eth'
+      components.worldsManager.hasNewerDeployedScene = jest.fn().mockResolvedValueOnce(true)
+      caughtError = await stage(input).catch((error: unknown) => error)
+    })
+
+    it('should reject it as an invalid request', () => {
+      expect(caughtError).toBeInstanceOf(InvalidRequestError)
+    })
+
+    it('should report that a newer scene is deployed', () => {
+      expect((caughtError as Error).message).toBe(
+        'Deployment failed: a newer scene is already deployed on one or more of these parcels.'
+      )
+    })
+
+    it('should check the lowercased world name and the entity', () => {
+      expect(components.worldsManager.hasNewerDeployedScene).toHaveBeenCalledWith('world.dcl.eth', input.entity)
+    })
+
+    it('should neither look up storage, admit the batch nor store its files', () => {
+      expect({
+        metadata: fileInfo.mock.calls.length,
+        admissions: admitBatch.mock.calls.length,
+        writes: storeStream.mock.calls.length
+      }).toEqual({ metadata: 0, admissions: 0, writes: 0 })
+    })
+  })
+
+  describe('and the batch resumes a live upload', () => {
+    beforeEach(async () => {
+      getPending.mockResolvedValueOnce({ createdAt: new Date(), deployer: 'deployer', initialized: true })
+      getProgress.mockResolvedValueOnce(new Map())
+      await stage(input)
+    })
+
+    it('should not check for a newer deployed scene', () => {
+      expect(components.worldsManager.hasNewerDeployedScene).not.toHaveBeenCalled()
     })
   })
   describe('and a resume batch omits the manifest', () => {

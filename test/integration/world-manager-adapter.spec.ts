@@ -2,14 +2,14 @@ import { test } from '../components'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { hashV1 } from '@dcl/hashing'
 import { bufferToStream } from '@dcl/catalyst-storage'
-import { makeid } from '../utils'
+import { makeid, waitForAdvisoryLocks } from '../utils'
 import { defaultAccess } from '../../src/logic/access'
 import { NoDeployedScenesError, DeploymentUniqueViolationError } from '../../src/types'
 import { PartialUploadExpiredError } from '../../src/logic/partial-upload-admission'
-import SQL from 'sql-template-strings'
+import SQL, { SQLStatement } from 'sql-template-strings'
 
 type LockClient = {
-  query(statement: string): Promise<unknown>
+  query(statement: string | SQLStatement): Promise<unknown>
   release(): void
 }
 
@@ -127,6 +127,164 @@ test('WorldManagerAdapter', function ({ components }) {
         isUniqueViolation: caughtError instanceof DeploymentUniqueViolationError,
         cause: (caughtError as DeploymentUniqueViolationError).cause
       }).toEqual({ isUniqueViolation: true, cause: expect.objectContaining({ code: '23505' }) })
+    })
+  })
+
+  describe('when deploying a scene directly over the parcels of a deployed one', () => {
+    let created: Awaited<ReturnType<typeof components.worldCreator.createWorldWithScene>>
+
+    // Bypasses the entity deployer's fast-fail, so only deployScene's in-transaction check decides.
+    function deployDirectly(entity: typeof created.entity): Promise<unknown> {
+      return components.worldsManager.deployScene(
+        created.worldName,
+        entity,
+        created.owner.authChain[0].payload,
+        { mode: 'unrestricted-owner' },
+        { authChain: created.owner.authChain, size: 123 }
+      )
+    }
+
+    async function deployedEntityIds(): Promise<string[]> {
+      const result = await components.worldsManager.getWorldScenes({ worldName: created.worldName })
+      return result.scenes.map((scene) => scene.entityId)
+    }
+
+    beforeEach(async () => {
+      created = await components.worldCreator.createWorldWithScene()
+    })
+
+    describe('and the incoming scene is older', () => {
+      let caughtError: unknown
+      let deployed: string[]
+
+      beforeEach(async () => {
+        const older = {
+          ...created.entity,
+          id: `${created.entityId}-older`,
+          timestamp: created.entity.timestamp - 1_000
+        }
+        caughtError = await deployDirectly(older).catch((error) => error)
+        deployed = await deployedEntityIds()
+      })
+
+      it('should reject it as stale', () => {
+        expect(caughtError).toEqual(
+          expect.objectContaining({
+            message: 'Deployment failed: a newer scene is already deployed on one or more of these parcels.'
+          })
+        )
+      })
+
+      it('should keep the newer scene deployed', () => {
+        expect(deployed).toEqual([created.entityId])
+      })
+    })
+
+    describe('and the incoming scene has the same timestamp and a lower entity id', () => {
+      let caughtError: unknown
+      let deployed: string[]
+
+      beforeEach(async () => {
+        // A proper prefix sorts first under any collation.
+        const lower = { ...created.entity, id: created.entityId.slice(0, -1) }
+        caughtError = await deployDirectly(lower).catch((error) => error)
+        deployed = await deployedEntityIds()
+      })
+
+      it('should reject it as stale', () => {
+        expect(caughtError).toEqual(
+          expect.objectContaining({
+            message: 'Deployment failed: a newer scene is already deployed on one or more of these parcels.'
+          })
+        )
+      })
+
+      it('should keep the deployed scene', () => {
+        expect(deployed).toEqual([created.entityId])
+      })
+    })
+
+    describe('and the incoming scene has the same timestamp and a higher entity id', () => {
+      let higherId: string
+      let deployed: string[]
+
+      beforeEach(async () => {
+        higherId = `${created.entityId}z`
+        await deployDirectly({ ...created.entity, id: higherId })
+        deployed = await deployedEntityIds()
+      })
+
+      it('should replace the deployed scene', () => {
+        expect(deployed).toEqual([higherId])
+      })
+    })
+
+    describe('and the deployed scene has a fractional timestamp', () => {
+      let newerId: string
+      let caughtError: unknown
+      let deployed: string[]
+
+      beforeEach(async () => {
+        await components.database.query(
+          SQL`UPDATE world_scenes SET entity = jsonb_set(entity, '{timestamp}', to_jsonb(${created.entity.timestamp + 0.5}::numeric))
+              WHERE world_name = ${created.worldName.toLowerCase()} AND entity_id = ${created.entityId}`
+        )
+        newerId = `${created.entityId}-newer`
+        caughtError = await deployDirectly({ ...created.entity, id: newerId, timestamp: created.entity.timestamp + 1 })
+          .then(() => undefined)
+          .catch((error) => error)
+        deployed = await deployedEntityIds()
+      })
+
+      it('should compare it without failing and deploy the newer scene', () => {
+        expect({ caughtError, deployed }).toEqual({ caughtError: undefined, deployed: [newerId] })
+      })
+    })
+
+    describe('and another transaction holds the per-world deploy lock', () => {
+      let lockClient: LockClient | undefined
+      let settledWhileLocked: boolean
+      let deployed: string[]
+
+      beforeEach(async () => {
+        const { database } = components
+        const newerId = `${created.entityId}-newer`
+        lockClient = (await database.getPool().connect()) as unknown as LockClient
+        await lockClient.query('BEGIN')
+        const lockKey = `world_scene_deploy:${created.worldName.toLowerCase()}`
+        await lockClient.query(SQL`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`)
+        let settled = false
+        const deployment = deployDirectly({
+          ...created.entity,
+          id: newerId,
+          timestamp: created.entity.timestamp + 1
+        }).finally(() => {
+          settled = true
+        })
+        // Throws unless the deploy queues behind the held lock.
+        await waitForAdvisoryLocks(database, lockKey, 'waiting')
+        settledWhileLocked = settled
+        await lockClient.query('ROLLBACK')
+        lockClient.release()
+        lockClient = undefined
+        await deployment
+        deployed = await deployedEntityIds()
+      })
+
+      afterEach(async () => {
+        if (lockClient) {
+          await lockClient.query('ROLLBACK').catch(() => undefined)
+          lockClient.release()
+        }
+      })
+
+      it('should wait for the lock before deploying', () => {
+        expect(settledWhileLocked).toBe(false)
+      })
+
+      it('should deploy the scene once the lock is released', () => {
+        expect(deployed).toEqual([`${created.entityId}-newer`])
+      })
     })
   })
 
