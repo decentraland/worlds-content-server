@@ -71,10 +71,14 @@ export const metricDeclarations = {
     help: 'Expired partial uploads reclaimed by cleanup',
     type: IMetricsComponent.CounterType
   },
+  partial_upload_cleanup_failed_uploads: {
+    help: 'Expired partial uploads a cleanup run failed to reclaim (retried next run)',
+    type: IMetricsComponent.CounterType
+  },
   partial_upload_cleanup_runs: {
     help: 'Expired partial upload cleanup runs',
     type: IMetricsComponent.CounterType,
-    // outcome=(success|deferred|error); deferred means the content lock stayed busy
+    // outcome=(success|deferred|error); deferred means the content lock stayed busy, error that an upload failed
     labelNames: ['outcome']
   },
   partial_upload_cleanup_duration_seconds: {
@@ -83,7 +87,7 @@ export const metricDeclarations = {
     buckets: [0.1, 0.5, 1, 5, 15, 30, 60, 120, 300]
   },
   partial_upload_cleanup_last_success_timestamp_seconds: {
-    help: 'Unix time of the last cleanup run that completed',
+    help: 'Unix time of the last cleanup run that reclaimed every expired upload it visited',
     type: IMetricsComponent.GaugeType
   },
   garbage_collection_runs: {

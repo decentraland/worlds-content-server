@@ -4,7 +4,7 @@ import { AppComponents } from '../../types'
 import { getPositiveInteger, raceWithSignal } from '../../logic/concurrency'
 import { withUploadTransaction } from '../upload-transaction'
 import { getReferencedContentKeys } from '../content-references'
-import { IPendingScenesManager, PendingScene, UpsertPendingScene, FileReceipt } from './types'
+import { ExpiredUploadsCleanup, IPendingScenesManager, PendingScene, UpsertPendingScene, FileReceipt } from './types'
 import { PartialUploadExpiredError, PartialUploadQuotaExceededError, PartialUploadTooLargeError } from './errors'
 import { ContentLockTimeoutError } from '../content-locks/errors'
 import { DEFAULT_MAX_UPLOAD_SIZE_IN_BYTES, formatBytes } from '../../logic/multipart'
@@ -25,6 +25,14 @@ export const DEFAULT_PENDING_DEPLOYMENT_TTL_MS = 60 * 60 * 1000
 export const DEFAULT_MAX_PENDING_BYTES_PER_DEPLOYER = 1024 ** 3
 /** Default interval between expired-upload cleanup runs. */
 export const DEFAULT_PARTIAL_UPLOAD_CLEANUP_INTERVAL_MS = 5 * 60 * 1000
+/** Expired uploads fetched per cleanup query. */
+export const CLEANUP_PAGE_SIZE = 100
+/** Expired uploads a cleanup run visits at most, bounding its duration. */
+export const CLEANUP_MAX_UPLOADS_PER_RUN = 1000
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
 
 function toPendingScene(row: PendingSceneRow): PendingScene {
   return {
@@ -324,48 +332,91 @@ export async function createPendingScenesManager(
       AND EXISTS (SELECT 1 FROM world_scenes WHERE entity_id = ${entityId})`)
   }
 
-  async function deleteExpired(): Promise<number> {
+  async function deleteExpired(): Promise<ExpiredUploadsCleanup> {
     const { end } = metrics.startTimer('partial_upload_cleanup_duration_seconds')
-    let outcome: 'success' | 'deferred' | 'error' = 'error'
+    let outcome: ExpiredUploadsCleanup['outcome'] = 'error'
     try {
-      const removed = await sweepExpired()
-      outcome = 'success'
-      metrics.observe('partial_upload_cleanup_last_success_timestamp_seconds', {}, Date.now() / 1000)
-      return removed
-    } catch (error) {
-      if (error instanceof ContentLockTimeoutError) outcome = 'deferred'
-      throw error
+      const sweep = await sweepExpired()
+      // Runs whatever the sweep did, so receipts, rate windows and gauges never go stale.
+      await pruneAndReport()
+      outcome = sweep.outcome
+      if (outcome === 'success') {
+        metrics.observe('partial_upload_cleanup_last_success_timestamp_seconds', {}, Date.now() / 1000)
+      }
+      logger.info('Cleaned expired uploads', sweep)
+      return sweep
     } finally {
       end()
       metrics.increment('partial_upload_cleanup_runs', { outcome })
+      // Any finished run counts: the next one is scheduled an interval later regardless of its outcome.
       lastCleanupFinishedAt = Date.now()
     }
   }
 
-  async function sweepExpired(): Promise<number> {
-    // Fetch ids without holding up uploads for an entire sweep. Each small physical delete batch
-    // gets its own exclusive gate; reservations are released only after every batch succeeds.
-    const expired = await database.query<{ entity_id: string }>(SQL`
-      SELECT entity_id FROM pending_scenes WHERE created_at < ${new Date(Date.now() - ttlMs)} LIMIT 100`)
+  async function sweepExpired(): Promise<ExpiredUploadsCleanup> {
+    const cutoff = new Date(Date.now() - ttlMs)
     let removed = 0
-    for (const { entity_id: entityId } of expired.rows) {
-      const keys = await database.query<{ hash: string }>(SQL`
-        SELECT hash FROM pending_scene_files WHERE entity_id = ${entityId}
-        UNION SELECT ${entityId} UNION SELECT ${entityId + '.auth'}`)
-      for (let offset = 0; offset < keys.rows.length; offset += 1000) {
-        const batch = keys.rows.slice(offset, offset + 1000).map((row) => row.hash)
-        await contentLocks.withWrite(async () => {
-          const referenced = await getReferencedContentKeys(database, new Date(Date.now() - ttlMs), batch)
-          const orphaned = batch.filter((hash) => !referenced.has(hash))
-          if (orphaned.length) await storage.delete(orphaned)
-        })
+    let failed = 0
+    let visited = 0
+    // Keyset cursor; created_at travels as text to keep its microseconds.
+    let after: { createdAt: string; entityId: string } | undefined
+    try {
+      while (visited < CLEANUP_MAX_UPLOADS_PER_RUN) {
+        const limit = Math.min(CLEANUP_PAGE_SIZE, CLEANUP_MAX_UPLOADS_PER_RUN - visited)
+        const query = SQL`SELECT entity_id, created_at::text AS cursor FROM pending_scenes WHERE created_at < ${cutoff}`
+        if (after) {
+          query.append(SQL` AND (created_at, entity_id) > (${after.createdAt}::timestamptz, ${after.entityId})`)
+        }
+        query.append(SQL` ORDER BY created_at, entity_id LIMIT ${limit}`)
+        const page = await database.query<{ entity_id: string; cursor: string }>(query)
+        for (const { entity_id: entityId, cursor } of page.rows) {
+          visited++
+          after = { createdAt: cursor, entityId }
+          try {
+            await reclaimUpload(entityId, cutoff)
+            removed++
+            metrics.increment('partial_upload_expired_uploads')
+          } catch (error) {
+            // Uploads keep the lock busy: retry next run rather than wait.
+            if (error instanceof ContentLockTimeoutError) {
+              logger.warn('Deferred expired upload cleanup: the content lock is busy', { entityId, removed, failed })
+              return { outcome: failed ? 'error' : 'deferred', removed, failed }
+            }
+            failed++
+            metrics.increment('partial_upload_cleanup_failed_uploads')
+            logger.error('Failed to reclaim expired upload', { entityId, error: errorMessage(error) })
+          }
+        }
+        if (page.rows.length < limit) break
       }
-      await database.query(
-        SQL`DELETE FROM pending_scenes WHERE entity_id = ${entityId} AND created_at < ${new Date(Date.now() - ttlMs)}`
-      )
-      removed++
-      metrics.increment('partial_upload_expired_uploads')
+    } catch (error) {
+      logger.error('Failed to list expired uploads', { error: errorMessage(error) })
+      return { outcome: 'error', removed, failed }
     }
+    return { outcome: failed ? 'error' : 'success', removed, failed }
+  }
+
+  /**
+   * Deletes an expired upload's orphaned staged objects, each batch under the exclusive lock, then
+   * releases its accounting.
+   * @throws ContentLockTimeoutError when uploads keep the content lock busy.
+   */
+  async function reclaimUpload(entityId: string, cutoff: Date): Promise<void> {
+    const keys = await database.query<{ hash: string }>(SQL`
+      SELECT hash FROM pending_scene_files WHERE entity_id = ${entityId}
+      UNION SELECT ${entityId} UNION SELECT ${entityId + '.auth'}`)
+    for (let offset = 0; offset < keys.rows.length; offset += 1000) {
+      const batch = keys.rows.slice(offset, offset + 1000).map((row) => row.hash)
+      await contentLocks.withWrite(async () => {
+        const referenced = await getReferencedContentKeys(database, new Date(Date.now() - ttlMs), batch)
+        const orphaned = batch.filter((hash) => !referenced.has(hash))
+        if (orphaned.length) await storage.delete(orphaned)
+      })
+    }
+    await database.query(SQL`DELETE FROM pending_scenes WHERE entity_id = ${entityId} AND created_at < ${cutoff}`)
+  }
+
+  async function pruneAndReport(): Promise<void> {
     await database.query(
       SQL`DELETE FROM completed_scene_uploads WHERE completed_at < ${new Date(Date.now() - completionTtl)}`
     )
@@ -382,8 +433,6 @@ export async function createPendingScenesManager(
       FROM pending_scenes`)
     metrics.observe('partial_uploads_pending', { state: 'live' }, Number(uploads.rows[0].live))
     metrics.observe('partial_uploads_pending', { state: 'expired' }, Number(uploads.rows[0].expired))
-    logger.info('Cleaned expired uploads', { removed })
-    return removed
   }
 
   return {

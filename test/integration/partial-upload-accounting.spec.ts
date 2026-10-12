@@ -5,6 +5,7 @@ import { bufferToStream } from '@dcl/catalyst-storage'
 import { test } from '../components'
 import { cleanup } from '../utils'
 import {
+  CLEANUP_PAGE_SIZE,
   createPendingScenesManager,
   PartialUploadExpiredError,
   PartialUploadQuotaExceededError,
@@ -679,8 +680,8 @@ test('when accounting for independent partial uploads', ({ components }) => {
       beforeEach(() => {
         jest.spyOn(components.storage, 'delete').mockRejectedValueOnce(new Error('storage unavailable'))
       })
-      it('should preserve the reservation for a later cleanup retry', async () => {
-        await expect(manager.deleteExpired()).rejects.toThrow('storage unavailable')
+      it('should report the failure and preserve the reservation for a later cleanup retry', async () => {
+        await expect(manager.deleteExpired()).resolves.toEqual({ outcome: 'error', removed: 0, failed: 1 })
         await expect(
           manager.reserve(second.id, [{ hash: 'content-b', size: 400, stored: false, charged: true }], 1000n, 400)
         ).rejects.toThrow('above its limit of 600 bytes')
@@ -699,6 +700,54 @@ test('when accounting for independent partial uploads', ({ components }) => {
           stored: true,
           count: 1
         })
+      })
+    })
+  })
+
+  describe('and the oldest of two expired uploads fails to be deleted from storage', () => {
+    let result: unknown
+    let remaining: unknown[]
+
+    beforeEach(async () => {
+      await create(first)
+      await create(second)
+      // Same instant up to the microsecond, so only the entity id orders them.
+      await components.database.query(
+        SQL`UPDATE pending_scenes SET created_at = now() - interval '2 days' + interval '1 microsecond'`
+      )
+      jest.spyOn(components.storage, 'delete').mockRejectedValueOnce(new Error('storage unavailable'))
+      result = await manager.deleteExpired()
+      remaining = (await components.database.query('SELECT entity_id FROM pending_scenes')).rows
+    })
+
+    it('should still reclaim the later upload and keep the failed one for a retry', () => {
+      expect({ result, remaining }).toEqual({
+        result: { outcome: 'error', removed: 1, failed: 1 },
+        remaining: [{ entity_id: first.id }]
+      })
+    })
+  })
+
+  describe('and more expired uploads than one cleanup page exist, the oldest failing', () => {
+    let result: unknown
+    let remaining: unknown[]
+
+    beforeEach(async () => {
+      // Microseconds apart within one millisecond, so the keyset cursor must keep them.
+      await components.database.query(SQL`
+        INSERT INTO pending_scenes (entity_id, world_name, parcels, entity, deployer, created_at)
+        SELECT 'bulk-' || lpad(i::text, 3, '0'), 'test.dcl.eth', ARRAY['0,0'], '{}'::jsonb, ${signer},
+          date_trunc('milliseconds', now() - interval '2 days') + (i + 1) * interval '1 microsecond'
+        FROM generate_series(0, ${CLEANUP_PAGE_SIZE}) AS i`)
+      jest.spyOn(components.storage, 'delete').mockRejectedValueOnce(new Error('storage unavailable'))
+      result = await manager.deleteExpired()
+      remaining = (await components.database.query('SELECT entity_id FROM pending_scenes')).rows
+    })
+
+    it('should visit every page once and keep only the failed upload', () => {
+      expect({ result, remaining }).toEqual({
+        result: { outcome: 'error', removed: CLEANUP_PAGE_SIZE, failed: 1 },
+        remaining: [{ entity_id: 'bulk-000' }]
       })
     })
   })

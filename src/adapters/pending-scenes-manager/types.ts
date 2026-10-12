@@ -27,6 +27,13 @@ export type UpsertPendingScene = {
 export type FileReceipt = { hash: string; size: number; stored: boolean; charged: boolean }
 type CompletedUpload = { worldName: string; parcels: string[]; creationTimestamp: number }
 
+/**
+ * Result of an expired-upload cleanup run. `success`: every visited upload was reclaimed; `deferred`:
+ * uploads kept the content lock busy so the run stopped early; `error`: some upload failed (logged), even
+ * if the run was then deferred.
+ */
+export type ExpiredUploadsCleanup = { outcome: 'success' | 'deferred' | 'error'; removed: number; failed: number }
+
 export interface IPendingScenesManager extends IBaseComponent {
   /** Retrieves a live upload without renewing its fixed expiration. */
   getByEntityId(entityId: string, signal?: AbortSignal): Promise<PendingScene | undefined>
@@ -68,8 +75,12 @@ export interface IPendingScenesManager extends IBaseComponent {
   getCompleted(entityId: string, deployer: string, signal?: AbortSignal): Promise<CompletedUpload | undefined>
   /** Removes staging state only after successful publication (normal publication does this atomically). */
   deleteByEntityId(entityId: string): Promise<void>
-  /** Reclaims expired content under the exclusive lock before releasing its byte accounting. */
-  deleteExpired(): Promise<number>
+  /**
+   * Reclaims expired content under the exclusive lock before releasing its byte accounting, then prunes
+   * completion receipts and rate windows and refreshes the gauges. A failing upload doesn't stop the run.
+   * @throws Error only when pruning or reporting fails.
+   */
+  deleteExpired(): Promise<ExpiredUploadsCleanup>
   /** The fixed pending upload lifetime used by GC. */
   readonly ttlMs: number
   /** How often the scheduled job runs {@link IPendingScenesManager.deleteExpired}. */

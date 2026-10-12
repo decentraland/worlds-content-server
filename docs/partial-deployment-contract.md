@@ -53,7 +53,8 @@ that is already stored, before the upload or by an earlier batch, is dropped wit
 charged again, but every received byte counts against the per-minute rate. The scene size limit still
 counts every file of the scene; for DCL-name worlds it is the owner's remaining allowance capped at
 `MAX_SCENE_SIZE` (500 MiB), which startup requires to fit `MAX_PENDING_BYTES_PER_DEPLOYER`. Expired
-slots and bytes remain charged if physical cleanup fails.
+slots and bytes remain charged if physical cleanup fails; the failing upload is retried by the next run
+without holding back later ones.
 
 Migrations run at startup. Worlds runs as a single instance behind Cloudflare, so a normal deploy is
 enough. The content lock uses `CONTENT_LOCK_CONNECTIONS` connections in addition to the query pool.
@@ -66,7 +67,7 @@ same-entity batch parallelism. Storage transports must have timeouts and honor w
 protection remains held until started writers settle, so an unresponsive backend can delay GC.
 
 Monitor `partial_upload_metadata_checks`, `partial_upload_batches`, `partial_upload_reserved_bytes`,
-`partial_upload_cleanup_backlog_bytes`, and the existing deployment stage duration/worker metrics.
+`partial_upload_cleanup_backlog_bytes`, `partial_upload_cleanup_failed_uploads`, and the existing deployment stage duration/worker metrics.
 Reserved-byte gauges are database snapshots updated by admission/cleanup, not instantaneous counters.
 The progress integration test asserts one initial inventory, zero metadata probes for intermediate
 batches and one final verification (2N probes instead of approximately 2NB for N hashes in B batches).

@@ -58,7 +58,11 @@ async function collectGarbage(context: GarbageCollectionContext): Promise<IHttpS
   }
   if (batch.length) await flush()
   // Release expired accounting only after its physical objects are reclaimed or referenced elsewhere.
-  await pendingScenesManager.deleteExpired()
-  logger.info('Garbage collection finished', { removed })
-  return { status: 200, body: { message: `Garbage collection removed ${removed} unused keys.` } }
+  // Its deferral or failures don't undo the sweep: reported here and in its own metrics, retried by its job.
+  const expiredUploads = await pendingScenesManager.deleteExpired()
+  logger.info('Garbage collection finished', { removed, expiredUploads: expiredUploads.outcome })
+  return {
+    status: 200,
+    body: { message: `Garbage collection removed ${removed} unused keys.`, expiredUploads }
+  }
 }

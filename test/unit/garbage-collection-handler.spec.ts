@@ -1,17 +1,23 @@
 import { garbageCollectionHandler } from '../../src/controllers/handlers/garbage-collection'
 import { ContentLockTimeoutError } from '../../src/adapters/content-locks/errors'
+import { ExpiredUploadsCleanup } from '../../src/adapters/pending-scenes-manager/types'
 
 type Context = Parameters<typeof garbageCollectionHandler>[0]
 
 const NOW = 1_800_000_000_000
 
-function buildContext(increment: jest.Mock, observe: jest.Mock, withWrite: jest.Mock): Context {
+function buildContext(
+  increment: jest.Mock,
+  observe: jest.Mock,
+  withWrite: jest.Mock,
+  cleanup: ExpiredUploadsCleanup = { outcome: 'success', removed: 0, failed: 0 }
+): Context {
   return {
     components: {
       database: { query: jest.fn().mockResolvedValue({ rows: [] }) },
       logs: { getLogger: () => ({ info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() }) },
       metrics: { increment, observe, startTimer: jest.fn().mockReturnValue({ end: jest.fn() }) },
-      pendingScenesManager: { ttlMs: 60_000, deleteExpired: jest.fn().mockResolvedValue(0) },
+      pendingScenesManager: { ttlMs: 60_000, deleteExpired: jest.fn().mockResolvedValue(cleanup) },
       storage: {
         allFileIds: async function* () {
           yield 'unreferenced-key'
@@ -60,6 +66,33 @@ describe('when running garbage collection', () => {
         runs: [['garbage_collection_runs', { outcome: 'success' }]],
         lastSuccess: [['garbage_collection_last_success_timestamp_seconds', {}, NOW / 1000]]
       })
+    })
+  })
+
+  describe('and the expired-upload cleanup fails to reclaim an upload', () => {
+    let response: Awaited<ReturnType<typeof garbageCollectionHandler>>
+
+    beforeEach(async () => {
+      withWrite.mockImplementation((operation: () => Promise<unknown>) => operation())
+      response = await garbageCollectionHandler(
+        buildContext(increment, observe, withWrite, { outcome: 'error', removed: 2, failed: 1 })
+      )
+    })
+
+    it('should answer the completed sweep with the cleanup summary', () => {
+      expect({ status: response.status, body: response.body }).toEqual({
+        status: 200,
+        body: {
+          message: 'Garbage collection removed 1 unused keys.',
+          expiredUploads: { outcome: 'error', removed: 2, failed: 1 }
+        }
+      })
+    })
+
+    it('should count a successful garbage collection run', () => {
+      expect(callsOf(increment, 'garbage_collection_runs')).toEqual([
+        ['garbage_collection_runs', { outcome: 'success' }]
+      ])
     })
   })
 

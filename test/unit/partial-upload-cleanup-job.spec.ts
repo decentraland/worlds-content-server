@@ -17,7 +17,10 @@ describe('when creating the partial-upload cleanup job', () => {
   beforeEach(async () => {
     error = jest.fn()
     logs = { getLogger: () => ({ log: jest.fn(), debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error }) }
-    pendingScenesManager = { deleteExpired: jest.fn().mockResolvedValue(2), cleanupIntervalMs: 300_000 }
+    pendingScenesManager = {
+      deleteExpired: jest.fn().mockResolvedValue({ outcome: 'success', removed: 2, failed: 0 }),
+      cleanupIntervalMs: 300_000
+    }
     mockCreateJobComponent.mockReturnValue({ start: jest.fn(), stop: jest.fn() })
     await createPartialUploadCleanupJob({
       logs,
