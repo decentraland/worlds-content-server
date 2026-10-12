@@ -27,8 +27,6 @@ export const DEFAULT_MAX_PENDING_BYTES_PER_DEPLOYER = 1024 ** 3
 export const DEFAULT_PARTIAL_UPLOAD_CLEANUP_INTERVAL_MS = 5 * 60 * 1000
 /** Expired uploads fetched per cleanup query. */
 export const CLEANUP_PAGE_SIZE = 100
-/** Expired uploads a cleanup run visits at most, bounding its duration. */
-export const CLEANUP_MAX_UPLOADS_PER_RUN = 1000
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -337,7 +335,16 @@ export async function createPendingScenesManager(
       AND EXISTS (SELECT 1 FROM world_scenes WHERE entity_id = ${entityId})`)
   }
 
-  async function deleteExpired(): Promise<ExpiredUploadsCleanup> {
+  // The scheduled job and POST /gc both run cleanup; runs are serialized so they never overlap.
+  let cleanupQueue: Promise<unknown> = Promise.resolve()
+
+  function deleteExpired(): Promise<ExpiredUploadsCleanup> {
+    const run = cleanupQueue.then(runCleanup)
+    cleanupQueue = run.catch(() => undefined)
+    return run
+  }
+
+  async function runCleanup(): Promise<ExpiredUploadsCleanup> {
     const { end } = metrics.startTimer('partial_upload_cleanup_duration_seconds')
     let outcome: ExpiredUploadsCleanup['outcome'] = 'error'
     try {
@@ -362,20 +369,18 @@ export async function createPendingScenesManager(
     const cutoff = new Date(Date.now() - ttlMs)
     let removed = 0
     let failed = 0
-    let visited = 0
     // Keyset cursor; created_at travels as text to keep its microseconds.
     let after: { createdAt: string; entityId: string } | undefined
     try {
-      while (visited < CLEANUP_MAX_UPLOADS_PER_RUN) {
-        const limit = Math.min(CLEANUP_PAGE_SIZE, CLEANUP_MAX_UPLOADS_PER_RUN - visited)
+      // Pages until a short one: every upload expired before the cutoff is visited once.
+      for (;;) {
         const query = SQL`SELECT entity_id, created_at::text AS cursor FROM pending_scenes WHERE created_at < ${cutoff}`
         if (after) {
           query.append(SQL` AND (created_at, entity_id) > (${after.createdAt}::timestamptz, ${after.entityId})`)
         }
-        query.append(SQL` ORDER BY created_at, entity_id LIMIT ${limit}`)
+        query.append(SQL` ORDER BY created_at, entity_id LIMIT ${CLEANUP_PAGE_SIZE}`)
         const page = await database.query<{ entity_id: string; cursor: string }>(query)
         for (const { entity_id: entityId, cursor } of page.rows) {
-          visited++
           after = { createdAt: cursor, entityId }
           try {
             await reclaimUpload(entityId, cutoff)
@@ -392,7 +397,7 @@ export async function createPendingScenesManager(
             logger.error('Failed to reclaim expired upload', { entityId, error: errorMessage(error) })
           }
         }
-        if (page.rows.length < limit) break
+        if (page.rows.length < CLEANUP_PAGE_SIZE) break
       }
     } catch (error) {
       logger.error('Failed to list expired uploads', { error: errorMessage(error) })

@@ -1,8 +1,4 @@
-import {
-  CLEANUP_MAX_UPLOADS_PER_RUN,
-  CLEANUP_PAGE_SIZE,
-  createPendingScenesManager
-} from '../../src/adapters/pending-scenes-manager'
+import { CLEANUP_PAGE_SIZE, createPendingScenesManager } from '../../src/adapters/pending-scenes-manager'
 import { ContentLockTimeoutError } from '../../src/adapters/content-locks/errors'
 import { ExpiredUploadsCleanup, IPendingScenesManager } from '../../src/adapters/pending-scenes-manager/types'
 
@@ -261,19 +257,20 @@ describe('when deleting expired partial uploads', () => {
     })
   })
 
-  describe('and every upload of the first page fails', () => {
+  describe('and more than a thousand expired uploads at the head keep failing', () => {
+    const FAILING_PAGES = 11
     let result: ExpiredUploadsCleanup
     let listings: { text: string; values?: unknown[] }[]
     let firstPage: ExpiredRow[]
 
     beforeEach(async () => {
-      firstPage = expiredRows('failing', CLEANUP_PAGE_SIZE)
-      // Full pages beyond the cap, so only the cap ends the run.
+      firstPage = expiredRows('failing-0', CLEANUP_PAGE_SIZE)
       mocks.pages = [
         firstPage,
-        ...Array.from({ length: CLEANUP_MAX_UPLOADS_PER_RUN / CLEANUP_PAGE_SIZE }, (_, page) =>
-          expiredRows(`page-${page + 2}`, CLEANUP_PAGE_SIZE)
-        )
+        ...Array.from({ length: FAILING_PAGES - 1 }, (_, page) =>
+          expiredRows(`failing-${page + 1}`, CLEANUP_PAGE_SIZE)
+        ),
+        expiredRows('later', 5)
       ]
       mocks.storageDelete.mockImplementation(async (keys: string[]) => {
         if (keys.some((key) => key.startsWith('failing-'))) throw new Error('storage unavailable')
@@ -282,21 +279,51 @@ describe('when deleting expired partial uploads', () => {
       listings = statementsMatching(mocks, 'ORDER BY created_at, entity_id')
     })
 
-    it('should page past the failed uploads and reclaim the later ones up to the per-run cap', () => {
-      expect(result).toEqual({
-        outcome: 'error',
-        removed: CLEANUP_MAX_UPLOADS_PER_RUN - CLEANUP_PAGE_SIZE,
-        failed: CLEANUP_PAGE_SIZE
+    it('should page past every failed upload and reclaim the later ones', () => {
+      expect({ result, released: released(mocks) }).toEqual({
+        result: { outcome: 'error', removed: 5, failed: FAILING_PAGES * CLEANUP_PAGE_SIZE },
+        released: expiredRows('later', 5).map((row) => row.entity_id)
       })
     })
 
-    it('should stop listing once the cap is reached', () => {
-      expect(listings).toHaveLength(CLEANUP_MAX_UPLOADS_PER_RUN / CLEANUP_PAGE_SIZE)
+    it('should stop listing after the first short page', () => {
+      expect(listings).toHaveLength(FAILING_PAGES + 1)
     })
 
     it('should resume the second page after the last upload of the first', () => {
       const last = firstPage[firstPage.length - 1]
       expect(listings[1].values).toEqual([new Date(NOW - 60 * 60 * 1000), last.cursor, last.entity_id, 100])
+    })
+  })
+
+  describe('and another cleanup is requested while one is running', () => {
+    let releaseFirst: () => void
+    let listingsWhileFirstRuns: number
+    let results: ExpiredUploadsCleanup[]
+
+    beforeEach(async () => {
+      mocks.withWrite.mockImplementationOnce(
+        (operation: () => Promise<unknown>) =>
+          new Promise((resolve) => {
+            releaseFirst = () => resolve(operation())
+          })
+      )
+      const first = manager.deleteExpired()
+      const second = manager.deleteExpired()
+      await new Promise((resolve) => setImmediate(resolve))
+      listingsWhileFirstRuns = statementsMatching(mocks, 'ORDER BY created_at, entity_id').length
+      releaseFirst()
+      results = await Promise.all([first, second])
+    })
+
+    it('should start the second run only after the first finishes', () => {
+      expect({ listingsWhileFirstRuns, results }).toEqual({
+        listingsWhileFirstRuns: 1,
+        results: [
+          { outcome: 'success', removed: 1, failed: 0 },
+          { outcome: 'success', removed: 0, failed: 0 }
+        ]
+      })
     })
   })
 

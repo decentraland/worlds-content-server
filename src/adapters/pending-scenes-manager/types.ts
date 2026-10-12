@@ -85,7 +85,8 @@ export interface IPendingScenesManager extends IBaseComponent {
   deleteByEntityId(entityId: string): Promise<void>
   /**
    * Reclaims expired content under the exclusive lock before releasing its byte accounting, then prunes
-   * completion receipts and rate windows and refreshes the gauges. A failing upload doesn't stop the run.
+   * completion receipts and rate windows and refreshes the gauges. Visits every upload expired when the
+   * run starts; a failing upload doesn't stop the run. Concurrent calls run one after another.
    * @throws Error only when pruning or reporting fails.
    */
   deleteExpired(): Promise<ExpiredUploadsCleanup>
