@@ -1,5 +1,5 @@
 import { IHttpServerComponent } from '@dcl/core-commons'
-import { PayloadTooLargeError, UploadTimeoutError, UploadUnavailableError } from '../logic/multipart'
+import { PayloadTooLargeError, UploadTimeoutError, UploadUnavailableError } from './multipart'
 import { SourceUploadLimitExceededError } from '../adapters/source-upload-limits'
 import { DeploymentProcessingAbortedError, DeploymentProcessingTimeoutError } from '../logic/deployment-processing'
 import { PartialUploadQuotaExceededError } from '../logic/partial-upload-admission'

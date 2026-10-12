@@ -1,14 +1,10 @@
 import { Router } from '@dcl/http-server'
 import {
-  createInFlightUploadBudget,
+  createMultipartUploadTelemetry,
   DEPLOYMENT_FIELD_LIMITS,
-  InFlightUploadBudget,
-  InFlightUploadBudgetSnapshot,
   MAX_WORLD_SETTINGS_UPLOAD_SIZE_IN_BYTES,
-  MultipartCleanupErrorEvent,
-  multipartParserWrapper,
-  MultipartTelemetryEvent
-} from '../logic/multipart'
+  multipartParserWrapper
+} from './multipart'
 import { DEFAULT_MAX_UPLOAD_SIZE_IN_BYTES } from '../logic/upload-limits'
 import { BaseComponents, GlobalContext } from '../types'
 import { stampRequestArrival } from './request-arrival'
@@ -51,100 +47,6 @@ import { getWorldsHandler } from './handlers/worlds-handler'
 import { reprocessABSchema } from './schemas/reprocess-ab-schemas'
 import { getWorldScenesSchema } from './schemas/scenes-query-schemas'
 import { worldCommsHandler } from './handlers/world-comms-handler'
-
-export type MultipartUploadGuard = {
-  inFlightUploadBudget: InFlightUploadBudget
-  uploadTimeoutMs: number | undefined
-  onTelemetry: (event: MultipartTelemetryEvent) => void
-  onCleanupError: (event: MultipartCleanupErrorEvent) => void
-}
-
-/**
- * Creates the process-wide multipart limiter and connects its state and outcomes to application
- * metrics and logs. All multipart routes must share the returned budget.
- *
- * @param components Configuration, logging, and metrics dependencies used by the limiter.
- * @returns The shared upload budget, configured timeout, telemetry callback, and cleanup-error callback.
- */
-export async function createMultipartUploadGuard(
-  components: Pick<BaseComponents, 'config' | 'logs' | 'metrics'>
-): Promise<MultipartUploadGuard> {
-  const { config, logs, metrics } = components
-  const logger = logs.getLogger('multipart-uploads')
-  const maxInFlightUploadBytes = await config.getNumber('MAX_IN_FLIGHT_UPLOAD_BYTES')
-  const minUploadReservationBytes = await config.getNumber('MIN_UPLOAD_RESERVATION_BYTES')
-  const uploadFileOverheadBytes = await config.getNumber('UPLOAD_FILE_OVERHEAD_BYTES')
-  const maxOrphanedUploadDirectories = await config.getNumber('MAX_ORPHANED_UPLOAD_DIRECTORIES')
-  const uploadTimeoutMs = await config.getNumber('MULTIPART_UPLOAD_TIMEOUT_MS')
-  const onStateChange = ({
-    reservedBytes,
-    orphanedBytes,
-    reservedFiles,
-    orphanedFiles,
-    orphanedDirectories,
-    activeUploads
-  }: InFlightUploadBudgetSnapshot): void => {
-    metrics.observe('multipart_upload_reserved_bytes', {}, reservedBytes)
-    metrics.observe('multipart_upload_orphaned_bytes', {}, orphanedBytes)
-    metrics.observe('multipart_upload_reserved_files', {}, reservedFiles)
-    metrics.observe('multipart_upload_orphaned_files', {}, orphanedFiles)
-    metrics.observe('multipart_upload_orphaned_directories', {}, orphanedDirectories)
-    metrics.observe('multipart_upload_active', {}, activeUploads)
-  }
-  const inFlightUploadBudget = createInFlightUploadBudget(maxInFlightUploadBytes, {
-    minUploadReservationBytes,
-    uploadFileOverheadBytes,
-    maxOrphanedUploadDirectories,
-    onStateChange
-  })
-  metrics.observe('multipart_upload_capacity_bytes', {}, inFlightUploadBudget.snapshot().capacity)
-  const onTelemetry = (event: MultipartTelemetryEvent): void => {
-    metrics.observe(
-      'multipart_upload_size_bytes',
-      {
-        route: event.route,
-        content_length: event.contentLengthPresent ? 'present' : 'absent',
-        outcome: event.kind
-      },
-      event.actualBytes
-    )
-    if (event.kind === 'rejected') {
-      metrics.increment('multipart_upload_rejections', { route: event.route, reason: event.reason })
-      logger.warn('Multipart upload rejected', {
-        route: event.route,
-        reason: event.reason,
-        actualBytes: event.actualBytes,
-        reservedBytes: event.snapshot.reservedBytes,
-        orphanedBytes: event.snapshot.orphanedBytes,
-        reservedFiles: event.snapshot.reservedFiles,
-        orphanedFiles: event.snapshot.orphanedFiles,
-        orphanedDirectories: event.snapshot.orphanedDirectories,
-        capacity: event.snapshot.capacity,
-        minUploadReservationBytes: event.snapshot.minUploadReservationBytes,
-        uploadFileOverheadBytes: event.snapshot.uploadFileOverheadBytes,
-        maxOrphanedUploadDirectories: event.snapshot.maxOrphanedUploadDirectories,
-        activeUploads: event.snapshot.activeUploads,
-        maxConcurrentUploads: event.snapshot.maxConcurrentUploads,
-        contentLengthPresent: String(event.contentLengthPresent)
-      })
-    }
-  }
-  const onCleanupError = ({ route, error, attempt, willRetry }: MultipartCleanupErrorEvent): void => {
-    if (attempt === 0) {
-      metrics.increment('multipart_upload_cleanup_failures', { route })
-    } else {
-      metrics.increment('multipart_upload_cleanup_retry_failures', { route })
-    }
-    logger.warn('Failed to clean up multipart upload directory', {
-      route,
-      error: error.message,
-      attempt,
-      willRetry: String(willRetry)
-    })
-  }
-
-  return { inFlightUploadBudget, uploadTimeoutMs, onTelemetry, onCleanupError }
-}
 
 /**
  * Runs a handler under the shared content lock; a client disconnect stops waiting for the lock.
@@ -265,11 +167,10 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   router.use(errorHandler)
   router.use(uploadErrorHandler())
 
-  // Aggregate buffered-bytes budget for multipart uploads. Tune per container ephemeral storage;
-  // falls back to the parser's default when unset.
-  const { inFlightUploadBudget, uploadTimeoutMs, onTelemetry, onCleanupError } = await createMultipartUploadGuard(
-    globalContext.components
-  )
+  // Every multipart route shares the process-wide in-flight budget (MAX_IN_FLIGHT_UPLOAD_BYTES).
+  const { inFlightUploadBudget, uploadLimits } = globalContext.components
+  const uploadTimeoutMs = uploadLimits.multipartUploadTimeoutMs
+  const { onTelemetry, onCleanupError } = createMultipartUploadTelemetry(globalContext.components)
 
   router.get('/world/:world_name/about', worldAboutHandler)
 

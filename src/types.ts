@@ -34,6 +34,7 @@ import type { IPartialUploadAdmission } from './logic/partial-upload-admission/t
 import type { IContentGcComponent } from './logic/content-gc/types'
 import type { UploadLimits } from './logic/upload-limits/types'
 import type { ISourceUploadLimits } from './adapters/source-upload-limits/types'
+import type { IInFlightUploadBudget } from './adapters/in-flight-upload-budget/types'
 import type { IClientSourceComponent } from './logic/client-source/types'
 import type { ISceneDeploymentsComponent } from './logic/scene-deployments/types'
 import { ISearchComponent } from './adapters/search'
@@ -730,6 +731,8 @@ export type BaseComponents = {
   partialUploadAdmission: IPartialUploadAdmission
   pendingScenesRepository: IPendingScenesRepository
   sourceUploadLimits: ISourceUploadLimits
+  /** Process-wide byte budget shared by every multipart route. */
+  inFlightUploadBudget: IInFlightUploadBudget
   /** Validated upload size, quota and lifetime settings (plain values, no lifecycle). */
   uploadLimits: UploadLimits
   clientSource: IClientSourceComponent

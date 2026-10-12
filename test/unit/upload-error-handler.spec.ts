@@ -6,7 +6,7 @@ import {
   PayloadTooLargeError,
   UploadTimeoutError,
   UploadUnavailableError
-} from '../../src/logic/multipart'
+} from '../../src/controllers/multipart'
 import { SourceUploadLimitExceededError } from '../../src/adapters/source-upload-limits'
 import {
   DeploymentProcessingAbortedError,

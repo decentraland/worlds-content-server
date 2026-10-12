@@ -7,16 +7,15 @@ import { errorHandler } from '@dcl/http-commons'
 import { uploadErrorHandler } from '../../src/controllers/upload-error-handler'
 import { ClientRequest, request } from 'http'
 import {
-  createInFlightUploadBudget,
-  InFlightUploadBudget,
-  InFlightUploadBudgetSnapshot,
-  multipartParserWrapper,
-  MultipartTelemetryEvent
-} from '../../src/logic/multipart'
+  buildInFlightUploadBudget,
+  IInFlightUploadBudget,
+  InFlightUploadBudgetSnapshot
+} from '../../src/adapters/in-flight-upload-budget'
+import { multipartParserWrapper, MultipartTelemetryEvent } from '../../src/controllers/multipart'
 
 type TestServer = {
   baseUrl: string
-  inFlightUploadBudget: InFlightUploadBudget
+  inFlightUploadBudget: IInFlightUploadBudget
   stop: () => Promise<void>
 }
 
@@ -44,7 +43,7 @@ async function startMultipartServer(options: {
   const server = await createServerComponent<Record<string, never>>({ config, logs }, { http: {} })
   const router = new Router<Record<string, never>>()
   // Payload-only by default so byte cases stay exact; cases opt into the fixed charges.
-  const inFlightUploadBudget = createInFlightUploadBudget(options.capacity, {
+  const inFlightUploadBudget = buildInFlightUploadBudget(options.capacity, {
     minUploadReservationBytes: options.minUploadReservationBytes ?? 0,
     uploadFileOverheadBytes: options.uploadFileOverheadBytes ?? 0
   })

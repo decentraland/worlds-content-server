@@ -1,5 +1,6 @@
 import { createContentLocks } from './adapters/content-locks/component'
 import { createSourceUploadLimits } from './adapters/source-upload-limits'
+import { createInFlightUploadBudget } from './adapters/in-flight-upload-budget'
 import { createClientSourceComponent } from './logic/client-source'
 import { createDotEnvConfigComponent } from '@well-known-components/env-config-provider'
 import {
@@ -188,6 +189,7 @@ export async function initComponents(): Promise<AppComponents> {
   const database = await createDatabaseComponent({ config, logs, metrics })
   const contentLocks = await createContentLocks({ config, logs, metrics })
   const sourceUploadLimits = await createSourceUploadLimits({ uploadLimits })
+  const inFlightUploadBudget = await createInFlightUploadBudget({ metrics, uploadLimits })
   const clientSource = await createClientSourceComponent({ config })
 
   const coordinates = createCoordinatesComponent()
@@ -379,6 +381,7 @@ export async function initComponents(): Promise<AppComponents> {
     contentLocks,
     contentGc,
     sourceUploadLimits,
+    inFlightUploadBudget,
     uploadLimits,
     clientSource,
     access,
