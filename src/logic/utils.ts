@@ -16,6 +16,15 @@ export function formatBytes(bytes: number): string {
   return `${(bytes / 1024 ** 3).toFixed(1)} GiB`
 }
 
+/** Calls an observer, swallowing its errors: observability must never change admission state or the HTTP response. */
+export function notifySafely<T>(listener: ((event: T) => void) | undefined, event: T): void {
+  try {
+    listener?.(event)
+  } catch {
+    // Ignored on purpose; see above.
+  }
+}
+
 export function requireString(val: string | null | undefined): string {
   if (typeof val !== 'string') throw new InvalidRequestError('A string was expected')
   return val

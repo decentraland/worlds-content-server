@@ -2,7 +2,7 @@ import { HandlerContextWithPath, WorldSettings, WorldSettingsInput } from '../..
 import { IHttpServerComponent } from '@dcl/core-commons'
 import { DecentralandSignatureContext } from '@dcl/crypto-middleware'
 import { UnauthorizedError, ValidationError, WorldNotFoundError } from '../../logic/settings'
-import { FormDataContext, isDefinedMultipartField, readUploadedFile } from '../../logic/multipart'
+import { FormDataContext, isDefinedMultipartField, readUploadedFile } from '../../logic/form-data'
 import { IWorldSettingsPolicyComponent } from '../../logic/world-settings-policy'
 import { ICoordinatesComponent } from '../../logic/coordinates'
 import { IThumbnailsComponent } from '../../logic/thumbnails'

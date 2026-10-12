@@ -1,4 +1,4 @@
-import { FormDataContext } from './multipart'
+import { FormDataContext } from './form-data'
 import { AuthChain } from '@dcl/schemas'
 import { requireString } from './utils'
 import { InvalidRequestError } from '@dcl/http-commons'

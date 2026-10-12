@@ -16,6 +16,7 @@ import { createWorldsIndexerComponent } from '../src/adapters/worlds-indexer'
 import { IFetchComponent } from '@dcl/core-commons'
 
 import { createValidator } from '../src/logic/validations'
+import { createInFlightUploadBudget } from '../src/adapters/in-flight-upload-budget'
 import { createPendingScenesRepository } from '../src/adapters/pending-scenes-repository'
 import { createPartialUploadAdmission } from '../src/logic/partial-upload-admission'
 import { createContentGcComponent } from '../src/logic/content-gc'
@@ -104,6 +105,8 @@ async function initComponents(): Promise<TestComponents> {
   )
 
   const metrics = createTestMetricsComponent(metricDeclarations)
+  // Reports its state to the test metrics the integration tests read.
+  const inFlightUploadBudget = await createInFlightUploadBudget({ metrics, uploadLimits })
 
   const storage = createInMemoryStorage()
 
@@ -322,6 +325,7 @@ async function initComponents(): Promise<TestComponents> {
     evictionJob,
     partialUploadCleanupJob,
     fetch,
+    inFlightUploadBudget,
     limitsManager,
     localFetch: await createAuthenticatedLocalFetchComponent(config),
     marketplaceSubGraph: createMockNameSubGraph(),

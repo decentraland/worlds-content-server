@@ -4,16 +4,22 @@ import { MB_BigInt } from '../../types'
 import {
   DEFAULT_COMPLETED_UPLOAD_TTL_MS,
   DEFAULT_MAX_CONCURRENT_UPLOADS_PER_SOURCE,
+  DEFAULT_MAX_IN_FLIGHT_UPLOAD_BYTES,
+  DEFAULT_MAX_ORPHANED_UPLOAD_DIRECTORIES,
   DEFAULT_MAX_PARTIAL_UPLOAD_BYTES_PER_MINUTE,
   DEFAULT_MAX_PENDING_BYTES,
   DEFAULT_MAX_PENDING_BYTES_PER_DEPLOYER,
   DEFAULT_MAX_PENDING_DEPLOYMENTS_PER_DEPLOYER,
   DEFAULT_MAX_SCENE_SIZE_MB,
   DEFAULT_MAX_UPLOAD_SIZE_IN_BYTES,
+  DEFAULT_MIN_UPLOAD_RESERVATION_BYTES,
+  DEFAULT_MULTIPART_UPLOAD_TIMEOUT_MS,
   DEFAULT_PARTIAL_UPLOAD_CLEANUP_INTERVAL_MS,
-  DEFAULT_PENDING_DEPLOYMENT_TTL_MS
+  DEFAULT_PENDING_DEPLOYMENT_TTL_MS,
+  DEFAULT_UPLOAD_FILE_OVERHEAD_BYTES
 } from './constants'
 import { UploadLimits } from './types'
+import { validatePositiveByteLimit, validateReservationBytes } from './validation'
 
 /**
  * Reads every upload size, quota and lifetime setting and checks the invariants between them.
@@ -85,6 +91,28 @@ export async function loadUploadLimits(config: Pick<IConfigComponent, 'getNumber
     DEFAULT_MAX_PENDING_DEPLOYMENTS_PER_DEPLOYER
   )
 
+  // Multipart in-flight budget; errors keep the parser's setting names.
+  const maxInFlightUploadBytes =
+    (await config.getNumber('MAX_IN_FLIGHT_UPLOAD_BYTES')) ?? DEFAULT_MAX_IN_FLIGHT_UPLOAD_BYTES
+  const minUploadReservationBytes =
+    (await config.getNumber('MIN_UPLOAD_RESERVATION_BYTES')) ?? DEFAULT_MIN_UPLOAD_RESERVATION_BYTES
+  const uploadFileOverheadBytes =
+    (await config.getNumber('UPLOAD_FILE_OVERHEAD_BYTES')) ?? DEFAULT_UPLOAD_FILE_OVERHEAD_BYTES
+  const maxOrphanedUploadDirectories =
+    (await config.getNumber('MAX_ORPHANED_UPLOAD_DIRECTORIES')) ?? DEFAULT_MAX_ORPHANED_UPLOAD_DIRECTORIES
+  const multipartUploadTimeoutMs =
+    (await config.getNumber('MULTIPART_UPLOAD_TIMEOUT_MS')) ?? DEFAULT_MULTIPART_UPLOAD_TIMEOUT_MS
+  validatePositiveByteLimit('maxInFlightUploadBytes', maxInFlightUploadBytes)
+  validateReservationBytes('minUploadReservationBytes', minUploadReservationBytes)
+  validateReservationBytes('uploadFileOverheadBytes', uploadFileOverheadBytes)
+  validatePositiveByteLimit('maxOrphanedUploadDirectories', maxOrphanedUploadDirectories)
+  if (maxInFlightUploadBytes < minUploadReservationBytes) {
+    throw new Error(
+      `maxInFlightUploadBytes (${maxInFlightUploadBytes}) must be greater than or equal to minUploadReservationBytes (${minUploadReservationBytes})`
+    )
+  }
+  validatePositiveByteLimit('uploadTimeoutMs', multipartUploadTimeoutMs)
+
   return {
     maxConcurrentUploadsPerSource,
     maxInFlightUploadBytesPerSource,
@@ -95,6 +123,11 @@ export async function loadUploadLimits(config: Pick<IConfigComponent, 'getNumber
     pendingDeploymentTtlMs,
     partialUploadCleanupIntervalMs,
     completedUploadTtlMs,
-    maxPendingDeploymentsPerDeployer
+    maxPendingDeploymentsPerDeployer,
+    maxInFlightUploadBytes,
+    minUploadReservationBytes,
+    uploadFileOverheadBytes,
+    maxOrphanedUploadDirectories,
+    multipartUploadTimeoutMs
   }
 }

@@ -30,7 +30,12 @@ describe('when loading the upload limits', () => {
         pendingDeploymentTtlMs: 60 * 60 * 1000,
         partialUploadCleanupIntervalMs: 5 * 60 * 1000,
         completedUploadTtlMs: 24 * 60 * 60 * 1000,
-        maxPendingDeploymentsPerDeployer: 10
+        maxPendingDeploymentsPerDeployer: 10,
+        maxInFlightUploadBytes: 4 * 1024 * MiB,
+        minUploadReservationBytes: 16 * MiB,
+        uploadFileOverheadBytes: 16 * 1024,
+        maxOrphanedUploadDirectories: 40,
+        multipartUploadTimeoutMs: 5 * 60 * 1000
       })
     })
   })
@@ -47,7 +52,12 @@ describe('when loading the upload limits', () => {
         PENDING_DEPLOYMENT_TTL: 1_000,
         PARTIAL_UPLOAD_CLEANUP_INTERVAL_MS: 2_000,
         COMPLETED_UPLOAD_TTL: 3_000,
-        MAX_PENDING_DEPLOYMENTS_PER_DEPLOYER: 5
+        MAX_PENDING_DEPLOYMENTS_PER_DEPLOYER: 5,
+        MAX_IN_FLIGHT_UPLOAD_BYTES: 100,
+        MIN_UPLOAD_RESERVATION_BYTES: 20,
+        UPLOAD_FILE_OVERHEAD_BYTES: 5,
+        MAX_ORPHANED_UPLOAD_DIRECTORIES: 3,
+        MULTIPART_UPLOAD_TIMEOUT_MS: 300
       }
       result = await load()
     })
@@ -63,7 +73,12 @@ describe('when loading the upload limits', () => {
         pendingDeploymentTtlMs: 1_000,
         partialUploadCleanupIntervalMs: 2_000,
         completedUploadTtlMs: 3_000,
-        maxPendingDeploymentsPerDeployer: 5
+        maxPendingDeploymentsPerDeployer: 5,
+        maxInFlightUploadBytes: 100,
+        minUploadReservationBytes: 20,
+        uploadFileOverheadBytes: 5,
+        maxOrphanedUploadDirectories: 3,
+        multipartUploadTimeoutMs: 300
       })
     })
   })
@@ -143,6 +158,61 @@ describe('when loading the upload limits', () => {
       expect((result as Error).message).toBe(
         `MAX_PENDING_BYTES (${2 * MiB - 1}) must be at least MAX_PENDING_BYTES_PER_DEPLOYER (${2 * MiB}).`
       )
+    })
+  })
+
+  describe.each([
+    ['MAX_IN_FLIGHT_UPLOAD_BYTES', 0, 'maxInFlightUploadBytes must be a positive safe integer, got 0'],
+    ['MIN_UPLOAD_RESERVATION_BYTES', -1, 'minUploadReservationBytes must be a non-negative safe integer, got -1'],
+    ['UPLOAD_FILE_OVERHEAD_BYTES', 1.5, 'uploadFileOverheadBytes must be a non-negative safe integer, got 1.5'],
+    ['MAX_ORPHANED_UPLOAD_DIRECTORIES', 0, 'maxOrphanedUploadDirectories must be a positive safe integer, got 0'],
+    ['MULTIPART_UPLOAD_TIMEOUT_MS', NaN, 'uploadTimeoutMs must be a positive safe integer, got NaN']
+  ])('and %s is %s', (key, value, message) => {
+    beforeEach(async () => {
+      settings[key] = value
+      result = await load()
+    })
+
+    it('should fail with the multipart budget error', () => {
+      expect((result as Error).message).toBe(message)
+    })
+  })
+
+  describe('and the per-request minimum reservation is zero', () => {
+    beforeEach(async () => {
+      settings.MIN_UPLOAD_RESERVATION_BYTES = 0
+      settings.UPLOAD_FILE_OVERHEAD_BYTES = 0
+      result = await load()
+    })
+
+    it('should load the limits', () => {
+      expect(result).not.toBeInstanceOf(Error)
+    })
+  })
+
+  describe('and the in-flight budget is smaller than the per-request minimum reservation', () => {
+    beforeEach(async () => {
+      settings.MAX_IN_FLIGHT_UPLOAD_BYTES = 100
+      settings.MIN_UPLOAD_RESERVATION_BYTES = 101
+      result = await load()
+    })
+
+    it('should fail naming both settings', () => {
+      expect((result as Error).message).toBe(
+        'maxInFlightUploadBytes (100) must be greater than or equal to minUploadReservationBytes (101)'
+      )
+    })
+  })
+
+  describe('and the in-flight budget equals the per-request minimum reservation', () => {
+    beforeEach(async () => {
+      settings.MAX_IN_FLIGHT_UPLOAD_BYTES = 100
+      settings.MIN_UPLOAD_RESERVATION_BYTES = 100
+      result = await load()
+    })
+
+    it('should load the limits', () => {
+      expect(result).not.toBeInstanceOf(Error)
     })
   })
 })
