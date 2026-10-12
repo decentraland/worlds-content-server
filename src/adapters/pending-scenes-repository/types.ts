@@ -67,8 +67,8 @@ export type BudgetTotals = {
  * the others run standalone on the pool.
  */
 export interface IPendingScenesRepository extends IBaseComponent {
-  /** Retrieves an upload created at or after `createdSince`. */
-  getCreatedSince(entityId: string, createdSince: Date, signal?: AbortSignal): Promise<PendingSceneRecord | undefined>
+  /** Retrieves an upload still live at `cutoff` (`now - ttl`): created after it. */
+  getLive(entityId: string, cutoff: Date, signal?: AbortSignal): Promise<PendingSceneRecord | undefined>
   /**
    * Returns the given hashes referenced by published content (world scenes, including soft-deleted ones
    * awaiting eviction, or world thumbnails). References from pending uploads don't count.
@@ -76,7 +76,7 @@ export interface IPendingScenesRepository extends IBaseComponent {
   getPublishedContent(hashes: string[], signal?: AbortSignal): Promise<Set<string>>
   /**
    * Returns the given keys referenced by any content, in one snapshot: world scenes (including soft-deleted
-   * ones awaiting eviction), world thumbnails and uploads created at or after `pendingCutoff`. Call under the
+   * ones awaiting eviction), world thumbnails and uploads created after `pendingCutoff`. Call under the
    * exclusive content lock before deleting them.
    */
   getReferencedContentKeys(pendingCutoff: Date, candidates: string[]): Promise<Set<string>>
@@ -122,20 +122,20 @@ export interface IPendingScenesRepository extends IBaseComponent {
   /** Removes an upload only once its entity is published. */
   deleteByEntityId(entityId: string): Promise<void>
   /**
-   * Lists uploads created before `cutoff`, oldest first, resuming after `after`.
+   * Lists uploads created at or before `cutoff`, oldest first, resuming after `after`.
    * @param limit Maximum uploads returned; a shorter page means no more remain.
    */
   listExpired(cutoff: Date, after: ExpiredUploadCursor | undefined, limit: number): Promise<ExpiredUploadCursor[]>
   /** Returns every storage key an upload may have staged: its files, entity and auth chain. */
   getUploadKeys(entityId: string): Promise<string[]>
-  /** Releases an upload's accounting if it was created before `cutoff`. */
+  /** Releases an upload's accounting if it was created at or before `cutoff`. */
   releaseExpired(entityId: string, cutoff: Date): Promise<void>
   /** Deletes completion receipts completed before `before`. */
   pruneCompleted(before: Date): Promise<void>
   /** Deletes byte-rate windows older than a minute. */
   pruneByteRates(): Promise<void>
-  /** Sums charged bytes, in total and of uploads created before `expiredBefore`. */
-  getChargedBytes(expiredBefore: Date): Promise<{ bytes: number; expired: number }>
-  /** Counts uploads created since `liveSince` and before `expiredBefore`. */
-  countUploads(liveSince: Date, expiredBefore: Date): Promise<{ live: number; expired: number }>
+  /** Sums charged bytes, in total and of expired uploads (created at or before `cutoff`). */
+  getChargedBytes(cutoff: Date): Promise<{ bytes: number; expired: number }>
+  /** Counts live uploads (created after `cutoff`) and expired ones (at or before it). */
+  countUploads(cutoff: Date): Promise<{ live: number; expired: number }>
 }

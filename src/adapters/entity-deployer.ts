@@ -183,7 +183,7 @@ export function createEntityDeployer(
       }
     )
 
-    const kind = worldName.endsWith('dcl.eth') ? 'dcl-name' : 'ens-name'
+    const kind = worldName.toLowerCase().endsWith('.dcl.eth') ? 'dcl-name' : 'ens-name'
     metrics.increment('world_deployments_counter', { kind })
 
     // Persistence is the deployment's success boundary. These hooks are best-effort: wait for them
