@@ -28,6 +28,7 @@ import {
   SceneDeploymentStatus,
   SceneDeploymentData,
   SceneReplacementAuthorization,
+  DeploymentUniqueViolationError,
   SceneReplacementConflictError,
   SceneUndeploymentResult
 } from '../types'
@@ -37,7 +38,7 @@ import { InvalidRequestError } from '@dcl/http-commons'
 import SQL, { type SQLStatement } from 'sql-template-strings'
 import { buildWorldRuntimeMetadata } from '../logic/world-runtime-metadata-utils'
 import { AccessSetting, defaultAccess } from '../logic/access'
-import { connectWithSignal } from './pg-client'
+import { connectWithSignal, isUniqueViolation } from './pg-client'
 import { PartialUploadExpiredError } from './pending-scenes-repository/errors'
 
 type BoundingRow = { min_x: number; max_x: number; min_y: number; max_y: number }
@@ -726,6 +727,9 @@ export async function createWorldsManagerComponent({
         // as a pre-commit failure. Request cancellation still applies until COMMIT begins.
         await query(SQL`SELECT set_config('statement_timeout', ${'0'}, true)`)
       }
+    }).catch((error: unknown) => {
+      // Most commonly a concurrent publication of this same entity colliding on the primary key.
+      throw isUniqueViolation(error) ? new DeploymentUniqueViolationError(scene.id, error) : error
     })
 
     return { metadataUpdated, creationTimestamp }

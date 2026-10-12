@@ -2,14 +2,12 @@ import { IHttpServerComponent } from '@dcl/core-commons'
 import { SourceUploadLease, SourceUploadLimitExceededError } from '../adapters/source-upload-limits'
 import { AppComponents } from '../types'
 
-// A slot frees when one of the source's uploads ends, which the source itself controls.
-const SOURCE_UPLOAD_RETRY_AFTER_SECONDS = 5
-
 /**
  * Admits a multipart body, before it is read, only while its source has fewer uploads and bytes in
  * flight than its share, and holds that share until the request ends. Applies to every request on the
  * route, since a body that never completes is never authenticated. A request with no client source
- * is not limited per source.
+ * is not limited per source. A rejection throws {@link SourceUploadLimitExceededError}, answered with 429
+ * by the upload error handler.
  * @param components Client-source resolver, per-source limits and metrics.
  * @param options Route label and the route's largest accepted payload.
  * @returns Middleware to place before the multipart parser.
@@ -39,13 +37,10 @@ export function createSourceUploadAdmission(
     try {
       lease = sourceUploadLimits.acquire(source, bytes)
     } catch (error) {
-      if (!(error instanceof SourceUploadLimitExceededError)) throw error
-      metrics.increment('multipart_upload_rejections', { route: options.route, reason: error.reason })
-      return {
-        status: 429,
-        headers: { 'Retry-After': String(SOURCE_UPLOAD_RETRY_AFTER_SECONDS) },
-        body: { error: 'Too Many Requests', message: error.message }
+      if (error instanceof SourceUploadLimitExceededError) {
+        metrics.increment('multipart_upload_rejections', { route: options.route, reason: error.reason })
       }
+      throw error
     }
     try {
       return await next()

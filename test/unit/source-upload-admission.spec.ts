@@ -1,6 +1,7 @@
 import { IHttpServerComponent } from '@dcl/core-commons'
 import { SourceUploadLimitExceededError } from '../../src/adapters/source-upload-limits'
 import { createSourceUploadAdmission } from '../../src/controllers/source-upload-admission'
+import { uploadErrorHandler } from '../../src/controllers/upload-error-handler'
 import { IClientSourceComponent } from '../../src/logic/client-source'
 
 describe('when admitting a multipart upload by its source', () => {
@@ -106,7 +107,9 @@ describe('when admitting a multipart upload by its source', () => {
       acquire.mockImplementationOnce(() => {
         throw new SourceUploadLimitExceededError('source_concurrency')
       })
-      response = await admission(context(), next)
+      const ctx = context()
+      // The rejection is answered by the upload error handler, as routed.
+      response = await uploadErrorHandler()(ctx, () => admission(ctx, next))
     })
 
     it('should answer 429 with a retry hint before the body is read', () => {

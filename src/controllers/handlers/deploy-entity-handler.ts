@@ -1,33 +1,25 @@
-import { AuthChain, Entity, EntityType } from '@dcl/schemas'
+import { AuthChain, Entity } from '@dcl/schemas'
 import { Authenticator } from '@dcl/crypto'
 import { IHttpServerComponent } from '@dcl/core-commons'
 import { bufferToStream } from '@dcl/catalyst-storage'
 import { hashV1 } from '@dcl/hashing'
 import { FormDataContext, toDeploymentFile } from '../../logic/multipart'
-import {
-  DeploymentFile,
-  DeploymentToValidate,
-  HandlerContextWithPath,
-  MissingSceneReplacementAuthorizationError,
-  SceneReplacementConflictError
-} from '../../types'
+import { DeploymentFile, DeploymentToValidate, HandlerContextWithPath } from '../../types'
 import { extractAuthChain } from '../../logic/extract-auth-chain'
 import { validateAuthChain, validateSignature, validateSigner } from '../../logic/validations/common'
-import { buildSceneDeploymentMessage, isUniqueViolation, requireString } from '../../logic/utils'
+import { buildSceneDeploymentMessage, requireString } from '../../logic/utils'
 import { InvalidRequestError } from '@dcl/http-commons'
-import { FileInfo, IContentStorageComponent } from '@dcl/catalyst-storage'
-import { calculateDeploymentSizeFromFileInfos } from '../../logic/validations/scene'
 import { Readable } from 'stream'
 import { mapWithConcurrency, raceWithSignal } from '../../logic/concurrency'
 import { getRequestArrival, RequestArrivalContext } from '../request-arrival'
 import { PartialUploadQuotaExceededError } from '../../logic/partial-upload-admission'
-import { StagingPrevalidation } from '../../logic/partial-deployments'
+import { StagingPrevalidation } from '../../logic/scene-deployments'
 import {
-  DEFAULT_CONTENT_FILE_INFO_CONCURRENCY,
   DeploymentProcessingAbortedError,
   DeploymentProcessingTimeoutError,
   isProcessingCancellationError
 } from '../../logic/deployment-processing'
+import { toDeploymentErrorResponse } from '../upload-error-handler'
 
 // The entity file is the scene manifest (JSON), small whatever the content size, so it is buffered
 // in full. Capped (5 MiB) because a partial resume reads it back from storage outside the multipart
@@ -41,14 +33,11 @@ type DeployEntityContext = FormDataContext &
     | 'contentLocks'
     | 'config'
     | 'deploymentProcessing'
-    | 'entityDeployer'
     | 'logs'
     | 'metrics'
-    | 'partialDeployments'
+    | 'sceneDeployments'
     | 'partialUploadAdmission'
-    | 'storage'
-    | 'validator'
-    | 'worldsManager',
+    | 'storage',
     '/entities'
   >
 
@@ -79,34 +68,6 @@ async function streamToBufferCapped(
     chunks.push(buf)
   }
   return Buffer.concat(chunks)
-}
-
-/**
- * Fetches content metadata through a continuous bounded worker pool.
- *
- * @param storage Content storage used for metadata checks.
- * @param hashes Content hashes referenced by the deployment.
- * @param concurrency Maximum number of concurrent checks delegated to storage.
- * @param signal Optional deadline or request-disconnect signal.
- * @param trackWorker Optional worker telemetry wrapper.
- * @returns Storage metadata for every unique content hash.
- * @throws The cancellation reason without waiting for active metadata calls, which own no request files.
- */
-export async function getContentFileInfos(
-  storage: Pick<IContentStorageComponent, 'fileInfo'>,
-  hashes: string[],
-  concurrency: number = DEFAULT_CONTENT_FILE_INFO_CONCURRENCY,
-  signal?: AbortSignal,
-  trackWorker?: (operation: () => Promise<FileInfo | undefined>) => Promise<FileInfo | undefined>
-): Promise<Map<string, FileInfo | undefined>> {
-  const uniqueHashes = Array.from(new Set(hashes))
-  const fileInfos = await mapWithConcurrency(
-    uniqueHashes,
-    concurrency,
-    (hash) => (trackWorker ? trackWorker(() => storage.fileInfo(hash)) : storage.fileInfo(hash)),
-    { signal, waitForActiveOnAbort: false }
-  )
-  return new Map(uniqueHashes.map((hash, index) => [hash, fileInfos[index]]))
 }
 
 type AuthenticatedRequest = { entityId: string; authChain: AuthChain; isPartial: boolean }
@@ -196,7 +157,7 @@ async function findPartialReplay(
     }
   }
   // A live entity is never restaged: any signer's batch, with or without the manifest, gets its publication.
-  const published = await ctx.components.partialDeployments.findPublication(baseUrl, entityId, signal)
+  const published = await ctx.components.sceneDeployments.findPublication(baseUrl, entityId, signal)
   if (published) {
     return { status: 200, body: { creationTimestamp: published.creationTimestamp, ...published.result } }
   }
@@ -213,7 +174,7 @@ async function prepareDeployment(
   signal: AbortSignal
 ): Promise<{ response: IHttpServerComponent.IResponse } | { prepared: PreparedDeployment }> {
   const { entityId, authChain, isPartial } = request
-  const { deploymentProcessing, partialDeployments, partialUploadAdmission, validator } = ctx.components
+  const { deploymentProcessing, sceneDeployments, partialUploadAdmission } = ctx.components
   signal.throwIfAborted()
   const uploadedFiles: Map<string, DeploymentFile> = new Map()
   for (const filesKey in ctx.formData.files) {
@@ -240,7 +201,7 @@ async function prepareDeployment(
       return { prepared: { kind: 'partial', uploadedFiles } }
     }
     const parsed = await readEntity(uploadedEntity, entityId, signal)
-    const prevalidation = await partialDeployments.prevalidate(
+    const prevalidation = await sceneDeployments.prevalidate(
       { entity: parsed.entity, authChain, files: uploadedFiles, signal, requestArrivedAt: getRequestArrival(ctx) },
       pending
     )
@@ -249,19 +210,12 @@ async function prepareDeployment(
 
   if (!uploadedEntity) throw new InvalidRequestError(`Entity file "${entityId}" is missing from the request.`)
   const parsed = await readEntity(uploadedEntity, entityId, signal)
-  // Always validated against now, even while a partial upload of the same entity is pending, whose
-  // staging state the publication then drops.
-  const deployment: DeploymentToValidate = {
+  const deployment = await sceneDeployments.prevalidateDeployment({
     entity: parsed.entity,
-    files: uploadedFiles,
     authChain,
-    contentHashesInStorage: new Map<string, boolean>(),
+    files: uploadedFiles,
     signal
-  }
-  const preStorageValidationResult = await validator.validateBeforeStorage(deployment)
-  if (!preStorageValidationResult.ok()) {
-    throw new InvalidRequestError(`Deployment failed: ${preStorageValidationResult.errors.join(', ')}`)
-  }
+  })
   return { prepared: { kind: 'regular', uploadedFiles, parsed, deployment } }
 }
 
@@ -273,7 +227,6 @@ async function deployEntityWithSignal(
   deadlineAt: number
 ): Promise<IHttpServerComponent.IResponse> {
   const { entityId, authChain } = request
-  const { deploymentProcessing } = ctx.components
   const { uploadedFiles } = prepared
   if (prepared.kind === 'partial') {
     // Re-checked under the per-entity lock: a concurrent batch may have published it meanwhile.
@@ -327,7 +280,7 @@ async function deployEntityWithSignal(
     // The abort context bounds each staging request like a vanilla deploy: a disconnect or the
     // processing deadline cancels validation/hashing/storing (the pending row survives, so the client
     // resumes), and bounds the deploy transaction when this request finalizes.
-    const result = await ctx.components.partialDeployments.stage({
+    const result = await ctx.components.sceneDeployments.stage({
       baseUrl: await getBaseUrl(ctx),
       ...parsed,
       authChain,
@@ -351,91 +304,14 @@ async function deployEntityWithSignal(
   }
 
   // Vanilla (single-request) deployment, validated before the lock up to its storage-backed checks.
-  const { entity, entityRaw } = prepared.parsed
-  const { deployment } = prepared
-  signal.throwIfAborted()
-  const contentHashes = entity.content!.map(($) => $.hash)
-  const contentFileInfos = await deploymentProcessing.trackStage('metadata', new Set(contentHashes).size, () =>
-    getContentFileInfos(
-      ctx.components.storage,
-      contentHashes,
-      deploymentProcessing.fileInfoConcurrency,
-      signal,
-      (operation) => deploymentProcessing.trackWorker('metadata', operation)
-    )
-  )
-  const contentHashesInStorage = new Map(Array.from(contentFileInfos, ([hash, info]) => [hash, info !== undefined]))
-
-  const validationResult = await ctx.components.validator.validateAfterStorage({
-    ...deployment,
-    contentHashesInStorage,
-    contentFileInfos,
-    signal
+  const result = await ctx.components.sceneDeployments.deploy({
+    baseUrl: await getBaseUrl(ctx),
+    entityRaw: prepared.parsed.entityRaw,
+    deployment: prepared.deployment,
+    signal,
+    deadlineAt
   })
-
-  if (!validationResult.ok()) {
-    throw new InvalidRequestError(`Deployment failed: ${validationResult.errors.join(', ')}`)
-  }
-
-  if (entity.type === EntityType.SCENE && !deployment.sceneReplacementAuthorization) {
-    throw new MissingSceneReplacementAuthorizationError(entity.id)
-  }
-
-  // Store the entity
-  const baseUrl = await getBaseUrl(ctx)
-  const deploymentSize = calculateDeploymentSizeFromFileInfos(entity, uploadedFiles, contentFileInfos)
-  signal.throwIfAborted()
-  let message: { message?: string; creationTimestamp?: number }
-  try {
-    message = await ctx.components.entityDeployer.deployEntity(
-      baseUrl,
-      entity,
-      contentHashesInStorage,
-      uploadedFiles,
-      entityRaw,
-      authChain,
-      deploymentSize,
-      { signal, deadlineAt, sceneReplacementAuthorization: deployment.sceneReplacementAuthorization }
-    )
-  } catch (error) {
-    // This same entity is already DEPLOYED — a concurrent duplicate (most commonly a client retry of a
-    // deploy whose first attempt committed but whose response was lost, or a race with this entity's
-    // partial finalize) won the world_scenes primary-key insert. The scene is live, so answer with an
-    // idempotent success instead of surfacing the loser's collision as a 5xx. Mirrors the partial
-    // finalize path's handling. Verified against the DB before mapping, so any other 23505 still fails.
-    const worldName: string | undefined = entity.metadata?.worldConfiguration?.name?.toLowerCase()
-    if (!isUniqueViolation(error) || !worldName) {
-      throw error
-    }
-    // The verification is best-effort: if it fails, propagate the ORIGINAL collision (its diagnostic
-    // value beats the verification hiccup's) rather than masking it.
-    const existing = await ctx.components.worldsManager
-      .getWorldScenes({ worldName, entityId }, { limit: 1 })
-      .catch(() => ({ scenes: [], total: 0 }))
-    if (existing.scenes.length === 0) {
-      throw error
-    }
-    ctx.components.logs
-      .getLogger('deploy-entity')
-      .info('Deployment finalized concurrently; returning idempotent success', { entityId, worldName })
-    message = {
-      // The live publication's timestamp, as the partial path answers.
-      creationTimestamp: existing.scenes[0].createdAt.getTime(),
-      message: buildSceneDeploymentMessage(
-        baseUrl,
-        entity.metadata?.worldConfiguration?.name ?? worldName,
-        entity.metadata?.scene?.parcels || []
-      )
-    }
-  }
-
-  return {
-    status: 200,
-    body: {
-      creationTimestamp: Date.now(),
-      ...message
-    }
-  }
+  return { status: 200, body: result }
 }
 
 const PARTIAL_OUTCOME_BY_STATUS: Record<number, string> = {
@@ -503,52 +379,18 @@ async function handleDeployment(ctx: DeployEntityContext): Promise<IHttpServerCo
         error: error instanceof Error ? error.message : String(error)
       })
     }
-    if (abortedError) {
-      // The transport is already gone in production. Returning a typed response keeps the expected
-      // cancellation out of the global error handler's warning/500 path in direct or mocked callers.
-      return {
-        status: 499,
-        body: {
-          error: 'Client Closed Request',
-          message: abortedError.message
-        }
-      }
-    }
     const timeoutError =
       error instanceof DeploymentProcessingTimeoutError
         ? error
         : abortContext.signal.reason instanceof DeploymentProcessingTimeoutError
           ? abortContext.signal.reason
           : undefined
-    if (timeoutError) {
-      return {
-        status: 408,
-        body: {
-          error: 'Request Timeout',
-          message: timeoutError.message
-        }
-      }
+    const outcome = abortedError ?? timeoutError ?? error
+    if (outcome instanceof PartialUploadQuotaExceededError) {
+      ctx.components.metrics.increment('partial_upload_throttled', { reason: outcome.quota })
     }
-    if (error instanceof PartialUploadQuotaExceededError) {
-      ctx.components.metrics.increment('partial_upload_throttled', { reason: error.quota })
-      return {
-        status: 429,
-        headers: { 'Retry-After': String(error.retryAfterSeconds) },
-        body: {
-          error: 'Too Many Requests',
-          message: error.message
-        }
-      }
-    }
-    if (error instanceof SceneReplacementConflictError) {
-      return {
-        status: 409,
-        body: {
-          error: 'Conflict',
-          message: error.message
-        }
-      }
-    }
+    const response = toDeploymentErrorResponse(outcome)
+    if (response) return response
     throw error
   } finally {
     abortContext.dispose()

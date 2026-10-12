@@ -1,13 +1,25 @@
 import { InvalidRequestError } from '@dcl/http-commons'
-import { buildSceneDeploymentMessage, isUniqueViolation } from '../utils'
-import { FileInfo } from '@dcl/catalyst-storage'
-import { AppComponents, DeploymentToValidate, MissingSceneReplacementAuthorizationError, WorldScene } from '../../types'
+import { Entity, EntityType } from '@dcl/schemas'
+import { buildSceneDeploymentMessage } from '../utils'
+import { FileInfo, IContentStorageComponent } from '@dcl/catalyst-storage'
+import {
+  AppComponents,
+  DeploymentResult,
+  DeploymentToValidate,
+  DeploymentUniqueViolationError,
+  MissingSceneReplacementAuthorizationError,
+  WorldScene
+} from '../../types'
 import { mapWithConcurrency, raceWithSignal } from '../concurrency'
+import { DEFAULT_CONTENT_FILE_INFO_CONCURRENCY } from '../deployment-processing'
 import { calculateDeploymentSizeFromFileInfos } from '../validations/scene'
 import { FileReceipt } from '../../adapters/pending-scenes-repository/types'
 import { PartialUploadExpiredError, PendingScene } from '../partial-upload-admission'
 import {
-  IPartialDeploymentsComponent,
+  DeployInput,
+  DeployResult,
+  ISceneDeploymentsComponent,
+  PrevalidateDeploymentInput,
   PrevalidateStagingInput,
   StageDeploymentInput,
   StageDeploymentResult,
@@ -15,13 +27,51 @@ import {
 } from './types'
 
 /**
- * Stages authenticated, entity-keyed upload batches. The HTTP handler holds the shared content lock
- * and per-entity lock through this operation, including final publication. Receipts avoid storage
- * scans between initialization and final verification; reservations remain charged on write failure.
- * @param components Validation, persistence, storage and telemetry dependencies.
- * @returns Partial deployment orchestration.
+ * Fetches content metadata through a continuous bounded worker pool.
+ *
+ * @param storage Content storage used for metadata checks.
+ * @param hashes Content hashes referenced by the deployment.
+ * @param concurrency Maximum number of concurrent checks delegated to storage.
+ * @param signal Optional deadline or request-disconnect signal.
+ * @param trackWorker Optional worker telemetry wrapper.
+ * @returns Storage metadata for every unique content hash.
+ * @throws The cancellation reason without waiting for active metadata calls, which own no request files.
  */
-export async function createPartialDeploymentsComponent(
+export async function getContentFileInfos(
+  storage: Pick<IContentStorageComponent, 'fileInfo'>,
+  hashes: string[],
+  concurrency: number = DEFAULT_CONTENT_FILE_INFO_CONCURRENCY,
+  signal?: AbortSignal,
+  trackWorker?: (operation: () => Promise<FileInfo | undefined>) => Promise<FileInfo | undefined>
+): Promise<Map<string, FileInfo | undefined>> {
+  const uniqueHashes = Array.from(new Set(hashes))
+  const fileInfos = await mapWithConcurrency(
+    uniqueHashes,
+    concurrency,
+    (hash) => (trackWorker ? trackWorker(() => storage.fileInfo(hash)) : storage.fileInfo(hash)),
+    { signal, waitForActiveOnAbort: false }
+  )
+  return new Map(uniqueHashes.map((hash, index) => [hash, fileInfos[index]]))
+}
+
+/**
+ * Lists the hashes of the entity's content.
+ * @throws InvalidRequestError when the entity has no content list; pre-storage validation already rejects it.
+ */
+function getContentHashes(entity: Entity): string[] {
+  if (!entity.content) throw new InvalidRequestError('Deployment failed: the entity has no content list.')
+  return entity.content.map((content) => content.hash)
+}
+
+/**
+ * Deploys scenes, in a single request or staged across authenticated, entity-keyed upload batches. The
+ * HTTP handler holds the shared content lock (and, for batches, the per-entity lock) through deploy and
+ * stage, including final publication. Receipts avoid storage scans between initialization and final
+ * verification; reservations remain charged on write failure.
+ * @param components Validation, persistence, storage and telemetry dependencies.
+ * @returns Scene deployment orchestration.
+ */
+export async function createSceneDeploymentsComponent(
   components: Pick<
     AppComponents,
     | 'coordinates'
@@ -36,11 +86,12 @@ export async function createPartialDeploymentsComponent(
     | 'deploymentProcessing'
     | 'metrics'
   >
-): Promise<IPartialDeploymentsComponent> {
+): Promise<ISceneDeploymentsComponent> {
   const {
     coordinates,
     entityDeployer,
     limitsManager,
+    logs,
     partialUploadAdmission,
     pendingScenesRepository,
     storage,
@@ -49,18 +100,122 @@ export async function createPartialDeploymentsComponent(
     deploymentProcessing,
     metrics
   } = components
+  const logger = logs.getLogger('deploy-entity')
+
+  /** Storage metadata of every unique hash, tracked as the deployment's metadata stage. */
+  async function fetchContentFileInfos(
+    hashes: string[],
+    signal?: AbortSignal
+  ): Promise<Map<string, FileInfo | undefined>> {
+    return deploymentProcessing.trackStage('metadata', new Set(hashes).size, () =>
+      getContentFileInfos(storage, hashes, deploymentProcessing.fileInfoConcurrency, signal, (operation) =>
+        deploymentProcessing.trackWorker('metadata', operation)
+      )
+    )
+  }
 
   async function metadata(hashes: string[], signal?: AbortSignal): Promise<Map<string, FileInfo | undefined>> {
     metrics.increment('partial_upload_metadata_checks', {}, hashes.length)
-    return deploymentProcessing.trackStage('metadata', hashes.length, async () => {
-      const infos = await mapWithConcurrency(
-        hashes,
-        deploymentProcessing.fileInfoConcurrency,
-        (hash) => deploymentProcessing.trackWorker('metadata', () => storage.fileInfo(hash)),
-        { signal, waitForActiveOnAbort: false }
-      )
-      return new Map(hashes.map((hash, index) => [hash, infos[index]]))
+    return fetchContentFileInfos(hashes, signal)
+  }
+
+  /** The live publication of an entity, optionally within a world. */
+  async function findPublishedScene(
+    entityId: string,
+    options: { worldName?: string; signal?: AbortSignal } = {}
+  ): Promise<WorldScene | undefined> {
+    const { worldName, signal } = options
+    const filters = worldName === undefined ? { entityId } : { worldName, entityId }
+    const { scenes } = await raceWithSignal(worldsManager.getWorldScenes(filters, { limit: 1 }), signal)
+    return scenes[0]
+  }
+
+  /**
+   * Answers a publication that collided with an already deployed entity from its live publication, verified
+   * against the database. When it can't be verified, the original database error propagates.
+   */
+  async function recoverAlreadyDeployed<T>(error: unknown, lookup: () => Promise<T | undefined>): Promise<T> {
+    if (!(error instanceof DeploymentUniqueViolationError)) throw error
+    // Best-effort: a lookup failure must not mask the original collision.
+    const published = await lookup().catch(() => undefined)
+    if (published === undefined) throw error.cause
+    return published
+  }
+
+  async function prevalidateDeployment(input: PrevalidateDeploymentInput): Promise<DeploymentToValidate> {
+    const { entity, authChain, files, signal } = input
+    // Always validated against now, even while a partial upload of the same entity is pending, whose
+    // staging state the publication then drops.
+    const deployment: DeploymentToValidate = {
+      entity,
+      files,
+      authChain,
+      contentHashesInStorage: new Map<string, boolean>(),
+      signal
+    }
+    const preStorageValidationResult = await validator.validateBeforeStorage(deployment)
+    if (!preStorageValidationResult.ok()) {
+      throw new InvalidRequestError(`Deployment failed: ${preStorageValidationResult.errors.join(', ')}`)
+    }
+    return deployment
+  }
+
+  async function deploy(input: DeployInput): Promise<DeployResult> {
+    const { baseUrl, entityRaw, deployment, signal, deadlineAt } = input
+    const { entity, files, authChain } = deployment
+    signal.throwIfAborted()
+    const contentHashes = getContentHashes(entity)
+    const contentFileInfos = await fetchContentFileInfos(contentHashes, signal)
+    const contentHashesInStorage = new Map(Array.from(contentFileInfos, ([hash, info]) => [hash, info !== undefined]))
+
+    const validationResult = await validator.validateAfterStorage({
+      ...deployment,
+      contentHashesInStorage,
+      contentFileInfos,
+      signal
     })
+    if (!validationResult.ok()) {
+      throw new InvalidRequestError(`Deployment failed: ${validationResult.errors.join(', ')}`)
+    }
+    if (entity.type === EntityType.SCENE && !deployment.sceneReplacementAuthorization) {
+      throw new MissingSceneReplacementAuthorizationError(entity.id)
+    }
+
+    const deploymentSize = calculateDeploymentSizeFromFileInfos(entity, files, contentFileInfos)
+    signal.throwIfAborted()
+    let result: DeploymentResult
+    try {
+      result = await entityDeployer.deployEntity(
+        baseUrl,
+        entity,
+        contentHashesInStorage,
+        files,
+        entityRaw,
+        authChain,
+        deploymentSize,
+        { signal, deadlineAt, sceneReplacementAuthorization: deployment.sceneReplacementAuthorization }
+      )
+    } catch (error) {
+      // A concurrent duplicate (most commonly a client retry whose first attempt committed, or this
+      // entity's partial finalize) won the publication: answer with an idempotent success.
+      const { scene, worldName } = await recoverAlreadyDeployed(error, async () => {
+        const worldName: string | undefined = entity.metadata?.worldConfiguration?.name?.toLowerCase()
+        if (!worldName) return undefined
+        const scene = await findPublishedScene(entity.id, { worldName })
+        return scene && { scene, worldName }
+      })
+      logger.info('Deployment finalized concurrently; returning idempotent success', { entityId: entity.id, worldName })
+      result = {
+        // The live publication's timestamp, as the partial path answers.
+        creationTimestamp: scene.createdAt.getTime(),
+        message: buildSceneDeploymentMessage(
+          baseUrl,
+          entity.metadata?.worldConfiguration?.name ?? worldName,
+          entity.metadata?.scene?.parcels || []
+        )
+      }
+    }
+    return { creationTimestamp: Date.now(), ...result }
   }
 
   async function validateStaging(
@@ -108,7 +263,7 @@ export async function createPartialDeploymentsComponent(
     if (!input.prevalidation) await validateStaging(input, pending, admittedAt)
 
     // Only validated manifests may cause storage lookups or affect staging state.
-    const contentHashes = Array.from(new Set((entity.content ?? []).map((content) => content.hash)))
+    const contentHashes = Array.from(new Set(getContentHashes(entity)))
     const worldName = entity.metadata.worldConfiguration.name.toLowerCase()
     const parcels = Array.from(new Set(coordinates.canonicalizeParcels(entity.pointers)))
     if (!pending && (await raceWithSignal(worldsManager.hasNewerDeployedScene(worldName, entity), signal))) {
@@ -221,10 +376,7 @@ export async function createPartialDeploymentsComponent(
         }
       )
     } catch (error) {
-      const concurrent = isUniqueViolation(error)
-        ? await findPublication(baseUrl, entity.id).catch(() => undefined)
-        : undefined
-      if (!concurrent) throw error
+      const concurrent = await recoverAlreadyDeployed(error, () => findPublication(baseUrl, entity.id))
       // Published concurrently: drop this request's staging state and answer with the live publication.
       await pendingScenesRepository.deleteByEntityId(entity.id).catch(() => undefined)
       return concurrent
@@ -241,8 +393,7 @@ export async function createPartialDeploymentsComponent(
     entityId: string,
     signal?: AbortSignal
   ): Promise<StageDeploymentResult | undefined> {
-    const { scenes } = await raceWithSignal(worldsManager.getWorldScenes({ entityId }, { limit: 1 }), signal)
-    const scene: WorldScene | undefined = scenes[0]
+    const scene = await findPublishedScene(entityId, { signal })
     if (!scene) return undefined
     return {
       complete: true,
@@ -257,5 +408,5 @@ export async function createPartialDeploymentsComponent(
     }
   }
 
-  return { stage, prevalidate, findPublication }
+  return { prevalidateDeployment, deploy, stage, prevalidate, findPublication }
 }

@@ -295,7 +295,10 @@ class MultipartRejectionError extends Error {
   }
 }
 
-class UploadCapacityError extends MultipartRejectionError {
+/** The server can't take the upload right now; answered with 503 and Retry-After. */
+export class UploadUnavailableError extends MultipartRejectionError {}
+
+class UploadCapacityError extends UploadUnavailableError {
   constructor(actualBytes: number) {
     super('bytes', 'Server is buffering too many uploads, please retry shortly.', actualBytes)
   }
@@ -315,7 +318,8 @@ export function describeUploadTimeout(timeoutMs: number, receivedBytes: number, 
   )
 }
 
-class UploadTimeoutError extends MultipartRejectionError {
+/** The body didn't arrive within the upload timeout; answered with 408. */
+export class UploadTimeoutError extends MultipartRejectionError {
   constructor(actualBytes: number, timeoutMs: number, receivedBytes: number, declaredBytes?: number) {
     super('timeout', describeUploadTimeout(timeoutMs, receivedBytes, declaredBytes), actualBytes)
   }
@@ -336,13 +340,13 @@ class UploadPayloadSizeError extends UploadLimitError {
   }
 }
 
-class UploadStorageError extends MultipartRejectionError {
+class UploadStorageError extends UploadUnavailableError {
   constructor(actualBytes: number) {
     super('storage', 'The server could not store the multipart upload, please retry shortly.', actualBytes)
   }
 }
 
-class UploadFileCapacityError extends MultipartRejectionError {
+class UploadFileCapacityError extends UploadUnavailableError {
   constructor(actualBytes: number) {
     super('files', 'Server is buffering too many upload files, please retry shortly.', actualBytes)
   }
@@ -649,18 +653,7 @@ export function multipartParserWrapper<Ctx extends FormDataContext, T extends IH
     if (!acquisition.lease) {
       drainRequestBody(ctx.request.body, uploadTimeoutMs, inFlightUploadBudget)
       emitRejection(acquisition.rejectionReason, 0, declaredSize !== undefined)
-      return {
-        status: 503,
-        headers: { 'Retry-After': '5' },
-        body: {
-          error: 'Service Unavailable',
-          message:
-            acquisition.rejectionReason === 'storage'
-              ? 'The server could not store the multipart upload, please retry shortly.'
-              : 'Server is buffering too many uploads, please retry shortly.'
-        }
-        // The wrapper is typed to the handler's response type; this shed response is a valid IResponse.
-      } as unknown as T
+      throw acquisition.rejectionReason === 'storage' ? new UploadStorageError(0) : new UploadCapacityError(0)
     }
     const lease = acquisition.lease
     try {
@@ -679,22 +672,9 @@ export function multipartParserWrapper<Ctx extends FormDataContext, T extends IH
         if (error instanceof UploadLimitError) {
           throw new PayloadTooLargeError(error.message)
         }
-        if (
-          error.reason !== 'bytes' &&
-          error.reason !== 'files' &&
-          error.reason !== 'timeout' &&
-          error.reason !== 'storage'
-        ) {
+        if (!(error instanceof UploadUnavailableError) && !(error instanceof UploadTimeoutError)) {
           throw new InvalidRequestError(error.message)
         }
-        return {
-          status: error.reason === 'timeout' ? 408 : 503,
-          headers: error.reason === 'timeout' ? {} : { 'Retry-After': '5' },
-          body: {
-            error: error.reason === 'timeout' ? 'Request Timeout' : 'Service Unavailable',
-            message: error.message
-          }
-        } as unknown as T
       }
       throw error
     } finally {

@@ -4,7 +4,7 @@ import { defaultServerConfig } from '@dcl/test-helpers'
 import { createRecordConfigComponent } from '@well-known-components/env-config-provider'
 import { createLogComponent } from '@well-known-components/logger'
 import { errorHandler } from '@dcl/http-commons'
-import { payloadTooLargeHandler } from '../../src/controllers/payload-too-large-handler'
+import { uploadErrorHandler } from '../../src/controllers/upload-error-handler'
 import { ClientRequest, request } from 'http'
 import {
   createInFlightUploadBudget,
@@ -51,7 +51,7 @@ async function startMultipartServer(options: {
   const handler = options.handler ?? (async () => ({ status: 200 }))
 
   router.use(errorHandler as any)
-  router.use(payloadTooLargeHandler())
+  router.use(uploadErrorHandler())
   router.post(
     '/upload',
     multipartParserWrapper(handler, {

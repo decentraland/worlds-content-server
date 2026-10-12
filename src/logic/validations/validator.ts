@@ -116,7 +116,7 @@ function sceneStructuralValidations(components: ValidatorComponents): Validation
 /**
  * The validations a partial (staging) scene deployment must pass on every request, before all of its
  * content is necessarily present. Excludes `validateNoMissingFiles` (content completeness) and
- * `createValidateSize` (needs every file present; the partial-deployments component runs a cumulative
+ * `createValidateSize` (needs every file present; the scene-deployments component runs a cumulative
  * size check instead). Uses `validateUploadedFiles` — the hash/CIDv1 check on the bytes uploaded this
  * request — rather than the full `validateFiles`.
  *

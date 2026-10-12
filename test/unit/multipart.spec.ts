@@ -8,6 +8,7 @@ import { once } from 'events'
 import FormData from 'form-data'
 import { hashV1 } from '@dcl/hashing'
 import { InvalidRequestError } from '@dcl/http-commons'
+import { IHttpServerComponent } from '@dcl/core-commons'
 import {
   createInFlightUploadBudget,
   DEPLOYMENT_FIELD_LIMITS,
@@ -23,6 +24,7 @@ import {
   UploadedFile
 } from '../../src/logic/multipart'
 import { formatBytes } from '../../src/logic/utils'
+import { uploadErrorHandler } from '../../src/controllers/upload-error-handler'
 
 // Charges payload bytes only, so these cases isolate payload accounting from the fixed overheads.
 function createPayloadBudget(capacity: number, options: InFlightUploadBudgetOptions = {}): InFlightUploadBudget {
@@ -63,6 +65,13 @@ function createStalledFileBody(bytes: number): { body: Readable; contentType: st
     }
   })
   return { body, contentType: `multipart/form-data; boundary=${boundary}` }
+}
+
+/** Answers upload errors as the router's upload error handler does. */
+function answeringUploadErrors<C extends object, R extends IHttpServerComponent.IResponse>(
+  parse: (ctx: C) => Promise<R>
+): (ctx: C) => Promise<IHttpServerComponent.IResponse> {
+  return (ctx) => uploadErrorHandler()(ctx, () => parse(ctx))
 }
 
 describe('multipartParserWrapper', function () {
@@ -638,14 +647,16 @@ describe('multipartParserWrapper', function () {
       onTelemetry = jest.fn()
       const stalledUpload = createStalledFileBody(20)
       body = stalledUpload.body
-      const parse: (ctx: any) => Promise<any> = multipartParserWrapper(jest.fn(), {
-        inFlightUploadBudget,
-        maxSizeInBytes: 100,
-        maxWireSizeInBytes: 1000,
-        uploadTimeoutMs: 1000,
-        onTelemetry,
-        route: 'test'
-      })
+      const parse: (ctx: any) => Promise<any> = answeringUploadErrors(
+        multipartParserWrapper(jest.fn(), {
+          inFlightUploadBudget,
+          maxSizeInBytes: 100,
+          maxWireSizeInBytes: 1000,
+          uploadTimeoutMs: 1000,
+          onTelemetry,
+          route: 'test'
+        })
+      )
 
       response = await parse({
         request: {
@@ -1193,13 +1204,15 @@ describe('multipartParserWrapper', function () {
     beforeEach(async () => {
       const inFlightUploadBudget = createPayloadBudget(100, { minUploadReservationBytes: 100 })
       releaseExistingUpload = inFlightUploadBudget.acquire(0).lease!.release
-      const parse = multipartParserWrapper(jest.fn(), {
-        maxSizeInBytes: 100,
-        inFlightUploadBudget,
-        onTelemetry: () => {
-          throw new Error('metrics unavailable')
-        }
-      })
+      const parse = answeringUploadErrors(
+        multipartParserWrapper(jest.fn(), {
+          maxSizeInBytes: 100,
+          inFlightUploadBudget,
+          onTelemetry: () => {
+            throw new Error('metrics unavailable')
+          }
+        })
+      )
       const form = new FormData()
       form.append('file', Buffer.from('hello world'), { filename: 'ok.bin' })
 
@@ -1411,12 +1424,14 @@ describe('multipartParserWrapper', function () {
         })
         .mockResolvedValue({ status: 200 })
       onTelemetry = jest.fn()
-      parse = multipartParserWrapper(handler, {
-        inFlightUploadBudget: createPayloadBudget(100, { minUploadReservationBytes: 100 }),
-        maxSizeInBytes: 100,
-        onTelemetry,
-        route: 'test'
-      })
+      parse = answeringUploadErrors(
+        multipartParserWrapper(handler, {
+          inFlightUploadBudget: createPayloadBudget(100, { minUploadReservationBytes: 100 }),
+          maxSizeInBytes: 100,
+          onTelemetry,
+          route: 'test'
+        })
+      )
 
       const firstForm = new FormData()
       firstForm.append('file', Buffer.alloc(10), { filename: 'a.bin' })
@@ -1458,12 +1473,14 @@ describe('multipartParserWrapper', function () {
       const existingLease = inFlightUploadBudget.acquire(90).lease!
       releaseExistingUpload = existingLease.release
       onTelemetry = jest.fn()
-      const parse = multipartParserWrapper(jest.fn(), {
-        inFlightUploadBudget,
-        maxSizeInBytes: 100,
-        onTelemetry,
-        route: 'test'
-      })
+      const parse = answeringUploadErrors(
+        multipartParserWrapper(jest.fn(), {
+          inFlightUploadBudget,
+          maxSizeInBytes: 100,
+          onTelemetry,
+          route: 'test'
+        })
+      )
       const form = new FormData()
       form.append('file', Buffer.alloc(20), { filename: 'file.bin' })
 
@@ -1503,13 +1520,15 @@ describe('multipartParserWrapper', function () {
       handler = jest.fn(async () => ({ status: 200 }))
       onTelemetry = jest.fn()
       const inFlightUploadBudget = createPayloadBudget(100)
-      parse = multipartParserWrapper(handler, {
-        maxSizeInBytes: 100,
-        inFlightUploadBudget,
-        onTelemetry,
-        route: 'test',
-        uploadTimeoutMs: 10
-      })
+      parse = answeringUploadErrors(
+        multipartParserWrapper(handler, {
+          maxSizeInBytes: 100,
+          inFlightUploadBudget,
+          onTelemetry,
+          route: 'test',
+          uploadTimeoutMs: 10
+        })
+      )
       const contentType = new FormData().getHeaders()['content-type']
       const stalledBody = new Readable({
         read() {}
@@ -1568,13 +1587,15 @@ describe('multipartParserWrapper', function () {
     let response: any
 
     beforeEach(async () => {
-      parse = multipartParserWrapper(
-        jest.fn(async () => ({ status: 200 })),
-        {
-          maxSizeInBytes: 10_000,
-          inFlightUploadBudget: createPayloadBudget(10_000),
-          uploadTimeoutMs: 20
-        }
+      parse = answeringUploadErrors(
+        multipartParserWrapper(
+          jest.fn(async () => ({ status: 200 })),
+          {
+            maxSizeInBytes: 10_000,
+            inFlightUploadBudget: createPayloadBudget(10_000),
+            uploadTimeoutMs: 20
+          }
+        )
       )
       const contentType = new FormData().getHeaders()['content-type']
       const headers: Record<string, string> = { 'content-type': contentType, 'content-length': '4096' }
@@ -1774,10 +1795,11 @@ describe('multipartParserWrapper', function () {
     let cleanupDirectory: string
     let stateAfterCleanupFailure: InFlightUploadBudgetSnapshot
     let subsequentAcquisition: ReturnType<InFlightUploadBudget['acquire']>
+    let inFlightUploadBudget: InFlightUploadBudget
 
     beforeEach(async () => {
       const removeDirectory = jest.fn().mockRejectedValueOnce(new Error('cleanup failed'))
-      const inFlightUploadBudget = createPayloadBudget(100, { maxOrphanedUploadDirectories: 1 })
+      inFlightUploadBudget = createPayloadBudget(100, { maxOrphanedUploadDirectories: 1 })
       const handler = jest.fn(async (ctx: any) => {
         cleanupDirectory = dirname(ctx.formData.files.file.filepath)
         return { status: 200 }
@@ -1815,6 +1837,35 @@ describe('multipartParserWrapper', function () {
     it('should stop admitting uploads after the orphan-directory safety limit is reached', () => {
       expect(subsequentAcquisition.rejectionReason).toBe('storage')
     })
+
+    describe('and another upload arrives', () => {
+      let response: IHttpServerComponent.IResponse
+      let handler: jest.Mock
+
+      beforeEach(async () => {
+        handler = jest.fn()
+        const parse = answeringUploadErrors(
+          multipartParserWrapper(handler, { inFlightUploadBudget, maxSizeInBytes: 100 })
+        )
+        const form = new FormData()
+        form.append('file', Buffer.from('contents'), { filename: 'file.bin' })
+        response = await parse(createMultipartContext(form))
+      })
+
+      it('should shed it with a retryable storage error without invoking the handler', () => {
+        expect({ response, handled: handler.mock.calls.length }).toEqual({
+          response: {
+            status: 503,
+            headers: { 'Retry-After': '5' },
+            body: {
+              error: 'Service Unavailable',
+              message: 'The server could not store the multipart upload, please retry shortly.'
+            }
+          },
+          handled: 0
+        })
+      })
+    })
   })
 
   describe('when an upload exceeds the shared temporary-file budget', () => {
@@ -1828,15 +1879,17 @@ describe('multipartParserWrapper', function () {
       const inFlightUploadBudget = createPayloadBudget(200, { uploadFileOverheadBytes: 50 })
       releaseExistingUpload = inFlightUploadBudget.acquire(120).lease!.release
       onTelemetry = jest.fn()
-      const parse = multipartParserWrapper(
-        jest.fn(async () => ({ status: 200 })),
-        {
-          inFlightUploadBudget,
-          maxSizeInBytes: 100,
-          limits: { files: 2 },
-          onTelemetry,
-          route: 'test'
-        }
+      const parse = answeringUploadErrors(
+        multipartParserWrapper(
+          jest.fn(async () => ({ status: 200 })),
+          {
+            inFlightUploadBudget,
+            maxSizeInBytes: 100,
+            limits: { files: 2 },
+            onTelemetry,
+            route: 'test'
+          }
+        )
       )
       const form = new FormData()
       form.append('first', Buffer.alloc(0), { filename: 'first.bin' })
@@ -1891,12 +1944,14 @@ describe('multipartParserWrapper', function () {
       })
       const inFlightUploadBudget = createPayloadBudget(200, { uploadFileOverheadBytes: 50 })
       releaseExistingUpload = inFlightUploadBudget.acquire(120).lease!.release
-      const parse = multipartParserWrapper(jest.fn(), {
-        inFlightUploadBudget,
-        maxSizeInBytes: 100,
-        limits: { files: 2 },
-        uploadTimeoutMs: 25
-      })
+      const parse = answeringUploadErrors(
+        multipartParserWrapper(jest.fn(), {
+          inFlightUploadBudget,
+          maxSizeInBytes: 100,
+          limits: { files: 2 },
+          uploadTimeoutMs: 25
+        })
+      )
 
       const context: any = {
         request: {
@@ -1947,13 +2002,15 @@ describe('multipartParserWrapper', function () {
       const inFlightUploadBudget = createPayloadBudget(100)
       handler = jest.fn(async () => ({ status: 200 }))
       onTelemetry = jest.fn()
-      const parse = multipartParserWrapper(handler, {
-        inFlightUploadBudget,
-        maxSizeInBytes: 100,
-        onTelemetry,
-        route: 'test',
-        fileSystem: { createWriteStream, mkdtemp: fsPromises.mkdtemp, rm: fsPromises.rm }
-      })
+      const parse = answeringUploadErrors(
+        multipartParserWrapper(handler, {
+          inFlightUploadBudget,
+          maxSizeInBytes: 100,
+          onTelemetry,
+          route: 'test',
+          fileSystem: { createWriteStream, mkdtemp: fsPromises.mkdtemp, rm: fsPromises.rm }
+        })
+      )
       const form = new FormData()
       form.append('file', Buffer.from('contents'), { filename: 'file.bin' })
 
@@ -2015,8 +2072,12 @@ describe('multipartParserWrapper', function () {
       // Unknown-length requests grow their reservation as file bytes arrive. The first upload
       // leaves less capacity than the second upload needs.
       const inFlightUploadBudget = createPayloadBudget(101)
-      firstParser = multipartParserWrapper(handler, { inFlightUploadBudget, maxSizeInBytes: 101 })
-      secondParser = multipartParserWrapper(handler, { inFlightUploadBudget, maxSizeInBytes: 101 })
+      firstParser = answeringUploadErrors(
+        multipartParserWrapper(handler, { inFlightUploadBudget, maxSizeInBytes: 101 })
+      )
+      secondParser = answeringUploadErrors(
+        multipartParserWrapper(handler, { inFlightUploadBudget, maxSizeInBytes: 101 })
+      )
 
       const firstForm = new FormData()
       firstForm.append('file', Buffer.alloc(100), { filename: 'a.bin' })
@@ -2071,13 +2132,15 @@ describe('multipartParserWrapper', function () {
       })
       onTelemetry = jest.fn()
       // 64 MiB / 16 MiB = 4 concurrent small uploads.
-      const parse = multipartParserWrapper(handler, {
-        inFlightUploadBudget: createInFlightUploadBudget(64 * 1024 ** 2),
-        maxSizeInBytes: 1024 ** 2,
-        limits: { files: 10 },
-        onTelemetry,
-        route: 'test'
-      })
+      const parse = answeringUploadErrors(
+        multipartParserWrapper(handler, {
+          inFlightUploadBudget: createInFlightUploadBudget(64 * 1024 ** 2),
+          maxSizeInBytes: 1024 ** 2,
+          limits: { files: 10 },
+          onTelemetry,
+          route: 'test'
+        })
+      )
       const createSmallUpload = (): any => {
         const form = new FormData()
         form.append('file', Buffer.alloc(10), { filename: 'small.bin' })
@@ -2130,16 +2193,18 @@ describe('multipartParserWrapper', function () {
         .mockResolvedValue({ status: 200 })
       onTelemetry = jest.fn()
       // Payload-free requests (scaled): 20 files × 64 bytes each; two need 2560 of the 2500 bytes.
-      const parse = multipartParserWrapper(handler, {
-        inFlightUploadBudget: createInFlightUploadBudget(2500, {
-          minUploadReservationBytes: 1024,
-          uploadFileOverheadBytes: 64
-        }),
-        maxSizeInBytes: 1024,
-        limits: { files: 20 },
-        onTelemetry,
-        route: 'test'
-      })
+      const parse = answeringUploadErrors(
+        multipartParserWrapper(handler, {
+          inFlightUploadBudget: createInFlightUploadBudget(2500, {
+            minUploadReservationBytes: 1024,
+            uploadFileOverheadBytes: 64
+          }),
+          maxSizeInBytes: 1024,
+          limits: { files: 20 },
+          onTelemetry,
+          route: 'test'
+        })
+      )
       const createEmptyFilesUpload = (): any => {
         const form = new FormData()
         for (let i = 0; i < 20; i++) {

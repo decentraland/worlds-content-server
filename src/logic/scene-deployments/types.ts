@@ -1,9 +1,34 @@
 import { AuthChain, Entity } from '@dcl/schemas'
-// Type-only import: DeploymentFile/DeploymentResult are shared types in the central types module, which
-// in turn references IPartialDeploymentsComponent for AppComponents — keeping this import type-only
-// erases the edge so there is no runtime import cycle.
-import type { DeploymentFile, DeploymentResult } from '../../types'
+// Type-only import: these are shared types in the central types module, which in turn references
+// ISceneDeploymentsComponent for AppComponents — keeping this import type-only erases the edge so
+// there is no runtime import cycle.
+import type { DeploymentFile, DeploymentResult, DeploymentToValidate } from '../../types'
 import type { PendingScene } from '../partial-upload-admission/types'
+
+/** A single-request deployment, checked before the content lock. */
+export type PrevalidateDeploymentInput = {
+  entity: Entity
+  authChain: AuthChain
+  /** Files uploaded in this request. */
+  files: Map<string, DeploymentFile>
+  signal: AbortSignal
+}
+
+export type DeployInput = {
+  baseUrl: string
+  entityRaw: string
+  /** The deployment returned by {@link ISceneDeploymentsComponent.prevalidateDeployment}. */
+  deployment: DeploymentToValidate
+  /** Request-scoped cancellation (client disconnect or the deployment-processing deadline). */
+  signal: AbortSignal
+  /** Absolute processing deadline forwarded to the deploy transaction. */
+  deadlineAt: number
+}
+
+export type DeployResult = DeploymentResult & {
+  /** The publication's commit timestamp, or when the response was built if the deployer reports none. */
+  creationTimestamp: number
+}
 
 export type StageDeploymentInput = {
   baseUrl: string
@@ -50,7 +75,20 @@ export type StageDeploymentResult = {
   result?: DeploymentResult
 }
 
-export type IPartialDeploymentsComponent = {
+export type ISceneDeploymentsComponent = {
+  /**
+   * Runs the pre-storage validation of a single-request deployment, which needs neither storage nor the
+   * content lock. Throws `InvalidRequestError` (HTTP 400) when it fails.
+   * @returns The validated deployment to pass to {@link ISceneDeploymentsComponent.deploy}.
+   */
+  prevalidateDeployment(input: PrevalidateDeploymentInput): Promise<DeploymentToValidate>
+  /**
+   * Deploys a prevalidated single-request deployment: checks its content against storage, runs the
+   * after-storage validation and publishes it. A concurrent publication of the same entity is answered
+   * with the live publication. Throws `InvalidRequestError` (HTTP 400) when validation fails and
+   * `SceneReplacementConflictError` when the authorized replacement changed.
+   */
+  deploy(input: DeployInput): Promise<DeployResult>
   /**
    * Stages one request of a partial scene deployment: validates everything that doesn't need the full
    * content set (unless `prevalidation` says it already did), stores the uploaded files, records/refreshes
@@ -61,7 +99,7 @@ export type IPartialDeploymentsComponent = {
    */
   stage(input: StageDeploymentInput): Promise<StageDeploymentResult>
   /**
-   * Runs the staging validation of {@link IPartialDeploymentsComponent.stage} ahead of it, anchored on a
+   * Runs the staging validation of {@link ISceneDeploymentsComponent.stage} ahead of it, anchored on a
    * pending upload read beforehand. Hashes the uploaded files and checks permission unless `pending` is
    * the signer's own upload. Throws `InvalidRequestError` (HTTP 400) when the batch is invalid.
    */

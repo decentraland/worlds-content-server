@@ -19,7 +19,7 @@ import { createValidator } from '../src/logic/validations'
 import { createPendingScenesRepository } from '../src/adapters/pending-scenes-repository'
 import { createPartialUploadAdmission } from '../src/logic/partial-upload-admission'
 import { createContentGcComponent } from '../src/logic/content-gc'
-import { createPartialDeploymentsComponent } from '../src/logic/partial-deployments'
+import { createSceneDeploymentsComponent } from '../src/logic/scene-deployments'
 import { createTestMetricsComponent } from '@dcl/metrics'
 import { metricDeclarations } from '../src/metrics'
 import { createEntityDeployer } from '../src/adapters/entity-deployer'
@@ -252,7 +252,7 @@ async function initComponents(): Promise<TestComponents> {
     uploadLimits
   })
 
-  const partialDeployments = await createPartialDeploymentsComponent({
+  const sceneDeployments = await createSceneDeploymentsComponent({
     coordinates,
     entityDeployer,
     limitsManager,
@@ -332,7 +332,7 @@ async function initComponents(): Promise<TestComponents> {
     nats: createMockNatsComponent(),
     permissionsManager,
     peersRegistry,
-    partialDeployments,
+    sceneDeployments,
     partialUploadAdmission,
     pendingScenesRepository,
     queueConsumer,
