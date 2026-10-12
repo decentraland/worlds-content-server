@@ -61,6 +61,7 @@ test('when accounting for independent partial uploads', ({ components }) => {
     second = { ...first, id: 'second', content: [{ hash: 'content-b', file: 'b' }] }
     // `components` is a get-only Proxy over an empty target, so it must be read key by key:
     // spreading it reads ownKeys from that empty target and yields nothing.
+    // Built directly, bypassing loadUploadLimits' validation on purpose, to use tiny budgets.
     const uploadLimits = {
       ...components.uploadLimits,
       maxPendingBytesPerDeployer: BigInt(limits.MAX_PENDING_BYTES_PER_DEPLOYER),
