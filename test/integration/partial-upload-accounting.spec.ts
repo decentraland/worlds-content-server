@@ -3,7 +3,7 @@ import { InvalidRequestError } from '@dcl/http-commons'
 import { Entity, EntityType } from '@dcl/schemas'
 import { bufferToStream } from '@dcl/catalyst-storage'
 import { test } from '../components'
-import { cleanup } from '../utils'
+import { cleanup, waitForAdvisoryLocks } from '../utils'
 import {
   createPartialUploadAdmission,
   IPartialUploadAdmission,
@@ -54,6 +54,13 @@ test('when accounting for independent partial uploads', ({ components }) => {
       pendingScenesRepository: repository,
       uploadLimits: limitsInUse
     })
+  }
+
+  function settle(results: PromiseSettledResult<unknown>[]): { fulfilled: number; rejections: unknown[] } {
+    return {
+      fulfilled: results.filter((result) => result.status === 'fulfilled').length,
+      rejections: results.flatMap((result) => (result.status === 'rejected' ? [result.reason] : []))
+    }
   }
 
   async function pendingCount(): Promise<number> {
@@ -181,6 +188,7 @@ test('when accounting for independent partial uploads', ({ components }) => {
     let lockClient: LockClient | undefined
     let reserveError: unknown
     let reserved: unknown
+    let waitedOnBudget: boolean
 
     beforeEach(async () => {
       await create(first)
@@ -190,12 +198,10 @@ test('when accounting for independent partial uploads', ({ components }) => {
       const reservation = manager
         .reserve(first.id, [{ hash: 'content-a', size: 400, stored: false, charged: true }], 1000n, 400)
         .catch((error: unknown) => error)
-      let waiting = false
-      for (let attempt = 0; attempt < 200 && !waiting; attempt++) {
-        const locks = await lockClient.query(`SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND NOT granted`)
-        waiting = (locks.rowCount ?? 0) > 0
-        if (!waiting) await new Promise<void>((resolve) => setTimeout(resolve, 10))
-      }
+      waitedOnBudget = await waitForAdvisoryLocks(components.database, 'partial-upload-budget', 'waiting').then(
+        () => true,
+        () => false
+      )
       const realNow = Date.now.bind(Date)
       jest.spyOn(Date, 'now').mockImplementation(() => realNow() + limits.PENDING_DEPLOYMENT_TTL + 1_000)
       await lockClient.query('COMMIT')
@@ -213,7 +219,8 @@ test('when accounting for independent partial uploads', ({ components }) => {
     })
 
     it('should answer that the upload expired without reserving its bytes', () => {
-      expect({ expired: reserveError instanceof PartialUploadExpiredError, reserved }).toEqual({
+      expect({ waitedOnBudget, expired: reserveError instanceof PartialUploadExpiredError, reserved }).toEqual({
+        waitedOnBudget: true,
         expired: true,
         reserved: [{ reserved_bytes: '0' }]
       })
@@ -221,38 +228,62 @@ test('when accounting for independent partial uploads', ({ components }) => {
   })
 
   describe('and two overlapping uploads reserve the same account budget concurrently', () => {
-    let results: PromiseSettledResult<void>[]
+    let outcome: { fulfilled: number; rejections: unknown[] }
+    let count: number
+    let progress: unknown[]
+
     beforeEach(async () => {
       await create(first)
       await create(second)
-      results = await Promise.allSettled([
-        manager.reserve(first.id, [{ hash: 'content-a', size: 400, stored: false, charged: true }], 1000n, 400),
-        manager.reserve(second.id, [{ hash: 'content-b', size: 400, stored: false, charged: true }], 1000n, 400)
-      ])
+      outcome = settle(
+        await Promise.allSettled([
+          manager.reserve(first.id, [{ hash: 'content-a', size: 400, stored: false, charged: true }], 1000n, 400),
+          manager.reserve(second.id, [{ hash: 'content-b', size: 400, stored: false, charged: true }], 1000n, 400)
+        ])
+      )
+      count = await pendingCount()
+      progress = [...(await repository.getProgress(first.id)), ...(await repository.getProgress(second.id))]
     })
-    it('should admit only one reservation without replacing either upload', async () => {
-      expect({
-        fulfilled: results.filter((result) => result.status === 'fulfilled').length,
-        count: await pendingCount()
-      }).toEqual({ fulfilled: 1, count: 2 })
+
+    it('should admit only one reservation, rejecting the other with the account byte quota', () => {
+      expect(outcome).toEqual({
+        fulfilled: 1,
+        rejections: [
+          expect.objectContaining({ constructor: PartialUploadQuotaExceededError, quota: 'bytes_per_account' })
+        ]
+      })
     })
-    it('should not treat reserved bytes as stored files', async () => {
-      expect([...(await repository.getProgress(first.id)), ...(await repository.getProgress(second.id))]).toEqual([])
+
+    it('should not replace either upload', () => {
+      expect(count).toBe(2)
+    })
+
+    it('should not treat reserved bytes as stored files', () => {
+      expect(progress).toEqual([])
     })
   })
 
   describe('and different accounts race the global budget', () => {
-    let results: PromiseSettledResult<void>[]
+    let outcome: { fulfilled: number; rejections: unknown[] }
+
     beforeEach(async () => {
       await create(first)
       await create(second, '0xanother')
-      results = await Promise.allSettled([
-        manager.reserve(first.id, [{ hash: 'content-a', size: 600, stored: false, charged: true }], 1000n, 600),
-        manager.reserve(second.id, [{ hash: 'content-b', size: 600, stored: false, charged: true }], 1000n, 600)
-      ])
+      outcome = settle(
+        await Promise.allSettled([
+          manager.reserve(first.id, [{ hash: 'content-a', size: 600, stored: false, charged: true }], 1000n, 600),
+          manager.reserve(second.id, [{ hash: 'content-b', size: 600, stored: false, charged: true }], 1000n, 600)
+        ])
+      )
     })
-    it('should never admit more than the global byte budget', () => {
-      expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1)
+
+    it('should never admit more than the global byte budget, rejecting the other with the server byte quota', () => {
+      expect(outcome).toEqual({
+        fulfilled: 1,
+        rejections: [
+          expect.objectContaining({ constructor: PartialUploadQuotaExceededError, quota: 'bytes_per_server' })
+        ]
+      })
     })
   })
 
@@ -488,6 +519,96 @@ test('when accounting for independent partial uploads', ({ components }) => {
     })
   })
 
+  describe('and a batch arrives after the minute window of an account at its byte rate elapsed', () => {
+    let error: unknown
+    let rate: { bytes: string; reset: boolean }[]
+
+    beforeEach(async () => {
+      await create(first)
+      await manager.reserve(
+        first.id,
+        [{ hash: 'content-a', size: 100, stored: false, charged: true }],
+        1000n,
+        DEFAULT_MAX_UPLOAD_SIZE_IN_BYTES
+      )
+      await components.database.query(
+        SQL`UPDATE partial_upload_rates SET window_started = now() - interval '61 seconds'`
+      )
+      error = await manager
+        .reserve(first.id, [{ hash: 'content-a', size: 100, stored: false, charged: true }], 1000n, 100)
+        .then(() => undefined)
+        .catch((e: unknown) => e)
+      const result = await components.database.query<{ bytes: string; reset: boolean }>(
+        `SELECT bytes, window_started > now() - interval '10 seconds' AS reset FROM partial_upload_rates`
+      )
+      rate = result.rows
+    })
+
+    it('should admit it', () => {
+      expect(error).toBeUndefined()
+    })
+
+    it('should start a new window charged with only the incoming bytes', () => {
+      expect(rate).toEqual([{ bytes: '100', reset: true }])
+    })
+  })
+
+  describe('and stale and fresh byte-rate windows are pruned', () => {
+    let deployers: string[]
+
+    beforeEach(async () => {
+      await components.database.query(`
+        INSERT INTO partial_upload_rates (deployer, window_started, bytes) VALUES
+          ('0xstale', now() - interval '61 seconds', 10),
+          ('0xfresh', now() - interval '30 seconds', 10)`)
+      await repository.pruneByteRates()
+      const result = await components.database.query<{ deployer: string }>('SELECT deployer FROM partial_upload_rates')
+      deployers = result.rows.map((row) => row.deployer)
+    })
+
+    it('should delete only the windows older than a minute', () => {
+      expect(deployers).toEqual(['0xfresh'])
+    })
+  })
+
+  describe('and completion receipts older and newer than the cutoff are pruned', () => {
+    let entityIds: string[]
+
+    beforeEach(async () => {
+      await components.database.query(`
+        INSERT INTO completed_scene_uploads (entity_id, deployer, world_name, parcels, completed_at) VALUES
+          ('old', '0xaccount', 'test.dcl.eth', '{0,0}', now() - interval '2 hours'),
+          ('recent', '0xaccount', 'test.dcl.eth', '{0,0}', now())`)
+      await repository.pruneCompleted(new Date(Date.now() - 60 * 60 * 1000))
+      const result = await components.database.query<{ entity_id: string }>(
+        'SELECT entity_id FROM completed_scene_uploads'
+      )
+      entityIds = result.rows.map((row) => row.entity_id)
+    })
+
+    it('should delete only the receipts completed before the cutoff', () => {
+      expect(entityIds).toEqual(['recent'])
+    })
+  })
+
+  describe('and pending uploads are deleted by entity id', () => {
+    let entityIds: string[]
+
+    beforeEach(async () => {
+      const published = await components.worldCreator.createWorldWithScene()
+      await create(first)
+      await create({ ...first, id: published.entityId })
+      await repository.deleteByEntityId(first.id)
+      await repository.deleteByEntityId(published.entityId)
+      const result = await components.database.query<{ entity_id: string }>('SELECT entity_id FROM pending_scenes')
+      entityIds = result.rows.map((row) => row.entity_id)
+    })
+
+    it('should keep the upload whose entity was never published and delete the published one', () => {
+      expect(entityIds).toEqual([first.id])
+    })
+  })
+
   describe('and a batch alone exceeds the per-minute byte rate', () => {
     let error: unknown
     let rateBytes: string
@@ -682,6 +803,13 @@ test('when accounting for independent partial uploads', ({ components }) => {
   })
 
   describe('and an expired upload still occupies storage', () => {
+    function reserveSecond(): Promise<unknown> {
+      return manager
+        .reserve(second.id, [{ hash: 'content-b', size: 400, stored: false, charged: true }], 1000n, 400)
+        .then(() => undefined)
+        .catch((error: unknown) => error)
+    }
+
     beforeEach(async () => {
       await create(first)
       await manager.reserve(first.id, [{ hash: 'content-a', size: 400, stored: false, charged: true }], 1000n, 400)
@@ -690,41 +818,75 @@ test('when accounting for independent partial uploads', ({ components }) => {
       await create(second)
     })
 
-    it('should keep its bytes charged until cleanup succeeds', async () => {
-      await expect(
-        manager.reserve(second.id, [{ hash: 'content-b', size: 400, stored: false, charged: true }], 1000n, 400)
-      ).rejects.toThrow('above its limit of 600 bytes')
-      await gc.deleteExpiredUploads()
-      await expect(
-        manager.reserve(second.id, [{ hash: 'content-b', size: 400, stored: false, charged: true }], 1000n, 400)
-      ).resolves.toBeUndefined()
-      expect(await components.storage.exist('content-a')).toBe(false)
+    describe('and the account reserves another batch before cleanup runs', () => {
+      let reserveError: unknown
+
+      beforeEach(async () => {
+        reserveError = await reserveSecond()
+      })
+
+      it('should keep its bytes charged against the account budget', () => {
+        expect(reserveError).toEqual(
+          expect.objectContaining({ message: expect.stringContaining('above its limit of 600 bytes') })
+        )
+      })
+    })
+
+    describe('and cleanup succeeds', () => {
+      let reserveError: unknown
+      let stored: boolean
+
+      beforeEach(async () => {
+        await gc.deleteExpiredUploads()
+        reserveError = await reserveSecond()
+        stored = await components.storage.exist('content-a')
+      })
+
+      it('should release its bytes for the next batch', () => {
+        expect(reserveError).toBeUndefined()
+      })
+
+      it('should delete its content from storage', () => {
+        expect(stored).toBe(false)
+      })
     })
 
     describe('and physical deletion fails', () => {
-      beforeEach(() => {
+      let cleanupResult: unknown
+      let reserveError: unknown
+
+      beforeEach(async () => {
         jest.spyOn(components.storage, 'delete').mockRejectedValueOnce(new Error('storage unavailable'))
+        cleanupResult = await gc.deleteExpiredUploads()
+        reserveError = await reserveSecond()
       })
-      it('should report the failure and preserve the reservation for a later cleanup retry', async () => {
-        await expect(gc.deleteExpiredUploads()).resolves.toEqual({ outcome: 'error', removed: 0, failed: 1 })
-        await expect(
-          manager.reserve(second.id, [{ hash: 'content-b', size: 400, stored: false, charged: true }], 1000n, 400)
-        ).rejects.toThrow('above its limit of 600 bytes')
+
+      it('should report the failure', () => {
+        expect(cleanupResult).toEqual({ outcome: 'error', removed: 0, failed: 1 })
+      })
+
+      it('should preserve the reservation for a later cleanup retry', () => {
+        expect(reserveError).toEqual(
+          expect.objectContaining({ message: expect.stringContaining('above its limit of 600 bytes') })
+        )
       })
     })
 
     describe('and a live upload references the same hash', () => {
+      let stored: boolean
+      let count: number
+
       beforeEach(async () => {
         await components.database.query(
           SQL`UPDATE pending_scenes SET entity = ${first}::jsonb WHERE entity_id = ${second.id}`
         )
-      })
-      it('should release expired accounting without deleting content retained by the live upload', async () => {
         await gc.deleteExpiredUploads()
-        expect({ stored: await components.storage.exist('content-a'), count: await pendingCount() }).toEqual({
-          stored: true,
-          count: 1
-        })
+        stored = await components.storage.exist('content-a')
+        count = await pendingCount()
+      })
+
+      it('should release expired accounting without deleting content retained by the live upload', () => {
+        expect({ stored, count }).toEqual({ stored: true, count: 1 })
       })
     })
   })
@@ -782,6 +944,7 @@ test('when accounting for independent partial uploads', ({ components }) => {
     let upload: Promise<void>
     let deletion: Promise<void>
     let deleting: boolean
+    let deletingWhileHeld: boolean
     let uploadActive: boolean
     let overlapped: boolean
 
@@ -806,7 +969,11 @@ test('when accounting for independent partial uploads', ({ components }) => {
         deleting = true
         overlapped = uploadActive
       })
+      // Gives the writer time for several lock attempts while the upload holds the gate.
       await new Promise<void>((resolve) => setTimeout(resolve, 30))
+      deletingWhileHeld = deleting
+      releaseUpload()
+      await Promise.all([upload, deletion])
     })
 
     afterEach(async () => {
@@ -814,10 +981,11 @@ test('when accounting for independent partial uploads', ({ components }) => {
       await Promise.all([upload, deletion])
     })
 
-    it('should exclude GC until the mutation settles', async () => {
-      expect(deleting).toBe(false)
-      releaseUpload()
-      await Promise.all([upload, deletion])
+    it('should not run GC while the mutation holds the lock', () => {
+      expect(deletingWhileHeld).toBe(false)
+    })
+
+    it('should run GC once the mutation settles, without overlapping it', () => {
       expect({ deleting, overlapped }).toEqual({ deleting: true, overlapped: false })
     })
   })

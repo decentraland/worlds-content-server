@@ -6,6 +6,7 @@ import { stringToUtf8Bytes } from 'eth-connect'
 import { AuthChain, AuthLinkType } from '@dcl/schemas'
 import { AUTH_CHAIN_HEADER_PREFIX, AUTH_METADATA_HEADER, AUTH_TIMESTAMP_HEADER } from '@dcl/crypto-middleware'
 import { IPgComponent } from '@dcl/pg-component'
+import SQL from 'sql-template-strings'
 import { getAuthHeaders, getIdentity, type Identity } from '@dcl/test-helpers'
 import { IWorldsManager } from '../src/types'
 
@@ -183,4 +184,42 @@ export function signThroughChainOf(
     signature: Authenticator.createSignature(authority, payload)
   })
   return chain
+}
+
+/**
+ * Counts the sessions holding (`granted`) or queued on (`waiting`) the advisory lock keyed by
+ * `hashtextextended(keyName, 0)` in this database, so other locks can't skew the count.
+ */
+export async function countAdvisoryLocks(
+  db: IPgComponent,
+  keyName: string,
+  state: 'granted' | 'waiting'
+): Promise<number> {
+  const result = await db.query<{ count: string }>(SQL`
+    SELECT COUNT(*) AS count
+    FROM pg_locks l, (SELECT hashtextextended(${keyName}, 0) AS k) h
+    WHERE l.locktype = 'advisory'
+      AND l.objsubid = 1
+      AND l.granted = ${state === 'granted'}
+      AND l.database = (SELECT oid FROM pg_database WHERE datname = current_database())
+      AND l.classid = ((h.k >> 32) & 4294967295)::oid
+      AND l.objid = (h.k & 4294967295)::oid
+  `)
+  return Number(result.rows[0].count)
+}
+
+/** Polls until {@link countAdvisoryLocks} reaches `count`; throws on the deadline instead of hanging. */
+export async function waitForAdvisoryLocks(
+  db: IPgComponent,
+  keyName: string,
+  state: 'granted' | 'waiting',
+  count = 1,
+  timeoutMs = 3_000
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while ((await countAdvisoryLocks(db, keyName, state)) < count) {
+    if (Date.now() >= deadline)
+      throw new Error(`Timed out waiting for ${count} ${state} advisory lock(s) on ${keyName}`)
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
 }
