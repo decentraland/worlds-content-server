@@ -144,4 +144,53 @@ describe('when creating the in-flight upload budget', () => {
       expect(observe).toHaveBeenCalledWith('multipart_upload_orphaned_directories', {}, 1)
     })
   })
+
+  describe('and cleanup tries to retain more than the active reservation', () => {
+    let lease: ReturnType<IInFlightUploadBudget['acquire']>['lease']
+    let releaseRetained: (options: { retainBytes?: number; retainFiles?: number }) => () => void
+
+    beforeEach(() => {
+      lease = budget.acquire(25).lease
+      lease?.resizeFiles(1)
+      releaseRetained = (options) => () => lease?.release(options)
+    })
+
+    describe('and the retained bytes exceed the reserved payload', () => {
+      let release: () => void
+
+      beforeEach(() => {
+        release = releaseRetained({ retainBytes: 26 })
+      })
+
+      it('should throw', () => {
+        expect(release).toThrow('Retained upload resources cannot exceed the active reservation')
+      })
+    })
+
+    describe('and the retained files exceed the reserved files', () => {
+      let release: () => void
+
+      beforeEach(() => {
+        release = releaseRetained({ retainFiles: 2 })
+      })
+
+      it('should throw', () => {
+        expect(release).toThrow('Retained upload resources cannot exceed the active reservation')
+      })
+    })
+
+    describe('and the release is rejected', () => {
+      beforeEach(() => {
+        try {
+          lease?.release({ retainBytes: 26 })
+        } catch {
+          // expected
+        }
+      })
+
+      it('should keep the upload active', () => {
+        expect(budget.snapshot().activeUploads).toBe(1)
+      })
+    })
+  })
 })

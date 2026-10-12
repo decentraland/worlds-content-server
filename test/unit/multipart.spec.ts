@@ -1859,6 +1859,69 @@ describe('multipartParserWrapper', function () {
     })
   })
 
+  describe('when every temporary upload cleanup retry fails', () => {
+    let cleanupDirectory: string
+    let onCleanupError: jest.Mock
+    let removeDirectory: jest.Mock
+    let stateAfterRetries: InFlightUploadBudgetSnapshot
+
+    beforeEach(async () => {
+      let signalRetriesExhausted: () => void
+      const retriesExhausted = new Promise<void>((resolve) => {
+        signalRetriesExhausted = resolve
+      })
+      onCleanupError = jest.fn((event: { willRetry: boolean }) => {
+        if (!event.willRetry) signalRetriesExhausted()
+      })
+      removeDirectory = jest.fn().mockRejectedValue(new Error('cleanup failed'))
+      const inFlightUploadBudget = createPayloadBudget(100)
+      const handler = jest.fn(async (ctx: any) => {
+        cleanupDirectory = dirname(ctx.formData.files.file.filepath)
+        return { status: 200 }
+      })
+      const parse = multipartParserWrapper(handler, {
+        inFlightUploadBudget,
+        maxSizeInBytes: 100,
+        onCleanupError,
+        route: 'test',
+        fileSystem: { createWriteStream: createNodeWriteStream, mkdtemp: fsPromises.mkdtemp, rm: removeDirectory },
+        cleanupRetryDelaysMs: [0, 0]
+      })
+      const form = new FormData()
+      form.append('file', Buffer.from('stuck bytes'), { filename: 'file.bin' })
+
+      await parse(createMultipartContext(form))
+      await retriesExhausted
+      // Let a wrongly scheduled extra retry run before sampling.
+      await new Promise<void>((resolve) => setTimeout(resolve, 0))
+      stateAfterRetries = inFlightUploadBudget.snapshot()
+    })
+
+    afterEach(async () => {
+      await fsPromises.rm(cleanupDirectory, { recursive: true, force: true })
+    })
+
+    it('should report each failed attempt with an increasing attempt number', () => {
+      expect(onCleanupError.mock.calls.map(([event]) => [event.attempt, event.willRetry])).toEqual([
+        [0, true],
+        [1, true],
+        [2, false]
+      ])
+    })
+
+    it('should stop retrying after the last configured delay', () => {
+      expect(removeDirectory).toHaveBeenCalledTimes(3)
+    })
+
+    it('should keep the orphaned directory charged', () => {
+      expect(stateAfterRetries).toMatchObject({
+        reservedBytes: Buffer.byteLength('stuck bytes'),
+        orphanedDirectories: 1,
+        activeUploads: 0
+      })
+    })
+  })
+
   describe('when cleanup leaves a zero-byte temporary file behind', () => {
     let cleanupDirectory: string
     let stateAfterCleanupFailure: InFlightUploadBudgetSnapshot

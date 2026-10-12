@@ -491,6 +491,37 @@ describe('getContentFile', () => {
     })
   })
 
+  describe('when serving a byte range and the MIME sniff read fails', () => {
+    let response: IHttpServerComponent.IResponse
+    let body: Buffer
+
+    beforeEach(async () => {
+      const storageMock: Partial<IContentStorageComponent> = {
+        fileInfo: jest.fn().mockResolvedValue({ encoding: null, size: 5000, contentSize: 5000 }),
+        retrieve: jest
+          .fn()
+          .mockResolvedValueOnce(createContentItem(mp4Content))
+          .mockRejectedValueOnce(new Error('object reclaimed'))
+      }
+      response = await getContentFile(createContext(storageMock, 'bytes=1000-2000'))
+      const chunks: Buffer[] = []
+      for await (const chunk of response.body as Readable) chunks.push(chunk)
+      body = Buffer.concat(chunks)
+    })
+
+    it('should still respond with 206', () => {
+      expect(response.status).toEqual(206)
+    })
+
+    it('should fall back to application/octet-stream', () => {
+      expect((response.headers as Record<string, string>)['Content-Type']).toEqual('application/octet-stream')
+    })
+
+    it('should serve the already-retrieved range as the body', () => {
+      expect(body).toEqual(mp4Content)
+    })
+  })
+
   describe('when the content key is a SHA-256 hex digest', () => {
     const sha256Key = 'a'.repeat(64)
     let response: IHttpServerComponent.IResponse
