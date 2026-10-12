@@ -1,8 +1,7 @@
 import SQL, { SQLStatement } from 'sql-template-strings'
 import { IPgComponent } from '@dcl/pg-component'
 import { Query, withUploadTransaction } from '../../src/adapters/upload-transaction'
-
-const sqlText = (sql: string | SQLStatement): string => (typeof sql === 'string' ? sql : sql.text)
+import { sqlText } from '../utils'
 
 describe('when running an upload transaction', () => {
   let query: jest.Mock

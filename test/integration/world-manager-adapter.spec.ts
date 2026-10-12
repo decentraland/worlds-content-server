@@ -6,10 +6,10 @@ import { makeid, waitForAdvisoryLocks } from '../utils'
 import { defaultAccess } from '../../src/logic/access'
 import { NoDeployedScenesError, DeploymentUniqueViolationError } from '../../src/types'
 import { PartialUploadExpiredError } from '../../src/logic/partial-upload-admission'
-import SQL from 'sql-template-strings'
+import SQL, { SQLStatement } from 'sql-template-strings'
 
 type LockClient = {
-  query(statement: string): Promise<unknown>
+  query(statement: string | SQLStatement): Promise<unknown>
   release(): void
 }
 
@@ -252,7 +252,7 @@ test('WorldManagerAdapter', function ({ components }) {
         lockClient = (await database.getPool().connect()) as unknown as LockClient
         await lockClient.query('BEGIN')
         const lockKey = `world_scene_deploy:${created.worldName.toLowerCase()}`
-        await lockClient.query(`SELECT pg_advisory_xact_lock(hashtextextended('${lockKey}', 0))`)
+        await lockClient.query(SQL`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`)
         let settled = false
         const deployment = deployDirectly({
           ...created.entity,

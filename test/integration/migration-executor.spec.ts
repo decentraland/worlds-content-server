@@ -48,7 +48,15 @@ test('MigrationExecutor', function ({ components }) {
             runs[TABLE_MIGRATION]++
             await database.query('CREATE TABLE test_concurrent_startup (id SERIAL PRIMARY KEY, value INT)')
             // Holds the lock until the other instance waits on it; bounded so a non-waiting one can't hang.
-            await Promise.race([otherInstanceWaiting, sleep(5_000)])
+            const bound = new AbortController()
+            try {
+              await Promise.race([
+                otherInstanceWaiting,
+                sleep(5_000, undefined, { signal: bound.signal }).catch(() => undefined)
+              ])
+            } finally {
+              bound.abort()
+            }
           }
         },
         {
@@ -238,11 +246,21 @@ test('MigrationExecutor', function ({ components }) {
     }, 30_000)
 
     afterEach(async () => {
-      // Only the catalog flag was flipped, so restoring it is safe even if the rerun left it.
-      await components.database.query(
-        `UPDATE pg_index SET indisvalid = true WHERE indexrelid = 'world_scenes_content_hashes_idx'::regclass`
-      )
-      await components.database.query(SQL`DELETE FROM migrations WHERE name = ${CONTENT_HASHES_INDEX_RERUN}`)
+      const { database } = components
+      // Rebuild rather than flip the flag back: a failed rerun could leave a half-built index.
+      const { rows } = await database.query<{ indisvalid: boolean }>(`
+        SELECT i.indisvalid FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+        WHERE c.relname = 'world_scenes_content_hashes_idx'
+      `)
+      if (rows.length === 0) {
+        await database.query(`
+          CREATE INDEX world_scenes_content_hashes_idx
+          ON world_scenes USING GIN (jsonb_path_query_array(entity, '$.content[*].hash'))
+        `)
+      } else if (!rows[0].indisvalid) {
+        await database.query('REINDEX INDEX world_scenes_content_hashes_idx')
+      }
+      await database.query(SQL`DELETE FROM migrations WHERE name = ${CONTENT_HASHES_INDEX_RERUN}`)
     })
 
     it('should rebuild it as a single valid index when the migration reruns', () => {

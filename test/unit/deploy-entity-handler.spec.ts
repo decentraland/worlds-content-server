@@ -588,7 +588,7 @@ describe('deployEntity', () => {
       })
 
       it('should reject asking for the entity file', () => {
-        expect(caughtError).toEqual(
+        expect(caughtError).toStrictEqual(
           new InvalidRequestError(`The first partial request for an entity must include the entity file "${entityId}".`)
         )
       })
@@ -596,17 +596,25 @@ describe('deployEntity', () => {
 
     describe('and the stored entity file streams past the cap without size metadata', () => {
       let stage: jest.Mock
+      let pulledChunks: number
+      let chunkSize: number
 
       beforeEach(async () => {
         getByEntityId = jest
           .fn()
           .mockResolvedValue({ deployer: '0x0000000000000000000000000000000000000001', createdAt: new Date() })
-        const chunk = Buffer.alloc(1024 * 1024, 'a')
+        chunkSize = 1024 * 1024
+        const chunk = Buffer.alloc(chunkSize, 'a')
+        pulledChunks = 0
+        // Unbounded in practice; the backstop only keeps a read-all regression from hanging the suite.
         retrieve = jest.fn().mockResolvedValue({
           size: null,
           asStream: async () =>
             (async function* () {
-              for (let i = 0; i <= MAX_ENTITY_FILE_SIZE_IN_BYTES / chunk.length; i++) yield chunk
+              while (pulledChunks < 1024) {
+                pulledChunks++
+                yield chunk
+              }
             })()
         })
         stage = jest.fn()
@@ -616,9 +624,14 @@ describe('deployEntity', () => {
       })
 
       it('should reject it as too large', () => {
-        expect(caughtError).toEqual(
+        expect(caughtError).toStrictEqual(
           new InvalidRequestError(`The stored entity file is too large (over ${MAX_ENTITY_FILE_SIZE_IN_BYTES} bytes).`)
         )
+      })
+
+      it('should stop reading right after crossing the cap', () => {
+        // +1 for the chunk that crosses the cap, +1 for Readable.from's single read-ahead.
+        expect(pulledChunks).toBe(Math.floor(MAX_ENTITY_FILE_SIZE_IN_BYTES / chunkSize) + 2)
       })
 
       it('should not stage the batch', () => {
@@ -1525,7 +1538,7 @@ describe('deployEntity', () => {
       })
 
       it('should propagate the error', () => {
-        expect(caughtError).toEqual(new Error('database exploded'))
+        expect(caughtError).toStrictEqual(new Error('database exploded'))
       })
 
       it('should count it as an error', () => {
@@ -1540,7 +1553,7 @@ describe('deployEntity', () => {
       })
 
       it('should reject it as an invalid auth chain', () => {
-        expect(caughtError).toEqual(new InvalidRequestError('Invalid auth chain.'))
+        expect(caughtError).toStrictEqual(new InvalidRequestError('Invalid auth chain.'))
       })
 
       it('should not take any content lock', () => {
