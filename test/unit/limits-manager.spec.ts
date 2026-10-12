@@ -1,4 +1,5 @@
 import { createLimitsManagerComponent } from '../../src/adapters/limits-manager'
+import { loadUploadLimits } from '../../src/logic/upload-limits'
 import { createConfigComponent } from '@well-known-components/env-config-provider'
 import { createMockedNameOwnership } from '../mocks/name-ownership-mock'
 import { createMockWalletStatsComponent } from '../mocks/wallet-stats-mock'
@@ -63,6 +64,7 @@ describe('limits manager', function () {
     worldsManager = createMockedWorldsManager()
     limitsManager = await createLimitsManagerComponent({
       config,
+      uploadLimits: await loadUploadLimits(config),
       nameOwnership,
       walletStats,
       whitelist,
@@ -103,6 +105,7 @@ describe('limits manager', function () {
       }
       limitsManager = await createLimitsManagerComponent({
         config,
+        uploadLimits: await loadUploadLimits(config),
         nameOwnership,
         walletStats,
         whitelist: failingWhitelist,
@@ -145,6 +148,7 @@ describe('limits manager', function () {
     })
     limitsManager = await createLimitsManagerComponent({
       config,
+      uploadLimits: await loadUploadLimits(config),
       nameOwnership,
       walletStats,
       whitelist,
@@ -172,6 +176,7 @@ describe('when computing the per-scene size limit', () => {
     nameOwnership.findOwners.mockResolvedValue(new Map([[worldName, owner]]))
     return createLimitsManagerComponent({
       config: createConfigComponent(configValues),
+      uploadLimits: await loadUploadLimits(createConfigComponent(configValues)),
       nameOwnership,
       walletStats: createMockWalletStatsComponent(
         new Map<EthAddress, WalletStats>([
@@ -264,62 +269,6 @@ describe('when computing the per-scene size limit', () => {
 
     it('should return MAX_SIZE', () => {
       expect(result).toBe(200n * MB_BigInt)
-    })
-  })
-})
-
-describe('when creating the limits manager with an invalid scene size configuration', () => {
-  let configValues: Record<string, string>
-  let error: unknown
-
-  async function build(): Promise<unknown> {
-    return createLimitsManagerComponent({
-      config: createConfigComponent(configValues),
-      nameOwnership: createMockedNameOwnership(),
-      walletStats: createMockWalletStatsComponent(),
-      whitelist: createMockWhitelistComponent(),
-      worldsManager: createMockedWorldsManager()
-    }).catch((e: unknown) => e)
-  }
-
-  beforeEach(() => {
-    configValues = { MAX_PARCELS: '4', MAX_SIZE: '200', ENS_MAX_SIZE: '36', ALLOW_SDK6: 'false' }
-  })
-
-  describe.each(['0', '-1', '1.5', 'abc'])('and MAX_SCENE_SIZE is %s', (value) => {
-    beforeEach(async () => {
-      configValues.MAX_SCENE_SIZE = value
-      error = await build()
-    })
-
-    it('should fail to start naming MAX_SCENE_SIZE', () => {
-      expect((error as Error).message).toContain('MAX_SCENE_SIZE')
-    })
-  })
-
-  describe('and the cap does not fit the per-deployer staging budget', () => {
-    beforeEach(async () => {
-      configValues.MAX_SCENE_SIZE = '2'
-      configValues.MAX_PENDING_BYTES_PER_DEPLOYER = String(2 * 1024 * 1024 - 1)
-      error = await build()
-    })
-
-    it('should fail to start naming both limits', () => {
-      expect((error as Error).message).toBe(
-        `MAX_PENDING_BYTES_PER_DEPLOYER (${2 * 1024 * 1024 - 1}) must be at least MAX_SCENE_SIZE (${2 * 1024 * 1024} bytes).`
-      )
-    })
-  })
-
-  describe('and the cap exactly fits the per-deployer staging budget', () => {
-    beforeEach(async () => {
-      configValues.MAX_SCENE_SIZE = '2'
-      configValues.MAX_PENDING_BYTES_PER_DEPLOYER = String(2 * 1024 * 1024)
-      error = await build()
-    })
-
-    it('should create the manager', () => {
-      expect(error).not.toBeInstanceOf(Error)
     })
   })
 })

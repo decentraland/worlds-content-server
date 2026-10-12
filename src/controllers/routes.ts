@@ -1,7 +1,6 @@
 import { Router } from '@dcl/http-server'
 import {
   createInFlightUploadBudget,
-  DEFAULT_MAX_UPLOAD_SIZE_IN_BYTES,
   DEPLOYMENT_FIELD_LIMITS,
   InFlightUploadBudget,
   InFlightUploadBudgetSnapshot,
@@ -10,6 +9,7 @@ import {
   multipartParserWrapper,
   MultipartTelemetryEvent
 } from '../logic/multipart'
+import { DEFAULT_MAX_UPLOAD_SIZE_IN_BYTES } from '../logic/upload-limits'
 import { BaseComponents, GlobalContext } from '../types'
 import { stampRequestArrival } from './request-arrival'
 import { payloadTooLargeHandler } from './payload-too-large-handler'

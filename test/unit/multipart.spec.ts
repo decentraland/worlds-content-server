@@ -11,7 +11,6 @@ import { InvalidRequestError } from '@dcl/http-commons'
 import {
   createInFlightUploadBudget,
   DEPLOYMENT_FIELD_LIMITS,
-  formatBytes,
   InFlightUploadBudget,
   InFlightUploadBudgetOptions,
   InFlightUploadBudgetSnapshot,
@@ -23,6 +22,7 @@ import {
   toDeploymentFile,
   UploadedFile
 } from '../../src/logic/multipart'
+import { formatBytes } from '../../src/logic/utils'
 
 // Charges payload bytes only, so these cases isolate payload accounting from the fixed overheads.
 function createPayloadBudget(capacity: number, options: InFlightUploadBudgetOptions = {}): InFlightUploadBudget {

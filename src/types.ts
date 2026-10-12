@@ -30,6 +30,8 @@ import { ICoordinatesComponent } from './logic/coordinates'
 // Type-only imports so the central types module can reference these component interfaces (for
 // AppComponents below) without a runtime import cycle through their component.ts factories.
 import type { IPendingScenesManager } from './adapters/pending-scenes-manager/types'
+import type { IContentGcComponent } from './logic/content-gc/types'
+import type { UploadLimits } from './logic/upload-limits/types'
 import type { ISourceUploadLimits } from './adapters/source-upload-limits/types'
 import type { IClientSourceComponent } from './logic/client-source/types'
 import type { IPartialDeploymentsComponent } from './logic/partial-deployments/types'
@@ -690,6 +692,7 @@ export type BaseComponents = {
   settingsPolicy: IWorldSettingsPolicyComponent
   coordinates: ICoordinatesComponent
   contentLocks: IContentLocks
+  contentGc: IContentGcComponent
   database: IPgComponent
   deploymentProcessing: IDeploymentProcessingComponent
   entityDeployer: IEntityDeployer
@@ -706,6 +709,8 @@ export type BaseComponents = {
   partialDeployments: IPartialDeploymentsComponent
   pendingScenesManager: IPendingScenesManager
   sourceUploadLimits: ISourceUploadLimits
+  /** Validated upload size, quota and lifetime settings (plain values, no lifecycle). */
+  uploadLimits: UploadLimits
   clientSource: IClientSourceComponent
   nats: INatsComponent
   nameDenyListChecker: INameDenyListChecker

@@ -2,7 +2,7 @@ import { InvalidRequestError } from '@dcl/http-commons'
 import { buildSceneDeploymentMessage, isUniqueViolation } from '../utils'
 import { FileInfo } from '@dcl/catalyst-storage'
 import { AppComponents, DeploymentToValidate, MissingSceneReplacementAuthorizationError, WorldScene } from '../../types'
-import { getPositiveInteger, mapWithConcurrency, raceWithSignal } from '../concurrency'
+import { mapWithConcurrency, raceWithSignal } from '../concurrency'
 import { calculateDeploymentSizeFromFileInfos } from '../validations/scene'
 import { PartialUploadExpiredError } from '../../adapters/pending-scenes-manager/errors'
 import { FileReceipt, PendingScene } from '../../adapters/pending-scenes-manager/types'
@@ -24,7 +24,6 @@ import {
 export async function createPartialDeploymentsComponent(
   components: Pick<
     AppComponents,
-    | 'config'
     | 'coordinates'
     | 'entityDeployer'
     | 'limitsManager'
@@ -35,10 +34,10 @@ export async function createPartialDeploymentsComponent(
     | 'worldsManager'
     | 'deploymentProcessing'
     | 'metrics'
+    | 'uploadLimits'
   >
 ): Promise<IPartialDeploymentsComponent> {
   const {
-    config,
     coordinates,
     entityDeployer,
     limitsManager,
@@ -47,9 +46,10 @@ export async function createPartialDeploymentsComponent(
     validator,
     worldsManager,
     deploymentProcessing,
-    metrics
+    metrics,
+    uploadLimits
   } = components
-  const maxPendingPerDeployer = await getPositiveInteger(config, 'MAX_PENDING_DEPLOYMENTS_PER_DEPLOYER', 10)
+  const maxPendingPerDeployer = uploadLimits.maxPendingDeploymentsPerDeployer
 
   async function metadata(hashes: string[], signal?: AbortSignal): Promise<Map<string, FileInfo | undefined>> {
     metrics.increment('partial_upload_metadata_checks', {}, hashes.length)

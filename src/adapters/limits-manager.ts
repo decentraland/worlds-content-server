@@ -1,10 +1,5 @@
 import { AppComponents, ILimitsManager, MB_BigInt, Whitelist } from '../types'
 import { isNameOwnershipValidationIgnored } from '../logic/name-ownership-validation'
-import { getPositiveInteger } from '../logic/concurrency'
-import { DEFAULT_MAX_PENDING_BYTES_PER_DEPLOYER } from './pending-scenes-manager'
-
-/** Default per-scene size cap for DCL-name worlds, in MiB. */
-export const DEFAULT_MAX_SCENE_SIZE_MB = 500
 
 const bigIntMax = (...args: bigint[]) => args.reduce((m, e) => (e > m ? e : m))
 const bigIntMin = (...args: bigint[]) => args.reduce((m, e) => (e < m ? e : m))
@@ -12,28 +7,19 @@ const bigIntMin = (...args: bigint[]) => args.reduce((m, e) => (e < m ? e : m))
 export async function createLimitsManagerComponent({
   config,
   nameOwnership,
+  uploadLimits,
   walletStats,
   whitelist,
   worldsManager
 }: Pick<
   AppComponents,
-  'config' | 'nameOwnership' | 'walletStats' | 'whitelist' | 'worldsManager'
+  'config' | 'nameOwnership' | 'uploadLimits' | 'walletStats' | 'whitelist' | 'worldsManager'
 >): Promise<ILimitsManager> {
   const hardMaxParcels = await config.requireNumber('MAX_PARCELS')
   const hardMaxSize = await config.requireNumber('MAX_SIZE')
   const hardMaxSizeForEns = await config.requireNumber('ENS_MAX_SIZE')
   const hardAllowSdk6 = (await config.requireString('ALLOW_SDK6')) === 'true'
-  const maxSceneSizeInBytes =
-    BigInt(await getPositiveInteger(config, 'MAX_SCENE_SIZE', DEFAULT_MAX_SCENE_SIZE_MB)) * MB_BigInt
-  const pendingBytesPerDeployer = BigInt(
-    await getPositiveInteger(config, 'MAX_PENDING_BYTES_PER_DEPLOYER', DEFAULT_MAX_PENDING_BYTES_PER_DEPLOYER)
-  )
-  // A capped scene uploaded in batches must always fit the deployer's staging budget.
-  if (pendingBytesPerDeployer < maxSceneSizeInBytes) {
-    throw new Error(
-      `MAX_PENDING_BYTES_PER_DEPLOYER (${pendingBytesPerDeployer}) must be at least MAX_SCENE_SIZE (${maxSceneSizeInBytes} bytes).`
-    )
-  }
+  const { maxSceneSizeInBytes } = uploadLimits
 
   // Limits fall back to the hard defaults when the whitelist is unavailable, so deployments keep
   // working during a whitelist outage instead of erroring on a missing override.

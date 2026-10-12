@@ -32,12 +32,8 @@ export type UpsertPendingScene = {
 export type FileReceipt = { hash: string; size: number; stored: boolean; charged: boolean }
 export type CompletedUpload = { worldName: string; parcels: string[]; creationTimestamp: number }
 
-/**
- * Result of an expired-upload cleanup run. `success`: every visited upload was reclaimed; `deferred`:
- * uploads kept the content lock busy so the run stopped early; `error`: some upload failed (logged), even
- * if the run was then deferred.
- */
-export type ExpiredUploadsCleanup = { outcome: 'success' | 'deferred' | 'error'; removed: number; failed: number }
+/** An expired upload's keyset position; `createdAt` travels as text to keep its microseconds. */
+export type ExpiredUploadCursor = { entityId: string; createdAt: string }
 
 export interface IPendingScenesManager extends IBaseComponent {
   /** Retrieves a live upload without renewing its fixed expiration. */
@@ -86,14 +82,16 @@ export interface IPendingScenesManager extends IBaseComponent {
   /** Removes staging state only after successful publication (normal publication does this atomically). */
   deleteByEntityId(entityId: string): Promise<void>
   /**
-   * Reclaims expired content under the exclusive lock before releasing its byte accounting, then prunes
-   * completion receipts and rate windows and refreshes the gauges. Visits every upload expired when the
-   * run starts; a failing upload doesn't stop the run. Concurrent calls run one after another.
-   * @throws Error only when pruning or reporting fails.
+   * Lists uploads created before `cutoff`, oldest first, resuming after `after`.
+   * @param limit Maximum uploads returned; a shorter page means no more remain.
    */
-  deleteExpired(): Promise<ExpiredUploadsCleanup>
-  /** The fixed pending upload lifetime; GC keeps content referenced by uploads younger than it. */
-  readonly ttlMs: number
-  /** How often the scheduled job runs {@link IPendingScenesManager.deleteExpired}. */
-  readonly cleanupIntervalMs: number
+  listExpired(cutoff: Date, after: ExpiredUploadCursor | undefined, limit: number): Promise<ExpiredUploadCursor[]>
+  /** Returns every storage key an upload may have staged: its files, entity and auth chain. */
+  getUploadKeys(entityId: string): Promise<string[]>
+  /** Releases an upload's accounting if it was created before `cutoff`; call once its objects are reclaimed. */
+  releaseExpired(entityId: string, cutoff: Date): Promise<void>
+  /** Prunes completion receipts and rate windows and refreshes the gauges. */
+  pruneAndReport(): Promise<void>
+  /** Records that a cleanup run finished; quota Retry-After estimates the next run from it. */
+  recordCleanupFinished(): void
 }

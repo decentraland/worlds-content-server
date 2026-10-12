@@ -3,15 +3,16 @@ import {
   ISourceUploadLimits,
   SourceUploadLimitExceededError
 } from '../../src/adapters/source-upload-limits'
-import { DEFAULT_MAX_UPLOAD_SIZE_IN_BYTES } from '../../src/logic/multipart'
+import { DEFAULT_MAX_UPLOAD_SIZE_IN_BYTES, loadUploadLimits } from '../../src/logic/upload-limits'
 
 const MAX_REQUEST_BYTES = DEFAULT_MAX_UPLOAD_SIZE_IN_BYTES
 
 describe('when limiting in-flight uploads per source', () => {
   let settings: Record<string, number | undefined>
 
-  function create(): Promise<ISourceUploadLimits> {
-    return createSourceUploadLimits({ config: { getNumber: jest.fn(async (key: string) => settings[key]) } as never })
+  async function create(): Promise<ISourceUploadLimits> {
+    const uploadLimits = await loadUploadLimits({ getNumber: jest.fn(async (key: string) => settings[key]) })
+    return createSourceUploadLimits({ uploadLimits })
   }
 
   beforeEach(() => {

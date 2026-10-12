@@ -17,6 +17,7 @@ import { IFetchComponent } from '@dcl/core-commons'
 
 import { createValidator } from '../src/logic/validations'
 import { createPendingScenesManager } from '../src/adapters/pending-scenes-manager'
+import { createContentGcComponent } from '../src/logic/content-gc'
 import { createPartialDeploymentsComponent } from '../src/logic/partial-deployments'
 import { createTestMetricsComponent } from '@dcl/metrics'
 import { metricDeclarations } from '../src/metrics'
@@ -92,7 +93,7 @@ export const test = createRunner<TestComponents>({
 async function initComponents(): Promise<TestComponents> {
   const components = await originalInitComponents()
 
-  const { logs, database } = components
+  const { logs, database, uploadLimits } = components
   const config = await createDotEnvConfigComponent(
     { path: ['.env.default', '.env'] },
     {
@@ -231,17 +232,18 @@ async function initComponents(): Promise<TestComponents> {
     worldsManager
   })
 
-  const pendingScenesManager = await createPendingScenesManager({
-    config,
+  const pendingScenesManager = await createPendingScenesManager({ database, metrics, uploadLimits })
+  const contentGc = await createContentGcComponent({
     database,
     logs,
     metrics,
     storage,
-    contentLocks: components.contentLocks
+    contentLocks: components.contentLocks,
+    pendingScenesManager,
+    uploadLimits
   })
 
   const partialDeployments = await createPartialDeploymentsComponent({
-    config,
     coordinates,
     entityDeployer,
     limitsManager,
@@ -250,6 +252,7 @@ async function initComponents(): Promise<TestComponents> {
     deploymentProcessing: components.deploymentProcessing,
     metrics,
     storage,
+    uploadLimits,
     validator,
     worldsManager
   })
@@ -301,6 +304,7 @@ async function initComponents(): Promise<TestComponents> {
     comms,
     config,
     commsAdapter,
+    contentGc,
     settingsPolicy,
     coordinates,
     deploymentProcessing: components.deploymentProcessing,

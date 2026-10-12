@@ -314,7 +314,7 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
           await components.database.query(
             SQL`UPDATE pending_scenes SET created_at = now() - interval '2 days' WHERE entity_id = ${otherUpload.id}`
           )
-          await components.pendingScenesManager.deleteExpired()
+          await components.contentGc.deleteExpiredUploads()
           kept = await components.storage.exist(contentHashes[0])
           accounting = await readCharges()
         })

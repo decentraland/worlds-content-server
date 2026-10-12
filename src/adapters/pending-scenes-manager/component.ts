@@ -1,14 +1,12 @@
 import SQL from 'sql-template-strings'
 import { InvalidRequestError } from '@dcl/http-commons'
 import { AppComponents } from '../../types'
-import { getPositiveInteger, raceWithSignal } from '../../logic/concurrency'
+import { raceWithSignal } from '../../logic/concurrency'
 import { withUploadTransaction } from '../upload-transaction'
-import { getPublishedContentKeys, getReferencedContentKeys } from '../content-references'
-import { ExpiredUploadsCleanup, IPendingScenesManager, PendingScene, UpsertPendingScene, FileReceipt } from './types'
+import { getPublishedContentKeys } from '../content-references'
+import { ExpiredUploadCursor, IPendingScenesManager, PendingScene, UpsertPendingScene, FileReceipt } from './types'
 import { PartialUploadExpiredError, PartialUploadQuotaExceededError, PartialUploadTooLargeError } from './errors'
-import { ContentLockTimeoutError } from '../content-locks/errors'
-import { DEFAULT_MAX_UPLOAD_SIZE_IN_BYTES, formatBytes } from '../../logic/multipart'
-import { errorMessage } from '../../logic/utils'
+import { formatBytes } from '../../logic/utils'
 
 type PendingSceneRow = {
   entity_id: string
@@ -19,15 +17,6 @@ type PendingSceneRow = {
   updated_at: Date
   initialized: boolean
 }
-
-/** Default lifetime of a pending (partial) upload, anchored at its first request. */
-export const DEFAULT_PENDING_DEPLOYMENT_TTL_MS = 60 * 60 * 1000
-/** Default staged/reserved bytes per deployer. */
-export const DEFAULT_MAX_PENDING_BYTES_PER_DEPLOYER = 1024 ** 3
-/** Default interval between expired-upload cleanup runs. */
-export const DEFAULT_PARTIAL_UPLOAD_CLEANUP_INTERVAL_MS = 5 * 60 * 1000
-/** Expired uploads fetched per cleanup query. */
-export const CLEANUP_PAGE_SIZE = 100
 
 function toPendingScene(row: PendingSceneRow, ttlMs: number): PendingScene {
   return {
@@ -44,38 +33,20 @@ function toPendingScene(row: PendingSceneRow, ttlMs: number): PendingScene {
 
 /**
  * Creates durable entity-keyed staging, progress and admission accounting. All staging mutations run
- * under the caller's shared content lock. Cleanup takes the exclusive lock, including physical deletes.
- * @param components Persistence, storage, lock and telemetry dependencies.
+ * under the caller's shared content lock; expired-upload cleanup is orchestrated by content GC.
+ * @param components Persistence, the validated upload limits and telemetry dependencies.
  * @returns Upload lifecycle and atomic admission operations.
  */
 export async function createPendingScenesManager(
-  components: Pick<AppComponents, 'config' | 'database' | 'logs' | 'metrics' | 'storage' | 'contentLocks'>
+  components: Pick<AppComponents, 'database' | 'metrics' | 'uploadLimits'>
 ): Promise<IPendingScenesManager> {
-  const { config, database, logs, metrics, storage, contentLocks } = components
-  const logger = logs.getLogger('pending-scenes-manager')
-  const ttlMs = await getPositiveInteger(config, 'PENDING_DEPLOYMENT_TTL', DEFAULT_PENDING_DEPLOYMENT_TTL_MS)
-  const cleanupIntervalMs = await getPositiveInteger(
-    config,
-    'PARTIAL_UPLOAD_CLEANUP_INTERVAL_MS',
-    DEFAULT_PARTIAL_UPLOAD_CLEANUP_INTERVAL_MS
-  )
-  const accountBytes = BigInt(
-    await getPositiveInteger(config, 'MAX_PENDING_BYTES_PER_DEPLOYER', DEFAULT_MAX_PENDING_BYTES_PER_DEPLOYER)
-  )
-  const globalBytes = BigInt(await getPositiveInteger(config, 'MAX_PENDING_BYTES', 50 * 1024 ** 3))
-  const bytesPerMinute = await getPositiveInteger(config, 'MAX_PARTIAL_UPLOAD_BYTES_PER_MINUTE', 512 * 1024 ** 2)
-  const completionTtl = await getPositiveInteger(config, 'COMPLETED_UPLOAD_TTL', 24 * 60 * 60 * 1000)
-  // Otherwise a valid request or upload could be rejected by its own size forever.
-  if (bytesPerMinute < DEFAULT_MAX_UPLOAD_SIZE_IN_BYTES) {
-    throw new Error(
-      `MAX_PARTIAL_UPLOAD_BYTES_PER_MINUTE (${bytesPerMinute}) must fit one maximum-size upload (${DEFAULT_MAX_UPLOAD_SIZE_IN_BYTES} bytes).`
-    )
-  }
-  if (globalBytes < accountBytes) {
-    throw new Error(
-      `MAX_PENDING_BYTES (${globalBytes}) must be at least MAX_PENDING_BYTES_PER_DEPLOYER (${accountBytes}).`
-    )
-  }
+  const { database, metrics, uploadLimits } = components
+  const ttlMs = uploadLimits.pendingDeploymentTtlMs
+  const cleanupIntervalMs = uploadLimits.partialUploadCleanupIntervalMs
+  const accountBytes = uploadLimits.maxPendingBytesPerDeployer
+  const globalBytes = uploadLimits.maxPendingBytes
+  const bytesPerMinute = uploadLimits.maxPartialUploadBytesPerMinute
+  const completionTtl = uploadLimits.completedUploadTtlMs
 
   // When this replica's cleanup last finished; the scheduled sweep runs again one interval later.
   let lastCleanupFinishedAt: number | undefined
@@ -328,95 +299,33 @@ export async function createPendingScenesManager(
       AND EXISTS (SELECT 1 FROM world_scenes WHERE entity_id = ${entityId})`)
   }
 
-  // The scheduled job and POST /gc both run cleanup; runs are serialized so they never overlap.
-  let cleanupQueue: Promise<unknown> = Promise.resolve()
-
-  function deleteExpired(): Promise<ExpiredUploadsCleanup> {
-    const run = cleanupQueue.then(runCleanup)
-    cleanupQueue = run.catch(() => undefined)
-    return run
-  }
-
-  async function runCleanup(): Promise<ExpiredUploadsCleanup> {
-    const { end } = metrics.startTimer('partial_upload_cleanup_duration_seconds')
-    let outcome: ExpiredUploadsCleanup['outcome'] = 'error'
-    try {
-      const sweep = await sweepExpired()
-      // Runs whatever the sweep did, so receipts, rate windows and gauges never go stale.
-      await pruneAndReport()
-      outcome = sweep.outcome
-      if (outcome === 'success') {
-        metrics.observe('partial_upload_cleanup_last_success_timestamp_seconds', {}, Date.now() / 1000)
-      }
-      logger.info('Cleaned expired uploads', sweep)
-      return sweep
-    } finally {
-      end()
-      metrics.increment('partial_upload_cleanup_runs', { outcome })
-      // Any finished run counts: the next one is scheduled an interval later regardless of its outcome.
-      lastCleanupFinishedAt = Date.now()
+  async function listExpired(
+    cutoff: Date,
+    after: ExpiredUploadCursor | undefined,
+    limit: number
+  ): Promise<ExpiredUploadCursor[]> {
+    const query = SQL`SELECT entity_id, created_at::text AS cursor FROM pending_scenes WHERE created_at < ${cutoff}`
+    if (after) {
+      query.append(SQL` AND (created_at, entity_id) > (${after.createdAt}::timestamptz, ${after.entityId})`)
     }
+    query.append(SQL` ORDER BY created_at, entity_id LIMIT ${limit}`)
+    const page = await database.query<{ entity_id: string; cursor: string }>(query)
+    return page.rows.map((row) => ({ entityId: row.entity_id, createdAt: row.cursor }))
   }
 
-  async function sweepExpired(): Promise<ExpiredUploadsCleanup> {
-    const cutoff = new Date(Date.now() - ttlMs)
-    let removed = 0
-    let failed = 0
-    // Keyset cursor; created_at travels as text to keep its microseconds.
-    let after: { createdAt: string; entityId: string } | undefined
-    try {
-      // Pages until a short one: every upload expired before the cutoff is visited once.
-      for (;;) {
-        const query = SQL`SELECT entity_id, created_at::text AS cursor FROM pending_scenes WHERE created_at < ${cutoff}`
-        if (after) {
-          query.append(SQL` AND (created_at, entity_id) > (${after.createdAt}::timestamptz, ${after.entityId})`)
-        }
-        query.append(SQL` ORDER BY created_at, entity_id LIMIT ${CLEANUP_PAGE_SIZE}`)
-        const page = await database.query<{ entity_id: string; cursor: string }>(query)
-        for (const { entity_id: entityId, cursor } of page.rows) {
-          after = { createdAt: cursor, entityId }
-          try {
-            await reclaimUpload(entityId, cutoff)
-            removed++
-            metrics.increment('partial_upload_expired_uploads')
-          } catch (error) {
-            // Uploads keep the lock busy: retry next run rather than wait.
-            if (error instanceof ContentLockTimeoutError) {
-              logger.warn('Deferred expired upload cleanup: the content lock is busy', { entityId, removed, failed })
-              return { outcome: failed ? 'error' : 'deferred', removed, failed }
-            }
-            failed++
-            metrics.increment('partial_upload_cleanup_failed_uploads')
-            logger.error('Failed to reclaim expired upload', { entityId, error: errorMessage(error) })
-          }
-        }
-        if (page.rows.length < CLEANUP_PAGE_SIZE) break
-      }
-    } catch (error) {
-      logger.error('Failed to list expired uploads', { error: errorMessage(error) })
-      return { outcome: 'error', removed, failed }
-    }
-    return { outcome: failed ? 'error' : 'success', removed, failed }
-  }
-
-  /**
-   * Deletes an expired upload's orphaned staged objects, each batch under the exclusive lock, then
-   * releases its accounting.
-   * @throws ContentLockTimeoutError when uploads keep the content lock busy.
-   */
-  async function reclaimUpload(entityId: string, cutoff: Date): Promise<void> {
+  async function getUploadKeys(entityId: string): Promise<string[]> {
     const keys = await database.query<{ hash: string }>(SQL`
       SELECT hash FROM pending_scene_files WHERE entity_id = ${entityId}
       UNION SELECT ${entityId} UNION SELECT ${entityId + '.auth'}`)
-    for (let offset = 0; offset < keys.rows.length; offset += 1000) {
-      const batch = keys.rows.slice(offset, offset + 1000).map((row) => row.hash)
-      await contentLocks.withWrite(async () => {
-        const referenced = await getReferencedContentKeys(database, new Date(Date.now() - ttlMs), batch)
-        const orphaned = batch.filter((hash) => !referenced.has(hash))
-        if (orphaned.length) await storage.delete(orphaned)
-      })
-    }
+    return keys.rows.map((row) => row.hash)
+  }
+
+  async function releaseExpired(entityId: string, cutoff: Date): Promise<void> {
     await database.query(SQL`DELETE FROM pending_scenes WHERE entity_id = ${entityId} AND created_at < ${cutoff}`)
+  }
+
+  function recordCleanupFinished(): void {
+    lastCleanupFinishedAt = Date.now()
   }
 
   async function pruneAndReport(): Promise<void> {
@@ -439,8 +348,6 @@ export async function createPendingScenesManager(
   }
 
   return {
-    ttlMs,
-    cleanupIntervalMs,
     getByEntityId,
     getPublishedContent,
     upsert,
@@ -451,6 +358,10 @@ export async function createPendingScenesManager(
     markMissing,
     getCompleted,
     deleteByEntityId,
-    deleteExpired
+    listExpired,
+    getUploadKeys,
+    releaseExpired,
+    pruneAndReport,
+    recordCleanupFinished
   }
 }

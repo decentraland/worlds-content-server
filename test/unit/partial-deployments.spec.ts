@@ -73,7 +73,7 @@ describe('when staging a partial deployment', () => {
     increment = jest.fn()
     observe = jest.fn()
     components = {
-      config: { getNumber: jest.fn().mockResolvedValue(undefined) },
+      uploadLimits: { maxPendingDeploymentsPerDeployer: 10 },
       coordinates: createCoordinatesComponent(),
       deploymentProcessing: createDeploymentProcessingMock(),
       entityDeployer: { deployEntity },
@@ -610,7 +610,7 @@ describe('when finding the publication of an entity', () => {
   beforeEach(async () => {
     getWorldScenes = jest.fn()
     ;({ findPublication } = await createPartialDeploymentsComponent({
-      config: { getNumber: jest.fn().mockResolvedValue(undefined) },
+      uploadLimits: { maxPendingDeploymentsPerDeployer: 10 },
       worldsManager: { getWorldScenes }
     } as unknown as Components))
   })

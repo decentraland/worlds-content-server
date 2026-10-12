@@ -1,6 +1,12 @@
-import { CLEANUP_PAGE_SIZE, createPendingScenesManager } from '../../src/adapters/pending-scenes-manager'
+import { createPendingScenesManager } from '../../src/adapters/pending-scenes-manager'
 import { ContentLockTimeoutError } from '../../src/adapters/content-locks/errors'
-import { ExpiredUploadsCleanup, IPendingScenesManager } from '../../src/adapters/pending-scenes-manager/types'
+import {
+  CLEANUP_PAGE_SIZE,
+  createContentGcComponent,
+  ExpiredUploadsCleanup,
+  IContentGcComponent
+} from '../../src/logic/content-gc'
+import { DEFAULT_PENDING_DEPLOYMENT_TTL_MS, UploadLimits } from '../../src/logic/upload-limits'
 
 const NOW = 1_800_000_000_000
 const MAX_PENDING_BYTES = 5000
@@ -66,22 +72,35 @@ function buildMocks(): Mocks {
   return mocks
 }
 
-function build(mocks: Mocks): Promise<IPendingScenesManager> {
-  return createPendingScenesManager({
-    config: {
-      getNumber: jest.fn(async (key: string) =>
-        key === 'MAX_PENDING_BYTES' || key === 'MAX_PENDING_BYTES_PER_DEPLOYER' ? MAX_PENDING_BYTES : undefined
-      )
-    },
+const UPLOAD_LIMITS = {
+  pendingDeploymentTtlMs: DEFAULT_PENDING_DEPLOYMENT_TTL_MS,
+  partialUploadCleanupIntervalMs: 300_000,
+  maxPendingBytesPerDeployer: BigInt(MAX_PENDING_BYTES),
+  maxPendingBytes: BigInt(MAX_PENDING_BYTES),
+  maxPartialUploadBytesPerMinute: 512 * 1024 ** 2,
+  completedUploadTtlMs: 86_400_000
+} as UploadLimits
+
+// The real staging accounting over a mocked database, cleaned up by the real content GC.
+async function build(mocks: Mocks): Promise<IContentGcComponent> {
+  const metrics = {
+    increment: mocks.increment,
+    observe: mocks.observe,
+    startTimer: jest.fn().mockReturnValue({ end: mocks.endTimer })
+  }
+  const pendingScenesManager = await createPendingScenesManager({
+    database: { query: mocks.query },
+    metrics,
+    uploadLimits: UPLOAD_LIMITS
+  } as any)
+  return createContentGcComponent({
     database: { query: mocks.query },
     logs: { getLogger: () => ({ info: jest.fn(), warn: jest.fn(), error: mocks.logError, debug: jest.fn() }) },
-    metrics: {
-      increment: mocks.increment,
-      observe: mocks.observe,
-      startTimer: jest.fn().mockReturnValue({ end: mocks.endTimer })
-    },
+    metrics,
     storage: { delete: mocks.storageDelete },
-    contentLocks: { withWrite: mocks.withWrite }
+    contentLocks: { withWrite: mocks.withWrite },
+    pendingScenesManager,
+    uploadLimits: UPLOAD_LIMITS
   } as any)
 }
 
@@ -143,7 +162,7 @@ describe('when creating the pending scenes manager', () => {
 
 describe('when deleting expired partial uploads', () => {
   let mocks: Mocks
-  let manager: IPendingScenesManager
+  let manager: IContentGcComponent
 
   beforeEach(async () => {
     mocks = buildMocks()
@@ -160,7 +179,7 @@ describe('when deleting expired partial uploads', () => {
     let result: ExpiredUploadsCleanup
 
     beforeEach(async () => {
-      result = await manager.deleteExpired()
+      result = await manager.deleteExpiredUploads()
     })
 
     it('should report a clean run that reclaimed the upload', () => {
@@ -195,7 +214,7 @@ describe('when deleting expired partial uploads', () => {
     beforeEach(async () => {
       mocks.pages = [expiredRows('expired', 2)]
       mocks.storageDelete.mockRejectedValueOnce(new Error('storage unavailable'))
-      result = await manager.deleteExpired()
+      result = await manager.deleteExpiredUploads()
     })
 
     it('should still reclaim the next upload and keep the failed one charged', () => {
@@ -233,7 +252,7 @@ describe('when deleting expired partial uploads', () => {
     beforeEach(async () => {
       mocks.pages = [expiredRows('expired', 2)]
       mocks.withWrite.mockRejectedValueOnce(new ContentLockTimeoutError())
-      result = await manager.deleteExpired()
+      result = await manager.deleteExpiredUploads()
     })
 
     it('should stop without touching the later uploads', () => {
@@ -275,7 +294,7 @@ describe('when deleting expired partial uploads', () => {
       mocks.storageDelete.mockImplementation(async (keys: string[]) => {
         if (keys.some((key) => key.startsWith('failing-'))) throw new Error('storage unavailable')
       })
-      result = await manager.deleteExpired()
+      result = await manager.deleteExpiredUploads()
       listings = statementsMatching(mocks, 'ORDER BY created_at, entity_id')
     })
 
@@ -308,8 +327,8 @@ describe('when deleting expired partial uploads', () => {
             releaseFirst = () => resolve(operation())
           })
       )
-      const first = manager.deleteExpired()
-      const second = manager.deleteExpired()
+      const first = manager.deleteExpiredUploads()
+      const second = manager.deleteExpiredUploads()
       await new Promise((resolve) => setImmediate(resolve))
       listingsWhileFirstRuns = statementsMatching(mocks, 'ORDER BY created_at, entity_id').length
       releaseFirst()
@@ -332,7 +351,7 @@ describe('when deleting expired partial uploads', () => {
 
     beforeEach(async () => {
       mocks.query.mockRejectedValueOnce(new Error('database is down'))
-      result = await manager.deleteExpired()
+      result = await manager.deleteExpiredUploads()
     })
 
     it('should report a failed run and still prune receipts and rate windows and refresh the gauges', () => {
@@ -358,7 +377,7 @@ describe('when deleting expired partial uploads', () => {
           ? Promise.reject(new Error('database is down'))
           : answer(sql)
       )
-      error = await manager.deleteExpired().catch((e) => e)
+      error = await manager.deleteExpiredUploads().catch((e) => e)
     })
 
     it('should rethrow after counting a failed run without recording a success', () => {

@@ -11,6 +11,8 @@ import { Readable, Transform } from 'stream'
 import { pipeline } from 'stream/promises'
 import { DeploymentFile } from '../types'
 import { hashV1 } from '@dcl/hashing'
+import { DEFAULT_MAX_UPLOAD_SIZE_IN_BYTES } from './upload-limits'
+import { formatBytes } from './utils'
 
 /** A multipart body over a size or count limit; answered with 413, as on Catalyst. */
 export class PayloadTooLargeError extends Error {
@@ -90,13 +92,6 @@ export function toDeploymentFile(file: UploadedFile): DeploymentFile {
 
 const MB = 1024 * 1024
 
-/**
- * Coarse limits applied while parsing multipart bodies. They comfortably fit a legitimate
- * world deployment while bounding how much an (unauthenticated) request can buffer in memory,
- * since the parser runs before any signature/size validation. Precise per-world size limits
- * are still enforced afterwards by the deployment validator.
- */
-export const DEFAULT_MAX_UPLOAD_SIZE_IN_BYTES = 350 * MB
 const DEFAULT_MAX_FILES = 10_000
 const DEFAULT_LIMITS: busboy.Limits = {
   fieldNameSize: 200,
@@ -304,14 +299,6 @@ class UploadCapacityError extends MultipartRejectionError {
   constructor(actualBytes: number) {
     super('bytes', 'Server is buffering too many uploads, please retry shortly.', actualBytes)
   }
-}
-
-/** Formats a byte count for client-facing messages. */
-export function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} bytes`
-  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KiB`
-  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MiB`
-  return `${(bytes / 1024 ** 3).toFixed(1)} GiB`
 }
 
 /** Describes a body that didn't arrive in time with what was measured, so a creator can report it. */
