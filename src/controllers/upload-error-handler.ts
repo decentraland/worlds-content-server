@@ -39,8 +39,8 @@ export function toDeploymentErrorResponse(error: unknown): IHttpServerComponent.
 }
 
 /**
- * Maps every upload and deployment error to its HTTP response; `@dcl/http-commons`' errorHandler has no
- * mapping for any of them.
+ * Maps every upload error to its HTTP response; `@dcl/http-commons`' errorHandler has no mapping for any
+ * of them. Deployment errors are mapped by the deploy handler itself (see {@link toDeploymentErrorResponse}).
  * @param error The error a request failed with.
  * @returns The response for it, or undefined when the shared errorHandler should handle it.
  */
@@ -66,11 +66,11 @@ export function toUploadErrorResponse(error: unknown): IHttpServerComponent.IRes
       body: { error: 'Too Many Requests', message: error.message }
     }
   }
-  return toDeploymentErrorResponse(error)
+  return undefined
 }
 
 /**
- * Answers upload and deployment errors with their HTTP responses (see {@link toUploadErrorResponse}).
+ * Answers upload errors with their HTTP responses (see {@link toUploadErrorResponse}).
  * @returns Middleware to register right after the shared errorHandler; every other error is rethrown to it.
  */
 export function uploadErrorHandler(): (

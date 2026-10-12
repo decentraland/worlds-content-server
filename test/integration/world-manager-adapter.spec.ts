@@ -4,7 +4,7 @@ import { hashV1 } from '@dcl/hashing'
 import { bufferToStream } from '@dcl/catalyst-storage'
 import { makeid } from '../utils'
 import { defaultAccess } from '../../src/logic/access'
-import { NoDeployedScenesError, SceneAlreadyDeployedError } from '../../src/types'
+import { NoDeployedScenesError, DeploymentUniqueViolationError } from '../../src/types'
 import { PartialUploadExpiredError } from '../../src/logic/partial-upload-admission'
 import SQL from 'sql-template-strings'
 
@@ -122,11 +122,11 @@ test('WorldManagerAdapter', function ({ components }) {
         .catch((error) => error)
     })
 
-    it('should reject it as already deployed, keeping the unique violation as its cause', () => {
+    it('should reject it as a unique violation, keeping the database error as its cause', () => {
       expect({
-        isAlreadyDeployed: caughtError instanceof SceneAlreadyDeployedError,
-        cause: (caughtError as SceneAlreadyDeployedError).cause
-      }).toEqual({ isAlreadyDeployed: true, cause: expect.objectContaining({ code: '23505' }) })
+        isUniqueViolation: caughtError instanceof DeploymentUniqueViolationError,
+        cause: (caughtError as DeploymentUniqueViolationError).cause
+      }).toEqual({ isUniqueViolation: true, cause: expect.objectContaining({ code: '23505' }) })
     })
   })
 

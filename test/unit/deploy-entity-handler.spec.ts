@@ -14,7 +14,7 @@ import {
 } from '../../src/logic/deployment-processing'
 import { hashV1 } from '@dcl/hashing'
 import { Authenticator } from '@dcl/crypto'
-import { DeploymentToValidate, SceneAlreadyDeployedError, SceneReplacementConflictError } from '../../src/types'
+import { DeploymentToValidate, DeploymentUniqueViolationError, SceneReplacementConflictError } from '../../src/types'
 import { PartialUploadQuotaExceededError, PartialUploadTooLargeError } from '../../src/logic/partial-upload-admission'
 import { createSceneDeploymentsComponent } from '../../src/logic/scene-deployments'
 
@@ -920,7 +920,10 @@ describe('deployEntity', () => {
             deployEntity: jest
               .fn()
               .mockRejectedValue(
-                new SceneAlreadyDeployedError(entityId, Object.assign(new Error('duplicate key'), { code: '23505' }))
+                new DeploymentUniqueViolationError(
+                  entityId,
+                  Object.assign(new Error('duplicate key'), { code: '23505' })
+                )
               )
           },
           storage: { fileInfo: jest.fn().mockResolvedValue(undefined) },
@@ -979,7 +982,10 @@ describe('deployEntity', () => {
             deployEntity: jest
               .fn()
               .mockRejectedValue(
-                new SceneAlreadyDeployedError(entityId, Object.assign(new Error('duplicate key'), { code: '23505' }))
+                new DeploymentUniqueViolationError(
+                  entityId,
+                  Object.assign(new Error('duplicate key'), { code: '23505' })
+                )
               )
           },
           storage: { fileInfo: jest.fn().mockResolvedValue(undefined) },

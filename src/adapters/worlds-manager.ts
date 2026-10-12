@@ -28,7 +28,7 @@ import {
   SceneDeploymentStatus,
   SceneDeploymentData,
   SceneReplacementAuthorization,
-  SceneAlreadyDeployedError,
+  DeploymentUniqueViolationError,
   SceneReplacementConflictError,
   SceneUndeploymentResult
 } from '../types'
@@ -729,7 +729,7 @@ export async function createWorldsManagerComponent({
       }
     }).catch((error: unknown) => {
       // Most commonly a concurrent publication of this same entity colliding on the primary key.
-      throw isUniqueViolation(error) ? new SceneAlreadyDeployedError(scene.id, error) : error
+      throw isUniqueViolation(error) ? new DeploymentUniqueViolationError(scene.id, error) : error
     })
 
     return { metadataUpdated, creationTimestamp }

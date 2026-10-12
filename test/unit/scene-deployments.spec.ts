@@ -8,7 +8,7 @@ import {
   DeploymentFile,
   DeploymentToValidate,
   MissingSceneReplacementAuthorizationError,
-  SceneAlreadyDeployedError
+  DeploymentUniqueViolationError
 } from '../../src/types'
 import {
   DEFAULT_CONTENT_FILE_INFO_CONCURRENCY,
@@ -115,6 +115,23 @@ describe('when staging a partial deployment', () => {
     it('should reject before looking up storage or reserving bytes', async () => {
       await expect(stage(input)).rejects.toThrow('invalid manifest')
       expect({ metadata: fileInfo.mock.calls.length, reservations: admitBatch.mock.calls.length }).toEqual({
+        metadata: 0,
+        reservations: 0
+      })
+    })
+  })
+
+  describe('and the entity has no content list', () => {
+    let error: unknown
+
+    beforeEach(async () => {
+      input.entity = { ...input.entity, content: undefined }
+      error = await stage(input).catch((e: unknown) => e)
+    })
+
+    it('should reject it as an invalid request before looking up storage or reserving bytes', () => {
+      expect({ error, metadata: fileInfo.mock.calls.length, reservations: admitBatch.mock.calls.length }).toEqual({
+        error: new InvalidRequestError('Deployment failed: the entity has no content list.'),
         metadata: 0,
         reservations: 0
       })
@@ -533,7 +550,7 @@ describe('when staging a partial deployment', () => {
       )
       fileInfo.mockImplementation(async (hash) => ({ size: hash === 'a' ? 300 : 500 }))
       deployEntity.mockRejectedValueOnce(
-        new SceneAlreadyDeployedError('entity', Object.assign(new Error('duplicate key'), { code: '23505' }))
+        new DeploymentUniqueViolationError('entity', Object.assign(new Error('duplicate key'), { code: '23505' }))
       )
       getWorldScenes.mockResolvedValueOnce({
         scenes: [
@@ -577,7 +594,7 @@ describe('when staging a partial deployment', () => {
       )
       fileInfo.mockImplementation(async (hash) => ({ size: hash === 'a' ? 300 : 500 }))
       deployEntity.mockRejectedValueOnce(
-        new SceneAlreadyDeployedError('entity', Object.assign(new Error('duplicate key'), { code: '23505' }))
+        new DeploymentUniqueViolationError('entity', Object.assign(new Error('duplicate key'), { code: '23505' }))
       )
       error = await stage(input).catch((e) => e)
     })
@@ -850,6 +867,29 @@ describe('when deploying a single-request deployment', () => {
     })
   })
 
+  describe('and the entity has no content list', () => {
+    let error: unknown
+
+    beforeEach(async () => {
+      deployment.entity = { ...deployment.entity, content: undefined }
+      error = await deploy({
+        baseUrl: 'https://worlds.example',
+        entityRaw: '{}',
+        deployment,
+        signal,
+        deadlineAt: 99
+      }).catch((e: unknown) => e)
+    })
+
+    it('should reject it as an invalid request without looking up storage or publishing it', () => {
+      expect({ error, metadata: fileInfo.mock.calls.length, published: deployEntity.mock.calls.length }).toEqual({
+        error: new InvalidRequestError('Deployment failed: the entity has no content list.'),
+        metadata: 0,
+        published: 0
+      })
+    })
+  })
+
   describe('and the scene has no replacement authorization', () => {
     let error: unknown
 
@@ -877,7 +917,7 @@ describe('when deploying a single-request deployment', () => {
 
     beforeEach(() => {
       collision = Object.assign(new Error('duplicate key'), { code: '23505' })
-      deployEntity.mockRejectedValueOnce(new SceneAlreadyDeployedError('entity', collision))
+      deployEntity.mockRejectedValueOnce(new DeploymentUniqueViolationError('entity', collision))
     })
 
     describe('and the entity is live in its world', () => {

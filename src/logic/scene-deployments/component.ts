@@ -1,13 +1,13 @@
 import { InvalidRequestError } from '@dcl/http-commons'
-import { EntityType } from '@dcl/schemas'
+import { Entity, EntityType } from '@dcl/schemas'
 import { buildSceneDeploymentMessage } from '../utils'
 import { FileInfo, IContentStorageComponent } from '@dcl/catalyst-storage'
 import {
   AppComponents,
   DeploymentResult,
   DeploymentToValidate,
+  DeploymentUniqueViolationError,
   MissingSceneReplacementAuthorizationError,
-  SceneAlreadyDeployedError,
   WorldScene
 } from '../../types'
 import { mapWithConcurrency, raceWithSignal } from '../concurrency'
@@ -52,6 +52,15 @@ export async function getContentFileInfos(
     { signal, waitForActiveOnAbort: false }
   )
   return new Map(uniqueHashes.map((hash, index) => [hash, fileInfos[index]]))
+}
+
+/**
+ * Lists the hashes of the entity's content.
+ * @throws InvalidRequestError when the entity has no content list; pre-storage validation already rejects it.
+ */
+function getContentHashes(entity: Entity): string[] {
+  if (!entity.content) throw new InvalidRequestError('Deployment failed: the entity has no content list.')
+  return entity.content.map((content) => content.hash)
 }
 
 /**
@@ -126,7 +135,7 @@ export async function createSceneDeploymentsComponent(
    * against the database. When it can't be verified, the original database error propagates.
    */
   async function recoverAlreadyDeployed<T>(error: unknown, lookup: () => Promise<T | undefined>): Promise<T> {
-    if (!(error instanceof SceneAlreadyDeployedError)) throw error
+    if (!(error instanceof DeploymentUniqueViolationError)) throw error
     // Best-effort: a lookup failure must not mask the original collision.
     const published = await lookup().catch(() => undefined)
     if (published === undefined) throw error.cause
@@ -155,8 +164,7 @@ export async function createSceneDeploymentsComponent(
     const { baseUrl, entityRaw, deployment, signal, deadlineAt } = input
     const { entity, files, authChain } = deployment
     signal.throwIfAborted()
-    // Pre-storage validation guarantees the content list.
-    const contentHashes = (entity.content ?? []).map(($) => $.hash)
+    const contentHashes = getContentHashes(entity)
     const contentFileInfos = await fetchContentFileInfos(contentHashes, signal)
     const contentHashesInStorage = new Map(Array.from(contentFileInfos, ([hash, info]) => [hash, info !== undefined]))
 
@@ -255,7 +263,7 @@ export async function createSceneDeploymentsComponent(
     if (!input.prevalidation) await validateStaging(input, pending, admittedAt)
 
     // Only validated manifests may cause storage lookups or affect staging state.
-    const contentHashes = Array.from(new Set((entity.content ?? []).map((content) => content.hash)))
+    const contentHashes = Array.from(new Set(getContentHashes(entity)))
     const worldName = entity.metadata.worldConfiguration.name.toLowerCase()
     const parcels = Array.from(new Set(coordinates.canonicalizeParcels(entity.pointers)))
     if (!pending && (await raceWithSignal(worldsManager.hasNewerDeployedScene(worldName, entity), signal))) {

@@ -95,21 +95,17 @@ describe('uploadErrorHandler', () => {
   })
 
   describe('when the next middleware throws a deployment error', () => {
-    let response: unknown
+    let thrown: SceneReplacementConflictError
+    let error: unknown
 
     beforeEach(async () => {
-      next.mockRejectedValueOnce(new SceneReplacementConflictError('world.dcl.eth'))
-      response = await uploadErrorHandler()({}, next)
+      thrown = new SceneReplacementConflictError('world.dcl.eth')
+      next.mockRejectedValueOnce(thrown)
+      error = await uploadErrorHandler()({}, next).catch((e) => e)
     })
 
-    it('should respond as the deployment would', () => {
-      expect(response).toEqual({
-        status: 409,
-        body: {
-          error: 'Conflict',
-          message: 'Scene replacement authorization changed while deploying to world "world.dcl.eth". Please retry.'
-        }
-      })
+    it('should not map it and rethrow it, since the deploy handler answers it', () => {
+      expect(error).toBe(thrown)
     })
   })
 

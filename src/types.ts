@@ -502,14 +502,14 @@ export class SceneReplacementConflictError extends Error {
  * The publication hit a unique constraint (SQLSTATE 23505), most commonly because the same entity is already
  * deployed. Callers verify the publication before answering with it, and otherwise rethrow `cause`.
  */
-export class SceneAlreadyDeployedError extends Error {
+export class DeploymentUniqueViolationError extends Error {
   constructor(
     entityId: string,
     /** The original database error. */
     readonly cause: unknown
   ) {
-    super(`Scene "${entityId}" is already deployed.`)
-    this.name = 'SceneAlreadyDeployedError'
+    super(`Deployment of scene "${entityId}" collided with an existing row.`)
+    this.name = 'DeploymentUniqueViolationError'
   }
 }
 
@@ -541,7 +541,7 @@ export type IWorldsManager = {
   hasNewerDeployedScene(worldName: string, scene: Entity): Promise<boolean>
   /**
    * Persists a scene and its already-calculated deployment metadata.
-   * @throws SceneAlreadyDeployedError when the publication hits a unique constraint.
+   * @throws DeploymentUniqueViolationError when the publication hits a unique constraint.
    */
   deployScene(
     worldName: string,
