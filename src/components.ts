@@ -28,6 +28,8 @@ import { createWorldsIndexerComponent } from './adapters/worlds-indexer'
 import { createValidator } from './logic/validations'
 import { createEntityDeployer } from './adapters/entity-deployer'
 import { createPendingScenesManager } from './adapters/pending-scenes-manager'
+import { createContentGcComponent } from './logic/content-gc'
+import { loadUploadLimits } from './logic/upload-limits'
 import { createPartialDeploymentsComponent } from './logic/partial-deployments'
 import { createMigrationExecutor } from './adapters/migration-executor'
 import { createNameDenyListChecker } from './adapters/name-deny-list-checker'
@@ -86,6 +88,8 @@ export async function initComponents(): Promise<AppComponents> {
   const logger = logs.getLogger('components')
   const commitHash = (await config.getString('COMMIT_HASH')) || 'unknown'
   logger.info(`Initializing components. Version: ${commitHash}`)
+  // Fails startup on invalid or contradicting upload limits before anything else is created.
+  const uploadLimits = await loadUploadLimits(config)
 
   const server = await createServerComponent<GlobalContext>(
     { config, logs },
@@ -182,7 +186,7 @@ export async function initComponents(): Promise<AppComponents> {
 
   const database = await createDatabaseComponent({ config, logs, metrics })
   const contentLocks = await createContentLocks({ config, logs, metrics })
-  const sourceUploadLimits = await createSourceUploadLimits({ config })
+  const sourceUploadLimits = await createSourceUploadLimits({ uploadLimits })
   const clientSource = await createClientSourceComponent({ config })
 
   const coordinates = createCoordinatesComponent()
@@ -213,6 +217,7 @@ export async function initComponents(): Promise<AppComponents> {
   const limitsManager = await createLimitsManagerComponent({
     config,
     nameOwnership,
+    uploadLimits,
     walletStats,
     whitelist,
     worldsManager
@@ -275,17 +280,18 @@ export async function initComponents(): Promise<AppComponents> {
     worldsManager
   })
 
-  const pendingScenesManager = await createPendingScenesManager({
-    config,
+  const pendingScenesManager = await createPendingScenesManager({ database, metrics, uploadLimits })
+  const contentGc = await createContentGcComponent({
     database,
     logs,
     metrics,
     storage,
-    contentLocks
+    contentLocks,
+    pendingScenesManager,
+    uploadLimits
   })
 
   const partialDeployments = await createPartialDeploymentsComponent({
-    config,
     coordinates,
     entityDeployer,
     limitsManager,
@@ -294,6 +300,7 @@ export async function initComponents(): Promise<AppComponents> {
     deploymentProcessing,
     metrics,
     storage,
+    uploadLimits,
     validator,
     worldsManager
   })
@@ -324,7 +331,7 @@ export async function initComponents(): Promise<AppComponents> {
   const worlds = createWorldsComponent({ blocking, coordinates, logs, snsClient, worldsManager })
 
   const evictionJob = await createEvictionJob({ config, logs, worlds })
-  const partialUploadCleanupJob = await createPartialUploadCleanupJob({ logs, pendingScenesManager })
+  const partialUploadCleanupJob = await createPartialUploadCleanupJob({ logs, contentGc, uploadLimits })
 
   const denyList = await createDenyListComponent({ config, fetch, logs })
   const bans = await createBansComponent({ config, fetch, logs })
@@ -361,7 +368,9 @@ export async function initComponents(): Promise<AppComponents> {
     database,
     migrationExecutor,
     contentLocks,
+    contentGc,
     sourceUploadLimits,
+    uploadLimits,
     clientSource,
     access,
     accessChangeHandler,

@@ -1,30 +1,16 @@
 import { garbageCollectionHandler } from '../../src/controllers/handlers/garbage-collection'
 import { ContentLockTimeoutError } from '../../src/adapters/content-locks/errors'
-import { ExpiredUploadsCleanup } from '../../src/adapters/pending-scenes-manager/types'
+import { ExpiredUploadsCleanup } from '../../src/logic/content-gc'
 
 type Context = Parameters<typeof garbageCollectionHandler>[0]
 
 const NOW = 1_800_000_000_000
 
-function buildContext(
-  increment: jest.Mock,
-  observe: jest.Mock,
-  withWrite: jest.Mock,
-  cleanup: ExpiredUploadsCleanup = { outcome: 'success', removed: 0, failed: 0 }
-): Context {
+function buildContext(increment: jest.Mock, observe: jest.Mock, collectGarbage: jest.Mock): Context {
   return {
     components: {
-      database: { query: jest.fn().mockResolvedValue({ rows: [] }) },
-      logs: { getLogger: () => ({ info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() }) },
-      metrics: { increment, observe, startTimer: jest.fn().mockReturnValue({ end: jest.fn() }) },
-      pendingScenesManager: { ttlMs: 60_000, deleteExpired: jest.fn().mockResolvedValue(cleanup) },
-      storage: {
-        allFileIds: async function* () {
-          yield 'unreferenced-key'
-        },
-        delete: jest.fn()
-      },
-      contentLocks: { withWrite }
+      contentGc: { collectGarbage },
+      metrics: { increment, observe, startTimer: jest.fn().mockReturnValue({ end: jest.fn() }) }
     }
   } as unknown as Context
 }
@@ -36,12 +22,12 @@ function callsOf(mock: jest.Mock, name: string): unknown[] {
 describe('when running garbage collection', () => {
   let increment: jest.Mock
   let observe: jest.Mock
-  let withWrite: jest.Mock
+  let collectGarbage: jest.Mock
 
   beforeEach(() => {
     increment = jest.fn()
     observe = jest.fn()
-    withWrite = jest.fn()
+    collectGarbage = jest.fn()
     jest.spyOn(Date, 'now').mockReturnValue(NOW)
   })
 
@@ -52,17 +38,18 @@ describe('when running garbage collection', () => {
 
   describe('and it deletes an unreferenced key', () => {
     beforeEach(async () => {
-      withWrite.mockImplementation((operation: () => Promise<unknown>) => operation())
-      await garbageCollectionHandler(buildContext(increment, observe, withWrite))
+      collectGarbage.mockResolvedValueOnce({
+        removed: 1,
+        expiredUploads: { outcome: 'success', removed: 0, failed: 0 } satisfies ExpiredUploadsCleanup
+      })
+      await garbageCollectionHandler(buildContext(increment, observe, collectGarbage))
     })
 
-    it('should count the removed key and a successful run and record when it succeeded', () => {
+    it('should count a successful run and record when it succeeded', () => {
       expect({
-        removed: callsOf(increment, 'garbage_collection_removed_keys'),
         runs: callsOf(increment, 'garbage_collection_runs'),
         lastSuccess: callsOf(observe, 'garbage_collection_last_success_timestamp_seconds')
       }).toEqual({
-        removed: [['garbage_collection_removed_keys', {}, 1]],
         runs: [['garbage_collection_runs', { outcome: 'success' }]],
         lastSuccess: [['garbage_collection_last_success_timestamp_seconds', {}, NOW / 1000]]
       })
@@ -73,10 +60,11 @@ describe('when running garbage collection', () => {
     let response: Awaited<ReturnType<typeof garbageCollectionHandler>>
 
     beforeEach(async () => {
-      withWrite.mockImplementation((operation: () => Promise<unknown>) => operation())
-      response = await garbageCollectionHandler(
-        buildContext(increment, observe, withWrite, { outcome: 'error', removed: 2, failed: 1 })
-      )
+      collectGarbage.mockResolvedValueOnce({
+        removed: 1,
+        expiredUploads: { outcome: 'error', removed: 2, failed: 1 } satisfies ExpiredUploadsCleanup
+      })
+      response = await garbageCollectionHandler(buildContext(increment, observe, collectGarbage))
     })
 
     it('should answer the completed sweep with the cleanup summary', () => {
@@ -100,8 +88,8 @@ describe('when running garbage collection', () => {
     let error: unknown
 
     beforeEach(async () => {
-      withWrite.mockRejectedValueOnce(new ContentLockTimeoutError())
-      error = await garbageCollectionHandler(buildContext(increment, observe, withWrite)).catch((e) => e)
+      collectGarbage.mockRejectedValueOnce(new ContentLockTimeoutError())
+      error = await garbageCollectionHandler(buildContext(increment, observe, collectGarbage)).catch((e) => e)
     })
 
     it('should rethrow after counting a deferred run without recording a success', () => {
@@ -117,8 +105,8 @@ describe('when running garbage collection', () => {
     let error: unknown
 
     beforeEach(async () => {
-      withWrite.mockRejectedValueOnce(new Error('storage is down'))
-      error = await garbageCollectionHandler(buildContext(increment, observe, withWrite)).catch((e) => e)
+      collectGarbage.mockRejectedValueOnce(new Error('storage is down'))
+      error = await garbageCollectionHandler(buildContext(increment, observe, collectGarbage)).catch((e) => e)
     })
 
     it('should rethrow after counting a failed run', () => {

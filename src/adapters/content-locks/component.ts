@@ -14,6 +14,10 @@ const ENTITY_LOCK_RETRY_MAX_MS = 500
 const WRITER_RETRY_MIN_MS = 50
 const WRITER_RETRY_MAX_MS = 1_000
 const WRITER_MAX_WAIT_MS = 60_000
+// Default size of the dedicated lock pool.
+const DEFAULT_CONTENT_LOCK_CONNECTIONS = 16
+// Default wait for a lock-pool connection before an attempt counts as busy.
+const DEFAULT_CONTENT_LOCK_CONNECTION_TIMEOUT_MS = 10_000
 
 // node-postgres reports a pool-connect timeout with one of two messages, depending on whether it was
 // waiting for a free connection or still opening a new one.
@@ -57,9 +61,9 @@ export async function createContentLocks(
   const logger = logs.getLogger('content-locks')
   const writerRetryMaxMs = options.writerRetryMaxMs ?? WRITER_RETRY_MAX_MS
   const writerMaxWaitMs = options.writerMaxWaitMs ?? WRITER_MAX_WAIT_MS
-  const max = await getPositiveInteger(components.config, 'CONTENT_LOCK_CONNECTIONS', 16)
+  const max = await getPositiveInteger(components.config, 'CONTENT_LOCK_CONNECTIONS', DEFAULT_CONTENT_LOCK_CONNECTIONS)
   const pg = await createPgComponent(components, {
-    pool: { max, connectionTimeoutMillis: options.connectionTimeoutMs ?? 10_000 }
+    pool: { max, connectionTimeoutMillis: options.connectionTimeoutMs ?? DEFAULT_CONTENT_LOCK_CONNECTION_TIMEOUT_MS }
   })
 
   // One non-queuing attempt: a held gate or busy entity is reported back, so nobody waits on a

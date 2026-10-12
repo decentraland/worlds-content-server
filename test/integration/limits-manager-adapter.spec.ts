@@ -1,5 +1,6 @@
 import { test } from '../components'
 import { createLimitsManagerComponent } from '../../src/adapters/limits-manager'
+import { loadUploadLimits } from '../../src/logic/upload-limits'
 import { createConfigComponent } from '@well-known-components/env-config-provider'
 import { createMockedNameOwnership } from '../mocks/name-ownership-mock'
 import { createMockWalletStatsComponent } from '../mocks/wallet-stats-mock'
@@ -82,9 +83,10 @@ test('LimitsManagerAdapter', function ({ components }) {
         ])
       )
 
-      buildLimitsManager = (overrides = {}) =>
+      buildLimitsManager = async (overrides = {}) =>
         createLimitsManagerComponent({
           config: createConfigComponent({ ...config, ...overrides }),
+          uploadLimits: await loadUploadLimits(createConfigComponent({ ...config, ...overrides })),
           nameOwnership,
           walletStats,
           whitelist: createMockWhitelistComponent(),

@@ -3,23 +3,23 @@ import { AppComponents } from '../../types'
 
 /**
  * Creates the scheduled sweep of expired partial uploads. It runs at start and then every
- * `pendingScenesManager.cleanupIntervalMs` after the previous run finishes, so expired uploads stop
+ * `uploadLimits.partialUploadCleanupIntervalMs` after the previous run finishes, so expired uploads stop
  * holding quota and storage soon after their lifetime ends. Stops with the component lifecycle.
- * @param components Logging and the pending-scenes manager that owns expiry and cleanup.
+ * @param components Logging, the content GC that runs the cleanup and the validated upload limits.
  * @returns A job component that runs until the application stops.
  */
 export async function createPartialUploadCleanupJob(
-  components: Pick<AppComponents, 'logs' | 'pendingScenesManager'>
+  components: Pick<AppComponents, 'logs' | 'contentGc' | 'uploadLimits'>
 ): Promise<IJobComponent> {
-  const { logs, pendingScenesManager } = components
+  const { logs, contentGc, uploadLimits } = components
   const logger = logs.getLogger('partial-upload-cleanup-job')
 
   return createJobComponent(
     { logs },
     async () => {
-      await pendingScenesManager.deleteExpired()
+      await contentGc.deleteExpiredUploads()
     },
-    pendingScenesManager.cleanupIntervalMs,
+    uploadLimits.partialUploadCleanupIntervalMs,
     { repeat: true, onError: (error) => logger.error(`Failed to delete expired partial uploads: ${error}`) }
   )
 }

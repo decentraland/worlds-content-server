@@ -5,17 +5,18 @@ import { bufferToStream } from '@dcl/catalyst-storage'
 import { test } from '../components'
 import { cleanup } from '../utils'
 import {
-  CLEANUP_PAGE_SIZE,
   createPendingScenesManager,
   PartialUploadExpiredError,
   PartialUploadQuotaExceededError,
   PartialUploadTooLargeError
 } from '../../src/adapters/pending-scenes-manager'
-import { DEFAULT_MAX_UPLOAD_SIZE_IN_BYTES } from '../../src/logic/multipart'
+import { DEFAULT_MAX_UPLOAD_SIZE_IN_BYTES, loadUploadLimits } from '../../src/logic/upload-limits'
 import { IPendingScenesManager } from '../../src/adapters/pending-scenes-manager/types'
+import { CLEANUP_PAGE_SIZE, createContentGcComponent, IContentGcComponent } from '../../src/logic/content-gc'
 
 test('when accounting for independent partial uploads', ({ components }) => {
   let manager: IPendingScenesManager
+  let gc: IContentGcComponent
   let first: Entity
   let second: Entity
   let signer: string
@@ -60,13 +61,27 @@ test('when accounting for independent partial uploads', ({ components }) => {
     second = { ...first, id: 'second', content: [{ hash: 'content-b', file: 'b' }] }
     // `components` is a get-only Proxy over an empty target, so it must be read key by key:
     // spreading it reads ownKeys from that empty target and yields nothing.
+    const uploadLimits = {
+      ...components.uploadLimits,
+      maxPendingBytesPerDeployer: BigInt(limits.MAX_PENDING_BYTES_PER_DEPLOYER),
+      maxPendingBytes: BigInt(limits.MAX_PENDING_BYTES),
+      maxPartialUploadBytesPerMinute: limits.MAX_PARTIAL_UPLOAD_BYTES_PER_MINUTE,
+      pendingDeploymentTtlMs: limits.PENDING_DEPLOYMENT_TTL,
+      partialUploadCleanupIntervalMs: limits.PARTIAL_UPLOAD_CLEANUP_INTERVAL_MS
+    }
     manager = await createPendingScenesManager({
-      config: { ...components.config, getNumber: jest.fn(async (key: string) => limits[key]) },
+      database: components.database,
+      metrics: components.metrics,
+      uploadLimits
+    })
+    gc = await createContentGcComponent({
       database: components.database,
       logs: components.logs,
       metrics: components.metrics,
       storage: components.storage,
-      contentLocks: components.contentLocks
+      contentLocks: components.contentLocks,
+      pendingScenesManager: manager,
+      uploadLimits
     })
   })
 
@@ -338,7 +353,7 @@ test('when accounting for independent partial uploads', ({ components }) => {
       let error: unknown
 
       beforeEach(async () => {
-        await manager.deleteExpired()
+        await gc.deleteExpiredUploads()
         await create(first)
         // Expired uploads can't be created, so this one is aged past its lifetime after the fact.
         await components.database.query(
@@ -359,15 +374,11 @@ test('when accounting for independent partial uploads', ({ components }) => {
     let defaults: { ttlMs: number; cleanupIntervalMs: number }
 
     beforeEach(async () => {
-      const unconfigured = await createPendingScenesManager({
-        config: { ...components.config, getNumber: jest.fn(async () => undefined) },
-        database: components.database,
-        logs: components.logs,
-        metrics: components.metrics,
-        storage: components.storage,
-        contentLocks: components.contentLocks
-      })
-      defaults = { ttlMs: unconfigured.ttlMs, cleanupIntervalMs: unconfigured.cleanupIntervalMs }
+      const unconfigured = await loadUploadLimits({ getNumber: jest.fn(async () => undefined) })
+      defaults = {
+        ttlMs: unconfigured.pendingDeploymentTtlMs,
+        cleanupIntervalMs: unconfigured.partialUploadCleanupIntervalMs
+      }
     })
 
     it('should keep uploads for one hour and clean them up every five minutes', () => {
@@ -642,7 +653,7 @@ test('when accounting for independent partial uploads', ({ components }) => {
         .spyOn(Date, 'now')
         .mockReturnValueOnce(now)
         .mockReturnValue(now + limits.PENDING_DEPLOYMENT_TTL + 1_000)
-      await manager.deleteExpired()
+      await gc.deleteExpiredUploads()
       gauges = observe.mock.calls.filter(
         ([name]) => name === 'partial_upload_reserved_bytes' || name === 'partial_upload_cleanup_backlog_bytes'
       )
@@ -669,7 +680,7 @@ test('when accounting for independent partial uploads', ({ components }) => {
       await expect(
         manager.reserve(second.id, [{ hash: 'content-b', size: 400, stored: false, charged: true }], 1000n, 400)
       ).rejects.toThrow('above its limit of 600 bytes')
-      await manager.deleteExpired()
+      await gc.deleteExpiredUploads()
       await expect(
         manager.reserve(second.id, [{ hash: 'content-b', size: 400, stored: false, charged: true }], 1000n, 400)
       ).resolves.toBeUndefined()
@@ -681,7 +692,7 @@ test('when accounting for independent partial uploads', ({ components }) => {
         jest.spyOn(components.storage, 'delete').mockRejectedValueOnce(new Error('storage unavailable'))
       })
       it('should report the failure and preserve the reservation for a later cleanup retry', async () => {
-        await expect(manager.deleteExpired()).resolves.toEqual({ outcome: 'error', removed: 0, failed: 1 })
+        await expect(gc.deleteExpiredUploads()).resolves.toEqual({ outcome: 'error', removed: 0, failed: 1 })
         await expect(
           manager.reserve(second.id, [{ hash: 'content-b', size: 400, stored: false, charged: true }], 1000n, 400)
         ).rejects.toThrow('above its limit of 600 bytes')
@@ -695,7 +706,7 @@ test('when accounting for independent partial uploads', ({ components }) => {
         )
       })
       it('should release expired accounting without deleting content retained by the live upload', async () => {
-        await manager.deleteExpired()
+        await gc.deleteExpiredUploads()
         expect({ stored: await components.storage.exist('content-a'), count: await pendingCount() }).toEqual({
           stored: true,
           count: 1
@@ -716,7 +727,7 @@ test('when accounting for independent partial uploads', ({ components }) => {
         SQL`UPDATE pending_scenes SET created_at = now() - interval '2 days' + interval '1 microsecond'`
       )
       jest.spyOn(components.storage, 'delete').mockRejectedValueOnce(new Error('storage unavailable'))
-      result = await manager.deleteExpired()
+      result = await gc.deleteExpiredUploads()
       remaining = (await components.database.query('SELECT entity_id FROM pending_scenes')).rows
     })
 
@@ -740,7 +751,7 @@ test('when accounting for independent partial uploads', ({ components }) => {
           date_trunc('milliseconds', now() - interval '2 days') + (i + 1) * interval '1 microsecond'
         FROM generate_series(0, ${CLEANUP_PAGE_SIZE}) AS i`)
       jest.spyOn(components.storage, 'delete').mockRejectedValueOnce(new Error('storage unavailable'))
-      result = await manager.deleteExpired()
+      result = await gc.deleteExpiredUploads()
       remaining = (await components.database.query('SELECT entity_id FROM pending_scenes')).rows
     })
 
