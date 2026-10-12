@@ -574,9 +574,9 @@ describe('deployEntity', () => {
       })
     })
 
-    describe('and the pending upload belongs to the signer', () => {
+    describe('and the pending upload belongs to the signer but storage no longer has the entity file', () => {
       beforeEach(async () => {
-        // createContext signs with payload '0xpayload'; the pending row stores deployers lowercased.
+        // createContext signs with an all-lowercase address payload; the pending row stores deployers lowercased.
         getByEntityId = jest
           .fn()
           .mockResolvedValue({ deployer: '0x0000000000000000000000000000000000000001', createdAt: new Date() })
@@ -585,6 +585,132 @@ describe('deployEntity', () => {
 
       it('should read the entity back from storage', () => {
         expect(retrieve).toHaveBeenCalledWith(entityId)
+      })
+
+      it('should reject asking for the entity file', () => {
+        expect(caughtError).toEqual(
+          new InvalidRequestError(`The first partial request for an entity must include the entity file "${entityId}".`)
+        )
+      })
+    })
+
+    describe('and the stored entity file streams past the cap without size metadata', () => {
+      let stage: jest.Mock
+
+      beforeEach(async () => {
+        getByEntityId = jest
+          .fn()
+          .mockResolvedValue({ deployer: '0x0000000000000000000000000000000000000001', createdAt: new Date() })
+        const chunk = Buffer.alloc(1024 * 1024, 'a')
+        retrieve = jest.fn().mockResolvedValue({
+          size: null,
+          asStream: async () =>
+            (async function* () {
+              for (let i = 0; i <= MAX_ENTITY_FILE_SIZE_IN_BYTES / chunk.length; i++) yield chunk
+            })()
+        })
+        stage = jest.fn()
+        const context = createResumeContext()
+        ;(context.components.sceneDeployments as unknown as { stage: jest.Mock }).stage = stage
+        caughtError = await deployEntity(context).catch((error) => error)
+      })
+
+      it('should reject it as too large', () => {
+        expect(caughtError).toEqual(
+          new InvalidRequestError(`The stored entity file is too large (over ${MAX_ENTITY_FILE_SIZE_IN_BYTES} bytes).`)
+        )
+      })
+
+      it('should not stage the batch', () => {
+        expect(stage).not.toHaveBeenCalled()
+      })
+    })
+
+    describe('and the stored entity file is read back', () => {
+      let storedEntity: Buffer
+      let expectedHash: string
+      let stagedManifest: { size: number; hash: string }
+
+      beforeEach(async () => {
+        getByEntityId = jest
+          .fn()
+          .mockResolvedValue({ deployer: '0x0000000000000000000000000000000000000001', createdAt: new Date() })
+        storedEntity = Buffer.from(JSON.stringify({ type: 'scene', pointers: ['0,0'], content: [] }))
+        expectedHash = await hashV1(storedEntity)
+        // Streamed in two chunks, the second as a string, to exercise the reassembly.
+        retrieve = jest.fn().mockResolvedValue({
+          asStream: async () =>
+            (async function* () {
+              yield storedEntity.subarray(0, 10)
+              yield storedEntity.subarray(10).toString()
+            })()
+        })
+        const context = createResumeContext()
+        ;(context.components.sceneDeployments as unknown as { stage: jest.Mock }).stage = jest.fn(
+          async (input: { manifest: { size: number; getHash(): Promise<string> } }) => {
+            stagedManifest = { size: input.manifest.size, hash: await input.manifest.getHash() }
+            return { complete: false, missing: [] }
+          }
+        )
+        await deployEntity(context)
+      })
+
+      it('should stage it with a manifest matching the stored bytes', () => {
+        expect(stagedManifest).toEqual({ size: storedEntity.length, hash: expectedHash })
+      })
+    })
+
+    describe('and the signer authenticates with a checksummed address', () => {
+      beforeEach(() => {
+        getByEntityId = jest
+          .fn()
+          .mockResolvedValue({ deployer: '0xabcdef0000000000000000000000000000000001', createdAt: new Date() })
+      })
+
+      describe('and the request omits every file', () => {
+        beforeEach(async () => {
+          const context = createResumeContext()
+          context.formData.fields['authChain[0][payload]'] = makeField('0xAbCdEf0000000000000000000000000000000001')
+          caughtError = await deployEntity(context).catch((error) => error)
+        })
+
+        it('should recognize its own upload and read the entity back from storage', () => {
+          expect(retrieve).toHaveBeenCalledWith(entityId)
+        })
+      })
+
+      describe('and the request carries a content file', () => {
+        let stagedHash: unknown
+        let expectedHash: string
+
+        beforeEach(async () => {
+          retrieve = jest.fn().mockResolvedValue({ asStream: async () => bufferToStream(Buffer.from('{}')) })
+          const content = makeFile(Buffer.from('content'))
+          expectedHash = await hashV1(Buffer.from('content'))
+          const context = createResumeContext()
+          context.formData.fields['authChain[0][payload]'] = makeField('0xAbCdEf0000000000000000000000000000000001')
+          context.formData.files = { [expectedHash]: content }
+          context.components.contentLocks = {
+            withRead: async (operation: (signal: AbortSignal) => Promise<unknown>, signal: AbortSignal) => {
+              rmSync(content.filepath)
+              return operation(signal)
+            }
+          } as unknown as DeployContext['components']['contentLocks']
+          ;(context.components.sceneDeployments as unknown as { stage: jest.Mock }).stage = jest.fn(
+            async (input: { files: Map<string, { getHash(): Promise<string> }> }) => {
+              stagedHash = await input.files
+                .get(expectedHash)!
+                .getHash()
+                .catch((error: Error) => error.message)
+              return { complete: false, missing: [] }
+            }
+          )
+          await deployEntity(context)
+        })
+
+        it('should hash the content file before taking the content lock', () => {
+          expect(stagedHash).toBe(expectedHash)
+        })
       })
     })
 
@@ -1312,6 +1438,160 @@ describe('deployEntity', () => {
       expect({ logged: loggerError.mock.calls[0], status: response.status }).toEqual({
         logged: ['Deployment failed while cancelled', { entityId, error: 'database exploded' }],
         status: 499
+      })
+    })
+  })
+
+  describe('when a partial batch is answered', () => {
+    let increment: jest.Mock
+    let context: DeployContext
+    let withRead: jest.Mock
+    let response: Awaited<ReturnType<typeof deployEntity>> | undefined
+    let caughtError: unknown
+
+    beforeEach(() => {
+      increment = jest.fn()
+      withRead = jest.fn()
+      response = undefined
+      caughtError = undefined
+      context = createContext(entityId, { [entityId]: makeFile(Buffer.from('{}')) })
+      context.formData.fields.partial = makeField('true')
+      context.components.metrics = { increment } as unknown as DeployContext['components']['metrics']
+      context.components.contentLocks = { withRead } as unknown as DeployContext['components']['contentLocks']
+    })
+
+    async function run() {
+      try {
+        response = await deployEntity(context)
+      } catch (error) {
+        caughtError = error
+      }
+    }
+
+    describe('and the batch is staged but content is still missing', () => {
+      beforeEach(async () => {
+        withRead.mockResolvedValueOnce({ status: 202, body: { missing: ['content-hash'] } })
+        await run()
+      })
+
+      it('should count it as accepted', () => {
+        expect(increment.mock.calls).toEqual([['partial_upload_requests', { outcome: 'accepted' }]])
+      })
+    })
+
+    describe('and the processing deadline passes', () => {
+      beforeEach(async () => {
+        withRead.mockRejectedValueOnce(new DeploymentProcessingTimeoutError(10))
+        await run()
+      })
+
+      it('should count it as timed out', () => {
+        expect(increment.mock.calls).toEqual([['partial_upload_requests', { outcome: 'timeout' }]])
+      })
+    })
+
+    describe('and the client disconnects', () => {
+      beforeEach(async () => {
+        withRead.mockRejectedValueOnce(
+          new DeploymentProcessingAbortedError(new DOMException('Client disconnected.', 'AbortError'))
+        )
+        await run()
+      })
+
+      it('should count it as aborted', () => {
+        expect(increment.mock.calls).toEqual([['partial_upload_requests', { outcome: 'aborted' }]])
+      })
+    })
+
+    describe('and the replacement authorization changes before persistence', () => {
+      beforeEach(async () => {
+        withRead.mockRejectedValueOnce(new SceneReplacementConflictError('world.dcl.eth'))
+        await run()
+      })
+
+      it('should answer 409', () => {
+        expect(response?.status).toBe(409)
+      })
+
+      it('should count it as a validation error', () => {
+        expect(increment.mock.calls).toEqual([['partial_upload_requests', { outcome: 'validation_error' }]])
+      })
+    })
+
+    describe('and an unexpected error is thrown', () => {
+      beforeEach(async () => {
+        withRead.mockRejectedValueOnce(new Error('database exploded'))
+        await run()
+      })
+
+      it('should propagate the error', () => {
+        expect(caughtError).toEqual(new Error('database exploded'))
+      })
+
+      it('should count it as an error', () => {
+        expect(increment.mock.calls).toEqual([['partial_upload_requests', { outcome: 'error' }]])
+      })
+    })
+
+    describe('and its auth chain is malformed', () => {
+      beforeEach(async () => {
+        context.formData.fields['authChain[0][type]'] = makeField('NOT_A_LINK_TYPE')
+        await run()
+      })
+
+      it('should reject it as an invalid auth chain', () => {
+        expect(caughtError).toEqual(new InvalidRequestError('Invalid auth chain.'))
+      })
+
+      it('should not take any content lock', () => {
+        expect(withRead).not.toHaveBeenCalled()
+      })
+    })
+
+    describe('and a quota rejects it while the client disconnects', () => {
+      beforeEach(async () => {
+        const controller = new AbortController()
+        context.components.deploymentProcessing = createDeploymentProcessingMock({
+          createAbortContext: jest.fn(() => ({
+            signal: controller.signal,
+            deadlineAt: Date.now() + 1000,
+            dispose: jest.fn()
+          }))
+        })
+        withRead.mockImplementationOnce(async () => {
+          controller.abort(new DeploymentProcessingAbortedError(new DOMException('Client disconnected.', 'AbortError')))
+          throw new PartialUploadQuotaExceededError('bytes_per_minute', 'This account sent too much this minute.', 42)
+        })
+        await run()
+      })
+
+      it('should answer the disconnect without a Retry-After', () => {
+        expect(response).toEqual({
+          status: 499,
+          body: { error: 'Client Closed Request', message: 'Client disconnected.' }
+        })
+      })
+
+      it('should count it as aborted without counting it as throttled', () => {
+        expect(increment.mock.calls).toEqual([['partial_upload_requests', { outcome: 'aborted' }]])
+      })
+    })
+
+    describe('and a replacement conflict races with the processing deadline', () => {
+      beforeEach(async () => {
+        const controller = new AbortController()
+        context.components.deploymentProcessing = createDeploymentProcessingMock({
+          createAbortContext: jest.fn(() => ({ signal: controller.signal, deadlineAt: Date.now(), dispose: jest.fn() }))
+        })
+        withRead.mockImplementationOnce(async () => {
+          controller.abort(new DeploymentProcessingTimeoutError(10))
+          throw new SceneReplacementConflictError('world.dcl.eth')
+        })
+        await run()
+      })
+
+      it('should answer the timeout', () => {
+        expect(response?.status).toBe(408)
       })
     })
   })
