@@ -15,6 +15,7 @@ describe('when staging a partial deployment', () => {
   let fileInfo: jest.Mock
   let getProgress: jest.Mock
   let getPending: jest.Mock
+  let getPublishedContent: jest.Mock
   let reserve: jest.Mock
   let recordStored: jest.Mock
   let storeStream: jest.Mock
@@ -54,6 +55,7 @@ describe('when staging a partial deployment', () => {
     fileInfo = jest.fn().mockResolvedValue(undefined)
     getProgress = jest.fn().mockResolvedValue(new Map([['a', 300]]))
     getPending = jest.fn().mockResolvedValue(undefined)
+    getPublishedContent = jest.fn().mockResolvedValue(new Set())
     reserve = jest.fn().mockResolvedValue(undefined)
     recordStored = jest.fn().mockResolvedValue(2)
     storeStream = jest.fn().mockResolvedValue(undefined)
@@ -81,6 +83,7 @@ describe('when staging a partial deployment', () => {
       pendingScenesManager: {
         ttlMs: 86_400_000,
         getByEntityId: getPending,
+        getPublishedContent,
         upsert,
         reserve,
         recordStored,
@@ -433,10 +436,15 @@ describe('when staging a partial deployment', () => {
     })
   })
 
-  describe('and the first batch re-sends content already in storage', () => {
+  describe('and the first batch re-sends content published content already references', () => {
     beforeEach(async () => {
       fileInfo.mockImplementation(async (hash) => (hash === 'a' ? { size: 300 } : undefined))
+      getPublishedContent.mockResolvedValueOnce(new Set(['a']))
       await stage(input)
+    })
+
+    it('should ask only about the content found in storage', () => {
+      expect(getPublishedContent.mock.calls).toEqual([[['a'], undefined]])
     })
 
     it('should record it as stored without charging, storing or recording a write for it', () => {
@@ -449,6 +457,21 @@ describe('when staging a partial deployment', () => {
 
     it('should still count its bytes against the byte rate', () => {
       expect(reserve.mock.calls[0][3]).toBe(300)
+    })
+  })
+
+  describe('and the first batch re-sends content in storage only for other pending uploads', () => {
+    beforeEach(async () => {
+      fileInfo.mockImplementation(async (hash) => (hash === 'a' ? { size: 300 } : undefined))
+      await stage(input)
+    })
+
+    it('should charge it without storing or recording a write for it', () => {
+      expect({
+        receipts: reserve.mock.calls[0][1],
+        stored: storeStream.mock.calls.length,
+        recorded: recordStored.mock.calls[0][1]
+      }).toEqual({ receipts: [{ hash: 'a', size: 300, stored: true, charged: true }], stored: 0, recorded: [] })
     })
   })
 
@@ -467,9 +490,10 @@ describe('when staging a partial deployment', () => {
     })
   })
 
-  describe('and a new upload has content already in storage', () => {
+  describe('and a new upload has published content already in storage', () => {
     beforeEach(async () => {
       fileInfo.mockImplementation(async (hash) => (hash === 'b' ? { size: 500 } : undefined))
+      getPublishedContent.mockResolvedValueOnce(new Set(['b']))
       await stage(input)
     })
 

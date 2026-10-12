@@ -14,11 +14,37 @@ export async function getReferencedContentKeys(
   cutoff: Date,
   candidates?: string[]
 ): Promise<Set<string>> {
+  return queryReferencedKeys(database, cutoff, candidates)
+}
+
+/**
+ * Reads the keys referenced by published content: world scenes (including soft-deleted ones awaiting
+ * eviction) and world thumbnails. Pending uploads don't count.
+ * @param database Application database.
+ * @param candidates Storage keys to check.
+ * @returns The candidates published content references.
+ */
+export async function getPublishedContentKeys(
+  database: AppComponents['database'],
+  candidates: string[]
+): Promise<Set<string>> {
+  return queryReferencedKeys(database, undefined, candidates)
+}
+
+async function queryReferencedKeys(
+  database: AppComponents['database'],
+  pendingCutoff: Date | undefined,
+  candidates?: string[]
+): Promise<Set<string>> {
   const query = SQL`
     WITH entities AS (
-      SELECT entity_id, entity FROM world_scenes WHERE entity IS NOT NULL
+      SELECT entity_id, entity FROM world_scenes WHERE entity IS NOT NULL`
+  if (pendingCutoff) {
+    query.append(SQL`
       UNION ALL
-      SELECT entity_id, entity FROM pending_scenes WHERE created_at >= ${cutoff}
+      SELECT entity_id, entity FROM pending_scenes WHERE created_at >= ${pendingCutoff}`)
+  }
+  query.append(SQL`
     ), refs AS (
       SELECT entity_id AS hash FROM entities
       UNION ALL SELECT entity_id || '.auth' FROM entities
@@ -27,7 +53,7 @@ export async function getReferencedContentKeys(
         LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(entity->'content') = 'array'
           THEN entity->'content' ELSE '[]'::jsonb END) AS content
       UNION ALL SELECT thumbnail_hash FROM worlds WHERE thumbnail_hash IS NOT NULL
-    ) SELECT DISTINCT hash FROM refs`
+    ) SELECT DISTINCT hash FROM refs`)
   if (candidates) query.append(SQL` WHERE hash = ANY(${candidates}::text[])`)
   const result = await database.query<{ hash: string }>(query)
   return new Set(result.rows.map((row) => row.hash))

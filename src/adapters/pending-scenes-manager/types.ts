@@ -23,7 +23,10 @@ export type UpsertPendingScene = {
   resumes: boolean
 }
 
-/** `charged`: the upload stores these bytes itself; content already in storage is never charged. */
+/**
+ * `charged`: the bytes count toward the staging budgets. Only content already referenced by published
+ * content is free; content held only by pending uploads is charged even though it isn't stored again.
+ */
 export type FileReceipt = { hash: string; size: number; stored: boolean; charged: boolean }
 type CompletedUpload = { worldName: string; parcels: string[]; creationTimestamp: number }
 
@@ -37,6 +40,11 @@ export type ExpiredUploadsCleanup = { outcome: 'success' | 'deferred' | 'error';
 export interface IPendingScenesManager extends IBaseComponent {
   /** Retrieves a live upload without renewing its fixed expiration. */
   getByEntityId(entityId: string, signal?: AbortSignal): Promise<PendingScene | undefined>
+  /**
+   * Returns the given hashes referenced by published content (world scenes, including soft-deleted ones
+   * awaiting eviction, or world thumbnails). References from pending uploads don't count.
+   */
+  getPublishedContent(hashes: string[], signal?: AbortSignal): Promise<Set<string>>
   /**
    * Creates an independent entity upload under the account count cap; requires the shared content lock.
    * @throws PartialUploadExpiredError when the upload is gone or its lifetime from `admittedAt` has ended.

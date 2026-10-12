@@ -46,11 +46,14 @@ staging sweep; files never attached to a deployment would otherwise be invisible
 
 Default limits: 10 uploads/account, 1 GiB staged/account, 50 GiB staged/server database, 512 MiB accepted
 batch bytes/account/minute, 1-hour pending lifetime (expired uploads cleaned up every 5 minutes) and
-24-hour completion retention. All are configured in `.env.default`. The staging budgets charge only the
-bytes an upload stores itself: the manifest and content that was not already in storage. Content already
-in storage is not charged; the pending upload's manifest protects it from garbage collection. A batch file
-that is already stored, before the upload or by an earlier batch, is dropped without being stored or
-charged again, but every received byte counts against the per-minute rate. The scene size limit still
+24-hour completion retention. All are configured in `.env.default`. The staging budgets charge the bytes an
+upload stores itself (the manifest and content that was not in storage) and content that is in storage only
+because other pending uploads staged it or nothing references it, so pending uploads cannot keep content
+alive outside the budgets. Only content already referenced by published content (a world scene, including
+one awaiting eviction, or a world thumbnail) when the upload starts is not charged; the pending upload's
+manifest protects it from garbage collection. A batch file that is already stored, before the upload or by
+an earlier batch, is dropped without being stored again and keeps the charge decided for it, and every
+received byte counts against the per-minute rate. The scene size limit still
 counts every file of the scene; for DCL-name worlds it is the owner's remaining allowance capped at
 `MAX_SCENE_SIZE` (500 MiB), which startup requires to fit `MAX_PENDING_BYTES_PER_DEPLOYER`. Expired
 slots and bytes remain charged if physical cleanup fails; the failing upload is retried by the next run

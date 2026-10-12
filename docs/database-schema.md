@@ -32,9 +32,11 @@ reclaims their objects, then removes their accounting.
 
 Primary key `(entity_id, hash)`, with a cascading FK to `pending_scenes`. `size` is the file's byte
 count; `stored` distinguishes successful writes/verified reused content from reservations. `charged`
-(BOOLEAN, default true) marks bytes the upload stores itself: content already in storage when the upload
-started is recorded with `charged = false` and counts only toward the scene size limit. A file re-uploaded
-after its stored copy went missing becomes charged. Reserves are atomic under a database admission lock.
+(BOOLEAN, default true) marks bytes counted toward the staging budgets: content already referenced by
+published content (a `world_scenes` entity or a world thumbnail) when the upload started is recorded with
+`charged = false` and counts only toward the scene size limit; content in storage only because of other
+pending uploads is charged. A file re-uploaded after its stored copy went missing becomes charged.
+Reserves are atomic under a database admission lock.
 The pending-row `reserved_bytes` caches the sum of charged sizes so global admission scans session totals
 instead of every content receipt. Failed writes remain conservatively charged; retrying a hash does not
 reserve its storage twice. Incoming bytes, including retries and dropped already-stored files, are also

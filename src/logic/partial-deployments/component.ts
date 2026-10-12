@@ -121,14 +121,19 @@ export async function createPartialDeploymentsComponent(
     const initialInfos = pending?.initialized
       ? new Map<string, FileInfo | undefined>()
       : await metadata(contentHashes, signal)
-    // Content already in storage is never charged; the pending row's manifest protects it from GC.
+    const inStorage = [...initialInfos].flatMap(([hash, info]) =>
+      info?.size !== undefined && info.size !== null ? [{ hash, size: info.size }] : []
+    )
+    // Stored content is free only when published content keeps it; if only pending uploads hold it, it's charged.
+    const published = await pendingScenesManager.getPublishedContent(
+      inStorage.map(({ hash }) => hash),
+      signal
+    )
     const receipts = new Map<string, FileReceipt>()
-    for (const [hash, info] of initialInfos) {
-      if (info?.size !== undefined && info.size !== null) {
-        receipts.set(hash, { hash, size: info.size, stored: true, charged: false })
-      }
+    for (const { hash, size } of inStorage) {
+      receipts.set(hash, { hash, size, stored: true, charged: !published.has(hash) })
     }
-    // Files already present, before the upload or from an earlier batch, are dropped; only the rate counts them.
+    // Files already present, before the upload or from an earlier batch, are dropped; their receipt keeps its charge.
     const stored = pending ? await pendingScenesManager.getProgress(entity.id, signal) : new Map<string, number>()
     const toStore = new Map([...files].filter(([hash]) => !stored.has(hash) && !receipts.has(hash)))
     let incomingBytes = 0

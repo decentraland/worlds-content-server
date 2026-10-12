@@ -8,7 +8,6 @@ import { getIdentity, Identity, makeid, cleanup, signThroughChainOf } from '../u
 import { MAX_DEPLOYMENT_AUTH_CHAIN_LINKS, MAX_DEPLOYMENT_FIELD_SIZE_IN_BYTES } from '../../src/logic/multipart'
 import FormData from 'form-data'
 import { request } from 'http'
-import { bufferToStream } from '@dcl/catalyst-storage'
 import SQL from 'sql-template-strings'
 
 // Lower the per-deployer concurrent-pending cap so it's exercisable without staging 10+ uploads.
@@ -29,9 +28,14 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
     await cleanup(storage, database)
   })
 
-  function buildForm(keysToInclude: string[], authChain: AuthChain, partial = true): FormData {
+  function buildForm(
+    keysToInclude: string[],
+    authChain: AuthChain,
+    partial = true,
+    upload: { id: string; files: Map<string, Uint8Array> } = { id: entityId, files }
+  ): FormData {
     const form = new FormData()
-    form.append('entityId', entityId)
+    form.append('entityId', upload.id)
     if (partial) {
       form.append('partial', 'true')
     }
@@ -41,7 +45,7 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
       form.append(`authChain[${i}][signature]`, link.signature ?? '')
     })
     for (const key of keysToInclude) {
-      form.append(key, Buffer.from(files.get(key)!), { filename: key })
+      form.append(key, Buffer.from(upload.files.get(key)!), { filename: key })
     }
     return form
   }
@@ -69,6 +73,24 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
       `SELECT COUNT(*) as count FROM world_scenes WHERE entity_id = '${entityId}' AND status = 'DEPLOYED'`
     )
     return parseInt(result.rows[0].count)
+  }
+
+  async function readAccounting(): Promise<{ reserved: unknown[]; rate: unknown[]; charged: Record<string, boolean> }> {
+    const { database } = components
+    const reserved = await database.query(SQL`SELECT reserved_bytes FROM pending_scenes WHERE entity_id = ${entityId}`)
+    const rate = await database.query('SELECT bytes FROM partial_upload_rates')
+    const receipts = await database.query<{ hash: string; charged: boolean }>(
+      SQL`SELECT hash, charged FROM pending_scene_files WHERE entity_id = ${entityId}`
+    )
+    return {
+      reserved: reserved.rows,
+      rate: rate.rows,
+      charged: Object.fromEntries(receipts.rows.map((row) => [row.hash, row.charged]))
+    }
+  }
+
+  function sizeOf(...keys: string[]): number {
+    return keys.reduce((sum, key) => sum + files.get(key)!.byteLength, 0)
   }
 
   beforeEach(async () => {
@@ -154,36 +176,18 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
     })
   })
 
-  describe('when an upload re-sends content already in storage', () => {
+  describe('when an upload re-sends content a deployed scene already references', () => {
     let authChain: AuthChain
     let storeSpy: jest.SpyInstance
     let response: Awaited<ReturnType<typeof post>>
     let body: unknown
     let accounting: unknown
 
-    async function readAccounting(): Promise<unknown> {
-      const { database } = components
-      const reserved = await database.query(
-        SQL`SELECT reserved_bytes FROM pending_scenes WHERE entity_id = ${entityId}`
-      )
-      const rate = await database.query('SELECT bytes FROM partial_upload_rates')
-      const receipts = await database.query<{ hash: string; charged: boolean }>(
-        SQL`SELECT hash, charged FROM pending_scene_files WHERE entity_id = ${entityId}`
-      )
-      return {
-        reserved: reserved.rows,
-        rate: rate.rows,
-        charged: Object.fromEntries(receipts.rows.map((row) => [row.hash, row.charged]))
-      }
-    }
-
-    function sizeOf(...keys: string[]): number {
-      return keys.reduce((sum, key) => sum + files.get(key)!.byteLength, 0)
-    }
-
     beforeEach(async () => {
       authChain = Authenticator.signPayload(identity.authChain, entityId)
-      await components.storage.storeStream(contentHashes[0], bufferToStream(Buffer.from(files.get(contentHashes[0])!)))
+      await components.worldCreator.createWorldWithScene({
+        files: new Map([['shared.bin', files.get(contentHashes[0])!]])
+      })
       storeSpy = jest.spyOn(components.storage, 'storeStream')
       response = await post(buildForm([entityId, contentHashes[0]], authChain))
       body = await response.json()
@@ -238,6 +242,109 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
         expect({ status: response.status, deployed: await countDeployedScenes() }).toEqual({
           status: 200,
           deployed: 1
+        })
+      })
+    })
+  })
+
+  describe('when content is in storage only because another pending upload staged it', () => {
+    let authChain: AuthChain
+    let otherUpload: { id: string; files: Map<string, Uint8Array> }
+    let storeSpy: jest.SpyInstance
+    let response: Awaited<ReturnType<typeof post>>
+    let accounting: unknown
+
+    beforeEach(async () => {
+      authChain = Authenticator.signPayload(identity.authChain, entityId)
+      const other = await DeploymentBuilder.buildEntity({
+        type: EntityType.SCENE as any,
+        pointers: ['21,24'],
+        files: new Map([
+          ['shared.bin', files.get(contentHashes[0])!],
+          ['extra.txt', stringToUtf8Bytes(makeid(50))]
+        ]),
+        metadata: {
+          main: 'shared.bin',
+          scene: { base: '21,24', parcels: ['21,24'] },
+          worldConfiguration: { name: worldName }
+        }
+      })
+      otherUpload = { id: other.entityId, files: other.files }
+      await post(
+        buildForm(
+          [otherUpload.id, contentHashes[0]],
+          Authenticator.signPayload(identity.authChain, otherUpload.id),
+          true,
+          otherUpload
+        )
+      )
+      storeSpy = jest.spyOn(components.storage, 'storeStream')
+    })
+
+    afterEach(() => {
+      storeSpy.mockRestore()
+    })
+
+    // The other upload's bytes share this deployer's rate window, so only the charges are compared.
+    async function readCharges(): Promise<unknown> {
+      const { reserved, charged } = await readAccounting()
+      return { reserved, charged }
+    }
+
+    describe('and a new upload lists it in its manifest', () => {
+      beforeEach(async () => {
+        response = await post(buildForm([entityId], authChain))
+        accounting = await readCharges()
+      })
+
+      it('should charge it to the new upload', () => {
+        expect({ status: response.status, accounting }).toEqual({
+          status: 202,
+          accounting: {
+            reserved: [{ reserved_bytes: String(sizeOf(entityId, contentHashes[0])) }],
+            charged: { [entityId]: true, [contentHashes[0]]: true }
+          }
+        })
+      })
+
+      describe('and the upload that staged it expires and is cleaned up', () => {
+        let kept: boolean
+
+        beforeEach(async () => {
+          await components.database.query(
+            SQL`UPDATE pending_scenes SET created_at = now() - interval '2 days' WHERE entity_id = ${otherUpload.id}`
+          )
+          await components.pendingScenesManager.deleteExpired()
+          kept = await components.storage.exist(contentHashes[0])
+          accounting = await readCharges()
+        })
+
+        it('should keep the content, still charged to the new upload', () => {
+          expect({ kept, accounting }).toEqual({
+            kept: true,
+            accounting: {
+              reserved: [{ reserved_bytes: String(sizeOf(entityId, contentHashes[0])) }],
+              charged: { [entityId]: true, [contentHashes[0]]: true }
+            }
+          })
+        })
+      })
+    })
+
+    describe('and a new upload re-sends it', () => {
+      beforeEach(async () => {
+        response = await post(buildForm([entityId, contentHashes[0]], authChain))
+        accounting = await readCharges()
+      })
+
+      it('should drop it without storing it again but charge it to the new upload', () => {
+        expect({ status: response.status, stored: storeSpy.mock.calls.map(([hash]) => hash), accounting }).toEqual({
+          status: 202,
+          stored: [entityId],
+          accounting: {
+            reserved: [{ reserved_bytes: String(sizeOf(entityId, contentHashes[0])) }],
+            charged: { [entityId]: true, [contentHashes[0]]: true }
+          }
         })
       })
     })

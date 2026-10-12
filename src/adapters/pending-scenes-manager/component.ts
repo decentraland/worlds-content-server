@@ -3,7 +3,7 @@ import { InvalidRequestError } from '@dcl/http-commons'
 import { AppComponents } from '../../types'
 import { getPositiveInteger, raceWithSignal } from '../../logic/concurrency'
 import { withUploadTransaction } from '../upload-transaction'
-import { getReferencedContentKeys } from '../content-references'
+import { getPublishedContentKeys, getReferencedContentKeys } from '../content-references'
 import { ExpiredUploadsCleanup, IPendingScenesManager, PendingScene, UpsertPendingScene, FileReceipt } from './types'
 import { PartialUploadExpiredError, PartialUploadQuotaExceededError, PartialUploadTooLargeError } from './errors'
 import { ContentLockTimeoutError } from '../content-locks/errors'
@@ -102,6 +102,11 @@ export async function createPendingScenesManager(
       signal
     )
     return result.rows[0] ? toPendingScene(result.rows[0]) : undefined
+  }
+
+  async function getPublishedContent(hashes: string[], signal?: AbortSignal): Promise<Set<string>> {
+    if (!hashes.length) return new Set()
+    return raceWithSignal(getPublishedContentKeys(database, hashes), signal)
   }
 
   async function upsert(
@@ -439,6 +444,7 @@ export async function createPendingScenesManager(
     ttlMs,
     cleanupIntervalMs,
     getByEntityId,
+    getPublishedContent,
     upsert,
     reserve,
     discardUnadmitted,
