@@ -28,7 +28,19 @@ export async function getPublishedContentKeys(
   database: AppComponents['database'],
   candidates: string[]
 ): Promise<Set<string>> {
-  return queryReferencedKeys(database, undefined, candidates)
+  // Looks each candidate up through world_scenes_content_hashes_idx; the expression must match the index's.
+  const result = await database.query<{ hash: string }>(SQL`
+    SELECT c.hash FROM unnest(${candidates}::text[]) AS c(hash)
+    WHERE EXISTS (
+        SELECT 1 FROM world_scenes ws
+        WHERE jsonb_path_query_array(ws.entity, '$.content[*].hash') @> jsonb_build_array(c.hash)
+      )
+      OR EXISTS (
+        SELECT 1 FROM world_scenes ws
+        WHERE ws.entity IS NOT NULL AND ws.entity_id IN (c.hash, regexp_replace(c.hash, '\\.auth$', ''))
+      )
+      OR EXISTS (SELECT 1 FROM worlds w WHERE w.thumbnail_hash = c.hash)`)
+  return new Set(result.rows.map((row) => row.hash))
 }
 
 async function queryReferencedKeys(
