@@ -5,7 +5,7 @@ import { createCoordinatesComponent } from '../../src/logic/coordinates'
 import { createDeploymentProcessingMock } from '../mocks/deployment-processing-mock'
 import { DeploymentToValidate } from '../../src/types'
 import { StageDeploymentInput } from '../../src/logic/partial-deployments/types'
-import { PartialUploadExpiredError } from '../../src/adapters/pending-scenes-manager'
+import { PartialUploadExpiredError } from '../../src/logic/partial-upload-admission'
 
 type Components = Parameters<typeof createPartialDeploymentsComponent>[0]
 
@@ -16,17 +16,15 @@ describe('when staging a partial deployment', () => {
   let getProgress: jest.Mock
   let getPending: jest.Mock
   let getPublishedContent: jest.Mock
-  let reserve: jest.Mock
   let recordStored: jest.Mock
   let storeStream: jest.Mock
   let validateStaging: jest.Mock
   let validate: jest.Mock
   let deployEntity: jest.Mock
-  let upsert: jest.Mock
+  let admitBatch: jest.Mock
   let getWorldScenes: jest.Mock
   let getCompleted: jest.Mock
   let deleteByEntityId: jest.Mock
-  let discardUnadmitted: jest.Mock
   let increment: jest.Mock
   let observe: jest.Mock
   let stage: Awaited<ReturnType<typeof createPartialDeploymentsComponent>>['stage']
@@ -56,7 +54,6 @@ describe('when staging a partial deployment', () => {
     getProgress = jest.fn().mockResolvedValue(new Map([['a', 300]]))
     getPending = jest.fn().mockResolvedValue(undefined)
     getPublishedContent = jest.fn().mockResolvedValue(new Set())
-    reserve = jest.fn().mockResolvedValue(undefined)
     recordStored = jest.fn().mockResolvedValue(2)
     storeStream = jest.fn().mockResolvedValue(undefined)
     validateStaging = jest.fn().mockResolvedValue({ ok: () => true, errors: [] })
@@ -65,33 +62,30 @@ describe('when staging a partial deployment', () => {
       return { ok: () => true, errors: [] }
     })
     deployEntity = jest.fn().mockResolvedValue({ message: 'deployed', creationTimestamp: 123 })
-    upsert = jest.fn().mockResolvedValue({ createdAt: new Date(), expiresAt: new Date(Date.now() + 86_400_000) })
+    admitBatch = jest.fn().mockResolvedValue({ createdAt: new Date(), expiresAt: new Date(Date.now() + 86_400_000) })
     getWorldScenes = jest.fn().mockResolvedValue({ scenes: [], total: 0 })
     getCompleted = jest.fn().mockResolvedValue({ creationTimestamp: 123 })
     deleteByEntityId = jest.fn().mockResolvedValue(undefined)
-    discardUnadmitted = jest.fn().mockResolvedValue(undefined)
     increment = jest.fn()
     observe = jest.fn()
     components = {
-      uploadLimits: { maxPendingDeploymentsPerDeployer: 10 },
       coordinates: createCoordinatesComponent(),
       deploymentProcessing: createDeploymentProcessingMock(),
       entityDeployer: { deployEntity },
       limitsManager: { getMaxAllowedSizeInBytesFor: jest.fn().mockResolvedValue(10000n) },
       logs: { getLogger: jest.fn() },
       metrics: { increment, observe },
-      pendingScenesManager: {
-        ttlMs: 86_400_000,
+      partialUploadAdmission: {
         getByEntityId: getPending,
-        getPublishedContent,
-        upsert,
-        reserve,
+        admitBatch,
         recordStored,
-        getProgress,
         markMissing: jest.fn(),
-        getCompleted,
-        deleteByEntityId,
-        discardUnadmitted
+        getCompleted
+      },
+      pendingScenesRepository: {
+        getPublishedContent,
+        getProgress,
+        deleteByEntityId
       },
       storage: { fileInfo, storeStream },
       validator: { validateStaging, validate },
@@ -110,7 +104,7 @@ describe('when staging a partial deployment', () => {
     })
     it('should reject before looking up storage or reserving bytes', async () => {
       await expect(stage(input)).rejects.toThrow('invalid manifest')
-      expect({ metadata: fileInfo.mock.calls.length, reservations: reserve.mock.calls.length }).toEqual({
+      expect({ metadata: fileInfo.mock.calls.length, reservations: admitBatch.mock.calls.length }).toEqual({
         metadata: 0,
         reservations: 0
       })
@@ -128,7 +122,7 @@ describe('when staging a partial deployment', () => {
     })
 
     it('should still create the upload', () => {
-      expect(upsert.mock.calls[0][0].resumes).toBe(false)
+      expect(admitBatch.mock.calls[0][0].upload.resumes).toBe(false)
     })
   })
 
@@ -148,7 +142,7 @@ describe('when staging a partial deployment', () => {
       expect({
         validations: validateStaging.mock.calls.length,
         metadata: fileInfo.mock.calls.length,
-        upserts: upsert.mock.calls.length
+        upserts: admitBatch.mock.calls.length
       }).toEqual({ validations: 0, metadata: 0, upserts: 0 })
     })
   })
@@ -162,7 +156,7 @@ describe('when staging a partial deployment', () => {
     })
 
     it('should resume it', () => {
-      expect(upsert.mock.calls[0][0].resumes).toBe(true)
+      expect(admitBatch.mock.calls[0][0].upload.resumes).toBe(true)
     })
   })
 
@@ -261,15 +255,15 @@ describe('when staging a partial deployment', () => {
     })
 
     it('should create the upload at the instant its freshness was validated', () => {
-      expect(upsert.mock.calls[0][0].admittedAt).toBe(validateStaging.mock.calls[0][0].pendingCreatedAt)
+      expect(admitBatch.mock.calls[0][0].upload.admittedAt).toBe(validateStaging.mock.calls[0][0].pendingCreatedAt)
     })
 
     it('should admit it at the request arrival', () => {
-      expect(upsert.mock.calls[0][0].admittedAt).toEqual(new Date(input.requestArrivedAt))
+      expect(admitBatch.mock.calls[0][0].upload.admittedAt).toEqual(new Date(input.requestArrivedAt))
     })
 
     it('should let the upload be created', () => {
-      expect(upsert.mock.calls[0][0].resumes).toBe(false)
+      expect(admitBatch.mock.calls[0][0].upload.resumes).toBe(false)
     })
 
     it('should count it as a started upload', () => {
@@ -281,7 +275,7 @@ describe('when staging a partial deployment', () => {
     let caughtError: unknown
 
     beforeEach(async () => {
-      upsert.mockResolvedValueOnce({ createdAt: new Date(Date.now() - 86_400_000), expiresAt: new Date() })
+      admitBatch.mockResolvedValueOnce({ createdAt: new Date(Date.now() - 86_400_000), expiresAt: new Date() })
       caughtError = await stage(input).catch((error: unknown) => error)
     })
 
@@ -308,7 +302,7 @@ describe('when staging a partial deployment', () => {
     })
 
     it('should require the upload to still exist instead of re-creating it', () => {
-      expect(upsert.mock.calls[0][0].resumes).toBe(true)
+      expect(admitBatch.mock.calls[0][0].upload.resumes).toBe(true)
     })
   })
 
@@ -325,7 +319,7 @@ describe('when staging a partial deployment', () => {
 
   describe('and the staging budget is exhausted', () => {
     beforeEach(() => {
-      reserve.mockRejectedValueOnce(new Error('budget exceeded'))
+      admitBatch.mockRejectedValueOnce(new Error('budget exceeded'))
     })
     it('should reject before any storage write', async () => {
       await expect(stage(input)).rejects.toThrow('budget exceeded')
@@ -368,7 +362,7 @@ describe('when staging a partial deployment', () => {
 
       beforeEach(async () => {
         createdAt = new Date(Date.now() - 5_000)
-        upsert.mockResolvedValueOnce({ createdAt, expiresAt: new Date(createdAt.getTime() + 86_400_000) })
+        admitBatch.mockResolvedValueOnce({ createdAt, expiresAt: new Date(createdAt.getTime() + 86_400_000) })
         await stage(input)
       })
 
@@ -400,7 +394,7 @@ describe('when staging a partial deployment', () => {
       })
       it('should invalidate its receipt and request that file again', async () => {
         expect(await stage(input)).toEqual({ complete: false, missing: ['a'] })
-        expect(components.pendingScenesManager.markMissing).toHaveBeenCalledWith('entity', ['a'], input.signal)
+        expect(components.partialUploadAdmission.markMissing).toHaveBeenCalledWith('entity', ['a'], input.signal)
         expect(deployEntity).not.toHaveBeenCalled()
       })
     })
@@ -429,13 +423,13 @@ describe('when staging a partial deployment', () => {
     it('should validate the manifest but only charge and store the uploaded files', () => {
       expect({
         validatedFiles,
-        incomingBytes: reserve.mock.calls[0][3],
+        incomingBytes: admitBatch.mock.calls[0][0].incomingBytes,
         stored: storeStream.mock.calls.map(([hash]) => hash)
       }).toEqual({ validatedFiles: ['a', 'entity'], incomingBytes: 300, stored: ['a'] })
     })
 
     it('should charge the uploaded file it stores', () => {
-      expect(reserve.mock.calls[0][1]).toEqual([{ hash: 'a', size: 300, stored: false, charged: true }])
+      expect(admitBatch.mock.calls[0][0].receipts).toEqual([{ hash: 'a', size: 300, stored: false, charged: true }])
     })
   })
 
@@ -452,14 +446,14 @@ describe('when staging a partial deployment', () => {
 
     it('should record it as stored without charging, storing or recording a write for it', () => {
       expect({
-        receipts: reserve.mock.calls[0][1],
+        receipts: admitBatch.mock.calls[0][0].receipts,
         stored: storeStream.mock.calls.length,
         recorded: recordStored.mock.calls[0][1]
       }).toEqual({ receipts: [{ hash: 'a', size: 300, stored: true, charged: false }], stored: 0, recorded: [] })
     })
 
     it('should still count its bytes against the byte rate', () => {
-      expect(reserve.mock.calls[0][3]).toBe(300)
+      expect(admitBatch.mock.calls[0][0].incomingBytes).toBe(300)
     })
   })
 
@@ -471,7 +465,7 @@ describe('when staging a partial deployment', () => {
 
     it('should charge it without storing or recording a write for it', () => {
       expect({
-        receipts: reserve.mock.calls[0][1],
+        receipts: admitBatch.mock.calls[0][0].receipts,
         stored: storeStream.mock.calls.length,
         recorded: recordStored.mock.calls[0][1]
       }).toEqual({ receipts: [{ hash: 'a', size: 300, stored: true, charged: true }], stored: 0, recorded: [] })
@@ -486,7 +480,7 @@ describe('when staging a partial deployment', () => {
     })
 
     it('should neither charge nor store it again', () => {
-      expect({ receipts: reserve.mock.calls[0][1], stored: storeStream.mock.calls.length }).toEqual({
+      expect({ receipts: admitBatch.mock.calls[0][0].receipts, stored: storeStream.mock.calls.length }).toEqual({
         receipts: [],
         stored: 0
       })
@@ -505,7 +499,7 @@ describe('when staging a partial deployment', () => {
     })
 
     it('should charge the received file but not the stored content', () => {
-      expect(reserve.mock.calls[0][1]).toEqual([
+      expect(admitBatch.mock.calls[0][0].receipts).toEqual([
         { hash: 'b', size: 500, stored: true, charged: false },
         { hash: 'a', size: 300, stored: false, charged: true }
       ])
@@ -574,33 +568,6 @@ describe('when staging a partial deployment', () => {
       expect(error).toMatchObject({ message: 'duplicate key', code: '23505' })
     })
   })
-  describe('and the first batch of an upload is not admitted', () => {
-    let error: unknown
-
-    beforeEach(async () => {
-      reserve.mockRejectedValueOnce(new Error('budget exceeded'))
-      error = await stage(input).catch((e) => e)
-    })
-
-    it('should discard the upload it created so it does not hold a slot of the cap', () => {
-      expect({ error, discarded: discardUnadmitted.mock.calls }).toEqual({
-        error: new Error('budget exceeded'),
-        discarded: [['entity']]
-      })
-    })
-  })
-
-  describe('and a later batch of an upload is not admitted', () => {
-    beforeEach(async () => {
-      getPending.mockResolvedValueOnce({ createdAt: new Date(), deployer: 'deployer', initialized: true })
-      reserve.mockRejectedValueOnce(new Error('rate exceeded'))
-      await stage(input).catch(() => undefined)
-    })
-
-    it('should keep the existing upload', () => {
-      expect(discardUnadmitted).not.toHaveBeenCalled()
-    })
-  })
 })
 
 describe('when finding the publication of an entity', () => {
@@ -610,7 +577,6 @@ describe('when finding the publication of an entity', () => {
   beforeEach(async () => {
     getWorldScenes = jest.fn()
     ;({ findPublication } = await createPartialDeploymentsComponent({
-      uploadLimits: { maxPendingDeploymentsPerDeployer: 10 },
       worldsManager: { getWorldScenes }
     } as unknown as Components))
   })

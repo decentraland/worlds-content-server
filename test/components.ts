@@ -16,7 +16,8 @@ import { createWorldsIndexerComponent } from '../src/adapters/worlds-indexer'
 import { IFetchComponent } from '@dcl/core-commons'
 
 import { createValidator } from '../src/logic/validations'
-import { createPendingScenesManager } from '../src/adapters/pending-scenes-manager'
+import { createPendingScenesRepository } from '../src/adapters/pending-scenes-repository'
+import { createPartialUploadAdmission } from '../src/logic/partial-upload-admission'
 import { createContentGcComponent } from '../src/logic/content-gc'
 import { createPartialDeploymentsComponent } from '../src/logic/partial-deployments'
 import { createTestMetricsComponent } from '@dcl/metrics'
@@ -152,12 +153,15 @@ async function initComponents(): Promise<TestComponents> {
 
   const thumbnails = await createThumbnailsComponent({ logs, storage })
 
+  const pendingScenesRepository = await createPendingScenesRepository({ database })
+
   const worldsManager = await createWorldsManagerComponent({
     settingsPolicy,
     coordinates,
     logs,
     database,
     nameDenyListChecker,
+    pendingScenesRepository,
     search,
     storage,
     thumbnails
@@ -232,14 +236,20 @@ async function initComponents(): Promise<TestComponents> {
     worldsManager
   })
 
-  const pendingScenesManager = await createPendingScenesManager({ database, metrics, uploadLimits })
+  const partialUploadAdmission = await createPartialUploadAdmission({
+    database,
+    metrics,
+    pendingScenesRepository,
+    uploadLimits
+  })
   const contentGc = await createContentGcComponent({
     database,
     logs,
     metrics,
     storage,
     contentLocks: components.contentLocks,
-    pendingScenesManager,
+    partialUploadAdmission,
+    pendingScenesRepository,
     uploadLimits
   })
 
@@ -248,11 +258,11 @@ async function initComponents(): Promise<TestComponents> {
     entityDeployer,
     limitsManager,
     logs,
-    pendingScenesManager,
+    partialUploadAdmission,
+    pendingScenesRepository,
     deploymentProcessing: components.deploymentProcessing,
     metrics,
     storage,
-    uploadLimits,
     validator,
     worldsManager
   })
@@ -324,7 +334,8 @@ async function initComponents(): Promise<TestComponents> {
     permissionsManager,
     peersRegistry,
     partialDeployments,
-    pendingScenesManager,
+    partialUploadAdmission,
+    pendingScenesRepository,
     queueConsumer,
     rateLimiter,
     redis,

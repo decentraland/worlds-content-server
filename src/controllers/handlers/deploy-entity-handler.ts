@@ -20,7 +20,7 @@ import { calculateDeploymentSizeFromFileInfos } from '../../logic/validations/sc
 import { Readable } from 'stream'
 import { mapWithConcurrency, raceWithSignal } from '../../logic/concurrency'
 import { getRequestArrival, RequestArrivalContext } from '../request-arrival'
-import { PartialUploadQuotaExceededError } from '../../adapters/pending-scenes-manager'
+import { PartialUploadQuotaExceededError } from '../../logic/partial-upload-admission'
 import { StagingPrevalidation } from '../../logic/partial-deployments'
 import {
   DEFAULT_CONTENT_FILE_INFO_CONCURRENCY,
@@ -45,7 +45,7 @@ type DeployEntityContext = FormDataContext &
     | 'logs'
     | 'metrics'
     | 'partialDeployments'
-    | 'pendingScenesManager'
+    | 'partialUploadAdmission'
     | 'storage'
     | 'validator'
     | 'worldsManager',
@@ -185,7 +185,7 @@ async function findPartialReplay(
 ): Promise<IHttpServerComponent.IResponse | undefined> {
   const baseUrl = await getBaseUrl(ctx)
   // The receipt keeps answering the finalizer after an undeploy or replacement.
-  const completed = await ctx.components.pendingScenesManager.getCompleted(entityId, authChain[0].payload, signal)
+  const completed = await ctx.components.partialUploadAdmission.getCompleted(entityId, authChain[0].payload, signal)
   if (completed) {
     return {
       status: 200,
@@ -213,7 +213,7 @@ async function prepareDeployment(
   signal: AbortSignal
 ): Promise<{ response: IHttpServerComponent.IResponse } | { prepared: PreparedDeployment }> {
   const { entityId, authChain, isPartial } = request
-  const { deploymentProcessing, partialDeployments, pendingScenesManager, validator } = ctx.components
+  const { deploymentProcessing, partialDeployments, partialUploadAdmission, validator } = ctx.components
   signal.throwIfAborted()
   const uploadedFiles: Map<string, DeploymentFile> = new Map()
   for (const filesKey in ctx.formData.files) {
@@ -224,7 +224,7 @@ async function prepareDeployment(
   if (isPartial) {
     // Read before the replay checks: a publication in between is then answered as a replay instead of
     // validating a long upload's entity against now. Staging re-reads it under the lock.
-    const pending = await pendingScenesManager.getByEntityId(entityId, signal)
+    const pending = await partialUploadAdmission.getByEntityId(entityId, signal)
     const replay = await findPartialReplay(ctx, request, signal)
     if (replay) return { response: replay }
     if (!uploadedEntity) {
@@ -295,7 +295,7 @@ async function deployEntityWithSignal(
       //    check) and rows are capped per deployer, so read-backs are bounded to in-flight uploads by
       //    their own permission-validated deployer. Any other signer (or an expired upload) must re-send
       //    the entity file instead, which restarts/joins the upload through the fully-validated path.
-      const pendingForResume = await ctx.components.pendingScenesManager.getByEntityId(entityId, signal)
+      const pendingForResume = await ctx.components.partialUploadAdmission.getByEntityId(entityId, signal)
       if (pendingForResume && pendingForResume.deployer === authChain[0].payload.toLowerCase()) {
         const stored = await raceWithSignal(ctx.components.storage.retrieve(entityId), signal)
         if (stored) {

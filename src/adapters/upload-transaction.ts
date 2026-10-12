@@ -2,7 +2,9 @@ import SQL, { SQLStatement } from 'sql-template-strings'
 import { IPgComponent } from '@dcl/pg-component'
 import { connectWithSignal } from './pg-client'
 
-type Query = <T extends Record<string, unknown>>(sql: SQLStatement) => Promise<{ rows: T[]; rowCount: number | null }>
+export type Query = <T extends Record<string, unknown>>(
+  sql: SQLStatement
+) => Promise<{ rows: T[]; rowCount: number | null }>
 
 /**
  * Executes short staging mutations atomically, destroying the checked-out connection on cancellation.

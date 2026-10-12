@@ -4,8 +4,8 @@ import { FileInfo } from '@dcl/catalyst-storage'
 import { AppComponents, DeploymentToValidate, MissingSceneReplacementAuthorizationError, WorldScene } from '../../types'
 import { mapWithConcurrency, raceWithSignal } from '../concurrency'
 import { calculateDeploymentSizeFromFileInfos } from '../validations/scene'
-import { PartialUploadExpiredError } from '../../adapters/pending-scenes-manager/errors'
-import { FileReceipt, PendingScene } from '../../adapters/pending-scenes-manager/types'
+import { FileReceipt } from '../../adapters/pending-scenes-repository/types'
+import { PartialUploadExpiredError, PendingScene } from '../partial-upload-admission'
 import {
   IPartialDeploymentsComponent,
   PrevalidateStagingInput,
@@ -28,28 +28,27 @@ export async function createPartialDeploymentsComponent(
     | 'entityDeployer'
     | 'limitsManager'
     | 'logs'
-    | 'pendingScenesManager'
+    | 'partialUploadAdmission'
+    | 'pendingScenesRepository'
     | 'storage'
     | 'validator'
     | 'worldsManager'
     | 'deploymentProcessing'
     | 'metrics'
-    | 'uploadLimits'
   >
 ): Promise<IPartialDeploymentsComponent> {
   const {
     coordinates,
     entityDeployer,
     limitsManager,
-    pendingScenesManager,
+    partialUploadAdmission,
+    pendingScenesRepository,
     storage,
     validator,
     worldsManager,
     deploymentProcessing,
-    metrics,
-    uploadLimits
+    metrics
   } = components
-  const maxPendingPerDeployer = uploadLimits.maxPendingDeploymentsPerDeployer
 
   async function metadata(hashes: string[], signal?: AbortSignal): Promise<Map<string, FileInfo | undefined>> {
     metrics.increment('partial_upload_metadata_checks', {}, hashes.length)
@@ -101,7 +100,7 @@ export async function createPartialDeploymentsComponent(
     const { baseUrl, entity, entityRaw, authChain, files, manifest, signal, deadlineAt, requestArrivedAt } = input
     signal?.throwIfAborted()
     const deploymentFiles = manifest ? new Map([...files, [entity.id, manifest]]) : files
-    const pending = await pendingScenesManager.getByEntityId(entity.id, signal)
+    const pending = await partialUploadAdmission.getByEntityId(entity.id, signal)
     // Permission was skipped for the signer's own upload; only expiry cleanup removes it in between.
     if (input.prevalidation?.sawPending && !pending) throw new PartialUploadExpiredError()
     // One admission instant, the request's arrival, anchors both freshness and the upload's lifetime.
@@ -125,7 +124,7 @@ export async function createPartialDeploymentsComponent(
       info?.size !== undefined && info.size !== null ? [{ hash, size: info.size }] : []
     )
     // Stored content is free only when published content keeps it; if only pending uploads hold it, it's charged.
-    const published = await pendingScenesManager.getPublishedContent(
+    const published = await pendingScenesRepository.getPublishedContent(
       inStorage.map(({ hash }) => hash),
       signal
     )
@@ -134,7 +133,7 @@ export async function createPartialDeploymentsComponent(
       receipts.set(hash, { hash, size, stored: true, charged: !published.has(hash) })
     }
     // Files already present, before the upload or from an earlier batch, are dropped; their receipt keeps its charge.
-    const stored = pending ? await pendingScenesManager.getProgress(entity.id, signal) : new Map<string, number>()
+    const stored = pending ? await pendingScenesRepository.getProgress(entity.id, signal) : new Map<string, number>()
     const toStore = new Map([...files].filter(([hash]) => !stored.has(hash) && !receipts.has(hash)))
     let incomingBytes = 0
     for (const file of files.values()) incomingBytes += file.size
@@ -143,26 +142,23 @@ export async function createPartialDeploymentsComponent(
       .filter((receipt) => receipt.hash !== entity.id)
       .reduce((sum, receipt) => sum + BigInt(receipt.size), 0n)
     if (knownSceneBytes > maxSize) throw new InvalidRequestError('Deployment failed: The deployment is too big.')
-    const pendingRow = await pendingScenesManager.upsert(
+    const pendingRow = await partialUploadAdmission.admitBatch(
       {
-        entityId: entity.id,
-        worldName,
-        parcels,
-        entity,
-        deployer: authChain[0].payload,
-        admittedAt,
-        resumes: !!pending
+        upload: {
+          entityId: entity.id,
+          worldName,
+          parcels,
+          entity,
+          deployer: authChain[0].payload,
+          admittedAt,
+          resumes: !!pending
+        },
+        receipts: [...receipts.values()],
+        maxSceneBytes: maxSize,
+        incomingBytes
       },
-      { maxPendingPerDeployer },
       signal
     )
-    try {
-      await pendingScenesManager.reserve(entity.id, [...receipts.values()], maxSize, incomingBytes, signal)
-    } catch (error) {
-      // A first batch that isn't admitted must not keep its new upload holding a slot of the cap.
-      if (!pending) await pendingScenesManager.discardUnadmitted(entity.id).catch(() => undefined)
-      throw error
-    }
     if (!pending) metrics.increment('partial_uploads_started')
 
     // Re-checked right before storing: a batch admitted just before expiry must store nothing.
@@ -179,8 +175,8 @@ export async function createPartialDeploymentsComponent(
         { signal }
       )
     )
-    const batches = await pendingScenesManager.recordStored(entity.id, [...toStore.keys()], signal)
-    const progress = await pendingScenesManager.getProgress(entity.id, signal)
+    const batches = await partialUploadAdmission.recordStored(entity.id, [...toStore.keys()], signal)
+    const progress = await pendingScenesRepository.getProgress(entity.id, signal)
     const missing = contentHashes.filter((hash) => !progress.has(hash))
     metrics.increment('partial_upload_batches', { outcome: missing.length ? 'incomplete' : 'finalizing' })
     if (missing.length) return { complete: false, missing }
@@ -190,7 +186,7 @@ export async function createPartialDeploymentsComponent(
     const presentInfos = await metadata(contentHashes, signal)
     const nowMissing = contentHashes.filter((hash) => presentInfos.get(hash) === undefined)
     if (nowMissing.length) {
-      await pendingScenesManager.markMissing(entity.id, nowMissing, signal)
+      await partialUploadAdmission.markMissing(entity.id, nowMissing, signal)
       return { complete: false, missing: nowMissing }
     }
     const present = new Map(contentHashes.map((hash) => [hash, true]))
@@ -230,7 +226,7 @@ export async function createPartialDeploymentsComponent(
         : undefined
       if (!concurrent) throw error
       // Published concurrently: drop this request's staging state and answer with the live publication.
-      await pendingScenesManager.deleteByEntityId(entity.id).catch(() => undefined)
+      await pendingScenesRepository.deleteByEntityId(entity.id).catch(() => undefined)
       return concurrent
     }
     metrics.increment('partial_uploads_completed')

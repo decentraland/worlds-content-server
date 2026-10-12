@@ -13,10 +13,12 @@ describe('when collecting unreferenced content', () => {
   let storageDelete: jest.Mock
   let increment: jest.Mock
   let info: jest.Mock
-  let pendingScenesManager: {
+  let pendingScenesRepository: {
     listExpired: jest.Mock
     getUploadKeys: jest.Mock
     releaseExpired: jest.Mock
+  }
+  let partialUploadAdmission: {
     pruneAndReport: jest.Mock
     recordCleanupFinished: jest.Mock
   }
@@ -40,12 +42,14 @@ describe('when collecting unreferenced content', () => {
     })
     increment = jest.fn()
     info = jest.fn()
-    pendingScenesManager = {
+    pendingScenesRepository = {
       listExpired: jest.fn().mockResolvedValue([]),
       getUploadKeys: jest.fn(),
       releaseExpired: jest.fn(async (entityId: string) => {
         calls.push(`release:${entityId}`)
-      }),
+      })
+    }
+    partialUploadAdmission = {
       pruneAndReport: jest.fn().mockResolvedValue(undefined),
       recordCleanupFinished: jest.fn()
     }
@@ -60,7 +64,8 @@ describe('when collecting unreferenced content', () => {
         delete: storageDelete
       },
       contentLocks: { withWrite },
-      pendingScenesManager,
+      partialUploadAdmission,
+      pendingScenesRepository,
       uploadLimits: { pendingDeploymentTtlMs: TTL_MS }
     } as unknown as Components)
   })
@@ -121,8 +126,8 @@ describe('when collecting unreferenced content', () => {
     beforeEach(async () => {
       storedKeys = ['orphan', 'kept']
       referencedKeys = ['kept']
-      pendingScenesManager.listExpired.mockResolvedValueOnce([{ entityId: 'expired', createdAt: '2027-01-01' }])
-      pendingScenesManager.getUploadKeys.mockResolvedValueOnce(['expired', 'expired.auth'])
+      pendingScenesRepository.listExpired.mockResolvedValueOnce([{ entityId: 'expired', createdAt: '2027-01-01' }])
+      pendingScenesRepository.getUploadKeys.mockResolvedValueOnce(['expired', 'expired.auth'])
       result = await contentGc.collectGarbage()
     })
 
@@ -157,7 +162,7 @@ describe('when collecting unreferenced content', () => {
     it('should rethrow without running the expired-upload cleanup', () => {
       expect({
         deferred: error instanceof ContentLockTimeoutError,
-        listed: pendingScenesManager.listExpired.mock.calls.length
+        listed: pendingScenesRepository.listExpired.mock.calls.length
       }).toEqual({ deferred: true, listed: 0 })
     })
   })
@@ -168,7 +173,7 @@ describe('when collecting unreferenced content', () => {
     })
 
     it('should record that the cleanup finished', () => {
-      expect(pendingScenesManager.recordCleanupFinished).toHaveBeenCalledTimes(1)
+      expect(partialUploadAdmission.recordCleanupFinished).toHaveBeenCalledTimes(1)
     })
   })
 })

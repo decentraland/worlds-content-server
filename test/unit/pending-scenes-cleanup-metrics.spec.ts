@@ -1,4 +1,5 @@
-import { createPendingScenesManager } from '../../src/adapters/pending-scenes-manager'
+import { createPendingScenesRepository } from '../../src/adapters/pending-scenes-repository'
+import { createPartialUploadAdmission } from '../../src/logic/partial-upload-admission'
 import { ContentLockTimeoutError } from '../../src/adapters/content-locks/errors'
 import {
   CLEANUP_PAGE_SIZE,
@@ -88,9 +89,11 @@ async function build(mocks: Mocks): Promise<IContentGcComponent> {
     observe: mocks.observe,
     startTimer: jest.fn().mockReturnValue({ end: mocks.endTimer })
   }
-  const pendingScenesManager = await createPendingScenesManager({
+  const pendingScenesRepository = await createPendingScenesRepository({ database: { query: mocks.query } } as any)
+  const partialUploadAdmission = await createPartialUploadAdmission({
     database: { query: mocks.query },
     metrics,
+    pendingScenesRepository,
     uploadLimits: UPLOAD_LIMITS
   } as any)
   return createContentGcComponent({
@@ -99,7 +102,8 @@ async function build(mocks: Mocks): Promise<IContentGcComponent> {
     metrics,
     storage: { delete: mocks.storageDelete },
     contentLocks: { withWrite: mocks.withWrite },
-    pendingScenesManager,
+    partialUploadAdmission,
+    pendingScenesRepository,
     uploadLimits: UPLOAD_LIMITS
   } as any)
 }

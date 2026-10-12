@@ -5,17 +5,19 @@ import { bufferToStream } from '@dcl/catalyst-storage'
 import { test } from '../components'
 import { cleanup } from '../utils'
 import {
-  createPendingScenesManager,
+  createPartialUploadAdmission,
+  IPartialUploadAdmission,
   PartialUploadExpiredError,
   PartialUploadQuotaExceededError,
   PartialUploadTooLargeError
-} from '../../src/adapters/pending-scenes-manager'
+} from '../../src/logic/partial-upload-admission'
 import { DEFAULT_MAX_UPLOAD_SIZE_IN_BYTES, loadUploadLimits } from '../../src/logic/upload-limits'
-import { IPendingScenesManager } from '../../src/adapters/pending-scenes-manager/types'
+import { createPendingScenesRepository, IPendingScenesRepository } from '../../src/adapters/pending-scenes-repository'
 import { CLEANUP_PAGE_SIZE, createContentGcComponent, IContentGcComponent } from '../../src/logic/content-gc'
 
 test('when accounting for independent partial uploads', ({ components }) => {
-  let manager: IPendingScenesManager
+  let manager: IPartialUploadAdmission
+  let repository: IPendingScenesRepository
   let gc: IContentGcComponent
   let first: Entity
   let second: Entity
@@ -70,9 +72,11 @@ test('when accounting for independent partial uploads', ({ components }) => {
       pendingDeploymentTtlMs: limits.PENDING_DEPLOYMENT_TTL,
       partialUploadCleanupIntervalMs: limits.PARTIAL_UPLOAD_CLEANUP_INTERVAL_MS
     }
-    manager = await createPendingScenesManager({
+    repository = await createPendingScenesRepository({ database: components.database })
+    manager = await createPartialUploadAdmission({
       database: components.database,
       metrics: components.metrics,
+      pendingScenesRepository: repository,
       uploadLimits
     })
     gc = await createContentGcComponent({
@@ -81,7 +85,8 @@ test('when accounting for independent partial uploads', ({ components }) => {
       metrics: components.metrics,
       storage: components.storage,
       contentLocks: components.contentLocks,
-      pendingScenesManager: manager,
+      partialUploadAdmission: manager,
+      pendingScenesRepository: repository,
       uploadLimits
     })
   })
@@ -227,7 +232,7 @@ test('when accounting for independent partial uploads', ({ components }) => {
       }).toEqual({ fulfilled: 1, count: 2 })
     })
     it('should not treat reserved bytes as stored files', async () => {
-      expect([...(await manager.getProgress(first.id)), ...(await manager.getProgress(second.id))]).toEqual([])
+      expect([...(await repository.getProgress(first.id)), ...(await repository.getProgress(second.id))]).toEqual([])
     })
   })
 
@@ -517,7 +522,7 @@ test('when accounting for independent partial uploads', ({ components }) => {
       await manager
         .reserve(first.id, [{ hash: 'content-a', size: 700, stored: false, charged: true }], 1000n, 700)
         .catch(() => undefined)
-      await manager.discardUnadmitted(first.id)
+      await repository.discardUnadmitted(first.id)
     })
 
     it('should free the upload slot', async () => {
@@ -529,7 +534,7 @@ test('when accounting for independent partial uploads', ({ components }) => {
     beforeEach(async () => {
       await create(first)
       await manager.reserve(first.id, [{ hash: 'content-a', size: 400, stored: false, charged: true }], 1000n, 400)
-      await manager.discardUnadmitted(first.id)
+      await repository.discardUnadmitted(first.id)
     })
 
     it('should keep the upload and its reservation', async () => {

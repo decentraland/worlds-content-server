@@ -3,7 +3,7 @@ import { AuthChain, Entity } from '@dcl/schemas'
 // in turn references IPartialDeploymentsComponent for AppComponents — keeping this import type-only
 // erases the edge so there is no runtime import cycle.
 import type { DeploymentFile, DeploymentResult } from '../../types'
-import type { PendingScene } from '../../adapters/pending-scenes-manager/types'
+import type { PendingScene } from '../partial-upload-admission/types'
 
 export type StageDeploymentInput = {
   baseUrl: string

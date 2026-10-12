@@ -1,10 +1,20 @@
 import { InvalidRequestError } from '@dcl/http-commons'
 
-/** The upload outlived its fixed lifetime; the client must start over with a fresh entity. */
-export class PartialUploadExpiredError extends InvalidRequestError {
+export { PartialUploadExpiredError } from '../../adapters/pending-scenes-repository/errors'
+
+/** Another account started the upload; reservations are charged to its creator. */
+export class PartialUploadOwnershipError extends InvalidRequestError {
   constructor() {
-    super('This upload expired. Create a new entity with a fresh timestamp.')
-    this.name = 'PartialUploadExpiredError'
+    super('This upload was started by another account.')
+    this.name = 'PartialUploadOwnershipError'
+  }
+}
+
+/** The upload is gone before its batch was reserved; the client must resend its manifest. */
+export class PartialUploadNotFoundError extends InvalidRequestError {
+  constructor() {
+    super('Upload no longer exists; resend its manifest.')
+    this.name = 'PartialUploadNotFoundError'
   }
 }
 
