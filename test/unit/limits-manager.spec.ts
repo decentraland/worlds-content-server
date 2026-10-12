@@ -286,6 +286,30 @@ describe('when computing the per-scene size limit', () => {
     })
   })
 
+  describe('and the world is an ENS name in mixed case', () => {
+    beforeEach(async () => {
+      worldName = 'Cool.ETH'
+      result = await (await build()).getMaxAllowedSizeInBytesFor(worldName)
+    })
+
+    it('should return ENS_MAX_SIZE', () => {
+      expect(result).toBe(36n * MB_BigInt)
+    })
+  })
+
+  describe('and the world is a DCL name with a mixed-case suffix', () => {
+    beforeEach(async () => {
+      worldName = 'Owned.DCL.eth'
+      const limitsManager = await build()
+      nameOwnership.findOwners.mockResolvedValue(new Map([['owned.dcl.eth', owner]]))
+      result = await limitsManager.getMaxAllowedSizeInBytesFor(worldName)
+    })
+
+    it('should return the owner remaining allowance instead of ENS_MAX_SIZE', () => {
+      expect(result).toBe(100n * MB_BigInt)
+    })
+  })
+
   describe('and name ownership validation is ignored', () => {
     beforeEach(async () => {
       configValues.IGNORE_NAME_OWNERSHIP_VALIDATION = 'true'

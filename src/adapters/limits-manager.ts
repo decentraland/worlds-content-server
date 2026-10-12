@@ -32,17 +32,20 @@ export async function createLimitsManagerComponent({
   }
 
   return {
-    async getAllowSdk6For(worldName: string): Promise<boolean> {
+    // World names arrive with arbitrary casing (entity.metadata.worldConfiguration.name); every
+    // check (whitelist keys, TLD, ownership) runs on the lowercased name.
+    async getAllowSdk6For(rawWorldName: string): Promise<boolean> {
+      const worldName = rawWorldName.toLowerCase()
       const currentWhitelist = await resolveWhitelist()
-      // World names arrive with arbitrary casing (entity.metadata.worldConfiguration.name); the
-      // whitelist is keyed lowercased, so the lookup key must be too.
-      return currentWhitelist[worldName.toLowerCase()]?.allow_sdk6 || hardAllowSdk6
+      return currentWhitelist[worldName]?.allow_sdk6 || hardAllowSdk6
     },
-    async getMaxAllowedParcelsFor(worldName: string): Promise<number> {
+    async getMaxAllowedParcelsFor(rawWorldName: string): Promise<number> {
+      const worldName = rawWorldName.toLowerCase()
       const currentWhitelist = await resolveWhitelist()
-      return currentWhitelist[worldName.toLowerCase()]?.max_parcels || hardMaxParcels
+      return currentWhitelist[worldName]?.max_parcels || hardMaxParcels
     },
-    async getMaxAllowedSizeInBytesFor(worldName: string, parcels?: string[]): Promise<bigint> {
+    async getMaxAllowedSizeInBytesFor(rawWorldName: string, parcels?: string[]): Promise<bigint> {
+      const worldName = rawWorldName.toLowerCase()
       if (await isNameOwnershipValidationIgnored(config)) {
         // The fixture has no wallet/subgraph state. Keep the configured hard
         // limit while the explicit bypass is enabled instead of trying to
@@ -54,7 +57,7 @@ export async function createLimitsManagerComponent({
       }
 
       const currentWhitelist = await resolveWhitelist()
-      const whitelistEntry = currentWhitelist[worldName.toLowerCase()]
+      const whitelistEntry = currentWhitelist[worldName]
       if (whitelistEntry) {
         return BigInt(whitelistEntry.max_size_in_mb || hardMaxSize) * MB_BigInt
       }
@@ -72,7 +75,7 @@ export async function createLimitsManagerComponent({
       // back to the whole-world size when parcels aren't provided.
       const creditedBackSize = parcels
         ? await worldsManager.getDeployedSceneSizeForParcels(worldName, parcels)
-        : stats.dclNames.find((name) => name.name === worldName.toLowerCase())?.size || 0n
+        : stats.dclNames.find((name) => name.name === worldName)?.size || 0n
 
       const usedSpace = stats.usedSpace - creditedBackSize
 
