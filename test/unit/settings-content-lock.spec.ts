@@ -11,6 +11,7 @@ describe('when a settings update waits for a held content lock and its client di
   let error: unknown
 
   beforeEach(async () => {
+    jest.useFakeTimers()
     // The shared gate is never granted, so the lock wait keeps retrying.
     const client = {
       query: jest.fn(async () => ({ rows: [{ acquired: false }] })),
@@ -29,15 +30,17 @@ describe('when a settings update waits for a held content lock and its client di
     disconnect = new Error('client disconnected')
     const controller = new AbortController()
     setTimeout(() => controller.abort(disconnect), 100)
+    error = 'still waiting'
     const update = withSharedContentLock(contentLocks, handler)({ request: { signal: controller.signal } })
-    // Bounded so a wait that ignores the disconnect fails the assertion instead of hanging.
-    error = await Promise.race([
-      update.catch((e: unknown) => e),
-      new Promise((resolve) => setTimeout(() => resolve('still waiting'), 1000))
-    ])
+    void update.catch((e: unknown) => {
+      error = e
+    })
+    // Advanced past the disconnect so a wait that ignores it fails the assertion instead of hanging.
+    await jest.advanceTimersByTimeAsync(1000)
   })
 
   afterEach(() => {
+    jest.useRealTimers()
     jest.resetAllMocks()
   })
 

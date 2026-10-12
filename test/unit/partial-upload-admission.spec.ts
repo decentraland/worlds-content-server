@@ -428,6 +428,148 @@ describe('when admitting partial uploads', () => {
     })
   })
 
+  describe('and the account has one upload fewer than its maximum', () => {
+    let outcome: unknown
+
+    beforeEach(async () => {
+      repository.countByDeployer.mockResolvedValueOnce({ count: 1, oldest: new Date(NOW - 60_000) })
+      outcome = await admission.upsert(upload).then(
+        () => 'admitted',
+        (e: unknown) => e
+      )
+    })
+
+    it('should admit the new upload', () => {
+      expect(outcome).toBe('admitted')
+    })
+  })
+
+  describe('and a batch is exactly at the per-minute byte rate', () => {
+    let outcome: unknown
+
+    beforeEach(async () => {
+      repository.chargeByteRate.mockResolvedValueOnce({ bytes: 500n, retryAfterSeconds: 60 })
+      outcome = await admission.reserve('entity', [], 1000n, 500).then(
+        () => 'admitted',
+        (e: unknown) => e
+      )
+    })
+
+    it('should admit the batch', () => {
+      expect(outcome).toBe('admitted')
+    })
+  })
+
+  describe("and the account's minute window reaches exactly the byte rate", () => {
+    let outcome: unknown
+
+    beforeEach(async () => {
+      repository.chargeByteRate.mockResolvedValueOnce({ bytes: 500n, retryAfterSeconds: 30 })
+      outcome = await admission.reserve('entity', [], 1000n, 100).then(
+        () => 'admitted',
+        (e: unknown) => e
+      )
+    })
+
+    it('should admit the batch', () => {
+      expect(outcome).toBe('admitted')
+    })
+  })
+
+  describe('and the scene is exactly at its size limit', () => {
+    let outcome: unknown
+
+    beforeEach(async () => {
+      repository.getBudgetTotals.mockResolvedValueOnce(totals({ own: 100n, account: 100n, total: 100n, scene: 1000n }))
+      outcome = await admission.reserve('entity', [], 1000n, 100).then(
+        () => 'admitted',
+        (e: unknown) => e
+      )
+    })
+
+    it('should admit the batch', () => {
+      expect(outcome).toBe('admitted')
+    })
+  })
+
+  describe('and the account byte budget is exactly full', () => {
+    let outcome: unknown
+
+    beforeEach(async () => {
+      repository.getBudgetTotals.mockResolvedValueOnce(totals({ own: 600n, account: 600n, total: 600n, scene: 600n }))
+      outcome = await admission.reserve('entity', [], 1000n, 100).then(
+        () => 'admitted',
+        (e: unknown) => e
+      )
+    })
+
+    it('should admit the batch', () => {
+      expect(outcome).toBe('admitted')
+    })
+  })
+
+  describe('and the server byte budget is exactly full', () => {
+    let outcome: unknown
+
+    beforeEach(async () => {
+      repository.getBudgetTotals.mockResolvedValueOnce(totals({ own: 100n, account: 100n, total: 1000n, scene: 100n }))
+      outcome = await admission.reserve('entity', [], 1000n, 100).then(
+        () => 'admitted',
+        (e: unknown) => e
+      )
+    })
+
+    it('should admit the batch', () => {
+      expect(outcome).toBe('admitted')
+    })
+  })
+
+  describe('and the oldest charged upload expires in a fraction of a second over a whole number', () => {
+    let error: unknown
+
+    beforeEach(async () => {
+      repository.getBudgetTotals.mockResolvedValueOnce(
+        totals({ own: 300n, account: 300n, total: 1001n, oldest: new Date(NOW - 60_900) })
+      )
+      error = await admission.reserve('entity', [], 1000n, 100).catch((e: unknown) => e)
+    })
+
+    it('should round the retry up to the next second', () => {
+      expect((error as PartialUploadQuotaExceededError).retryAfterSeconds).toBe(240)
+    })
+  })
+
+  describe('and the oldest charged upload has expired and the next cleanup is overdue', () => {
+    let error: unknown
+
+    beforeEach(async () => {
+      admission.recordCleanupFinished()
+      ;(Date.now as jest.Mock).mockReturnValue(NOW + CLEANUP_INTERVAL_MS + 10_000)
+      repository.getOwner.mockResolvedValueOnce({ deployer: '0xaccount', createdAt: new Date(NOW) })
+      repository.getBudgetTotals.mockResolvedValueOnce(
+        totals({ own: 300n, account: 300n, total: 1001n, oldest: new Date(NOW - TTL_MS) })
+      )
+      error = await admission.reserve('entity', [], 1000n, 100).catch((e: unknown) => e)
+    })
+
+    it('should retry after one second', () => {
+      expect((error as PartialUploadQuotaExceededError).retryAfterSeconds).toBe(1)
+    })
+  })
+
+  describe('and no charged upload is known and no cleanup has finished yet', () => {
+    let error: unknown
+
+    beforeEach(async () => {
+      repository.getBudgetTotals.mockResolvedValueOnce(totals({ own: 300n, account: 300n, total: 1001n, oldest: null }))
+      error = await admission.reserve('entity', [], 1000n, 100).catch((e: unknown) => e)
+    })
+
+    it('should retry after one cleanup interval', () => {
+      expect((error as PartialUploadQuotaExceededError).retryAfterSeconds).toBe(CLEANUP_INTERVAL_MS / 1000)
+    })
+  })
+
   describe('and a batch fits every budget', () => {
     beforeEach(async () => {
       await admission.reserve('entity', [{ hash: 'a', size: 100, stored: false, charged: true }], 1000n, 100)
