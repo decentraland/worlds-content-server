@@ -6,8 +6,9 @@ import {
   DeploymentProcessingTimeoutError,
   MAX_DEPLOYMENT_PROCESSING_TIMEOUT_MS
 } from '../../src/logic/deployment-processing'
+import { PartialUploadQuotaExceededError } from '../../src/logic/partial-upload-admission'
 import { metricDeclarations } from '../../src/metrics'
-import { IDeploymentProcessingComponent } from '../../src/types'
+import { IDeploymentProcessingComponent, SceneReplacementConflictError } from '../../src/types'
 
 describe('deployment processing component', () => {
   describe('when deployment settings are loaded during initialization', () => {
@@ -363,6 +364,54 @@ describe('deployment processing component', () => {
       }).toEqual({
         error: 'The entity file is not valid JSON.',
         failure: ['deployment_processing_failures', { outcome: 'client-error', stage: 'total' }]
+      })
+    })
+  })
+
+  describe('when a processing stage fails with an error the client resolves by retrying', () => {
+    let increment: jest.Mock
+    let component: IDeploymentProcessingComponent
+
+    beforeEach(async () => {
+      increment = jest.fn()
+      component = await createDeploymentProcessingComponent({
+        config: { getNumber: jest.fn().mockResolvedValue(undefined) } as unknown as IConfigComponent,
+        logs: { getLogger: jest.fn().mockReturnValue({ info: jest.fn() }) } as unknown as ILoggerComponent,
+        metrics: { increment, observe: jest.fn() } as unknown as IMetricsComponent<keyof typeof metricDeclarations>
+      })
+    })
+
+    describe('and the error is a partial upload quota rejection', () => {
+      beforeEach(async () => {
+        await component
+          .trackStage('admission', 1, async () => {
+            throw new PartialUploadQuotaExceededError('bytes_per_minute', 'Too many bytes this minute.', 30)
+          })
+          .catch(() => undefined)
+      })
+
+      it('should report a client-error outcome', () => {
+        expect(increment).toHaveBeenCalledWith('deployment_processing_failures', {
+          outcome: 'client-error',
+          stage: 'admission'
+        })
+      })
+    })
+
+    describe('and the error is a scene replacement conflict', () => {
+      beforeEach(async () => {
+        await component
+          .trackStage('total', 1, async () => {
+            throw new SceneReplacementConflictError('world.dcl.eth')
+          })
+          .catch(() => undefined)
+      })
+
+      it('should report a client-error outcome', () => {
+        expect(increment).toHaveBeenCalledWith('deployment_processing_failures', {
+          outcome: 'client-error',
+          stage: 'total'
+        })
       })
     })
   })

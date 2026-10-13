@@ -4,8 +4,10 @@ import type {
   DeploymentProcessingStage,
   IDeploymentProcessingComponent
 } from '../types'
+import { SceneReplacementConflictError } from '../types'
 import { InvalidRequestError } from '@dcl/http-commons'
 import { getPositiveInteger } from './concurrency'
+import { PartialUploadQuotaExceededError } from './partial-upload-admission/errors'
 
 export const DEFAULT_STORAGE_UPLOAD_CONCURRENCY = 10
 export const DEFAULT_FILE_HASH_CONCURRENCY = 4
@@ -81,7 +83,12 @@ function outcomeFor(error: unknown): 'timeout' | 'aborted' | 'client-error' | 'e
   }
   // Client mistakes (invalid entities, failed validations) are kept out of the operational-failure
   // outcome so dashboards and alerts on `outcome="error"` only reflect server-side problems.
-  if (error instanceof InvalidRequestError) {
+  // Quota rejections (429) and replacement conflicts (409) also ask the client to retry, not an operator to act.
+  if (
+    error instanceof InvalidRequestError ||
+    error instanceof PartialUploadQuotaExceededError ||
+    error instanceof SceneReplacementConflictError
+  ) {
     return 'client-error'
   }
   return 'error'
