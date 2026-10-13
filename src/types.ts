@@ -658,7 +658,7 @@ export type IEntityDeployer = {
     entity: Entity,
     allContentHashesInStorage: Map<string, boolean>,
     files: Map<string, DeploymentFile>,
-    entityJson: string,
+    entityFile: Uint8Array,
     authChain: AuthLink[],
     deploymentSize: number,
     options?: DeployEntityOptions

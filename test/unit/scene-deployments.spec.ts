@@ -44,7 +44,7 @@ describe('when staging a partial deployment', () => {
   beforeEach(async () => {
     input = {
       baseUrl: 'https://worlds.example',
-      entityRaw: '{}',
+      entityFile: Buffer.from('{}'),
       entity: {
         version: 'v3',
         id: 'entity',
@@ -978,7 +978,13 @@ describe('when deploying a single-request deployment', () => {
     let result: DeployResult
 
     beforeEach(async () => {
-      result = await deploy({ baseUrl: 'https://worlds.example', entityRaw: '{}', deployment, signal, deadlineAt: 99 })
+      result = await deploy({
+        baseUrl: 'https://worlds.example',
+        entityFile: Buffer.from('{}'),
+        deployment,
+        signal,
+        deadlineAt: 99
+      })
     })
 
     it('should look up the metadata of each unique content hash once', () => {
@@ -1020,7 +1026,7 @@ describe('when deploying a single-request deployment', () => {
           ['b', true]
         ]),
         deployment.files,
-        '{}',
+        Buffer.from('{}'),
         deployment.authChain,
         12,
         { signal, deadlineAt: 99, sceneReplacementAuthorization: { mode: 'unrestricted-owner' } }
@@ -1038,7 +1044,13 @@ describe('when deploying a single-request deployment', () => {
     beforeEach(async () => {
       jest.spyOn(Date, 'now').mockReturnValue(4242)
       deployEntity.mockResolvedValueOnce({ message: 'deployed' })
-      result = await deploy({ baseUrl: 'https://worlds.example', entityRaw: '{}', deployment, signal, deadlineAt: 99 })
+      result = await deploy({
+        baseUrl: 'https://worlds.example',
+        entityFile: Buffer.from('{}'),
+        deployment,
+        signal,
+        deadlineAt: 99
+      })
     })
 
     it('should answer with the current time', () => {
@@ -1053,7 +1065,7 @@ describe('when deploying a single-request deployment', () => {
       validateAfterStorage.mockResolvedValueOnce({ ok: () => false, errors: ['hash mismatch'] })
       error = await deploy({
         baseUrl: 'https://worlds.example',
-        entityRaw: '{}',
+        entityFile: Buffer.from('{}'),
         deployment,
         signal,
         deadlineAt: 99
@@ -1075,7 +1087,7 @@ describe('when deploying a single-request deployment', () => {
       deployment.entity = { ...deployment.entity, content: undefined }
       error = await deploy({
         baseUrl: 'https://worlds.example',
-        entityRaw: '{}',
+        entityFile: Buffer.from('{}'),
         deployment,
         signal,
         deadlineAt: 99
@@ -1098,7 +1110,7 @@ describe('when deploying a single-request deployment', () => {
       deployment.sceneReplacementAuthorization = undefined
       error = await deploy({
         baseUrl: 'https://worlds.example',
-        entityRaw: '{}',
+        entityFile: Buffer.from('{}'),
         deployment,
         signal,
         deadlineAt: 99
@@ -1128,7 +1140,7 @@ describe('when deploying a single-request deployment', () => {
         getWorldScenes.mockResolvedValueOnce({ scenes: [{ entityId: 'entity', createdAt: new Date(321) }], total: 1 })
         result = await deploy({
           baseUrl: 'https://worlds.example',
-          entityRaw: '{}',
+          entityFile: Buffer.from('{}'),
           deployment,
           signal,
           deadlineAt: 99
@@ -1162,7 +1174,7 @@ describe('when deploying a single-request deployment', () => {
       beforeEach(async () => {
         error = await deploy({
           baseUrl: 'https://worlds.example',
-          entityRaw: '{}',
+          entityFile: Buffer.from('{}'),
           deployment,
           signal,
           deadlineAt: 99
@@ -1181,7 +1193,7 @@ describe('when deploying a single-request deployment', () => {
         getWorldScenes.mockRejectedValueOnce(new Error('database unavailable'))
         error = await deploy({
           baseUrl: 'https://worlds.example',
-          entityRaw: '{}',
+          entityFile: Buffer.from('{}'),
           deployment,
           signal,
           deadlineAt: 99
@@ -1200,7 +1212,7 @@ describe('when deploying a single-request deployment', () => {
         deployment.entity.metadata = { scene: { base: '0,0', parcels: ['0,0'] } }
         error = await deploy({
           baseUrl: 'https://worlds.example',
-          entityRaw: '{}',
+          entityFile: Buffer.from('{}'),
           deployment,
           signal,
           deadlineAt: 99
@@ -1222,7 +1234,7 @@ describe('when deploying a single-request deployment', () => {
       deployEntity.mockRejectedValueOnce(failure)
       error = await deploy({
         baseUrl: 'https://worlds.example',
-        entityRaw: '{}',
+        entityFile: Buffer.from('{}'),
         deployment,
         signal,
         deadlineAt: 99

@@ -122,7 +122,7 @@ describe('entity deployer', () => {
         entity,
         new Map(contentHashes.map((hash) => [hash, false])),
         files,
-        JSON.stringify(entity),
+        Buffer.from(JSON.stringify(entity)),
         [],
         12,
         { sceneReplacementAuthorization: unrestrictedReplacementAuthorization }
@@ -182,7 +182,7 @@ describe('entity deployer', () => {
           entity,
           new Map(contentHashes.map((hash) => [hash, false])),
           files,
-          JSON.stringify(entity),
+          Buffer.from(JSON.stringify(entity)),
           [],
           3
         )
@@ -265,7 +265,7 @@ describe('entity deployer', () => {
           [missingHash, false]
         ]),
         files,
-        JSON.stringify(entity),
+        Buffer.from(JSON.stringify(entity)),
         [],
         2,
         { sceneReplacementAuthorization: unrestrictedReplacementAuthorization }
@@ -326,7 +326,7 @@ describe('entity deployer', () => {
           entity,
           new Map(contentHashes.map((hash) => [hash, false])),
           files,
-          JSON.stringify(entity),
+          Buffer.from(JSON.stringify(entity)),
           [],
           3,
           { signal: controller.signal }
@@ -381,7 +381,7 @@ describe('entity deployer', () => {
           entity,
           new Map(contentHashes.map((hash) => [hash, false])),
           files,
-          JSON.stringify(entity),
+          Buffer.from(JSON.stringify(entity)),
           [],
           2,
           { signal: controller.signal }
@@ -443,7 +443,7 @@ describe('entity deployer', () => {
         entity,
         new Map(),
         new Map(),
-        JSON.stringify(entity),
+        Buffer.from(JSON.stringify(entity)),
         [],
         0,
         {
@@ -486,7 +486,7 @@ describe('entity deployer', () => {
         entity,
         new Map(),
         new Map(),
-        JSON.stringify(entity),
+        Buffer.from(JSON.stringify(entity)),
         [],
         0,
         { sceneReplacementAuthorization: unrestrictedReplacementAuthorization }
@@ -530,7 +530,7 @@ describe('entity deployer', () => {
         entity,
         new Map(),
         new Map(),
-        JSON.stringify(entity),
+        Buffer.from(JSON.stringify(entity)),
         [],
         0
       )
@@ -548,6 +548,38 @@ describe('entity deployer', () => {
     })
   })
 
+  describe('when the entity file is not valid UTF-8', () => {
+    let entityFile: Buffer
+    let storedEntityFile: Buffer | undefined
+
+    beforeEach(async () => {
+      const entity = createScene([], true)
+      entityFile = Buffer.concat([Buffer.from('{"metadata":"a'), Buffer.from([0xff]), Buffer.from('"}')])
+      storedEntityFile = undefined
+      const storageStoreStream = jest.fn(async (hash: string, stream: AsyncIterable<Uint8Array>) => {
+        if (hash !== entity.id) return
+        const chunks: Uint8Array[] = []
+        for await (const chunk of stream) chunks.push(chunk)
+        storedEntityFile = Buffer.concat(chunks)
+      })
+      const setup = createComponents(storageStoreStream, 2)
+      await createEntityDeployer(setup.components).deployEntity(
+        'https://worlds.example',
+        entity,
+        new Map((entity.content ?? []).map(({ hash }) => [hash, true])),
+        new Map(),
+        entityFile,
+        [],
+        0,
+        { sceneReplacementAuthorization: unrestrictedReplacementAuthorization }
+      )
+    })
+
+    it('should store the entity file byte for byte', () => {
+      expect(storedEntityFile).toStrictEqual(entityFile)
+    })
+  })
+
   describe('when a scene deployment finalizes a partial upload', () => {
     let worldsDeployScene: jest.Mock
 
@@ -562,7 +594,7 @@ describe('entity deployer', () => {
         entity,
         new Map(),
         new Map(),
-        JSON.stringify(entity),
+        Buffer.from(JSON.stringify(entity)),
         [],
         0,
         {
@@ -598,7 +630,7 @@ describe('entity deployer', () => {
         entity,
         new Map(),
         new Map(),
-        JSON.stringify(entity),
+        Buffer.from(JSON.stringify(entity)),
         [],
         0,
         { sceneReplacementAuthorization: unrestrictedReplacementAuthorization }
@@ -644,7 +676,15 @@ describe('entity deployer', () => {
       const deployer = createEntityDeployer(setup.components)
 
       caughtError = await deployer
-        .deployEntity('https://worlds.example', entity, new Map(), new Map(), JSON.stringify(entity), [], 0)
+        .deployEntity(
+          'https://worlds.example',
+          entity,
+          new Map(),
+          new Map(),
+          Buffer.from(JSON.stringify(entity)),
+          [],
+          0
+        )
         .catch((error) => error)
     })
 
@@ -691,7 +731,7 @@ describe('entity deployer', () => {
         entity,
         new Map(),
         new Map(),
-        JSON.stringify(entity),
+        Buffer.from(JSON.stringify(entity)),
         [],
         12,
         { sceneReplacementAuthorization: unrestrictedReplacementAuthorization }
@@ -767,7 +807,7 @@ describe('entity deployer', () => {
         entity,
         new Map(),
         new Map(),
-        JSON.stringify(entity),
+        Buffer.from(JSON.stringify(entity)),
         [],
         12,
         { sceneReplacementAuthorization: unrestrictedReplacementAuthorization }
@@ -811,7 +851,7 @@ describe('entity deployer', () => {
         entity,
         new Map(),
         new Map(),
-        JSON.stringify(entity),
+        Buffer.from(JSON.stringify(entity)),
         [],
         12,
         { sceneReplacementAuthorization: unrestrictedReplacementAuthorization }
@@ -848,7 +888,7 @@ describe('entity deployer', () => {
       deployment.entity,
       deployment.contentHashesInStorage,
       deployment.files,
-      JSON.stringify(deployment.entity),
+      Buffer.from(JSON.stringify(deployment.entity)),
       deployment.authChain,
       0,
       { sceneReplacementAuthorization: unrestrictedReplacementAuthorization }
