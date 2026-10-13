@@ -582,36 +582,69 @@ describe('entity deployer', () => {
 
   describe('when a scene deployment finalizes a partial upload', () => {
     let worldsDeployScene: jest.Mock
+    let hasNewerDeployedScene: jest.Mock
+    let storageStoreStream: jest.Mock
+    let deployEntity: () => Promise<unknown>
+    let storedEntityFile: boolean | undefined
 
-    beforeEach(async () => {
-      const setup = createComponents(jest.fn().mockResolvedValue(undefined), 2)
+    beforeEach(() => {
+      storageStoreStream = jest.fn().mockResolvedValue(undefined)
+      const setup = createComponents(storageStoreStream, 2)
       worldsDeployScene = setup.worldsDeployScene
-      const entity = createScene([])
+      hasNewerDeployedScene = setup.components.worldsManager.hasNewerDeployedScene as jest.Mock
+      const entity = createScene(['hash'])
       const deployer = createEntityDeployer(setup.components)
-
-      await deployer.deployEntity(
-        'https://worlds.example',
-        entity,
-        new Map(),
-        new Map(),
-        Buffer.from(JSON.stringify(entity)),
-        [],
-        0,
-        {
-          sceneReplacementAuthorization: unrestrictedReplacementAuthorization,
-          completesPartialUpload: { expiresAt: 42 }
-        }
-      )
+      storedEntityFile = undefined
+      deployEntity = () =>
+        deployer.deployEntity(
+          'https://worlds.example',
+          entity,
+          new Map([['hash', true]]),
+          new Map(),
+          Buffer.from(JSON.stringify(entity)),
+          [],
+          0,
+          {
+            sceneReplacementAuthorization: unrestrictedReplacementAuthorization,
+            completesPartialUpload: { expiresAt: 42 },
+            storedEntityFile
+          }
+        )
     })
 
     afterEach(() => {
       jest.resetAllMocks()
     })
 
-    it('should ask scene persistence to record the completion receipt', () => {
-      expect(worldsDeployScene.mock.calls[0][4]).toEqual(
-        expect.objectContaining({ completesPartialUpload: { expiresAt: 42 } })
-      )
+    describe('and its entity file is already stored', () => {
+      beforeEach(async () => {
+        storedEntityFile = true
+        await deployEntity()
+      })
+
+      it('should store only the auth chain', () => {
+        expect(storageStoreStream.mock.calls.map(([key]) => key)).toEqual(['entity-id.auth'])
+      })
+
+      it('should leave the newer-scene check to scene persistence', () => {
+        expect(hasNewerDeployedScene).not.toHaveBeenCalled()
+      })
+
+      it('should ask scene persistence to record the completion receipt', () => {
+        expect(worldsDeployScene.mock.calls[0][4]).toEqual(
+          expect.objectContaining({ completesPartialUpload: { expiresAt: 42 } })
+        )
+      })
+    })
+
+    describe('and its entity file is not known to be stored', () => {
+      beforeEach(async () => {
+        await deployEntity()
+      })
+
+      it('should store the entity file and the auth chain', () => {
+        expect(storageStoreStream.mock.calls.map(([key]) => key).sort()).toEqual(['entity-id', 'entity-id.auth'])
+      })
     })
   })
 

@@ -681,6 +681,8 @@ export type DeployEntityOptions = {
   sceneReplacementAuthorization?: SceneReplacementAuthorization
   /** The publication finalizes a partial upload; see SceneDeploymentData.completesPartialUpload. */
   completesPartialUpload?: PartialUploadCompletion
+  /** The entity file is already stored as uploaded, so only its auth chain is written. */
+  storedEntityFile?: boolean
 }
 
 export type AwsConfig = {

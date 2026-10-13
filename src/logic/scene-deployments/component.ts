@@ -386,7 +386,9 @@ export async function createSceneDeploymentsComponent(
           signal,
           deadlineAt,
           sceneReplacementAuthorization: deployment.sceneReplacementAuthorization,
-          completesPartialUpload: { expiresAt: pendingRow.expiresAt.getTime() }
+          completesPartialUpload: { expiresAt: pendingRow.expiresAt.getTime() },
+          // A batch of this upload stored it; its id is the hash of these bytes.
+          storedEntityFile: progress.has(entity.id)
         }
       )
     } catch (error) {

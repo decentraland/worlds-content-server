@@ -437,6 +437,34 @@ describe('when staging a partial deployment', () => {
       })
     })
 
+    describe('and no batch has recorded its entity file as stored', () => {
+      beforeEach(async () => {
+        await stage(input)
+      })
+
+      it('should have the entity file stored again', () => {
+        expect(deployEntity.mock.calls[0][7].storedEntityFile).toBe(false)
+      })
+    })
+
+    describe('and an earlier batch stored its entity file', () => {
+      beforeEach(async () => {
+        getProgress.mockReset()
+        getProgress.mockResolvedValueOnce(new Map([['b', 500]])).mockResolvedValueOnce(
+          new Map([
+            ['entity', 40],
+            ['a', 300],
+            ['b', 500]
+          ])
+        )
+        await stage(input)
+      })
+
+      it('should not have the entity file stored again', () => {
+        expect(deployEntity.mock.calls[0][7].storedEntityFile).toBe(true)
+      })
+    })
+
     describe('and the upload is published', () => {
       let createdAt: Date
 

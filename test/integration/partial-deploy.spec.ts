@@ -147,24 +147,34 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
     let finalStatus: number
     let deployed: number
     let size: string | undefined
+    let storeSpy: jest.SpyInstance
+    let finalWrites: string[]
 
     beforeEach(async () => {
       authChain = Authenticator.signPayload(identity.authChain, entityId)
       metadataSpy = jest.spyOn(components.storage, 'fileInfo')
+      storeSpy = jest.spyOn(components.storage, 'storeStream')
       await post(buildForm([entityId], authChain))
       initialChecks = metadataSpy.mock.calls.length
       metadataSpy.mockClear()
       await post(buildForm([contentHashes[0]], authChain))
       middleChecks = metadataSpy.mock.calls.length
       metadataSpy.mockClear()
+      storeSpy.mockClear()
       finalStatus = (await post(buildForm(contentHashes.slice(1), authChain))).status
       finalChecks = metadataSpy.mock.calls.length
+      finalWrites = storeSpy.mock.calls.map(([key]) => key).sort()
       deployed = await countDeployedScenes()
       size = await readPublishedSize()
     })
 
     afterEach(() => {
       metadataSpy.mockRestore()
+      storeSpy.mockRestore()
+    })
+
+    it('should store only its content and the auth chain on the publishing batch, not the entity file again', () => {
+      expect(finalWrites).toEqual([...contentHashes.slice(1), `${entityId}.auth`].sort())
     })
 
     it('should inventory once and publish without probing storage metadata again', () => {
