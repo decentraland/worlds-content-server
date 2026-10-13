@@ -161,7 +161,7 @@ export async function createSceneDeploymentsComponent(
   }
 
   async function deploy(input: DeployInput): Promise<DeployResult> {
-    const { baseUrl, entityRaw, deployment, signal, deadlineAt } = input
+    const { baseUrl, entityFile, deployment, signal, deadlineAt } = input
     const { entity, files, authChain } = deployment
     signal.throwIfAborted()
     const contentHashes = getContentHashes(entity)
@@ -190,7 +190,7 @@ export async function createSceneDeploymentsComponent(
         entity,
         contentHashesInStorage,
         files,
-        entityRaw,
+        entityFile,
         authChain,
         deploymentSize,
         { signal, deadlineAt, sceneReplacementAuthorization: deployment.sceneReplacementAuthorization }
@@ -252,7 +252,7 @@ export async function createSceneDeploymentsComponent(
   }
 
   async function stage(input: StageDeploymentInput): Promise<StageDeploymentResult> {
-    const { baseUrl, entity, entityRaw, authChain, files, manifest, signal, deadlineAt, requestArrivedAt } = input
+    const { baseUrl, entity, entityFile, authChain, files, manifest, signal, deadlineAt, requestArrivedAt } = input
     signal?.throwIfAborted()
     const deploymentFiles = manifest ? new Map([...files, [entity.id, manifest]]) : files
     const pending = await partialUploadAdmission.getByEntityId(entity.id, signal)
@@ -365,7 +365,7 @@ export async function createSceneDeploymentsComponent(
         entity,
         present,
         deploymentFiles,
-        entityRaw,
+        entityFile,
         authChain,
         calculateDeploymentSizeFromFileInfos(entity, deploymentFiles, presentInfos),
         {

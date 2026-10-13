@@ -56,7 +56,7 @@ export function createEntityDeployer(
     entity: Entity,
     allContentHashesInStorage: Map<string, boolean>,
     files: Map<string, DeploymentFile>,
-    entityJson: string,
+    entityFile: Uint8Array,
     authChain: AuthLink[],
     deploymentSize: number,
     options: DeployEntityOptions = {}
@@ -97,14 +97,13 @@ export function createEntityDeployer(
       logger.info(`Storing entity`, { cid: entity.id })
       await mapWithConcurrency(
         [
-          [entity.id, entityJson],
-          [entity.id + '.auth', JSON.stringify(authChain)]
+          // The entity file is stored as uploaded: its bytes are what the id hashes.
+          [entity.id, entityFile],
+          [entity.id + '.auth', stringToUtf8Bytes(JSON.stringify(authChain))]
         ] as const,
         2,
         ([id, content]) =>
-          deploymentProcessing.trackWorker('storage', () =>
-            storage.storeStream(id, bufferToStream(stringToUtf8Bytes(content)), signal)
-          ),
+          deploymentProcessing.trackWorker('storage', () => storage.storeStream(id, bufferToStream(content), signal)),
         { signal, waitForActiveOnAbort: true }
       )
     })
