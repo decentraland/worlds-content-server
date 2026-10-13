@@ -227,7 +227,7 @@ describe('entity deployer', () => {
         entity,
         new Map([['hash', true]]),
         new Map(),
-        JSON.stringify(entity),
+        Buffer.from(JSON.stringify(entity)),
         [],
         1,
         { sceneReplacementAuthorization: unrestrictedReplacementAuthorization }
