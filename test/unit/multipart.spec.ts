@@ -96,6 +96,10 @@ describe('multipartParserWrapper', function () {
       })
     })
 
+    afterEach(() => {
+      jest.restoreAllMocks()
+    })
+
     describe('and a stamped body is parsed', () => {
       beforeEach(async () => {
         const form = new FormData()
@@ -106,7 +110,7 @@ describe('multipartParserWrapper', function () {
       })
 
       it('should report a completed receive timed from the arrival', () => {
-        expect(onBodyReceived).toHaveBeenCalledWith({ route: 'entities', outcome: 'completed', durationSeconds: 2.5 })
+        expect(onBodyReceived.mock.calls).toEqual([[{ route: 'entities', outcome: 'completed', durationSeconds: 2.5 }]])
       })
 
       it('should report it before the handler runs', () => {
@@ -124,7 +128,7 @@ describe('multipartParserWrapper', function () {
       })
 
       it('should report a rejected receive timed from the arrival', () => {
-        expect(onBodyReceived).toHaveBeenCalledWith({ route: 'entities', outcome: 'rejected', durationSeconds: 2.5 })
+        expect(onBodyReceived.mock.calls).toEqual([[{ route: 'entities', outcome: 'rejected', durationSeconds: 2.5 }]])
       })
     })
 
@@ -138,7 +142,7 @@ describe('multipartParserWrapper', function () {
       })
 
       it('should time the receive from parser entry', () => {
-        expect(onBodyReceived).toHaveBeenCalledWith({ route: 'entities', outcome: 'completed', durationSeconds: 0.5 })
+        expect(onBodyReceived.mock.calls).toEqual([[{ route: 'entities', outcome: 'completed', durationSeconds: 0.5 }]])
       })
     })
   })

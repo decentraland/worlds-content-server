@@ -1,6 +1,7 @@
 import {
   DeploymentProcessingStage,
   DeploymentToValidate,
+  IDeploymentProcessingComponent,
   Validation,
   ValidationResult,
   Validator,
@@ -84,11 +85,21 @@ export function createBeforeStorageValidateFns(components: ValidatorComponents):
   ]
 }
 
+// Times only files still to hash: a second pass over memoized hashes would add a near-zero sample.
+function trackHashing<T>(
+  deploymentProcessing: IDeploymentProcessingComponent,
+  deployment: DeploymentToValidate,
+  operation: () => Promise<T>
+): Promise<T> {
+  const unhashed = Array.from(deployment.files.values()).filter((file) => !file.isHashed?.()).length
+  return unhashed ? deploymentProcessing.trackStage('hash', unhashed, operation) : operation()
+}
+
 export function createAfterStorageValidateFns(components: ValidatorComponents): Validation[] {
   const { deploymentProcessing } = components
   return [
     async (deployment) =>
-      deploymentProcessing.trackStage('hash', deployment.files.size, () =>
+      trackHashing(deploymentProcessing, deployment, () =>
         validateFiles(deployment, deploymentProcessing.hashConcurrency, deployment.signal, (operation) =>
           deploymentProcessing.trackWorker('hash', operation)
         )
@@ -119,7 +130,7 @@ function commonValidations(components: ValidatorComponents): Validation[] {
 
 // Scene structural validations that only inspect the entity / its declared content (no stored bytes).
 // Runs in the staging path so #514's relative-path thumbnail check and the other structural checks apply
-// to every partial request, not just at finalize. A fresh array per call so staging can append to it.
+// to every partial request, not just at finalize.
 function sceneStructuralValidations(components: ValidatorComponents): Validation[] {
   return [
     validateSceneEntity,
@@ -159,7 +170,7 @@ export function createStagingValidateFns(
     validateAll([
       ...commonValidations(components),
       (deployment) =>
-        deploymentProcessing.trackStage('hash', deployment.files.size, () =>
+        trackHashing(deploymentProcessing, deployment, () =>
           validateUploadedFiles(deployment, deploymentProcessing.hashConcurrency, deployment.signal, (operation) =>
             deploymentProcessing.trackWorker('hash', operation)
           )

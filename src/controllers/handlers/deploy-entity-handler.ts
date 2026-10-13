@@ -361,6 +361,9 @@ async function withTimedReadLock<T>(
   } catch (error) {
     failed(error)
     throw error
+  } finally {
+    // No-op once settled; ends the stage even if the lock never ran the operation.
+    acquired()
   }
 }
 

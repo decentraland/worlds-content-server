@@ -947,6 +947,26 @@ describe('deployEntity', () => {
         expect(lockStageOutcome).toBe(lockError)
       })
     })
+
+    describe('and the content lock returns without running the operation', () => {
+      let lockStageState: string
+
+      beforeEach(async () => {
+        context.components.contentLocks = {
+          withRead: jest.fn().mockResolvedValue({ status: 200, body: {} })
+        } as unknown as DeployContext['components']['contentLocks']
+        await deployEntity(context).catch(() => undefined)
+        const lockCall = recorder.trackStage.mock.calls.findIndex(([stage]) => stage === 'lock')
+        lockStageState = await Promise.race([
+          recorder.trackStage.mock.results[lockCall].value.then(() => 'settled'),
+          new Promise<string>((resolve) => setImmediate(() => resolve('pending')))
+        ])
+      })
+
+      it('should still close the lock stage', () => {
+        expect(lockStageState).toBe('settled')
+      })
+    })
   })
 
   describe('when the entity file exceeds the safe in-memory size', () => {

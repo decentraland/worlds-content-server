@@ -70,6 +70,7 @@ export function toDeploymentFile(file: UploadedFile): DeploymentFile {
       (hash ??= buffered
         ? buffered.then((content) => hashV1(content))
         : hashV1(createDeploymentFileStream(file.filepath, signal))),
+    isHashed: () => hash !== undefined,
     asBuffer: (signal) => (buffered ??= readFile(file.filepath, signal ? { signal } : undefined))
   }
 }

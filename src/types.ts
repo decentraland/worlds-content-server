@@ -84,6 +84,8 @@ export type DeploymentFile = {
   getStream(signal?: AbortSignal): Readable
   /** Calculates and memoizes the file's CIDv1. */
   getHash(signal?: AbortSignal): Promise<string>
+  /** Whether getHash already ran, so another call reuses its result. */
+  isHashed?(): boolean
   /** Reads the full file into a Buffer. Intended for small files such as the entity JSON. */
   asBuffer(signal?: AbortSignal): Promise<Buffer>
 }

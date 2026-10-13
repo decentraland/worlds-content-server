@@ -176,7 +176,7 @@ export const metricDeclarations = {
     help: 'Time from request arrival until the multipart body is fully received and parsed, or rejected',
     type: IMetricsComponent.HistogramType,
     labelNames: ['route', 'outcome'],
-    buckets: [0.1, 0.5, 1, 2.5, 5, 10, 20, 30, 60, 120, 300]
+    buckets: [0.1, 0.5, 1, 2.5, 5, 10, 20, 30, 60, 120, 300, 600]
   },
   deployment_processing_stage_duration_seconds: {
     help: 'Duration of deployment processing stages after multipart parsing; permission is nested in authorization',

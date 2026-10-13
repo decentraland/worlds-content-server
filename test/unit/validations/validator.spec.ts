@@ -349,5 +349,27 @@ describe('validator', function () {
         expect(recorder.trackStage).toHaveBeenCalledWith('limits', 1, expect.any(Function))
       })
     })
+
+    describe('and every file was hashed earlier in the request', () => {
+      beforeEach(async () => {
+        for (const file of deployment.files.values()) file.isHashed = () => true
+        await validator.validate(deployment)
+      })
+
+      it('should not open the hash stage', () => {
+        expect(recorder.trackStage).not.toHaveBeenCalledWith('hash', expect.anything(), expect.anything())
+      })
+    })
+
+    describe('and only the entity file was hashed earlier in the request', () => {
+      beforeEach(async () => {
+        deployment.files.get(deployment.entity.id)!.isHashed = () => true
+        await validator.validate(deployment)
+      })
+
+      it('should count only the files still to hash as the hash stage items', () => {
+        expect(recorder.trackStage).toHaveBeenCalledWith('hash', deployment.files.size - 1, expect.any(Function))
+      })
+    })
   })
 })

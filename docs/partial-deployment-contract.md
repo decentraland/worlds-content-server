@@ -80,7 +80,9 @@ parsed (`completed`) or rejected, separating network time from server time. Afte
 newer-scene and stored-manifest reads), `hash`, `authorization`, `lock` (waiting for the content lock),
 `limits` (size quota), `metadata`, `admission` (batch admission and progress bookkeeping), `storage` and
 `persistence`. These are disjoint, except `permission` (name ownership and parcel permission), which runs
-inside `authorization`. Request authentication and small in-memory steps are not timed.
+inside `authorization`. `lookup` and `admission` record one sample per call, so a request can add several;
+their `_sum` series still split `total`. `hash` only times files not hashed earlier in the request. Request
+authentication and small in-memory steps are not timed.
 Reserved-byte gauges are database snapshots updated by admission/cleanup, not instantaneous counters.
 The progress integration test asserts one initial inventory, zero metadata probes for intermediate
 batches and one final verification (2N probes instead of approximately 2NB for N hashes in B batches).

@@ -212,6 +212,7 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   router.get('/world/:world_name/settings', getWorldSettingsHandler)
   router.put(
     '/world/:world_name/settings',
+    stampRequestArrival(),
     // Shares the in-flight parser budget, so every request also takes its source's share.
     createSourceUploadAdmission(globalContext.components, {
       route: 'world-settings',
