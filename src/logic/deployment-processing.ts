@@ -1,6 +1,8 @@
+import { AsyncLocalStorage } from 'async_hooks'
 import type {
   AppComponents,
   DeploymentAbortContext,
+  DeploymentMode,
   DeploymentProcessingStage,
   IDeploymentProcessingComponent
 } from '../types'
@@ -120,8 +122,11 @@ export async function createDeploymentProcessingComponent(
     )
   }
   const logger = logs.getLogger('deployment-processing')
-  const activeStages = new Map<DeploymentProcessingStage, number>()
-  const activeWorkers = new Map<DeploymentProcessingStage, number>()
+  const activeStages = new Map<string, number>()
+  const activeWorkers = new Map<string, number>()
+  const requestMode = new AsyncLocalStorage<DeploymentMode>()
+  // Tracking outside runInMode is a wiring mistake; label it instead of guessing a mode.
+  const currentMode = (): DeploymentMode | 'unknown' => requestMode.getStore() ?? 'unknown'
 
   logger.info('Deployment processing configured', {
     fileInfoConcurrency,
@@ -131,14 +136,16 @@ export async function createDeploymentProcessingComponent(
   })
 
   function updateActive(
-    counts: Map<DeploymentProcessingStage, number>,
+    counts: Map<string, number>,
     metric: 'deployment_processing_stage_active' | 'deployment_processing_worker_active',
     stage: DeploymentProcessingStage,
+    mode: string,
     delta: number
   ): void {
-    const active = Math.max(0, (counts.get(stage) ?? 0) + delta)
-    counts.set(stage, active)
-    metrics.observe(metric, { stage }, active)
+    const key = `${mode}:${stage}`
+    const active = Math.max(0, (counts.get(key) ?? 0) + delta)
+    counts.set(key, active)
+    metrics.observe(metric, { stage, mode }, active)
   }
 
   function createAbortContext(parentSignal?: AbortSignal): DeploymentAbortContext {
@@ -169,32 +176,38 @@ export async function createDeploymentProcessingComponent(
     operation: () => Promise<T>
   ): Promise<T> {
     const startedAt = performance.now()
-    updateActive(activeStages, 'deployment_processing_stage_active', stage, 1)
-    metrics.observe('deployment_processing_stage_items', { stage }, items)
+    const mode = currentMode()
+    updateActive(activeStages, 'deployment_processing_stage_active', stage, mode, 1)
+    metrics.observe('deployment_processing_stage_items', { stage, mode }, items)
     let outcome: 'success' | 'timeout' | 'aborted' | 'client-error' | 'error' = 'success'
     try {
       return await operation()
     } catch (error) {
       outcome = outcomeFor(error)
-      metrics.increment('deployment_processing_failures', { stage, outcome })
+      metrics.increment('deployment_processing_failures', { stage, mode, outcome })
       throw error
     } finally {
       metrics.observe(
         'deployment_processing_stage_duration_seconds',
-        { stage, outcome },
+        { stage, mode, outcome },
         (performance.now() - startedAt) / 1000
       )
-      updateActive(activeStages, 'deployment_processing_stage_active', stage, -1)
+      updateActive(activeStages, 'deployment_processing_stage_active', stage, mode, -1)
     }
   }
 
   async function trackWorker<T>(stage: DeploymentProcessingStage, operation: () => Promise<T>): Promise<T> {
-    updateActive(activeWorkers, 'deployment_processing_worker_active', stage, 1)
+    const mode = currentMode()
+    updateActive(activeWorkers, 'deployment_processing_worker_active', stage, mode, 1)
     try {
       return await operation()
     } finally {
-      updateActive(activeWorkers, 'deployment_processing_worker_active', stage, -1)
+      updateActive(activeWorkers, 'deployment_processing_worker_active', stage, mode, -1)
     }
+  }
+
+  function runInMode<T>(mode: DeploymentMode, operation: () => Promise<T>): Promise<T> {
+    return requestMode.run(mode, operation)
   }
 
   return {
@@ -204,6 +217,7 @@ export async function createDeploymentProcessingComponent(
     timeoutMs,
     createAbortContext,
     trackStage,
-    trackWorker
+    trackWorker,
+    runInMode
   }
 }

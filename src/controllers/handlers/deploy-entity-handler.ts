@@ -379,10 +379,12 @@ const PARTIAL_OUTCOME_BY_STATUS: Record<number, string> = {
 }
 
 export async function deployEntity(ctx: DeployEntityContext): Promise<IHttpServerComponent.IResponse> {
-  if (ctx.formData.fields.partial?.value[0] !== 'true') return handleDeployment(ctx)
-  const { metrics } = ctx.components
+  const { deploymentProcessing, metrics } = ctx.components
+  if (ctx.formData.fields.partial?.value[0] !== 'true') {
+    return deploymentProcessing.runInMode('regular', () => handleDeployment(ctx))
+  }
   try {
-    const response = await handleDeployment(ctx)
+    const response = await deploymentProcessing.runInMode('partial', () => handleDeployment(ctx))
     const status = response.status ?? 200
     metrics.increment('partial_upload_requests', {
       outcome: PARTIAL_OUTCOME_BY_STATUS[status] ?? (status < 500 ? 'validation_error' : 'error')

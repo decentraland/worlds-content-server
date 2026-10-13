@@ -83,6 +83,8 @@ newer-scene and stored-manifest reads), `hash`, `authorization`, `lock` (waiting
 inside `authorization`. `lookup` and `admission` record one sample per call, so a request can add several;
 their `_sum` series still split `total`. `hash` only times files not hashed earlier in the request. Request
 authentication and small in-memory steps are not timed.
+Every `deployment_processing_*` series carries `mode` (`regular` or `partial`), so single-request deployments and
+partial batches can be told apart; aggregating by `stage` alone still sums both.
 Reserved-byte gauges are database snapshots updated by admission/cleanup, not instantaneous counters.
 The progress integration test asserts one initial inventory, zero metadata probes for intermediate
 batches and one final verification (2N probes instead of approximately 2NB for N hashes in B batches).

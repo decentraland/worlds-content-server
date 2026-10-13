@@ -15,6 +15,7 @@ export function createDeploymentProcessingMock(
     })),
     trackStage: jest.fn(async (_stage, _items, operation) => operation()),
     trackWorker: jest.fn(async (_stage, operation) => operation()),
+    runInMode: jest.fn(async (_mode, operation) => operation()),
     ...overrides
   }
   return component as unknown as jest.Mocked<IDeploymentProcessingComponent>

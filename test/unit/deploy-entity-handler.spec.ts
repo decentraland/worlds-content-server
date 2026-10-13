@@ -123,6 +123,35 @@ describe('deployEntity', () => {
     } as unknown as DeployContext
   }
 
+  describe('when a request is deployed', () => {
+    let context: DeployContext
+
+    beforeEach(() => {
+      context = createContext(entityId, {})
+    })
+
+    describe('and it is a regular deployment', () => {
+      beforeEach(async () => {
+        await deployEntity(context).catch(() => undefined)
+      })
+
+      it('should process it in the regular mode', () => {
+        expect(context.components.deploymentProcessing.runInMode).toHaveBeenCalledWith('regular', expect.any(Function))
+      })
+    })
+
+    describe('and it is a partial batch', () => {
+      beforeEach(async () => {
+        context.formData.fields.partial = makeField('true')
+        await deployEntity(context).catch(() => undefined)
+      })
+
+      it('should process it in the partial mode', () => {
+        expect(context.components.deploymentProcessing.runInMode).toHaveBeenCalledWith('partial', expect.any(Function))
+      })
+    })
+  })
+
   describe('when the entity file referenced by entityId is missing from the request', () => {
     let context: DeployContext
 

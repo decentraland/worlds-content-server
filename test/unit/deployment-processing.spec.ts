@@ -171,7 +171,7 @@ describe('deployment processing component', () => {
         failure: increment.mock.calls[0]
       }).toEqual({
         error: new DeploymentProcessingAbortedError(new DOMException('Client disconnected.', 'AbortError')),
-        failure: ['deployment_processing_failures', { outcome: 'aborted', stage: 'total' }]
+        failure: ['deployment_processing_failures', { outcome: 'aborted', stage: 'total', mode: 'unknown' }]
       })
     })
   })
@@ -220,6 +220,63 @@ describe('deployment processing component', () => {
     })
   })
 
+  describe('when stages run inside a request mode', () => {
+    let observe: jest.Mock
+    let component: IDeploymentProcessingComponent
+
+    beforeEach(async () => {
+      observe = jest.fn()
+      component = await createDeploymentProcessingComponent({
+        config: { getNumber: jest.fn().mockResolvedValue(undefined) } as unknown as IConfigComponent,
+        logs: { getLogger: jest.fn().mockReturnValue({ info: jest.fn() }) } as unknown as ILoggerComponent,
+        metrics: { increment: jest.fn(), observe } as unknown as IMetricsComponent<keyof typeof metricDeclarations>
+      })
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    describe('and a partial request tracks a stage and its workers', () => {
+      beforeEach(async () => {
+        await component.runInMode('partial', () =>
+          component.trackStage('storage', 2, () => component.trackWorker('storage', async () => undefined))
+        )
+      })
+
+      it('should label every stage and worker metric with the partial mode', () => {
+        expect(observe.mock.calls.map(([metric, labels]) => [metric, labels])).toEqual([
+          ['deployment_processing_stage_active', { stage: 'storage', mode: 'partial' }],
+          ['deployment_processing_stage_items', { stage: 'storage', mode: 'partial' }],
+          ['deployment_processing_worker_active', { stage: 'storage', mode: 'partial' }],
+          ['deployment_processing_worker_active', { stage: 'storage', mode: 'partial' }],
+          ['deployment_processing_stage_duration_seconds', { stage: 'storage', mode: 'partial', outcome: 'success' }],
+          ['deployment_processing_stage_active', { stage: 'storage', mode: 'partial' }]
+        ])
+      })
+    })
+
+    describe('and a regular and a partial request run the same stage at once', () => {
+      let partialActivity: number[]
+
+      beforeEach(async () => {
+        let release: () => void = () => undefined
+        const held = new Promise<void>((resolve) => (release = resolve))
+        const regular = component.runInMode('regular', () => component.trackStage('total', 1, () => held))
+        const partial = component.runInMode('partial', () => component.trackStage('total', 1, () => held))
+        release()
+        await Promise.all([regular, partial])
+        partialActivity = observe.mock.calls
+          .filter(([metric, labels]) => metric === 'deployment_processing_stage_active' && labels.mode === 'partial')
+          .map(([, , value]) => value)
+      })
+
+      it('should count the active stage of each mode separately', () => {
+        expect(partialActivity).toEqual([1, 0])
+      })
+    })
+  })
+
   describe('when a processing stage times out', () => {
     let caughtError: unknown
     let increment: jest.Mock
@@ -256,11 +313,11 @@ describe('deployment processing component', () => {
           .filter(([metric]) => metric === 'deployment_processing_stage_active')
           .map(([, , value]) => value)
       }).toEqual({
-        durationLabels: { outcome: 'timeout', stage: 'storage' },
+        durationLabels: { outcome: 'timeout', stage: 'storage', mode: 'unknown' },
         error:
           'The server could not finish processing the deployment within 0.01 s after receiving it. ' +
           'Retry the deployment; if it keeps timing out, report it.',
-        failure: ['deployment_processing_failures', { outcome: 'timeout', stage: 'storage' }],
+        failure: ['deployment_processing_failures', { outcome: 'timeout', stage: 'storage', mode: 'unknown' }],
         stageActivity: [1, 0]
       })
     })
@@ -329,7 +386,7 @@ describe('deployment processing component', () => {
         failure: increment.mock.calls[0]
       }).toEqual({
         error: 'database exploded',
-        failure: ['deployment_processing_failures', { outcome: 'error', stage: 'persistence' }]
+        failure: ['deployment_processing_failures', { outcome: 'error', stage: 'persistence', mode: 'unknown' }]
       })
     })
   })
@@ -363,7 +420,7 @@ describe('deployment processing component', () => {
         failure: increment.mock.calls[0]
       }).toEqual({
         error: 'The entity file is not valid JSON.',
-        failure: ['deployment_processing_failures', { outcome: 'client-error', stage: 'total' }]
+        failure: ['deployment_processing_failures', { outcome: 'client-error', stage: 'total', mode: 'unknown' }]
       })
     })
   })
@@ -393,7 +450,8 @@ describe('deployment processing component', () => {
       it('should report a client-error outcome', () => {
         expect(increment).toHaveBeenCalledWith('deployment_processing_failures', {
           outcome: 'client-error',
-          stage: 'admission'
+          stage: 'admission',
+          mode: 'unknown'
         })
       })
     })
@@ -410,7 +468,8 @@ describe('deployment processing component', () => {
       it('should report a client-error outcome', () => {
         expect(increment).toHaveBeenCalledWith('deployment_processing_failures', {
           outcome: 'client-error',
-          stage: 'total'
+          stage: 'total',
+          mode: 'unknown'
         })
       })
     })
@@ -455,8 +514,8 @@ describe('deployment processing component', () => {
 
     it('should classify the failure by the cancellation it wraps instead of an operational error', () => {
       expect(increment.mock.calls).toEqual([
-        ['deployment_processing_failures', { outcome: 'timeout', stage: 'hash' }],
-        ['deployment_processing_failures', { outcome: 'aborted', stage: 'hash' }]
+        ['deployment_processing_failures', { outcome: 'timeout', stage: 'hash', mode: 'unknown' }],
+        ['deployment_processing_failures', { outcome: 'aborted', stage: 'hash', mode: 'unknown' }]
       ])
     })
   })

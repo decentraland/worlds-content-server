@@ -130,6 +130,9 @@ export type DeploymentAbortContext = {
   dispose(): void
 }
 
+/** Which upload protocol a deployment request uses, recorded as the `mode` label of the processing metrics. */
+export type DeploymentMode = 'regular' | 'partial'
+
 export interface IDeploymentProcessingComponent extends IBaseComponent {
   /** Maximum number of content files uploaded concurrently by one deployment. */
   readonly storageConcurrency: number
@@ -145,6 +148,8 @@ export interface IDeploymentProcessingComponent extends IBaseComponent {
   trackStage<T>(stage: DeploymentProcessingStage, items: number, operation: () => Promise<T>): Promise<T>
   /** Records the number of workers currently active in a bounded processing stage. */
   trackWorker<T>(stage: DeploymentProcessingStage, operation: () => Promise<T>): Promise<T>
+  /** Runs a request's processing so every stage and worker it tracks is labelled with its mode. */
+  runInMode<T>(mode: DeploymentMode, operation: () => Promise<T>): Promise<T>
 }
 
 export type SceneDeploymentData = {
