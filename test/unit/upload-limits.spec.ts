@@ -31,6 +31,8 @@ describe('when loading the upload limits', () => {
         partialUploadCleanupIntervalMs: 5 * 60 * 1000,
         completedUploadTtlMs: 24 * 60 * 60 * 1000,
         maxPendingDeploymentsPerDeployer: 10,
+        pendingBytesPerWorldFactor: 2,
+        maxPendingDeploymentsPerWorld: 4,
         maxInFlightUploadBytes: 4 * 1024 * MiB,
         minUploadReservationBytes: 16 * MiB,
         uploadFileOverheadBytes: 16 * 1024,
@@ -53,6 +55,8 @@ describe('when loading the upload limits', () => {
         PARTIAL_UPLOAD_CLEANUP_INTERVAL_MS: 2_000,
         COMPLETED_UPLOAD_TTL: 3_000,
         MAX_PENDING_DEPLOYMENTS_PER_DEPLOYER: 5,
+        PENDING_BYTES_PER_WORLD_FACTOR: 3,
+        MAX_PENDING_DEPLOYMENTS_PER_WORLD: 6,
         MAX_IN_FLIGHT_UPLOAD_BYTES: 100,
         MIN_UPLOAD_RESERVATION_BYTES: 20,
         UPLOAD_FILE_OVERHEAD_BYTES: 5,
@@ -74,6 +78,8 @@ describe('when loading the upload limits', () => {
         partialUploadCleanupIntervalMs: 2_000,
         completedUploadTtlMs: 3_000,
         maxPendingDeploymentsPerDeployer: 5,
+        pendingBytesPerWorldFactor: 3,
+        maxPendingDeploymentsPerWorld: 6,
         maxInFlightUploadBytes: 100,
         minUploadReservationBytes: 20,
         uploadFileOverheadBytes: 5,
@@ -104,6 +110,22 @@ describe('when loading the upload limits', () => {
 
     it('should fail naming MAX_SCENE_SIZE', () => {
       expect((result as Error).message).toBe(`MAX_SCENE_SIZE must be a positive safe integer, got ${value}`)
+    })
+  })
+
+  describe.each([
+    ['PENDING_BYTES_PER_WORLD_FACTOR', 0],
+    ['PENDING_BYTES_PER_WORLD_FACTOR', 1.5],
+    ['MAX_PENDING_DEPLOYMENTS_PER_WORLD', -1],
+    ['MAX_PENDING_DEPLOYMENTS_PER_WORLD', NaN]
+  ])('and %s is %s', (key, value) => {
+    beforeEach(async () => {
+      settings[key] = value
+      result = await load()
+    })
+
+    it('should fail naming the per-world setting', () => {
+      expect((result as Error).message).toBe(`${key} must be a positive safe integer, got ${value}`)
     })
   })
 

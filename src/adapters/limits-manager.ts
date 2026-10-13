@@ -31,6 +31,21 @@ export async function createLimitsManagerComponent({
     }
   }
 
+  // The cap of worlds whose size doesn't depend on the owner's allowance; undefined for DCL names.
+  async function fixedSceneSizeCap(worldName: string): Promise<bigint | undefined> {
+    if (await isNameOwnershipValidationIgnored(config)) {
+      // The fixture has no wallet/subgraph state. Keep the configured hard
+      // limit while the explicit bypass is enabled instead of trying to
+      // resolve ownership through an external service.
+      return BigInt(hardMaxSize) * MB_BigInt
+    }
+    if (worldName.endsWith('.eth') && !worldName.endsWith('.dcl.eth')) {
+      return BigInt(hardMaxSizeForEns) * MB_BigInt
+    }
+    const whitelistEntry = (await resolveWhitelist())[worldName]
+    return whitelistEntry ? BigInt(whitelistEntry.max_size_in_mb || hardMaxSize) * MB_BigInt : undefined
+  }
+
   return {
     // World names arrive with arbitrary casing (entity.metadata.worldConfiguration.name); every
     // check (whitelist keys, TLD, ownership) runs on the lowercased name.
@@ -46,21 +61,8 @@ export async function createLimitsManagerComponent({
     },
     async getMaxAllowedSizeInBytesFor(rawWorldName: string, parcels?: string[]): Promise<bigint> {
       const worldName = rawWorldName.toLowerCase()
-      if (await isNameOwnershipValidationIgnored(config)) {
-        // The fixture has no wallet/subgraph state. Keep the configured hard
-        // limit while the explicit bypass is enabled instead of trying to
-        // resolve ownership through an external service.
-        return BigInt(hardMaxSize) * MB_BigInt
-      }
-      if (worldName.endsWith('.eth') && !worldName.endsWith('.dcl.eth')) {
-        return BigInt(hardMaxSizeForEns) * MB_BigInt
-      }
-
-      const currentWhitelist = await resolveWhitelist()
-      const whitelistEntry = currentWhitelist[worldName]
-      if (whitelistEntry) {
-        return BigInt(whitelistEntry.max_size_in_mb || hardMaxSize) * MB_BigInt
-      }
+      const fixedCap = await fixedSceneSizeCap(worldName)
+      if (fixedCap !== undefined) return fixedCap
 
       const owners = await nameOwnership.findOwners([worldName])
       const owner = owners.get(worldName)
@@ -81,6 +83,9 @@ export async function createLimitsManagerComponent({
 
       // The owner's remaining allowance (0 if exceeded), capped per scene
       return bigIntMin(bigIntMax(stats.maxAllowedSpace - usedSpace, 0n), maxSceneSizeInBytes)
+    },
+    async getSceneSizeCapInBytesFor(rawWorldName: string): Promise<bigint> {
+      return (await fixedSceneSizeCap(rawWorldName.toLowerCase())) ?? maxSceneSizeInBytes
     }
   }
 }

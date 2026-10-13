@@ -18,6 +18,9 @@ export function createMockLimitsManagerComponent(): ILimitsManager {
     },
     async getMaxAllowedSizeInBytesFor(worldName: string, _parcels?: string[]): Promise<bigint> {
       return BigInt(whitelist[worldName]?.max_size_in_mb || 10 * MB)
+    },
+    async getSceneSizeCapInBytesFor(worldName: string): Promise<bigint> {
+      return BigInt(whitelist[worldName]?.max_size_in_mb || 10 * MB)
     }
   }
 }

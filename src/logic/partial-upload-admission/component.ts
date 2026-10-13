@@ -10,11 +10,11 @@ import {
   PartialUploadQuotaExceededError,
   PartialUploadTooLargeError
 } from './errors'
-import { AdmitBatchInput, IPartialUploadAdmission, PendingScene, UpsertPendingScene } from './types'
+import { AdmitBatchInput, IPartialUploadAdmission, PendingScene, SceneSizeCaps, UpsertPendingScene } from './types'
 
 /**
- * Creates the admission rules of partial uploads: the per-account upload cap, the account, server and
- * scene byte budgets, the per-minute byte rate and the fixed upload lifetime. All staging mutations run
+ * Creates the admission rules of partial uploads: the per-account and per-world upload caps, the account,
+ * world, server and scene byte budgets, the per-minute byte rate and the fixed upload lifetime. All staging mutations run
  * under the caller's shared content lock; expired-upload cleanup is orchestrated by content GC.
  * @param components Persistence, the validated upload limits and telemetry dependencies.
  * @returns Upload lifecycle and atomic admission operations.
@@ -30,6 +30,10 @@ export async function createPartialUploadAdmission(
   const bytesPerMinute = uploadLimits.maxPartialUploadBytesPerMinute
   const completionTtl = uploadLimits.completedUploadTtlMs
   const maxPendingPerDeployer = uploadLimits.maxPendingDeploymentsPerDeployer
+  const maxPendingPerWorld = uploadLimits.maxPendingDeploymentsPerWorld
+  // Keeps a slot of the world for its other deployers.
+  const maxPendingPerDeployerInWorld = Math.max(1, maxPendingPerWorld - 1)
+  const worldBytesFactor = BigInt(uploadLimits.pendingBytesPerWorldFactor)
 
   // When this replica's cleanup last finished; the scheduled sweep runs again one interval later.
   let lastCleanupFinishedAt: number | undefined
@@ -92,9 +96,28 @@ export async function createPartialUploadAdmission(
             retryAfterOldest(oldest)
           )
         }
+        // Always after the deployer lock, so concurrent deployers of one world can't both take its last slot.
+        const worldName = input.worldName.toLowerCase()
+        await repository.lockWorld(query, worldName)
+        // Unlike the account count, which keeps expired uploads until cleanup, world counts are live-only.
+        const world = await repository.countLiveByWorld(query, worldName, deployer, new Date(Date.now() - ttlMs))
+        if (world.count >= maxPendingPerWorld) {
+          throw new PartialUploadQuotaExceededError(
+            'uploads_per_world',
+            `Too many partial uploads in progress for this world: ${world.count} of the ${maxPendingPerWorld} allowed. Complete an upload or wait for one to expire.`,
+            retryAfterOldest(world.oldest)
+          )
+        }
+        if (world.deployerCount >= maxPendingPerDeployerInWorld) {
+          throw new PartialUploadQuotaExceededError(
+            'uploads_per_world',
+            `Too many partial uploads in progress for this account in this world: ${world.deployerCount} of the ${maxPendingPerDeployerInWorld} allowed. Complete an upload or wait for one to expire.`,
+            retryAfterOldest(world.deployerOldest)
+          )
+        }
         const created = await repository.insert(query, {
           entityId: input.entityId,
-          worldName: input.worldName.toLowerCase(),
+          worldName,
           parcels: input.parcels,
           entity: input.entity,
           deployer,
@@ -109,13 +132,15 @@ export async function createPartialUploadAdmission(
   async function reserve(
     entityId: string,
     receipts: FileReceipt[],
-    maxSceneBytes: bigint,
+    caps: SceneSizeCaps,
     incomingBytes: number,
     signal?: AbortSignal
   ): Promise<void> {
+    const { maxSceneBytes, worldSceneCapBytes } = caps
     const owner = await repository.getOwner(entityId, signal)
     if (!owner) throw new PartialUploadNotFoundError()
-    const { deployer, createdAt } = owner
+    const { deployer, worldName, createdAt } = owner
+    const worldBytes = worldBytesFactor * worldSceneCapBytes
     // Nothing is charged to an upload past its deadline.
     const assertLive = (): void => {
       if (isPastExpiry(expiresAt(createdAt))) throw new PartialUploadExpiredError()
@@ -147,7 +172,12 @@ export async function createPartialUploadAdmission(
         assertLive()
         if (receipts.length) await repository.upsertFiles(query, entityId, receipts)
         await repository.refreshReservedBytes(query, entityId)
-        const total = await repository.getBudgetTotals(query, entityId, deployer)
+        const total = await repository.getBudgetTotals(query, {
+          entityId,
+          deployer,
+          worldName,
+          liveCutoff: new Date(Date.now() - ttlMs)
+        })
         if (total.scene > maxSceneBytes) throw new InvalidRequestError('Deployment failed: The deployment is too big.')
         // Over a budget on its own, an upload can never be admitted; the server budget is at least this one.
         if (total.own > accountBytes) {
@@ -156,11 +186,25 @@ export async function createPartialUploadAdmission(
             `This upload needs ${formatBytes(Number(total.own))} of staging, above the per-account partial upload limit of ${formatBytes(Number(accountBytes))}. Reduce its size.`
           )
         }
+        // Content only, like the scene check; reachable only if the world's cap is below this scene's.
+        if (total.ownContent > worldBytes) {
+          throw new PartialUploadTooLargeError(
+            'bytes_per_world',
+            `This upload needs ${formatBytes(Number(total.ownContent))} of staging, above the per-world partial upload limit of ${formatBytes(Number(worldBytes))}. Reduce its size.`
+          )
+        }
         if (total.account > accountBytes) {
           throw new PartialUploadQuotaExceededError(
             'bytes_per_account',
             `This batch would stage ${formatBytes(Number(total.account))} for this account, above its limit of ${formatBytes(Number(accountBytes))}. Complete an upload or wait for expired uploads to be cleaned up.`,
             retryAfterOldest(total.accountOldest)
+          )
+        }
+        if (total.world > worldBytes) {
+          throw new PartialUploadQuotaExceededError(
+            'bytes_per_world',
+            `This batch would stage ${formatBytes(Number(total.world))} for this world, above its limit of ${formatBytes(Number(worldBytes))}. Complete an upload or wait for one to expire.`,
+            retryAfterOldest(total.worldOldest)
           )
         }
         if (total.total > globalBytes) {
@@ -177,11 +221,11 @@ export async function createPartialUploadAdmission(
   }
 
   async function admitBatch(input: AdmitBatchInput, signal?: AbortSignal): Promise<PendingScene> {
-    const { upload, receipts, maxSceneBytes, incomingBytes } = input
+    const { upload, receipts, maxSceneBytes, worldSceneCapBytes, incomingBytes } = input
     // Two transactions on purpose: the deployer lock is released before the budget lock is taken.
     const pending = await upsert(upload, signal)
     try {
-      await reserve(upload.entityId, receipts, maxSceneBytes, incomingBytes, signal)
+      await reserve(upload.entityId, receipts, { maxSceneBytes, worldSceneCapBytes }, incomingBytes, signal)
     } catch (error) {
       // A first batch that isn't admitted must not keep its new upload holding a slot of the cap.
       if (!upload.resumes) await repository.discardUnadmitted(upload.entityId).catch(() => undefined)

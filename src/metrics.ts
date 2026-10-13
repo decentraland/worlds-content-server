@@ -40,7 +40,7 @@ export const metricDeclarations = {
   partial_upload_throttled: {
     help: 'Partial upload batches answered 429, by the quota that rejected them',
     type: IMetricsComponent.CounterType,
-    // reason=(uploads_per_account|bytes_per_account|bytes_per_server|bytes_per_minute)
+    // reason=(uploads_per_account|uploads_per_world|bytes_per_account|bytes_per_world|bytes_per_server|bytes_per_minute)
     labelNames: ['reason']
   },
   partial_uploads_started: {

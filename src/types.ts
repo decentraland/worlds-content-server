@@ -476,6 +476,11 @@ export type ILimitsManager = {
   getAllowSdk6For(worldName: string): Promise<boolean>
   getMaxAllowedParcelsFor(worldName: string): Promise<number>
   getMaxAllowedSizeInBytesFor(worldName: string, parcels?: string[]): Promise<bigint>
+  /**
+   * The world's per-scene size cap before the owner's allowance applies: stable across uploads and
+   * never below {@link ILimitsManager.getMaxAllowedSizeInBytesFor}. Needs no owner or wallet lookups.
+   */
+  getSceneSizeCapInBytesFor(worldName: string): Promise<bigint>
 }
 
 export type WorldBoundingRectangle = {
