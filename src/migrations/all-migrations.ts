@@ -28,6 +28,7 @@ import { migration as migration_0026 } from './0026_create_pending_scenes_table'
 import { migration as migration_0028 } from './0028_partial_upload_progress'
 import { migration as migration_0029 } from './0029_pending_scene_batches'
 import { migration as migration_0030 } from './0030_add_world_scenes_content_hashes_index'
+import { migration as migration_0031 } from './0031_add_world_scenes_entity_id_index'
 
 export const allMigrations: Migration[] = [
   migration_0001,
@@ -58,5 +59,6 @@ export const allMigrations: Migration[] = [
   migration_0026,
   migration_0028,
   migration_0029,
-  migration_0030
+  migration_0030,
+  migration_0031
 ]

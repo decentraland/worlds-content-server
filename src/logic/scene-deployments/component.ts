@@ -125,9 +125,7 @@ export async function createSceneDeploymentsComponent(
     options: { worldName?: string; signal?: AbortSignal } = {}
   ): Promise<WorldScene | undefined> {
     const { worldName, signal } = options
-    const filters = worldName === undefined ? { entityId } : { worldName, entityId }
-    const { scenes } = await raceWithSignal(worldsManager.getWorldScenes(filters, { limit: 1 }), signal)
-    return scenes[0]
+    return raceWithSignal(worldsManager.getDeployedScene(entityId, worldName), signal)
   }
 
   /**

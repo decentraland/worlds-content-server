@@ -580,6 +580,8 @@ export type IWorldsManager = {
   undeployWorld(worldName: string): Promise<void>
   getContributableDomains(address: string): Promise<{ domains: ContributorDomain[]; count: number }>
   getWorldScenes(filters?: GetWorldScenesFilters, options?: GetWorldScenesOptions): Promise<GetWorldScenesResult>
+  /** Retrieves the oldest DEPLOYED scene of an entity, optionally within a world, without counting matches. */
+  getDeployedScene(entityId: string, worldName?: string): Promise<WorldScene | undefined>
   updateWorldSettings(worldName: string, owner: EthAddress, settings: WorldSettings): Promise<UpdateWorldSettingsResult>
   getWorldSettings(worldName: string): Promise<WorldSettings | undefined>
   getTotalWorldSize(worldName: string): Promise<bigint>

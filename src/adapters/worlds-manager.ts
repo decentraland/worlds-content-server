@@ -30,7 +30,8 @@ import {
   SceneReplacementAuthorization,
   DeploymentUniqueViolationError,
   SceneReplacementConflictError,
-  SceneUndeploymentResult
+  SceneUndeploymentResult,
+  WorldScene
 } from '../types'
 import { streamToBuffer } from '@dcl/catalyst-storage'
 import { Entity, EthAddress } from '@dcl/schemas'
@@ -43,6 +44,34 @@ import { connectWithSignal, isUniqueViolation } from './pg-client'
 import { PartialUploadExpiredError } from './pending-scenes-repository/errors'
 
 type BoundingRow = { min_x: number; max_x: number; min_y: number; max_y: number }
+
+type WorldSceneRow = {
+  world_name: string
+  entity_id: string
+  deployer: string
+  deployment_auth_chain: any
+  entity: any
+  parcels: string[]
+  size: string
+  status: string
+  created_at: Date
+  updated_at: Date
+}
+
+function toWorldScene(row: WorldSceneRow): WorldScene {
+  return {
+    worldName: row.world_name,
+    deployer: row.deployer,
+    entityId: row.entity_id,
+    deploymentAuthChain: row.deployment_auth_chain,
+    entity: row.entity,
+    parcels: row.parcels,
+    size: BigInt(row.size),
+    status: row.status as SceneDeploymentStatus,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  }
+}
 
 /**
  * A change to a world's stored settings.
@@ -1005,36 +1034,20 @@ export async function createWorldsManagerComponent({
     // Execute both queries concurrently
     const [countResult, result] = await Promise.all([
       database.query<{ total: string }>(countQuery),
-      database.query<{
-        world_name: string
-        entity_id: string
-        deployer: string
-        deployment_auth_chain: any
-        entity: any
-        parcels: string[]
-        size: string
-        status: string
-        created_at: Date
-        updated_at: Date
-      }>(mainQuery)
+      database.query<WorldSceneRow>(mainQuery)
     ])
 
     const total = parseInt(countResult.rows[0]?.total || '0', 10)
 
-    const scenes = result.rows.map((row) => ({
-      worldName: row.world_name,
-      deployer: row.deployer,
-      entityId: row.entity_id,
-      deploymentAuthChain: row.deployment_auth_chain,
-      entity: row.entity,
-      parcels: row.parcels,
-      size: BigInt(row.size),
-      status: row.status as SceneDeploymentStatus,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at
-    }))
+    return { scenes: result.rows.map(toWorldScene), total }
+  }
 
-    return { scenes, total }
+  async function getDeployedScene(entityId: string, worldName?: string): Promise<WorldScene | undefined> {
+    const query = SQL`SELECT * FROM world_scenes WHERE entity_id = ${entityId} AND status = 'DEPLOYED'`
+    if (worldName) query.append(SQL` AND world_name = ${worldName.toLowerCase()}`)
+    query.append(SQL` ORDER BY created_at ASC LIMIT 1`)
+    const result = await database.query<WorldSceneRow>(query)
+    return result.rows[0] ? toWorldScene(result.rows[0]) : undefined
   }
 
   async function undeployScene(
@@ -1650,6 +1663,7 @@ export async function createWorldsManagerComponent({
     undeployWorld,
     getContributableDomains,
     getWorldScenes,
+    getDeployedScene,
     updateWorldSettings,
     getWorldSettings,
     getTotalWorldSize,

@@ -7,6 +7,7 @@ import { defaultAccess } from '../../src/logic/access'
 import { NoDeployedScenesError, DeploymentUniqueViolationError } from '../../src/types'
 import { PartialUploadExpiredError } from '../../src/logic/partial-upload-admission'
 import SQL, { SQLStatement } from 'sql-template-strings'
+import { PoolClient } from 'pg'
 
 type LockClient = {
   query(statement: string | SQLStatement): Promise<unknown>
@@ -2890,6 +2891,88 @@ test('WorldManagerAdapter', function ({ components }) {
 
       it('should roll back the metadata refresh', function () {
         expect(settings?.title).toBe('Original Title')
+      })
+    })
+  })
+
+  describe('when getting the deployed scene of an entity', function () {
+    let worldName: string
+    let entityId: string
+    let found: unknown
+
+    beforeEach(async () => {
+      const created = await components.worldCreator.createWorldWithScene({
+        files: new Map([['abc.txt', stringToUtf8Bytes(makeid(100))]])
+      })
+      worldName = created.worldName
+      entityId = created.entityId
+    })
+
+    describe('and the entity is deployed', function () {
+      beforeEach(async () => {
+        found = await components.worldsManager.getDeployedScene(entityId)
+      })
+
+      it('should return its scene as the paginated scene listing maps it', async () => {
+        const { scenes } = await components.worldsManager.getWorldScenes({ entityId }, { limit: 1 })
+        expect(found).toEqual(scenes[0])
+      })
+    })
+
+    describe('and it is looked up within its world, named in another case', function () {
+      beforeEach(async () => {
+        found = await components.worldsManager.getDeployedScene(entityId, worldName.toUpperCase())
+      })
+
+      it('should return its scene', function () {
+        expect(found).toEqual(expect.objectContaining({ entityId, worldName: worldName.toLowerCase() }))
+      })
+    })
+
+    describe('and it is looked up within another world', function () {
+      beforeEach(async () => {
+        found = await components.worldsManager.getDeployedScene(entityId, `other-${worldName}`)
+      })
+
+      it('should return nothing', function () {
+        expect(found).toBeUndefined()
+      })
+    })
+
+    describe('and the entity was undeployed', function () {
+      beforeEach(async () => {
+        await components.worldsManager.undeployWorld(worldName)
+        found = await components.worldsManager.getDeployedScene(entityId)
+      })
+
+      it('should return nothing', function () {
+        expect(found).toBeUndefined()
+      })
+    })
+
+    describe('and the planner cannot scan world_scenes sequentially', function () {
+      let client: PoolClient
+      let plan: string
+
+      beforeEach(async () => {
+        const querySpy = jest.spyOn(components.database, 'query')
+        await components.worldsManager.getDeployedScene(entityId)
+        const lookup = querySpy.mock.calls[0][0] as SQLStatement
+        querySpy.mockRestore()
+        client = await components.database.getPool().connect()
+        await client.query('BEGIN')
+        await client.query('SET LOCAL enable_seqscan = off')
+        const result = await client.query({ text: `EXPLAIN ${lookup.text}`, values: lookup.values })
+        plan = result.rows.map((row) => row['QUERY PLAN']).join('\n')
+      })
+
+      afterEach(async () => {
+        await client.query('ROLLBACK')
+        client.release()
+      })
+
+      it('should look the entity up through the entity id index', function () {
+        expect(plan).toContain('world_scenes_entity_id_idx')
       })
     })
   })

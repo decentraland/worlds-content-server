@@ -271,6 +271,7 @@ Stores individual scene deployments within worlds. Each world can have multiple 
 - **Index**: `world_scenes_world_name_idx` on `world_name` column
 - **GIN Index**: `world_scenes_parcels_idx` on `parcels` column (for array operations)
 - **Index**: `world_scenes_deployer_idx` on `deployer` column
+- **Index**: `world_scenes_entity_id_idx` on `entity_id` column (published-entity and content-reference lookups)
 - **Partial Index**: `world_scenes_status_idx` on `status` WHERE `status = 'DEPLOYED'` (hot-path reads)
 - **Partial Index**: `world_scenes_undeployed_updated_at_idx` on `updated_at` WHERE `status = 'UNDEPLOYED'` (eviction job)
 

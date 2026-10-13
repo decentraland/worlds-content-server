@@ -33,7 +33,7 @@ describe('when staging a partial deployment', () => {
   let validate: jest.Mock
   let deployEntity: jest.Mock
   let admitBatch: jest.Mock
-  let getWorldScenes: jest.Mock
+  let getDeployedScene: jest.Mock
   let getCompleted: jest.Mock
   let deleteByEntityId: jest.Mock
   let increment: jest.Mock
@@ -74,7 +74,7 @@ describe('when staging a partial deployment', () => {
     })
     deployEntity = jest.fn().mockResolvedValue({ message: 'deployed', creationTimestamp: 123 })
     admitBatch = jest.fn().mockResolvedValue({ createdAt: new Date(), expiresAt: new Date(Date.now() + 86_400_000) })
-    getWorldScenes = jest.fn().mockResolvedValue({ scenes: [], total: 0 })
+    getDeployedScene = jest.fn().mockResolvedValue(undefined)
     getCompleted = jest.fn().mockResolvedValue({ creationTimestamp: 123 })
     deleteByEntityId = jest.fn().mockResolvedValue(undefined)
     increment = jest.fn()
@@ -100,7 +100,7 @@ describe('when staging a partial deployment', () => {
       },
       storage: { fileInfo, storeStream },
       validator: { validateStaging, validate },
-      worldsManager: { hasNewerDeployedScene: jest.fn().mockResolvedValue(false), getWorldScenes }
+      worldsManager: { hasNewerDeployedScene: jest.fn().mockResolvedValue(false), getDeployedScene }
     } as unknown as Components
     ;({ stage, prevalidate } = await createSceneDeploymentsComponent(components))
   })
@@ -652,17 +652,12 @@ describe('when staging a partial deployment', () => {
       deployEntity.mockRejectedValueOnce(
         new DeploymentUniqueViolationError('entity', Object.assign(new Error('duplicate key'), { code: '23505' }))
       )
-      getWorldScenes.mockResolvedValueOnce({
-        scenes: [
-          {
-            entityId: 'entity',
-            worldName: 'world.dcl.eth',
-            parcels: ['0,0'],
-            entity: input.entity,
-            createdAt: new Date(456)
-          }
-        ],
-        total: 1
+      getDeployedScene.mockResolvedValueOnce({
+        entityId: 'entity',
+        worldName: 'world.dcl.eth',
+        parcels: ['0,0'],
+        entity: input.entity,
+        createdAt: new Date(456)
       })
       // No completion receipt for this signer: the live publication answers regardless.
       getCompleted.mockResolvedValue(undefined)
@@ -807,14 +802,14 @@ describe('when staging a partial deployment', () => {
 })
 
 describe('when finding the publication of an entity', () => {
-  let getWorldScenes: jest.Mock
+  let getDeployedScene: jest.Mock
   let findPublication: Awaited<ReturnType<typeof createSceneDeploymentsComponent>>['findPublication']
 
   beforeEach(async () => {
-    getWorldScenes = jest.fn()
+    getDeployedScene = jest.fn()
     ;({ findPublication } = await createSceneDeploymentsComponent({
       logs: { getLogger: jest.fn() },
-      worldsManager: { getWorldScenes }
+      worldsManager: { getDeployedScene }
     } as unknown as Components))
   })
 
@@ -826,23 +821,18 @@ describe('when finding the publication of an entity', () => {
     let result: Awaited<ReturnType<typeof findPublication>>
 
     beforeEach(async () => {
-      getWorldScenes.mockResolvedValueOnce({
-        scenes: [
-          {
-            entityId: 'entity',
-            worldName: 'world.dcl.eth',
-            parcels: ['0,0'],
-            entity: { metadata: { worldConfiguration: { name: 'World.dcl.eth' }, scene: { parcels: ['0,0'] } } },
-            createdAt: new Date(789)
-          }
-        ],
-        total: 1
+      getDeployedScene.mockResolvedValueOnce({
+        entityId: 'entity',
+        worldName: 'world.dcl.eth',
+        parcels: ['0,0'],
+        entity: { metadata: { worldConfiguration: { name: 'World.dcl.eth' }, scene: { parcels: ['0,0'] } } },
+        createdAt: new Date(789)
       })
       result = await findPublication('https://worlds.example', 'entity')
     })
 
     it('should look it up among deployed scenes by entity id alone', () => {
-      expect(getWorldScenes).toHaveBeenCalledWith({ entityId: 'entity' }, { limit: 1 })
+      expect(getDeployedScene).toHaveBeenCalledWith('entity', undefined)
     })
 
     it('should answer with a completed result carrying the publication timestamp', () => {
@@ -858,7 +848,7 @@ describe('when finding the publication of an entity', () => {
     let result: Awaited<ReturnType<typeof findPublication>>
 
     beforeEach(async () => {
-      getWorldScenes.mockResolvedValueOnce({ scenes: [], total: 0 })
+      getDeployedScene.mockResolvedValueOnce(undefined)
       result = await findPublication('https://worlds.example', 'entity')
     })
 
@@ -924,7 +914,7 @@ describe('when deploying a single-request deployment', () => {
   let fileInfo: jest.Mock
   let validateAfterStorage: jest.Mock
   let deployEntity: jest.Mock
-  let getWorldScenes: jest.Mock
+  let getDeployedScene: jest.Mock
   let info: jest.Mock
   let increment: jest.Mock
   let signal: AbortSignal
@@ -955,7 +945,7 @@ describe('when deploying a single-request deployment', () => {
     fileInfo = jest.fn(async (hash: string) => (hash === 'b' ? { size: 7, contentSize: 7, encoding: null } : undefined))
     validateAfterStorage = jest.fn().mockResolvedValue({ ok: () => true, errors: [] })
     deployEntity = jest.fn().mockResolvedValue({ message: 'deployed', creationTimestamp: 123 })
-    getWorldScenes = jest.fn().mockResolvedValue({ scenes: [], total: 0 })
+    getDeployedScene = jest.fn().mockResolvedValue(undefined)
     info = jest.fn()
     increment = jest.fn()
     ;({ deploy } = await createSceneDeploymentsComponent({
@@ -965,7 +955,7 @@ describe('when deploying a single-request deployment', () => {
       metrics: { increment },
       storage: { fileInfo },
       validator: { validateAfterStorage },
-      worldsManager: { getWorldScenes }
+      worldsManager: { getDeployedScene }
     } as unknown as Components))
   })
 
@@ -1137,7 +1127,7 @@ describe('when deploying a single-request deployment', () => {
       let result: DeployResult
 
       beforeEach(async () => {
-        getWorldScenes.mockResolvedValueOnce({ scenes: [{ entityId: 'entity', createdAt: new Date(321) }], total: 1 })
+        getDeployedScene.mockResolvedValueOnce({ entityId: 'entity', createdAt: new Date(321) })
         result = await deploy({
           baseUrl: 'https://worlds.example',
           entityFile: Buffer.from('{}'),
@@ -1148,7 +1138,7 @@ describe('when deploying a single-request deployment', () => {
       })
 
       it('should verify it among the deployed scenes of its world', () => {
-        expect(getWorldScenes.mock.calls).toEqual([[{ worldName: 'world.dcl.eth', entityId: 'entity' }, { limit: 1 }]])
+        expect(getDeployedScene.mock.calls).toEqual([['entity', 'world.dcl.eth']])
       })
 
       it("should answer with the live publication's timestamp and this deployment's message", () => {
@@ -1190,7 +1180,7 @@ describe('when deploying a single-request deployment', () => {
       let error: unknown
 
       beforeEach(async () => {
-        getWorldScenes.mockRejectedValueOnce(new Error('database unavailable'))
+        getDeployedScene.mockRejectedValueOnce(new Error('database unavailable'))
         error = await deploy({
           baseUrl: 'https://worlds.example',
           entityFile: Buffer.from('{}'),
@@ -1220,7 +1210,7 @@ describe('when deploying a single-request deployment', () => {
       })
 
       it('should propagate the original database error without looking it up', () => {
-        expect({ error, lookups: getWorldScenes.mock.calls.length }).toEqual({ error: collision, lookups: 0 })
+        expect({ error, lookups: getDeployedScene.mock.calls.length }).toEqual({ error: collision, lookups: 0 })
       })
     })
   })
@@ -1242,7 +1232,7 @@ describe('when deploying a single-request deployment', () => {
     })
 
     it('should propagate it without looking up the publication', () => {
-      expect({ error, lookups: getWorldScenes.mock.calls.length }).toEqual({ error: failure, lookups: 0 })
+      expect({ error, lookups: getDeployedScene.mock.calls.length }).toEqual({ error: failure, lookups: 0 })
     })
   })
 })
