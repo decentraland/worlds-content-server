@@ -172,8 +172,14 @@ export const metricDeclarations = {
     labelNames: ['route', 'content_length', 'outcome'],
     buckets: [1024, 1024 * 1024, 10 * 1024 * 1024, 100 * 1024 * 1024, 350 * 1024 * 1024]
   },
+  multipart_upload_receive_duration_seconds: {
+    help: 'Time from request arrival until the multipart body is fully received and parsed, or rejected',
+    type: IMetricsComponent.HistogramType,
+    labelNames: ['route', 'outcome'],
+    buckets: [0.1, 0.5, 1, 2.5, 5, 10, 20, 30, 60, 120, 300]
+  },
   deployment_processing_stage_duration_seconds: {
-    help: 'Duration of deployment processing stages after multipart parsing',
+    help: 'Duration of deployment processing stages after multipart parsing; permission is nested in authorization',
     type: IMetricsComponent.HistogramType,
     labelNames: ['stage', 'outcome'],
     buckets: [0.01, 0.05, 0.1, 0.5, 1, 5, 15, 30, 60, 120, 300]

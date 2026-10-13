@@ -9,7 +9,8 @@ import {
   IWorldsManager,
   Validation,
   ValidationResult,
-  ValidatorComponents
+  ValidatorComponents,
+  DeploymentProcessingStage
 } from '../../../src/types'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { Entity, EntityType } from '@dcl/schemas'
@@ -41,7 +42,11 @@ import { createSceneDeployment } from './shared'
 import { createMockNameDenyListChecker } from '../../mocks/name-deny-list-checker-mock'
 import { createMockedPermissionsComponent } from '../../mocks/permissions-component-mock'
 import { IPermissionsComponent } from '../../../src/logic/permissions'
-import { createDeploymentProcessingMock } from '../../mocks/deployment-processing-mock'
+import {
+  createDeploymentProcessingMock,
+  createStageRecorder,
+  StageRecorder
+} from '../../mocks/deployment-processing-mock'
 
 describe('scene validations', function () {
   let config: IConfigComponent
@@ -688,6 +693,37 @@ describe('scene validations', function () {
 
     beforeEach(() => {
       validateSize = createValidateSize(components)
+    })
+
+    describe('and the size limit lookup is tracked', () => {
+      let recorder: StageRecorder
+      let limitStages: DeploymentProcessingStage[][]
+
+      beforeEach(async () => {
+        recorder = createStageRecorder()
+        limitStages = []
+        deployment = await createSceneDeployment(identity.authChain)
+        validateSize = createValidateSize({
+          ...components,
+          deploymentProcessing: createDeploymentProcessingMock({ trackStage: recorder.trackStage }),
+          limitsManager: {
+            ...limitsManager,
+            getMaxAllowedSizeInBytesFor: jest.fn(async () => {
+              limitStages.push(recorder.openStages())
+              return 1024n * 1024n
+            })
+          }
+        })
+        await validateSize(deployment)
+      })
+
+      it('should look up the size limit inside the limits stage', () => {
+        expect(limitStages).toEqual([['limits']])
+      })
+
+      it('should count the lookup as one limits item', () => {
+        expect(recorder.trackStage).toHaveBeenCalledWith('limits', 1, expect.any(Function))
+      })
     })
 
     describe('and the deployment is within the size limit', () => {

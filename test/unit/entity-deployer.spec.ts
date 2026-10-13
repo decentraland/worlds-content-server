@@ -4,8 +4,8 @@ import { Entity, EntityType, Events, WorldSettingsChangedEvent } from '@dcl/sche
 import { generateLazyValidator } from '@dcl/schemas/dist/validation'
 import { createEntityDeployer } from '../../src/adapters/entity-deployer'
 import { DEFAULT_STORAGE_UPLOAD_CONCURRENCY } from '../../src/logic/deployment-processing'
-import { AppComponents, DeploymentFile, IEntityDeployer } from '../../src/types'
-import { createDeploymentProcessingMock } from '../mocks/deployment-processing-mock'
+import { AppComponents, DeploymentFile, DeploymentProcessingStage, IEntityDeployer } from '../../src/types'
+import { createDeploymentProcessingMock, createStageRecorder, StageRecorder } from '../mocks/deployment-processing-mock'
 import { createSceneDeployment } from './validations/shared'
 import { getIdentity } from '../utils'
 
@@ -205,6 +205,37 @@ describe('entity deployer', () => {
         startedUploads: ['hash-0', 'hash-1'],
         worldDeployments: 0
       })
+    })
+  })
+
+  describe('when a scene deployment checks for a newer scene', () => {
+    let recorder: StageRecorder
+    let newerSceneCheckStages: DeploymentProcessingStage[][]
+
+    beforeEach(async () => {
+      recorder = createStageRecorder()
+      newerSceneCheckStages = []
+      const setup = createComponents(jest.fn().mockResolvedValue(undefined), 2)
+      setup.components.deploymentProcessing = createDeploymentProcessingMock({ trackStage: recorder.trackStage })
+      ;(setup.components.worldsManager.hasNewerDeployedScene as jest.Mock).mockImplementation(async () => {
+        newerSceneCheckStages.push(recorder.openStages())
+        return false
+      })
+      const entity = createScene(['hash'])
+      await createEntityDeployer(setup.components).deployEntity(
+        'https://worlds.example',
+        entity,
+        new Map([['hash', true]]),
+        new Map(),
+        JSON.stringify(entity),
+        [],
+        1,
+        { sceneReplacementAuthorization: unrestrictedReplacementAuthorization }
+      )
+    })
+
+    it('should run the check inside the lookup stage', () => {
+      expect(newerSceneCheckStages).toEqual([['lookup']])
     })
   })
 

@@ -170,7 +170,7 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   // Every multipart route shares the process-wide in-flight budget (MAX_IN_FLIGHT_UPLOAD_BYTES).
   const { inFlightUploadBudget, uploadLimits } = globalContext.components
   const uploadTimeoutMs = uploadLimits.multipartUploadTimeoutMs
-  const { onTelemetry, onCleanupError } = createMultipartUploadTelemetry(globalContext.components)
+  const { onTelemetry, onBodyReceived, onCleanupError } = createMultipartUploadTelemetry(globalContext.components)
 
   router.get('/world/:world_name/about', worldAboutHandler)
 
@@ -190,6 +190,7 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
       uploadTimeoutMs,
       route: 'entities',
       onTelemetry,
+      onBodyReceived,
       onCleanupError
     })
   )
@@ -223,6 +224,7 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
       uploadTimeoutMs,
       route: 'world-settings',
       onTelemetry,
+      onBodyReceived,
       onCleanupError,
       repeatableFields: ['categories']
     })

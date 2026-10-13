@@ -107,7 +107,19 @@ export type DeploymentToValidate = {
   sceneReplacementAuthorization?: SceneReplacementAuthorization
 }
 
-export type DeploymentProcessingStage = 'total' | 'authorization' | 'metadata' | 'hash' | 'storage' | 'persistence'
+/** `permission` runs inside `authorization`; every other stage is disjoint within `total`. */
+export type DeploymentProcessingStage =
+  | 'total'
+  | 'authorization'
+  | 'permission'
+  | 'metadata'
+  | 'hash'
+  | 'limits'
+  | 'lookup'
+  | 'lock'
+  | 'admission'
+  | 'storage'
+  | 'persistence'
 
 export type DeploymentAbortContext = {
   signal: AbortSignal

@@ -227,7 +227,9 @@ export function createValidateFileCount(components: Pick<ValidatorComponents, 'c
   }
 }
 
-export function createValidateSize(components: Pick<ValidatorComponents, 'coordinates' | 'limitsManager' | 'storage'>) {
+export function createValidateSize(
+  components: Pick<ValidatorComponents, 'coordinates' | 'deploymentProcessing' | 'limitsManager' | 'storage'>
+) {
   return async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
     const fetchContentFileSize = async (hash: string): Promise<number> => {
       const content = await components.storage.retrieve(hash)
@@ -260,9 +262,11 @@ export function createValidateSize(components: Pick<ValidatorComponents, 'coordi
     const worldName = deployment.entity.metadata.worldConfiguration.name
     // Pass the deployment's parcels so the quota credits back only the scenes this
     // deployment actually replaces (those overlapping these parcels), not the whole world.
-    const maxTotalSizeInBytes = await components.limitsManager.getMaxAllowedSizeInBytesFor(
-      worldName || '',
-      getDeploymentParcels(deployment, components.coordinates)
+    const maxTotalSizeInBytes = await components.deploymentProcessing.trackStage('limits', 1, () =>
+      components.limitsManager.getMaxAllowedSizeInBytesFor(
+        worldName || '',
+        getDeploymentParcels(deployment, components.coordinates)
+      )
     )
 
     const errors: string[] = []

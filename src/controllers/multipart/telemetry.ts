@@ -1,8 +1,9 @@
 import { BaseComponents } from '../../types'
-import { MultipartCleanupErrorEvent, MultipartTelemetryEvent } from './types'
+import { MultipartBodyReceivedEvent, MultipartCleanupErrorEvent, MultipartTelemetryEvent } from './types'
 
 export type MultipartUploadTelemetry = {
   onTelemetry: (event: MultipartTelemetryEvent) => void
+  onBodyReceived: (event: MultipartBodyReceivedEvent) => void
   onCleanupError: (event: MultipartCleanupErrorEvent) => void
 }
 
@@ -10,7 +11,7 @@ export type MultipartUploadTelemetry = {
  * Connects multipart upload outcomes and cleanup failures to application metrics and logs.
  *
  * @param components Logging and metrics dependencies.
- * @returns The telemetry and cleanup-error callbacks to pass to every multipart route.
+ * @returns The telemetry, body-received and cleanup-error callbacks to pass to every multipart route.
  */
 export function createMultipartUploadTelemetry(
   components: Pick<BaseComponents, 'logs' | 'metrics'>
@@ -48,6 +49,9 @@ export function createMultipartUploadTelemetry(
       })
     }
   }
+  const onBodyReceived = ({ route, outcome, durationSeconds }: MultipartBodyReceivedEvent): void => {
+    metrics.observe('multipart_upload_receive_duration_seconds', { route, outcome }, durationSeconds)
+  }
   const onCleanupError = ({ route, error, attempt, willRetry }: MultipartCleanupErrorEvent): void => {
     if (attempt === 0) {
       metrics.increment('multipart_upload_cleanup_failures', { route })
@@ -62,5 +66,5 @@ export function createMultipartUploadTelemetry(
     })
   }
 
-  return { onTelemetry, onCleanupError }
+  return { onTelemetry, onBodyReceived, onCleanupError }
 }

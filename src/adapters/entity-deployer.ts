@@ -67,7 +67,10 @@ export function createEntityDeployer(
     // deploy from leaving its content/entity/auth objects orphaned in storage until the next GC. Only
     // scenes carry a world name; other entity types skip it.
     if (entity.metadata?.worldConfiguration?.name) {
-      if (await worldsManager.hasNewerDeployedScene(entity.metadata.worldConfiguration.name, entity)) {
+      const worldName = entity.metadata.worldConfiguration.name
+      if (
+        await deploymentProcessing.trackStage('lookup', 1, () => worldsManager.hasNewerDeployedScene(worldName, entity))
+      ) {
         throw new InvalidRequestError(
           `Deployment failed: a newer scene is already deployed on one or more of these parcels.`
         )

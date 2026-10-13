@@ -57,6 +57,34 @@ describe('createMultipartUploadTelemetry', () => {
     })
   })
 
+  describe('when an upload body is received', () => {
+    beforeEach(() => {
+      telemetry.onBodyReceived({ route: 'entities', outcome: 'completed', durationSeconds: 2.5 })
+    })
+
+    it('should record the receive duration by route and outcome', () => {
+      expect(observe).toHaveBeenCalledWith(
+        'multipart_upload_receive_duration_seconds',
+        { route: 'entities', outcome: 'completed' },
+        2.5
+      )
+    })
+  })
+
+  describe('when an upload body is rejected while it is received', () => {
+    beforeEach(() => {
+      telemetry.onBodyReceived({ route: 'world-settings', outcome: 'rejected', durationSeconds: 0.25 })
+    })
+
+    it('should record the receive duration with the rejected outcome', () => {
+      expect(observe).toHaveBeenCalledWith(
+        'multipart_upload_receive_duration_seconds',
+        { route: 'world-settings', outcome: 'rejected' },
+        0.25
+      )
+    })
+  })
+
   describe('when an upload is rejected', () => {
     beforeEach(() => {
       telemetry.onTelemetry({

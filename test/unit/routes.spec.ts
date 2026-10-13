@@ -9,8 +9,11 @@ jest.mock('../../src/controllers/multipart', () => ({
 
 describe('when setting up the router', () => {
   let uploadTimeoutsByRoute: Record<string, unknown>
+  let bodyReceivedByRoute: Record<string, unknown>
 
   beforeEach(async () => {
+    // Mock resets between tests drop the module factory's implementation.
+    jest.mocked(multipartParserWrapper).mockImplementation(() => jest.fn())
     const globalContext = {
       components: {
         fetch: {},
@@ -29,6 +32,11 @@ describe('when setting up the router', () => {
     uploadTimeoutsByRoute = Object.fromEntries(
       jest.mocked(multipartParserWrapper).mock.calls.map(([, options]) => [options.route, options.uploadTimeoutMs])
     )
+    bodyReceivedByRoute = Object.fromEntries(
+      jest
+        .mocked(multipartParserWrapper)
+        .mock.calls.map(([, options]) => [options.route, typeof options.onBodyReceived])
+    )
   })
 
   afterEach(() => {
@@ -37,5 +45,9 @@ describe('when setting up the router', () => {
 
   it('should give the deployment and world settings parsers the configured multipart upload timeout', () => {
     expect(uploadTimeoutsByRoute).toEqual({ entities: 12_345, 'world-settings': 12_345 })
+  })
+
+  it('should report the body-receive time of the deployment and world settings parsers', () => {
+    expect(bodyReceivedByRoute).toEqual({ entities: 'function', 'world-settings': 'function' })
   })
 })

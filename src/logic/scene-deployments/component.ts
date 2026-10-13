@@ -255,7 +255,9 @@ export async function createSceneDeploymentsComponent(
     const { baseUrl, entity, entityRaw, authChain, files, manifest, signal, deadlineAt, requestArrivedAt } = input
     signal?.throwIfAborted()
     const deploymentFiles = manifest ? new Map([...files, [entity.id, manifest]]) : files
-    const pending = await partialUploadAdmission.getByEntityId(entity.id, signal)
+    const pending = await deploymentProcessing.trackStage('lookup', 1, () =>
+      partialUploadAdmission.getByEntityId(entity.id, signal)
+    )
     // Permission was skipped for the signer's own upload; only expiry cleanup removes it in between.
     if (input.prevalidation?.sawPending && !pending) throw new PartialUploadExpiredError()
     // One admission instant, the request's arrival, anchors both freshness and the upload's lifetime.
@@ -266,12 +268,19 @@ export async function createSceneDeploymentsComponent(
     const contentHashes = Array.from(new Set(getContentHashes(entity)))
     const worldName = entity.metadata.worldConfiguration.name.toLowerCase()
     const parcels = Array.from(new Set(coordinates.canonicalizeParcels(entity.pointers)))
-    if (!pending && (await raceWithSignal(worldsManager.hasNewerDeployedScene(worldName, entity), signal))) {
+    const hasNewerScene =
+      !pending &&
+      (await deploymentProcessing.trackStage('lookup', 1, () =>
+        raceWithSignal(worldsManager.hasNewerDeployedScene(worldName, entity), signal)
+      ))
+    if (hasNewerScene) {
       throw new InvalidRequestError(
         'Deployment failed: a newer scene is already deployed on one or more of these parcels.'
       )
     }
-    const maxSize = await raceWithSignal(limitsManager.getMaxAllowedSizeInBytesFor(worldName, parcels), signal)
+    const maxSize = await deploymentProcessing.trackStage('limits', 1, () =>
+      raceWithSignal(limitsManager.getMaxAllowedSizeInBytesFor(worldName, parcels), signal)
+    )
     const initialInfos = pending?.initialized
       ? new Map<string, FileInfo | undefined>()
       : await metadata(contentHashes, signal)
@@ -279,16 +288,22 @@ export async function createSceneDeploymentsComponent(
       info?.size !== undefined && info.size !== null ? [{ hash, size: info.size }] : []
     )
     // Stored content is free only when published content keeps it; if only pending uploads hold it, it's charged.
-    const published = await pendingScenesRepository.getPublishedContent(
-      inStorage.map(({ hash }) => hash),
-      signal
+    const published = await deploymentProcessing.trackStage('admission', 1, () =>
+      pendingScenesRepository.getPublishedContent(
+        inStorage.map(({ hash }) => hash),
+        signal
+      )
     )
     const receipts = new Map<string, FileReceipt>()
     for (const { hash, size } of inStorage) {
       receipts.set(hash, { hash, size, stored: true, charged: !published.has(hash) })
     }
     // Files already present, before the upload or from an earlier batch, are dropped; their receipt keeps its charge.
-    const stored = pending ? await pendingScenesRepository.getProgress(entity.id, signal) : new Map<string, number>()
+    const stored = pending
+      ? await deploymentProcessing.trackStage('admission', 1, () =>
+          pendingScenesRepository.getProgress(entity.id, signal)
+        )
+      : new Map<string, number>()
     const toStore = new Map([...files].filter(([hash]) => !stored.has(hash) && !receipts.has(hash)))
     let incomingBytes = 0
     for (const file of files.values()) incomingBytes += file.size
@@ -297,22 +312,24 @@ export async function createSceneDeploymentsComponent(
       .filter((receipt) => receipt.hash !== entity.id)
       .reduce((sum, receipt) => sum + BigInt(receipt.size), 0n)
     if (knownSceneBytes > maxSize) throw new InvalidRequestError('Deployment failed: The deployment is too big.')
-    const pendingRow = await partialUploadAdmission.admitBatch(
-      {
-        upload: {
-          entityId: entity.id,
-          worldName,
-          parcels,
-          entity,
-          deployer: authChain[0].payload,
-          admittedAt,
-          resumes: !!pending
+    const pendingRow = await deploymentProcessing.trackStage('admission', 1, () =>
+      partialUploadAdmission.admitBatch(
+        {
+          upload: {
+            entityId: entity.id,
+            worldName,
+            parcels,
+            entity,
+            deployer: authChain[0].payload,
+            admittedAt,
+            resumes: !!pending
+          },
+          receipts: [...receipts.values()],
+          maxSceneBytes: maxSize,
+          incomingBytes
         },
-        receipts: [...receipts.values()],
-        maxSceneBytes: maxSize,
-        incomingBytes
-      },
-      signal
+        signal
+      )
     )
     if (!pending) metrics.increment('partial_uploads_started')
 
@@ -330,8 +347,12 @@ export async function createSceneDeploymentsComponent(
         { signal }
       )
     )
-    const batches = await partialUploadAdmission.recordStored(entity.id, [...toStore.keys()], signal)
-    const progress = await pendingScenesRepository.getProgress(entity.id, signal)
+    const batches = await deploymentProcessing.trackStage('admission', 1, () =>
+      partialUploadAdmission.recordStored(entity.id, [...toStore.keys()], signal)
+    )
+    const progress = await deploymentProcessing.trackStage('admission', 1, () =>
+      pendingScenesRepository.getProgress(entity.id, signal)
+    )
     const missing = contentHashes.filter((hash) => !progress.has(hash))
     metrics.increment('partial_upload_batches', { outcome: missing.length ? 'incomplete' : 'finalizing' })
     if (missing.length) return { complete: false, missing }
@@ -341,7 +362,9 @@ export async function createSceneDeploymentsComponent(
     const presentInfos = await metadata(contentHashes, signal)
     const nowMissing = contentHashes.filter((hash) => presentInfos.get(hash) === undefined)
     if (nowMissing.length) {
-      await partialUploadAdmission.markMissing(entity.id, nowMissing, signal)
+      await deploymentProcessing.trackStage('admission', 1, () =>
+        partialUploadAdmission.markMissing(entity.id, nowMissing, signal)
+      )
       return { complete: false, missing: nowMissing }
     }
     const present = new Map(contentHashes.map((hash) => [hash, true]))
