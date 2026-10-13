@@ -1,5 +1,6 @@
 import { Entity } from '@dcl/schemas'
 import { IBaseComponent } from '@well-known-components/interfaces'
+import type { PartialUploadCompletion } from '../../types'
 import { Query } from '../upload-transaction'
 
 /** A stored pending upload, as persisted. */
@@ -36,8 +37,8 @@ export type PublicationRecord = {
   worldName: string
   parcels: string[]
   publishedAt: Date
-  /** Whether the publication finalizes a partial upload, which earns its deployer a completion receipt. */
-  completesPartialUpload: boolean
+  /** Set when the publication finalizes a partial upload, which earns its deployer a completion receipt. */
+  completesPartialUpload?: PartialUploadCompletion
 }
 
 /** An expired upload's keyset position; `createdAt` travels as text to keep its microseconds. */
@@ -76,10 +77,10 @@ export interface IPendingScenesRepository extends IBaseComponent {
   getPublishedContent(hashes: string[], signal?: AbortSignal): Promise<Set<string>>
   /**
    * Returns the given keys referenced by any content, in one snapshot: world scenes (including soft-deleted
-   * ones awaiting eviction), world thumbnails and uploads created after `pendingCutoff`. Call under the
-   * exclusive content lock before deleting them.
+   * ones awaiting eviction), world thumbnails and uploads live by the database clock for `ttlMs`. Call
+   * under the exclusive content lock before deleting them.
    */
-  getReferencedContentKeys(pendingCutoff: Date, candidates: string[]): Promise<Set<string>>
+  getReferencedContentKeys(ttlMs: number, candidates: string[]): Promise<Set<string>>
   /** Serializes the transaction with every other one holding the same deployer's lock. */
   lockDeployer(query: Query, deployer: string): Promise<void>
   /** Retrieves an upload whatever its age. */
@@ -104,8 +105,6 @@ export interface IPendingScenesRepository extends IBaseComponent {
   recordStored(query: Query, entityId: string, hashes: string[]): Promise<number>
   /** Returns stored file sizes by hash. */
   getProgress(entityId: string, signal?: AbortSignal): Promise<Map<string, number>>
-  /** Marks files as not stored. */
-  markMissing(query: Query, entityId: string, hashes: string[]): Promise<void>
   /** Returns the deployer's completion receipt completed at or after `completedSince`. */
   getCompleted(
     entityId: string,
@@ -116,20 +115,21 @@ export interface IPendingScenesRepository extends IBaseComponent {
   /**
    * Creates or replaces the entity's completion receipt when the publication finalizes a partial upload,
    * drops it otherwise, then deletes the entity's pending upload.
-   * @returns Whether a pending upload was deleted.
+   * @returns Whether a pending upload was deleted and, for a partial finalize, whether it was still live by
+   * the database clock at the transaction start.
    */
-  recordPublication(query: Query, publication: PublicationRecord): Promise<{ consumed: boolean }>
+  recordPublication(query: Query, publication: PublicationRecord): Promise<{ consumed: boolean; live: boolean }>
   /** Removes an upload only once its entity is published. */
   deleteByEntityId(entityId: string): Promise<void>
   /**
-   * Lists uploads created at or before `cutoff`, oldest first, resuming after `after`.
+   * Lists uploads expired by the database clock for `ttlMs`, oldest first, resuming after `after`.
    * @param limit Maximum uploads returned; a shorter page means no more remain.
    */
-  listExpired(cutoff: Date, after: ExpiredUploadCursor | undefined, limit: number): Promise<ExpiredUploadCursor[]>
+  listExpired(ttlMs: number, after: ExpiredUploadCursor | undefined, limit: number): Promise<ExpiredUploadCursor[]>
   /** Returns every storage key an upload may have staged: its files, entity and auth chain. */
   getUploadKeys(entityId: string): Promise<string[]>
-  /** Releases an upload's accounting if it was created at or before `cutoff`. */
-  releaseExpired(entityId: string, cutoff: Date): Promise<void>
+  /** Releases an upload's accounting if it is expired by the database clock for `ttlMs`. */
+  releaseExpired(entityId: string, ttlMs: number): Promise<void>
   /** Deletes completion receipts completed before `before`. */
   pruneCompleted(before: Date): Promise<void>
   /** Deletes byte-rate windows older than a minute. */

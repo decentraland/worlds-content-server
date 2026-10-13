@@ -1243,7 +1243,7 @@ describe('deployEntity', () => {
 
   describe('when the entity was already deployed by a concurrent duplicate request', () => {
     let response: Awaited<ReturnType<typeof deployEntity>>
-    let getWorldScenes: jest.Mock
+    let getDeployedScene: jest.Mock
 
     beforeEach(async () => {
       const entity = {
@@ -1253,7 +1253,7 @@ describe('deployEntity', () => {
         content: [],
         metadata: { worldConfiguration: { name: 'world.dcl.eth' }, scene: { parcels: ['0,0'] } }
       }
-      getWorldScenes = jest.fn().mockResolvedValue({ scenes: [{ entityId, createdAt: new Date(321) }], total: 1 })
+      getDeployedScene = jest.fn().mockResolvedValue({ entityId, createdAt: new Date(321) })
       const baseContext = createContext(entityId, { [entityId]: makeFile(Buffer.from(JSON.stringify(entity))) })
       const context = {
         ...baseContext,
@@ -1282,7 +1282,7 @@ describe('deployEntity', () => {
             }),
             validateAfterStorage: jest.fn().mockResolvedValue({ errors: [], ok: () => true })
           },
-          worldsManager: { getWorldScenes }
+          worldsManager: { getDeployedScene }
         }
       } as unknown as DeployContext
 
@@ -1294,9 +1294,9 @@ describe('deployEntity', () => {
     })
 
     it('should respond with an idempotent success verified against the deployed scenes', () => {
-      expect({ status: response.status, queried: getWorldScenes.mock.calls[0] }).toEqual({
+      expect({ status: response.status, queried: getDeployedScene.mock.calls[0] }).toEqual({
         status: 200,
-        queried: [{ worldName: 'world.dcl.eth', entityId }, { limit: 1 }]
+        queried: [entityId, 'world.dcl.eth']
       })
     })
 
@@ -1344,7 +1344,7 @@ describe('deployEntity', () => {
             }),
             validateAfterStorage: jest.fn().mockResolvedValue({ errors: [], ok: () => true })
           },
-          worldsManager: { getWorldScenes: jest.fn().mockResolvedValue({ scenes: [], total: 0 }) }
+          worldsManager: { getDeployedScene: jest.fn().mockResolvedValue(undefined) }
         }
       } as unknown as DeployContext
 

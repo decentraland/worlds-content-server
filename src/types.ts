@@ -101,8 +101,8 @@ export type DeploymentToValidate = {
    * of now, so a multi-request upload can span longer than the TTL.
    */
   pendingCreatedAt?: Date
-  /** Storage metadata fetched once before validation, keyed by unique content hash. */
-  contentFileInfos?: Map<string, FileInfo | undefined>
+  /** Content sizes known before validation (storage metadata or upload receipts), keyed by unique content hash. */
+  contentFileInfos?: Map<string, Pick<FileInfo, 'size'> | undefined>
   /** Cancels request-scoped processing after disconnect or the configured processing deadline. */
   signal?: AbortSignal
   /** Replacement authority established during deployment authorization. */
@@ -165,8 +165,8 @@ export type SceneDeploymentData = {
   completesPartialUpload?: PartialUploadCompletion
 }
 
-/** Publication is refused once the upload is gone or `expiresAt` (epoch ms) has passed. */
-export type PartialUploadCompletion = { expiresAt: number }
+/** Publication is refused once the upload is gone or expired by the database clock for `ttlMs`. */
+export type PartialUploadCompletion = { ttlMs: number }
 
 export type SceneReplacementAuthorization = { mode: 'unrestricted-owner' } | { mode: 'scoped'; entityIds: string[] }
 
@@ -580,6 +580,8 @@ export type IWorldsManager = {
   undeployWorld(worldName: string): Promise<void>
   getContributableDomains(address: string): Promise<{ domains: ContributorDomain[]; count: number }>
   getWorldScenes(filters?: GetWorldScenesFilters, options?: GetWorldScenesOptions): Promise<GetWorldScenesResult>
+  /** Retrieves the oldest DEPLOYED scene of an entity, optionally within a world, without counting matches. */
+  getDeployedScene(entityId: string, worldName?: string): Promise<WorldScene | undefined>
   updateWorldSettings(worldName: string, owner: EthAddress, settings: WorldSettings): Promise<UpdateWorldSettingsResult>
   getWorldSettings(worldName: string): Promise<WorldSettings | undefined>
   getTotalWorldSize(worldName: string): Promise<bigint>
@@ -679,6 +681,8 @@ export type DeployEntityOptions = {
   sceneReplacementAuthorization?: SceneReplacementAuthorization
   /** The publication finalizes a partial upload; see SceneDeploymentData.completesPartialUpload. */
   completesPartialUpload?: PartialUploadCompletion
+  /** The entity file is already stored as uploaded, so only its auth chain is written. */
+  storedEntityFile?: boolean
 }
 
 export type AwsConfig = {

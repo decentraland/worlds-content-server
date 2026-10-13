@@ -62,6 +62,14 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
     return parseInt(result.rows[0].count)
   }
 
+  async function readPublishedSize(): Promise<string | undefined> {
+    const { database } = components
+    const result = await database.query<{ size: string }>(
+      SQL`SELECT size FROM world_scenes WHERE entity_id = ${entityId} AND status = 'DEPLOYED'`
+    )
+    return result.rows[0]?.size
+  }
+
   async function readAccounting(): Promise<{ reserved: unknown[]; rate: unknown[]; charged: Record<string, boolean> }> {
     const { database } = components
     const reserved = await database.query(SQL`SELECT reserved_bytes FROM pending_scenes WHERE entity_id = ${entityId}`)
@@ -136,30 +144,147 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
     let initialChecks: number
     let middleChecks: number
     let finalChecks: number
+    let finalStatus: number
+    let deployed: number
+    let size: string | undefined
+    let storeSpy: jest.SpyInstance
+    let finalWrites: string[]
 
     beforeEach(async () => {
       authChain = Authenticator.signPayload(identity.authChain, entityId)
       metadataSpy = jest.spyOn(components.storage, 'fileInfo')
+      storeSpy = jest.spyOn(components.storage, 'storeStream')
       await post(buildForm([entityId], authChain))
       initialChecks = metadataSpy.mock.calls.length
       metadataSpy.mockClear()
       await post(buildForm([contentHashes[0]], authChain))
       middleChecks = metadataSpy.mock.calls.length
       metadataSpy.mockClear()
-      await post(buildForm(contentHashes.slice(1), authChain))
+      storeSpy.mockClear()
+      finalStatus = (await post(buildForm(contentHashes.slice(1), authChain))).status
       finalChecks = metadataSpy.mock.calls.length
+      finalWrites = storeSpy.mock.calls.map(([key]) => key).sort()
+      deployed = await countDeployedScenes()
+      size = await readPublishedSize()
     })
 
     afterEach(() => {
       metadataSpy.mockRestore()
+      storeSpy.mockRestore()
     })
 
-    it('should inventory once, skip metadata for intermediate batches, and verify once at completion', () => {
-      expect({ initialChecks, middleChecks, finalChecks }).toEqual({
-        initialChecks: contentHashes.length,
-        middleChecks: 0,
-        finalChecks: contentHashes.length
+    it('should store only its content and the auth chain on the publishing batch, not the entity file again', () => {
+      expect(finalWrites).toEqual([...contentHashes.slice(1), `${entityId}.auth`].sort())
+    })
+
+    it('should inventory the storage metadata of every content hash on the first batch', () => {
+      expect(initialChecks).toBe(contentHashes.length)
+    })
+
+    it('should not probe storage metadata on a middle batch', () => {
+      expect(middleChecks).toBe(0)
+    })
+
+    it('should not probe storage metadata on the publishing batch', () => {
+      expect(finalChecks).toBe(0)
+    })
+
+    it('should answer the publishing batch with a success', () => {
+      expect(finalStatus).toBe(200)
+    })
+
+    it('should deploy the scene once', () => {
+      expect(deployed).toBe(1)
+    })
+
+    it('should publish the size of its content from the receipts', () => {
+      expect(size).toBe(String(sizeOf(...contentHashes)))
+    })
+  })
+
+  // Accepted trade-off: publication trusts the receipts instead of probing storage again.
+  describe('when a stored file is deleted outside the service before the publishing batch', () => {
+    let finalStatus: number
+    let deployed: number
+    let deletedFile: unknown
+
+    beforeEach(async () => {
+      const authChain = Authenticator.signPayload(identity.authChain, entityId)
+      await post(buildForm([entityId, contentHashes[0]], authChain))
+      await components.storage.delete([contentHashes[0]])
+      finalStatus = (await post(buildForm(contentHashes.slice(1), authChain))).status
+      deployed = await countDeployedScenes()
+      deletedFile = await components.storage.retrieve(contentHashes[0])
+    })
+
+    it('should still publish the scene', () => {
+      expect({ finalStatus, deployed }).toEqual({ finalStatus: 200, deployed: 1 })
+    })
+
+    it('should leave the deleted file missing from storage', () => {
+      expect(deletedFile).toBeUndefined()
+    })
+  })
+
+  describe('when the first batch fails to store after admission and the upload resumes', () => {
+    let authChain: AuthChain
+    let failedStatus: number
+    let afterFailure: { initialized: unknown[]; stored: Record<string, boolean> }
+    let resumeStatus: number
+    let resumeMissing: string[]
+    let completingStatus: number
+    let size: string | undefined
+
+    beforeEach(async () => {
+      const { storage, database } = components
+      authChain = Authenticator.signPayload(identity.authChain, entityId)
+      const storeStream = storage.storeStream.bind(storage)
+      // The batch writes its first content file and the entity file but fails on the second content file.
+      const storeSpy = jest
+        .spyOn(storage, 'storeStream')
+        .mockImplementation(async (key, stream, signal) =>
+          key === contentHashes[1] ? Promise.reject(new Error('storage unavailable')) : storeStream(key, stream, signal)
+        )
+      failedStatus = (await post(buildForm([entityId, ...contentHashes], authChain))).status
+      storeSpy.mockRestore()
+      const initialized = await database.query(
+        SQL`SELECT initialized FROM pending_scenes WHERE entity_id = ${entityId}`
+      )
+      const receipts = await database.query<{ hash: string; stored: boolean }>(
+        SQL`SELECT hash, stored FROM pending_scene_files WHERE entity_id = ${entityId}`
+      )
+      afterFailure = {
+        initialized: initialized.rows,
+        stored: Object.fromEntries(receipts.rows.map((row) => [row.hash, row.stored]))
+      }
+      const resume = await post(buildForm([entityId], authChain))
+      resumeStatus = resume.status
+      resumeMissing = (await resume.json()).missing
+      completingStatus = (await post(buildForm([contentHashes[1]], authChain))).status
+      size = await readPublishedSize()
+    })
+
+    it('should fail the first batch', () => {
+      expect(failedStatus).toBe(500)
+    })
+
+    it('should leave the upload admitted but uninitialized, with no file recorded as stored', () => {
+      expect(afterFailure).toEqual({
+        initialized: [{ initialized: false }],
+        stored: { [entityId]: false, [contentHashes[0]]: false, [contentHashes[1]]: false }
       })
+    })
+
+    it('should request on resume only the content the failed batch did not write', () => {
+      expect({ resumeStatus, resumeMissing }).toEqual({ resumeStatus: 202, resumeMissing: [contentHashes[1]] })
+    })
+
+    it('should publish once the missing content arrives', () => {
+      expect(completingStatus).toBe(200)
+    })
+
+    it('should publish the size of its content', () => {
+      expect(size).toBe(String(sizeOf(...contentHashes)))
     })
   })
 
@@ -221,14 +346,20 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
     })
 
     describe('and the last batch uploads the remaining content', () => {
+      let deployed: number
+      let size: string | undefined
+
       beforeEach(async () => {
         response = await post(buildForm([contentHashes[1]], authChain))
+        deployed = await countDeployedScenes()
+        size = await readPublishedSize()
       })
 
-      it('should publish the scene', async () => {
-        expect({ status: response.status, deployed: await countDeployedScenes() }).toEqual({
+      it('should publish the scene sized with the content it found in storage', () => {
+        expect({ status: response.status, deployed, size }).toEqual({
           status: 200,
-          deployed: 1
+          deployed: 1,
+          size: String(sizeOf(...contentHashes))
         })
       })
     })

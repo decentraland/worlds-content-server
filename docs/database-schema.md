@@ -35,7 +35,7 @@ count; `stored` distinguishes successful writes/verified reused content from res
 (BOOLEAN, default true) marks bytes counted toward the staging budgets: content already referenced by
 published content (a `world_scenes` entity or a world thumbnail) when the upload started is recorded with
 `charged = false` and counts only toward the scene size limit; content in storage only because of other
-pending uploads is charged. A file re-uploaded after its stored copy went missing becomes charged.
+pending uploads is charged. Publication takes content sizes from these rows instead of probing storage.
 Reserves are atomic under a database admission lock.
 The pending-row `reserved_bytes` caches the sum of charged sizes so global admission scans session totals
 instead of every content receipt. Failed writes remain conservatively charged; retrying a hash does not
@@ -271,6 +271,7 @@ Stores individual scene deployments within worlds. Each world can have multiple 
 - **Index**: `world_scenes_world_name_idx` on `world_name` column
 - **GIN Index**: `world_scenes_parcels_idx` on `parcels` column (for array operations)
 - **Index**: `world_scenes_deployer_idx` on `deployer` column
+- **Index**: `world_scenes_entity_id_idx` on `entity_id` column (published-entity and content-reference lookups)
 - **Partial Index**: `world_scenes_status_idx` on `status` WHERE `status = 'DEPLOYED'` (hot-path reads)
 - **Partial Index**: `world_scenes_undeployed_updated_at_idx` on `updated_at` WHERE `status = 'UNDEPLOYED'` (eviction job)
 

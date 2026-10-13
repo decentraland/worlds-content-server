@@ -39,7 +39,7 @@ export async function createContentGcComponent(
     for (let offset = 0; offset < keys.length; offset += GC_BATCH_SIZE) {
       const batch = keys.slice(offset, offset + GC_BATCH_SIZE)
       removed += await contentLocks.withWrite(async () => {
-        const referenced = await pendingScenesRepository.getReferencedContentKeys(new Date(Date.now() - ttlMs), batch)
+        const referenced = await pendingScenesRepository.getReferencedContentKeys(ttlMs, batch)
         const orphaned = batch.filter((key) => !referenced.has(key))
         if (orphaned.length) await storage.delete(orphaned)
         return orphaned.length
@@ -103,19 +103,18 @@ export async function createContentGcComponent(
   }
 
   async function sweepExpired(): Promise<ExpiredUploadsCleanup> {
-    const cutoff = new Date(Date.now() - ttlMs)
     let removed = 0
     let failed = 0
     let after: ExpiredUploadCursor | undefined
     try {
-      // Pages until a short one: every upload expired before the cutoff is visited once.
+      // Pages until a short one: keyset order visits every expired upload once.
       for (;;) {
-        const page = await pendingScenesRepository.listExpired(cutoff, after, CLEANUP_PAGE_SIZE)
+        const page = await pendingScenesRepository.listExpired(ttlMs, after, CLEANUP_PAGE_SIZE)
         for (const upload of page) {
           after = upload
           const { entityId } = upload
           try {
-            await reclaimUpload(entityId, cutoff)
+            await reclaimUpload(entityId)
             removed++
             metrics.increment('partial_upload_expired_uploads')
           } catch (error) {
@@ -146,9 +145,9 @@ export async function createContentGcComponent(
    * Deletes an expired upload's orphaned staged objects, then releases its accounting.
    * @throws ContentLockTimeoutError when uploads keep the content lock busy.
    */
-  async function reclaimUpload(entityId: string, cutoff: Date): Promise<void> {
+  async function reclaimUpload(entityId: string): Promise<void> {
     await deleteUnreferenced(await pendingScenesRepository.getUploadKeys(entityId))
-    await pendingScenesRepository.releaseExpired(entityId, cutoff)
+    await pendingScenesRepository.releaseExpired(entityId, ttlMs)
   }
 
   return { deleteUnreferenced, collectGarbage, deleteExpiredUploads }

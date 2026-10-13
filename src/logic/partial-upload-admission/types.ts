@@ -67,8 +67,6 @@ export interface IPartialUploadAdmission {
    * complete. Returns the upload's stored batches so far.
    */
   recordStored(entityId: string, hashes: string[], signal?: AbortSignal): Promise<number>
-  /** Forgets receipts invalidated by a final storage verification. Reservations remain charged. */
-  markMissing(entityId: string, hashes: string[], signal?: AbortSignal): Promise<void>
   /** Prunes completion receipts and rate windows and refreshes the gauges. */
   pruneAndReport(): Promise<void>
   /** Records that a cleanup run finished; quota Retry-After estimates the next run from it. */

@@ -1,5 +1,13 @@
-import SQL from 'sql-template-strings'
+import SQL, { SQLStatement } from 'sql-template-strings'
 import { AppComponents } from '../types'
+
+/**
+ * `now() - ttl` on the database clock: uploads created after it are live, at or before it expired.
+ * `now()` is the transaction start, so start the transaction after taking the content lock.
+ */
+export function pendingExpiryCutoff(ttlMs: number): SQLStatement {
+  return SQL`(now() - ${ttlMs / 1000}::float8 * interval '1 second')`
+}
 
 /**
  * Reads the keys referenced by published content: world scenes (including soft-deleted ones awaiting
@@ -31,20 +39,21 @@ export async function getPublishedContentKeys(
  * Reads all sources of content references in one SQL snapshot. Call under the exclusive content
  * lock before deleting candidates, so publication cannot race either this read or physical deletion.
  * @param database Application database.
- * @param pendingCutoff `now - ttl`: pending uploads created after it are live.
+ * @param pendingTtlMs Pending upload lifetime; uploads live by the database clock count.
  * @param candidates Optional storage keys to check.
  * @returns Referenced keys, including soft-deleted scenes awaiting eviction.
  */
 export async function getReferencedContentKeys(
   database: AppComponents['database'],
-  pendingCutoff: Date,
+  pendingTtlMs: number,
   candidates?: string[]
 ): Promise<Set<string>> {
   const query = SQL`
     WITH entities AS (
       SELECT entity_id, entity FROM world_scenes WHERE entity IS NOT NULL
       UNION ALL
-      SELECT entity_id, entity FROM pending_scenes WHERE created_at > ${pendingCutoff}
+      SELECT entity_id, entity FROM pending_scenes WHERE created_at > `.append(pendingExpiryCutoff(pendingTtlMs))
+    .append(SQL`
     ), refs AS (
       SELECT entity_id AS hash FROM entities
       UNION ALL SELECT entity_id || '.auth' FROM entities
@@ -53,7 +62,7 @@ export async function getReferencedContentKeys(
         LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(entity->'content') = 'array'
           THEN entity->'content' ELSE '[]'::jsonb END) AS content
       UNION ALL SELECT thumbnail_hash FROM worlds WHERE thumbnail_hash IS NOT NULL
-    ) SELECT DISTINCT hash FROM refs`
+    ) SELECT DISTINCT hash FROM refs`)
   if (candidates) query.append(SQL` WHERE hash = ANY(${candidates}::text[])`)
   const result = await database.query<{ hash: string }>(query)
   return new Set(result.rows.map((row) => row.hash))

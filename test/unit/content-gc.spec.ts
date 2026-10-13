@@ -44,7 +44,8 @@ describe('when collecting unreferenced content', () => {
     info = jest.fn()
     pendingScenesRepository = {
       getReferencedContentKeys: jest.fn(
-        async (_cutoff: Date, candidates: string[]) => new Set(candidates.filter((key) => referencedKeys.includes(key)))
+        async (_ttlMs: number, candidates: string[]) =>
+          new Set(candidates.filter((key) => referencedKeys.includes(key)))
       ),
       listExpired: jest.fn().mockResolvedValue([]),
       getUploadKeys: jest.fn(),
@@ -93,8 +94,8 @@ describe('when collecting unreferenced content', () => {
       })
     })
 
-    it('should keep content held by uploads younger than the pending lifetime', () => {
-      expect(pendingScenesRepository.getReferencedContentKeys.mock.calls[0][0]).toEqual(new Date(NOW - TTL_MS))
+    it('should keep content held by uploads live for the pending lifetime on the database clock', () => {
+      expect(pendingScenesRepository.getReferencedContentKeys.mock.calls[0][0]).toBe(TTL_MS)
     })
   })
 
@@ -141,6 +142,13 @@ describe('when collecting unreferenced content', () => {
       expect(increment.mock.calls.filter(([metric]) => metric === 'garbage_collection_removed_keys')).toEqual([
         ['garbage_collection_removed_keys', {}, 1]
       ])
+    })
+
+    it('should list and release uploads expired for the pending lifetime on the database clock', () => {
+      expect({
+        listed: pendingScenesRepository.listExpired.mock.calls[0][0],
+        released: pendingScenesRepository.releaseExpired.mock.calls[0][1]
+      }).toEqual({ listed: TTL_MS, released: TTL_MS })
     })
 
     it('should reclaim the expired upload after the sweep, deleting its objects before releasing it', () => {

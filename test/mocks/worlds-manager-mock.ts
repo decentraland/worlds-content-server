@@ -238,6 +238,11 @@ export async function createWorldsManagerMockComponent({
     }
   }
 
+  async function getDeployedScene(entityId: string, worldName?: string): Promise<WorldScene | undefined> {
+    const { scenes } = await getWorldScenes(worldName ? { worldName, entityId } : { entityId }, { limit: 1 })
+    return scenes[0]
+  }
+
   async function updateWorldSettings(
     worldName: string,
     _owner: EthAddress,
@@ -383,6 +388,7 @@ export async function createWorldsManagerMockComponent({
     storeAccess,
     undeployWorld,
     getWorldScenes,
+    getDeployedScene,
     updateWorldSettings,
     getWorldSettings,
     getTotalWorldSize,
@@ -415,6 +421,7 @@ export function createMockedWorldsManager(
     undeployWorld: jest.fn(),
     getContributableDomains: jest.fn(),
     getWorldScenes: jest.fn(),
+    getDeployedScene: jest.fn(),
     getTotalWorldSize: jest.fn(),
     getDeployedSceneSizeForParcels: jest.fn(),
     getWorldBoundingRectangle: jest.fn(),

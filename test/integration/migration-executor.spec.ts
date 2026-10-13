@@ -5,12 +5,14 @@ import { test } from '../components'
 import { createMigrationExecutor, MigrationsLockLostError } from '../../src/adapters/migration-executor'
 import { Migration } from '../../src/types'
 import { migration as contentHashesIndexMigration } from '../../src/migrations/0030_add_world_scenes_content_hashes_index'
+import { migration as entityIdIndexMigration } from '../../src/migrations/0031_add_world_scenes_entity_id_index'
 
 const TABLE_MIGRATION = 'test_concurrent_startup_table'
 const INDEX_MIGRATION = 'test_concurrent_startup_index'
 const LOCK_LOSS_MIGRATION = 'test_lock_loss_table'
 const TRANSACTION_MIGRATION = 'test_transaction_table'
 const CONTENT_HASHES_INDEX_RERUN = 'test_0030_rerun'
+const ENTITY_ID_INDEX_RERUN = 'test_0031_rerun'
 
 test('MigrationExecutor', function ({ components }) {
   describe('when two instances start at the same time', () => {
@@ -265,6 +267,86 @@ test('MigrationExecutor', function ({ components }) {
 
     it('should rebuild it as a single valid index when the migration reruns', () => {
       expect(indexes).toEqual([{ indisvalid: true }])
+    })
+  })
+
+  describe('when the entity id index was left invalid by a failed concurrent build', () => {
+    let indexes: { indisvalid: boolean; definition: string }[]
+
+    beforeEach(async () => {
+      const { database } = components
+      await database.query(
+        `UPDATE pg_index SET indisvalid = false WHERE indexrelid = 'world_scenes_entity_id_idx'::regclass`
+      )
+      const migrations: Migration[] = [{ id: ENTITY_ID_INDEX_RERUN, run: entityIdIndexMigration.run }]
+      await createMigrationExecutor(components, { migrations })[START_COMPONENT]!({} as never)
+      const result = await database.query<{ indisvalid: boolean; definition: string }>(`
+        SELECT i.indisvalid, pg_get_indexdef(i.indexrelid) AS definition FROM pg_index i
+        JOIN pg_class c ON c.oid = i.indexrelid WHERE c.relname = 'world_scenes_entity_id_idx'
+      `)
+      indexes = result.rows
+    }, 30_000)
+
+    afterEach(async () => {
+      const { database } = components
+      // Rebuild rather than flip the flag back: a failed rerun could leave a half-built index.
+      const { rows } = await database.query<{ indisvalid: boolean }>(`
+        SELECT i.indisvalid FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+        WHERE c.relname = 'world_scenes_entity_id_idx'
+      `)
+      if (rows.length === 0) {
+        await database.query('CREATE INDEX world_scenes_entity_id_idx ON world_scenes (entity_id)')
+      } else if (!rows[0].indisvalid) {
+        await database.query('REINDEX INDEX world_scenes_entity_id_idx')
+      }
+      await database.query(SQL`DELETE FROM migrations WHERE name = ${ENTITY_ID_INDEX_RERUN}`)
+    })
+
+    it('should rebuild it as a single valid index on entity_id when the migration reruns', () => {
+      expect(indexes).toEqual([
+        {
+          indisvalid: true,
+          definition: 'CREATE INDEX world_scenes_entity_id_idx ON public.world_scenes USING btree (entity_id)'
+        }
+      ])
+    })
+  })
+
+  describe('when the entity id index already exists and is valid', () => {
+    let before: { oid: number; indisvalid: boolean; definition: string }[]
+    let after: { oid: number; indisvalid: boolean; definition: string }[]
+
+    async function readIndex(): Promise<{ oid: number; indisvalid: boolean; definition: string }[]> {
+      const result = await components.database.query<{ oid: number; indisvalid: boolean; definition: string }>(`
+        SELECT c.oid::int AS oid, i.indisvalid, pg_get_indexdef(i.indexrelid) AS definition FROM pg_index i
+        JOIN pg_class c ON c.oid = i.indexrelid WHERE c.relname = 'world_scenes_entity_id_idx'
+      `)
+      return result.rows
+    }
+
+    beforeEach(async () => {
+      before = await readIndex()
+      const migrations: Migration[] = [{ id: ENTITY_ID_INDEX_RERUN, run: entityIdIndexMigration.run }]
+      await createMigrationExecutor(components, { migrations })[START_COMPONENT]!({} as never)
+      after = await readIndex()
+    }, 30_000)
+
+    afterEach(async () => {
+      await components.database.query(SQL`DELETE FROM migrations WHERE name = ${ENTITY_ID_INDEX_RERUN}`)
+    })
+
+    it('should start from a single valid index on entity_id', () => {
+      expect(before).toEqual([
+        {
+          oid: expect.any(Number),
+          indisvalid: true,
+          definition: 'CREATE INDEX world_scenes_entity_id_idx ON public.world_scenes USING btree (entity_id)'
+        }
+      ])
+    })
+
+    it('should leave that same index in place when the migration reruns', () => {
+      expect(after).toEqual(before)
     })
   })
 

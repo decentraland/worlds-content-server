@@ -33,7 +33,7 @@ describe('when staging a partial deployment', () => {
   let validate: jest.Mock
   let deployEntity: jest.Mock
   let admitBatch: jest.Mock
-  let getWorldScenes: jest.Mock
+  let getDeployedScene: jest.Mock
   let getCompleted: jest.Mock
   let deleteByEntityId: jest.Mock
   let increment: jest.Mock
@@ -74,7 +74,7 @@ describe('when staging a partial deployment', () => {
     })
     deployEntity = jest.fn().mockResolvedValue({ message: 'deployed', creationTimestamp: 123 })
     admitBatch = jest.fn().mockResolvedValue({ createdAt: new Date(), expiresAt: new Date(Date.now() + 86_400_000) })
-    getWorldScenes = jest.fn().mockResolvedValue({ scenes: [], total: 0 })
+    getDeployedScene = jest.fn().mockResolvedValue(undefined)
     getCompleted = jest.fn().mockResolvedValue({ creationTimestamp: 123 })
     deleteByEntityId = jest.fn().mockResolvedValue(undefined)
     increment = jest.fn()
@@ -90,7 +90,6 @@ describe('when staging a partial deployment', () => {
         getByEntityId: getPending,
         admitBatch,
         recordStored,
-        markMissing: jest.fn(),
         getCompleted
       },
       pendingScenesRepository: {
@@ -99,8 +98,9 @@ describe('when staging a partial deployment', () => {
         deleteByEntityId
       },
       storage: { fileInfo, storeStream },
+      uploadLimits: { pendingDeploymentTtlMs: 86_400_000 },
       validator: { validateStaging, validate },
-      worldsManager: { hasNewerDeployedScene: jest.fn().mockResolvedValue(false), getWorldScenes }
+      worldsManager: { hasNewerDeployedScene: jest.fn().mockResolvedValue(false), getDeployedScene }
     } as unknown as Components
     ;({ stage, prevalidate } = await createSceneDeploymentsComponent(components))
   })
@@ -393,7 +393,6 @@ describe('when staging a partial deployment', () => {
           ['b', 500]
         ])
       )
-      fileInfo.mockImplementation(async (hash) => ({ size: hash === 'a' ? 300 : 500 }))
       input.signal = new AbortController().signal
       input.deadlineAt = Date.now() + 60000
     })
@@ -413,17 +412,57 @@ describe('when staging a partial deployment', () => {
         })
       })
 
-      it('should publish the verified total size under the request signal and deadline', () => {
+      it('should publish the total size from the uploaded file and the stored progress under the request signal and deadline', () => {
         const [, , , , , , size, options] = deployEntity.mock.calls[0]
         expect([size, options.signal, options.deadlineAt]).toEqual([800, input.signal, input.deadlineAt])
       })
 
-      it('should perform only one final metadata pass', () => {
-        expect(fileInfo.mock.calls.map(([hash]) => hash)).toEqual(['a', 'b'])
+      it('should validate the content sizes recorded in the stored progress', () => {
+        expect(validate.mock.calls[0][0].contentFileInfos).toEqual(
+          new Map([
+            ['a', { size: 300 }],
+            ['b', { size: 500 }]
+          ])
+        )
+      })
+
+      it('should not look up storage metadata', () => {
+        expect({
+          metadata: fileInfo.mock.calls.length,
+          checks: increment.mock.calls.filter(([name]) => name === 'partial_upload_metadata_checks')
+        }).toEqual({ metadata: 0, checks: [] })
       })
 
       it('should pass the request signal into storage writes', () => {
         expect(storeStream.mock.calls[0][2]).toBe(input.signal)
+      })
+    })
+
+    describe('and no batch has recorded its entity file as stored', () => {
+      beforeEach(async () => {
+        await stage(input)
+      })
+
+      it('should have the entity file stored again', () => {
+        expect(deployEntity.mock.calls[0][7].storedEntityFile).toBe(false)
+      })
+    })
+
+    describe('and an earlier batch stored its entity file', () => {
+      beforeEach(async () => {
+        getProgress.mockReset()
+        getProgress.mockResolvedValueOnce(new Map([['b', 500]])).mockResolvedValueOnce(
+          new Map([
+            ['entity', 40],
+            ['a', 300],
+            ['b', 500]
+          ])
+        )
+        await stage(input)
+      })
+
+      it('should not have the entity file stored again', () => {
+        expect(deployEntity.mock.calls[0][7].storedEntityFile).toBe(true)
       })
     })
 
@@ -436,10 +475,8 @@ describe('when staging a partial deployment', () => {
         await stage(input)
       })
 
-      it('should mark the publication as a partial finalization that expires with the upload', () => {
-        expect(deployEntity.mock.calls[0][7].completesPartialUpload).toEqual({
-          expiresAt: createdAt.getTime() + 86_400_000
-        })
+      it('should mark the publication as a partial finalization judged against the upload lifetime', () => {
+        expect(deployEntity.mock.calls[0][7].completesPartialUpload).toEqual({ ttlMs: 86_400_000 })
       })
 
       it('should report the completed upload with its batches and its duration since admission', () => {
@@ -456,26 +493,6 @@ describe('when staging a partial deployment', () => {
           batches: [['partial_upload_batches_per_upload', {}, 2]],
           lastedAtLeastItsAge: [true]
         })
-      })
-    })
-    describe('and storage has lost a previously acknowledged file', () => {
-      let result: Awaited<ReturnType<typeof stage>>
-
-      beforeEach(async () => {
-        fileInfo.mockResolvedValueOnce(undefined)
-        result = await stage(input)
-      })
-
-      it('should request that file again', () => {
-        expect(result).toEqual({ complete: false, missing: ['a'] })
-      })
-
-      it('should invalidate its receipt', () => {
-        expect(components.partialUploadAdmission.markMissing).toHaveBeenCalledWith('entity', ['a'], input.signal)
-      })
-
-      it('should not publish the entity', () => {
-        expect(deployEntity).not.toHaveBeenCalled()
       })
     })
   })
@@ -648,21 +665,15 @@ describe('when staging a partial deployment', () => {
           ['b', 500]
         ])
       )
-      fileInfo.mockImplementation(async (hash) => ({ size: hash === 'a' ? 300 : 500 }))
       deployEntity.mockRejectedValueOnce(
         new DeploymentUniqueViolationError('entity', Object.assign(new Error('duplicate key'), { code: '23505' }))
       )
-      getWorldScenes.mockResolvedValueOnce({
-        scenes: [
-          {
-            entityId: 'entity',
-            worldName: 'world.dcl.eth',
-            parcels: ['0,0'],
-            entity: input.entity,
-            createdAt: new Date(456)
-          }
-        ],
-        total: 1
+      getDeployedScene.mockResolvedValueOnce({
+        entityId: 'entity',
+        worldName: 'world.dcl.eth',
+        parcels: ['0,0'],
+        entity: input.entity,
+        createdAt: new Date(456)
       })
       // No completion receipt for this signer: the live publication answers regardless.
       getCompleted.mockResolvedValue(undefined)
@@ -692,7 +703,6 @@ describe('when staging a partial deployment', () => {
           ['b', 500]
         ])
       )
-      fileInfo.mockImplementation(async (hash) => ({ size: hash === 'a' ? 300 : 500 }))
       deployEntity.mockRejectedValueOnce(
         new DeploymentUniqueViolationError('entity', Object.assign(new Error('duplicate key'), { code: '23505' }))
       )
@@ -725,7 +735,6 @@ describe('when staging a partial deployment', () => {
       recordStages('admitBatch', admitBatch)
       recordStages('recordStored', recordStored)
       recordStages('getProgress', getProgress)
-      recordStages('markMissing', components.partialUploadAdmission.markMissing as jest.Mock)
       ;({ stage } = await createSceneDeploymentsComponent({
         ...components,
         deploymentProcessing: createDeploymentProcessingMock({ trackStage: recorder.trackStage })
@@ -780,7 +789,7 @@ describe('when staging a partial deployment', () => {
       })
     })
 
-    describe('and a resumed batch finds content missing at final verification', () => {
+    describe('and a resumed batch completes the upload', () => {
       beforeEach(async () => {
         let progressReads = 0
         getPending.mockResolvedValue({ createdAt: new Date(), deployer: 'deployer', initialized: true })
@@ -799,22 +808,22 @@ describe('when staging a partial deployment', () => {
         expect(stagesByCall.getProgress).toEqual([['admission'], ['admission']])
       })
 
-      it('should mark the missing content inside the admission stage', () => {
-        expect(stagesByCall.markMissing).toEqual([['admission']])
+      it('should not open a metadata stage', () => {
+        expect(recorder.trackStage.mock.calls.map(([stage]) => stage)).not.toContain('metadata')
       })
     })
   })
 })
 
 describe('when finding the publication of an entity', () => {
-  let getWorldScenes: jest.Mock
+  let getDeployedScene: jest.Mock
   let findPublication: Awaited<ReturnType<typeof createSceneDeploymentsComponent>>['findPublication']
 
   beforeEach(async () => {
-    getWorldScenes = jest.fn()
+    getDeployedScene = jest.fn()
     ;({ findPublication } = await createSceneDeploymentsComponent({
       logs: { getLogger: jest.fn() },
-      worldsManager: { getWorldScenes }
+      worldsManager: { getDeployedScene }
     } as unknown as Components))
   })
 
@@ -826,23 +835,18 @@ describe('when finding the publication of an entity', () => {
     let result: Awaited<ReturnType<typeof findPublication>>
 
     beforeEach(async () => {
-      getWorldScenes.mockResolvedValueOnce({
-        scenes: [
-          {
-            entityId: 'entity',
-            worldName: 'world.dcl.eth',
-            parcels: ['0,0'],
-            entity: { metadata: { worldConfiguration: { name: 'World.dcl.eth' }, scene: { parcels: ['0,0'] } } },
-            createdAt: new Date(789)
-          }
-        ],
-        total: 1
+      getDeployedScene.mockResolvedValueOnce({
+        entityId: 'entity',
+        worldName: 'world.dcl.eth',
+        parcels: ['0,0'],
+        entity: { metadata: { worldConfiguration: { name: 'World.dcl.eth' }, scene: { parcels: ['0,0'] } } },
+        createdAt: new Date(789)
       })
       result = await findPublication('https://worlds.example', 'entity')
     })
 
     it('should look it up among deployed scenes by entity id alone', () => {
-      expect(getWorldScenes).toHaveBeenCalledWith({ entityId: 'entity' }, { limit: 1 })
+      expect(getDeployedScene).toHaveBeenCalledWith('entity', undefined)
     })
 
     it('should answer with a completed result carrying the publication timestamp', () => {
@@ -858,7 +862,7 @@ describe('when finding the publication of an entity', () => {
     let result: Awaited<ReturnType<typeof findPublication>>
 
     beforeEach(async () => {
-      getWorldScenes.mockResolvedValueOnce({ scenes: [], total: 0 })
+      getDeployedScene.mockResolvedValueOnce(undefined)
       result = await findPublication('https://worlds.example', 'entity')
     })
 
@@ -924,7 +928,7 @@ describe('when deploying a single-request deployment', () => {
   let fileInfo: jest.Mock
   let validateAfterStorage: jest.Mock
   let deployEntity: jest.Mock
-  let getWorldScenes: jest.Mock
+  let getDeployedScene: jest.Mock
   let info: jest.Mock
   let increment: jest.Mock
   let signal: AbortSignal
@@ -955,7 +959,7 @@ describe('when deploying a single-request deployment', () => {
     fileInfo = jest.fn(async (hash: string) => (hash === 'b' ? { size: 7, contentSize: 7, encoding: null } : undefined))
     validateAfterStorage = jest.fn().mockResolvedValue({ ok: () => true, errors: [] })
     deployEntity = jest.fn().mockResolvedValue({ message: 'deployed', creationTimestamp: 123 })
-    getWorldScenes = jest.fn().mockResolvedValue({ scenes: [], total: 0 })
+    getDeployedScene = jest.fn().mockResolvedValue(undefined)
     info = jest.fn()
     increment = jest.fn()
     ;({ deploy } = await createSceneDeploymentsComponent({
@@ -965,7 +969,7 @@ describe('when deploying a single-request deployment', () => {
       metrics: { increment },
       storage: { fileInfo },
       validator: { validateAfterStorage },
-      worldsManager: { getWorldScenes }
+      worldsManager: { getDeployedScene }
     } as unknown as Components))
   })
 
@@ -1137,7 +1141,7 @@ describe('when deploying a single-request deployment', () => {
       let result: DeployResult
 
       beforeEach(async () => {
-        getWorldScenes.mockResolvedValueOnce({ scenes: [{ entityId: 'entity', createdAt: new Date(321) }], total: 1 })
+        getDeployedScene.mockResolvedValueOnce({ entityId: 'entity', createdAt: new Date(321) })
         result = await deploy({
           baseUrl: 'https://worlds.example',
           entityFile: Buffer.from('{}'),
@@ -1148,7 +1152,7 @@ describe('when deploying a single-request deployment', () => {
       })
 
       it('should verify it among the deployed scenes of its world', () => {
-        expect(getWorldScenes.mock.calls).toEqual([[{ worldName: 'world.dcl.eth', entityId: 'entity' }, { limit: 1 }]])
+        expect(getDeployedScene.mock.calls).toEqual([['entity', 'world.dcl.eth']])
       })
 
       it("should answer with the live publication's timestamp and this deployment's message", () => {
@@ -1190,7 +1194,7 @@ describe('when deploying a single-request deployment', () => {
       let error: unknown
 
       beforeEach(async () => {
-        getWorldScenes.mockRejectedValueOnce(new Error('database unavailable'))
+        getDeployedScene.mockRejectedValueOnce(new Error('database unavailable'))
         error = await deploy({
           baseUrl: 'https://worlds.example',
           entityFile: Buffer.from('{}'),
@@ -1220,7 +1224,7 @@ describe('when deploying a single-request deployment', () => {
       })
 
       it('should propagate the original database error without looking it up', () => {
-        expect({ error, lookups: getWorldScenes.mock.calls.length }).toEqual({ error: collision, lookups: 0 })
+        expect({ error, lookups: getDeployedScene.mock.calls.length }).toEqual({ error: collision, lookups: 0 })
       })
     })
   })
@@ -1242,7 +1246,7 @@ describe('when deploying a single-request deployment', () => {
     })
 
     it('should propagate it without looking up the publication', () => {
-      expect({ error, lookups: getWorldScenes.mock.calls.length }).toEqual({ error: failure, lookups: 0 })
+      expect({ error, lookups: getDeployedScene.mock.calls.length }).toEqual({ error: failure, lookups: 0 })
     })
   })
 })

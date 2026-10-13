@@ -286,18 +286,18 @@ export function createValidateSize(
 }
 
 /**
- * Calculates unique deployment content size from request files and a shared storage metadata snapshot.
+ * Calculates unique deployment content size from request files and the content sizes known before validation.
  *
  * @param entity Entity whose unique content hashes are counted.
  * @param files Files included in the current request.
- * @param contentFileInfos Storage metadata fetched before validation.
+ * @param contentFileInfos Content sizes known before validation.
  * @returns Total deployment size in bytes.
- * @throws When referenced content is neither uploaded nor present in the metadata snapshot.
+ * @throws When referenced content is neither uploaded nor of a known size.
  */
 export function calculateDeploymentSizeFromFileInfos(
   entity: Entity,
   files: Map<string, DeploymentFile>,
-  contentFileInfos: Map<string, FileInfo | undefined>
+  contentFileInfos: Map<string, Pick<FileInfo, 'size'> | undefined>
 ): number {
   let totalSize = 0
   for (const hash of new Set(entity.content?.map((item) => item.hash) ?? [])) {

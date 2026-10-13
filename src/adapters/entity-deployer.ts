@@ -61,12 +61,13 @@ export function createEntityDeployer(
     deploymentSize: number,
     options: DeployEntityOptions = {}
   ): Promise<DeploymentResult> {
-    const { signal } = options
+    const { signal, completesPartialUpload, storedEntityFile } = options
     // Fast-fail BEFORE writing anything to storage if a newer scene already holds these parcels. This is
     // non-authoritative (deployScene re-checks atomically under a lock), but it keeps a rejected older
     // deploy from leaving its content/entity/auth objects orphaned in storage until the next GC. Only
-    // scenes carry a world name; other entity types skip it.
-    if (entity.metadata?.worldConfiguration?.name) {
+    // scenes carry a world name; other entity types skip it. A partial finalize skips it too: its content
+    // is already staged, and its upload keeps the auth chain it writes until expiry cleanup.
+    if (entity.metadata?.worldConfiguration?.name && !completesPartialUpload) {
       const worldName = entity.metadata.worldConfiguration.name
       if (
         await deploymentProcessing.trackStage('lookup', 1, () => worldsManager.hasNewerDeployedScene(worldName, entity))
@@ -80,8 +81,13 @@ export function createEntityDeployer(
     const contentByHash = new Map((entity.content || []).map((file) => [file.hash, file]))
     const filesToStore = Array.from(contentByHash).filter(([hash]) => !allContentHashesInStorage.get(hash))
     logger.info(`Storing ${filesToStore.length} files`, { entityId: entity.id })
+    const entityObjects: [string, Uint8Array][] = [
+      // The entity file is stored as uploaded: its bytes are what the id hashes.
+      ...(storedEntityFile ? [] : [[entity.id, entityFile] as [string, Uint8Array]]),
+      [entity.id + '.auth', stringToUtf8Bytes(JSON.stringify(authChain))]
+    ]
 
-    await deploymentProcessing.trackStage('storage', filesToStore.length + 2, async () => {
+    await deploymentProcessing.trackStage('storage', filesToStore.length + entityObjects.length, async () => {
       await mapWithConcurrency(
         filesToStore,
         deploymentProcessing.storageConcurrency,
@@ -99,11 +105,7 @@ export function createEntityDeployer(
       signal?.throwIfAborted()
       logger.info(`Storing entity`, { cid: entity.id })
       await mapWithConcurrency(
-        [
-          // The entity file is stored as uploaded: its bytes are what the id hashes.
-          [entity.id, entityFile],
-          [entity.id + '.auth', stringToUtf8Bytes(JSON.stringify(authChain))]
-        ] as const,
+        entityObjects,
         2,
         ([id, content]) =>
           deploymentProcessing.trackWorker('storage', () => storage.storeStream(id, bufferToStream(content), signal)),

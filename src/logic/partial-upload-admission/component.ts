@@ -145,7 +145,6 @@ export async function createPartialUploadAdmission(
         // or external validation occurs under this lock. Expired reservations stay counted until cleanup.
         await repository.lockBudget(query)
         assertLive()
-        // A file re-uploaded after its stored copy went missing becomes charged.
         if (receipts.length) await repository.upsertFiles(query, entityId, receipts)
         await repository.refreshReservedBytes(query, entityId)
         const total = await repository.getBudgetTotals(query, entityId, deployer)
@@ -195,10 +194,6 @@ export async function createPartialUploadAdmission(
     return withUploadTransaction(database, (query) => repository.recordStored(query, entityId, hashes), signal)
   }
 
-  async function markMissing(entityId: string, hashes: string[], signal?: AbortSignal): Promise<void> {
-    await withUploadTransaction(database, (query) => repository.markMissing(query, entityId, hashes), signal)
-  }
-
   async function pruneAndReport(): Promise<void> {
     await repository.pruneCompleted(new Date(Date.now() - completionTtl))
     await repository.pruneByteRates()
@@ -222,7 +217,6 @@ export async function createPartialUploadAdmission(
     upsert,
     reserve,
     recordStored,
-    markMissing,
     pruneAndReport,
     recordCleanupFinished
   }

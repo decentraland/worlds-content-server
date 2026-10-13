@@ -265,6 +265,7 @@ async function initComponents(): Promise<TestComponents> {
     deploymentProcessing: components.deploymentProcessing,
     metrics,
     storage,
+    uploadLimits,
     validator,
     worldsManager
   })

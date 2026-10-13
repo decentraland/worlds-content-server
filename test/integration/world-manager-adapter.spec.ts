@@ -1,4 +1,5 @@
 import { test } from '../components'
+import { Authenticator } from '@dcl/crypto'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { hashV1 } from '@dcl/hashing'
 import { bufferToStream } from '@dcl/catalyst-storage'
@@ -291,7 +292,7 @@ test('WorldManagerAdapter', function ({ components }) {
   describe('when publishing the completion of a partial upload', () => {
     let created: Awaited<ReturnType<typeof components.worldCreator.createWorldWithScene>>
     let upload: typeof created.entity
-    let expiresAt: number
+    let ttlMs: number
     let removeUpload: boolean
     let caughtError: unknown
     let deployedEntityIds: string[]
@@ -302,7 +303,7 @@ test('WorldManagerAdapter', function ({ components }) {
       const { database, worldCreator } = components
       created = await worldCreator.createWorldWithScene()
       upload = { ...created.entity, id: `${created.entity.id}-partial` }
-      expiresAt = Date.now() + 60_000
+      ttlMs = 60 * 60 * 1000
       removeUpload = false
       await database.query(SQL`
         INSERT INTO pending_scenes (entity_id, world_name, parcels, entity, deployer)
@@ -319,7 +320,7 @@ test('WorldManagerAdapter', function ({ components }) {
           upload,
           created.owner.authChain[0].payload,
           { mode: 'unrestricted-owner' },
-          { authChain: created.owner.authChain, size: 123, completesPartialUpload: { expiresAt } }
+          { authChain: created.owner.authChain, size: 123, completesPartialUpload: { ttlMs } }
         )
         .then(() => undefined)
         .catch((error: unknown) => error)
@@ -346,10 +347,17 @@ test('WorldManagerAdapter', function ({ components }) {
       })
     })
 
-    describe('and the upload expired before publication', () => {
+    describe('and the database clock says the upload expired while this instance clock says it is live', () => {
       beforeEach(async () => {
-        expiresAt = Date.now() - 1
+        const backdated = await components.database.query<{ created_at: Date }>(SQL`
+          UPDATE pending_scenes SET created_at = now() - ${ttlMs / 1000}::float8 * interval '1 second'
+          WHERE entity_id = ${upload.id} RETURNING created_at`)
+        jest.spyOn(Date, 'now').mockReturnValue(backdated.rows[0].created_at.getTime() + 1000)
         await publish()
+      })
+
+      afterEach(() => {
+        jest.restoreAllMocks()
       })
 
       it('should refuse to publish it and keep the upload for cleanup', () => {
@@ -2890,6 +2898,103 @@ test('WorldManagerAdapter', function ({ components }) {
 
       it('should roll back the metadata refresh', function () {
         expect(settings?.title).toBe('Original Title')
+      })
+    })
+  })
+
+  describe('when getting the deployed scene of an entity', function () {
+    let created: Awaited<ReturnType<typeof components.worldCreator.createWorldWithScene>>
+    let worldName: string
+    let entityId: string
+    let found: unknown
+
+    beforeEach(async () => {
+      created = await components.worldCreator.createWorldWithScene({
+        files: new Map([['abc.txt', stringToUtf8Bytes(makeid(100))]])
+      })
+      worldName = created.worldName
+      entityId = created.entityId
+    })
+
+    describe('and the entity is deployed', function () {
+      let expected: Record<string, unknown>
+      let listed: unknown
+
+      beforeEach(async () => {
+        expected = {
+          worldName: worldName.toLowerCase(),
+          deployer: created.owner.authChain[0].payload.toLowerCase(),
+          entityId,
+          deploymentAuthChain: Authenticator.signPayload(created.owner, entityId),
+          entity: created.entity,
+          parcels: ['20,24'],
+          size: 100n,
+          status: 'DEPLOYED',
+          createdAt: expect.any(Date),
+          updatedAt: expect.any(Date)
+        }
+        found = await components.worldsManager.getDeployedScene(entityId)
+        listed = (await components.worldsManager.getWorldScenes({ entityId }, { limit: 1 })).scenes[0]
+      })
+
+      it('should return its scene', function () {
+        expect(found).toEqual(expected)
+      })
+
+      it('should map it as the paginated scene listing does', function () {
+        expect(listed).toEqual(expected)
+      })
+    })
+
+    describe('and it is looked up within its world, named in another case', function () {
+      beforeEach(async () => {
+        found = await components.worldsManager.getDeployedScene(entityId, worldName.toUpperCase())
+      })
+
+      it('should return its scene', function () {
+        expect(found).toEqual(expect.objectContaining({ entityId, worldName: worldName.toLowerCase() }))
+      })
+    })
+
+    describe('and it is looked up within another world', function () {
+      beforeEach(async () => {
+        found = await components.worldsManager.getDeployedScene(entityId, `other-${worldName}`)
+      })
+
+      it('should return nothing', function () {
+        expect(found).toBeUndefined()
+      })
+    })
+
+    describe('and the entity was undeployed', function () {
+      beforeEach(async () => {
+        await components.worldsManager.undeployWorld(worldName)
+        found = await components.worldsManager.getDeployedScene(entityId)
+      })
+
+      it('should return nothing', function () {
+        expect(found).toBeUndefined()
+      })
+    })
+
+    describe('and the index backing its lookup is inspected', function () {
+      let index: unknown
+
+      beforeEach(async () => {
+        const result = await components.database.query<{ valid: boolean; definition: string }>(`
+          SELECT i.indisvalid AS valid, pg_get_indexdef(i.indexrelid) AS definition
+          FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+          WHERE c.relname = 'world_scenes_entity_id_idx'`)
+        index = result.rows
+      })
+
+      it('should exist on the entity id and be valid', function () {
+        expect(index).toEqual([
+          {
+            valid: true,
+            definition: 'CREATE INDEX world_scenes_entity_id_idx ON public.world_scenes USING btree (entity_id)'
+          }
+        ])
       })
     })
   })
