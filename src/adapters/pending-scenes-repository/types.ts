@@ -47,10 +47,21 @@ export type ExpiredUploadCursor = { entityId: string; createdAt: string }
 /** The per-minute byte window of an account after charging a batch. */
 export type ByteRateWindow = { bytes: bigint; retryAfterSeconds: number }
 
+/** The upload whose reservation reads the budget totals. */
+export type BudgetScope = {
+  entityId: string
+  deployer: string
+  worldName: string
+  /** Uploads created at or before it are expired and don't count toward the world's totals. */
+  liveCutoff: Date
+}
+
 /** Staged bytes as seen by an upload's reservation. */
 export type BudgetTotals = {
   /** Charged bytes of the account's uploads. */
   account: bigint
+  /** Charged bytes of the world's live uploads, from every deployer. */
+  world: bigint
   /** Charged bytes of every upload. */
   total: bigint
   /** Charged bytes of this upload. */
@@ -59,6 +70,8 @@ export type BudgetTotals = {
   scene: bigint
   /** Creation of the account's oldest upload holding charged bytes. */
   accountOldest: Date | null
+  /** Creation of the world's oldest live upload holding charged bytes. */
+  worldOldest: Date | null
   /** Creation of the oldest upload holding charged bytes. */
   oldest: Date | null
 }
@@ -87,9 +100,16 @@ export interface IPendingScenesRepository extends IBaseComponent {
   findRecord(query: Query, entityId: string): Promise<PendingSceneRecord | undefined>
   /** Counts a deployer's uploads and finds the oldest one's creation. */
   countByDeployer(query: Query, deployer: string): Promise<{ count: number; oldest: Date | null }>
+  /** Serializes the transaction with every other one holding the same world's lock. */
+  lockWorld(query: Query, worldName: string): Promise<void>
+  /** Counts a world's uploads created after `cutoff`, from every deployer, and finds the oldest one's creation. */
+  countLiveByWorld(query: Query, worldName: string, cutoff: Date): Promise<{ count: number; oldest: Date | null }>
   insert(query: Query, scene: NewPendingScene): Promise<PendingSceneRecord>
-  /** Retrieves who owns an upload and when it was created. */
-  getOwner(entityId: string, signal?: AbortSignal): Promise<{ deployer: string; createdAt: Date } | undefined>
+  /** Retrieves who owns an upload, its world and when it was created. */
+  getOwner(
+    entityId: string,
+    signal?: AbortSignal
+  ): Promise<{ deployer: string; worldName: string; createdAt: Date } | undefined>
   /** Adds bytes to the deployer's current one-minute window, starting a new window once it is over. */
   chargeByteRate(deployer: string, bytes: number, signal?: AbortSignal): Promise<ByteRateWindow>
   /** Serializes the transaction with every other budget reservation. */
@@ -98,7 +118,7 @@ export interface IPendingScenesRepository extends IBaseComponent {
   upsertFiles(query: Query, entityId: string, receipts: FileReceipt[]): Promise<void>
   /** Recomputes the upload's reserved bytes from its charged files. */
   refreshReservedBytes(query: Query, entityId: string): Promise<void>
-  getBudgetTotals(query: Query, entityId: string, deployer: string): Promise<BudgetTotals>
+  getBudgetTotals(query: Query, scope: BudgetScope): Promise<BudgetTotals>
   /** Removes an upload holding no reservation nor files. */
   discardUnadmitted(entityId: string): Promise<void>
   /** Marks files as stored and counts a batch. Returns the upload's batches so far, 0 when it is gone. */

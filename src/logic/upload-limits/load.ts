@@ -10,11 +10,13 @@ import {
   DEFAULT_MAX_PENDING_BYTES,
   DEFAULT_MAX_PENDING_BYTES_PER_DEPLOYER,
   DEFAULT_MAX_PENDING_DEPLOYMENTS_PER_DEPLOYER,
+  DEFAULT_MAX_PENDING_DEPLOYMENTS_PER_WORLD,
   DEFAULT_MAX_SCENE_SIZE_MB,
   DEFAULT_MAX_UPLOAD_SIZE_IN_BYTES,
   DEFAULT_MIN_UPLOAD_RESERVATION_BYTES,
   DEFAULT_MULTIPART_UPLOAD_TIMEOUT_MS,
   DEFAULT_PARTIAL_UPLOAD_CLEANUP_INTERVAL_MS,
+  DEFAULT_PENDING_BYTES_PER_WORLD_FACTOR,
   DEFAULT_PENDING_DEPLOYMENT_TTL_MS,
   DEFAULT_UPLOAD_FILE_OVERHEAD_BYTES
 } from './constants'
@@ -90,6 +92,16 @@ export async function loadUploadLimits(config: Pick<IConfigComponent, 'getNumber
     'MAX_PENDING_DEPLOYMENTS_PER_DEPLOYER',
     DEFAULT_MAX_PENDING_DEPLOYMENTS_PER_DEPLOYER
   )
+  const pendingBytesPerWorldFactor = await getPositiveInteger(
+    config,
+    'PENDING_BYTES_PER_WORLD_FACTOR',
+    DEFAULT_PENDING_BYTES_PER_WORLD_FACTOR
+  )
+  const maxPendingDeploymentsPerWorld = await getPositiveInteger(
+    config,
+    'MAX_PENDING_DEPLOYMENTS_PER_WORLD',
+    DEFAULT_MAX_PENDING_DEPLOYMENTS_PER_WORLD
+  )
 
   // Multipart in-flight budget; errors keep the parser's setting names.
   const maxInFlightUploadBytes =
@@ -124,6 +136,8 @@ export async function loadUploadLimits(config: Pick<IConfigComponent, 'getNumber
     partialUploadCleanupIntervalMs,
     completedUploadTtlMs,
     maxPendingDeploymentsPerDeployer,
+    pendingBytesPerWorldFactor,
+    maxPendingDeploymentsPerWorld,
     maxInFlightUploadBytes,
     minUploadReservationBytes,
     uploadFileOverheadBytes,

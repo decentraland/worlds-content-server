@@ -29,7 +29,17 @@ describe('when admitting partial uploads', () => {
   let record: PendingSceneRecord
 
   function totals(overrides: Partial<BudgetTotals>): BudgetTotals {
-    return { account: 0n, total: 0n, own: 0n, scene: 0n, accountOldest: null, oldest: null, ...overrides }
+    return {
+      account: 0n,
+      world: 0n,
+      total: 0n,
+      own: 0n,
+      scene: 0n,
+      accountOldest: null,
+      worldOldest: null,
+      oldest: null,
+      ...overrides
+    }
   }
 
   beforeEach(async () => {
@@ -69,8 +79,12 @@ describe('when admitting partial uploads', () => {
       lockDeployer: jest.fn().mockResolvedValue(undefined),
       findRecord: jest.fn().mockResolvedValue(undefined),
       countByDeployer: jest.fn().mockResolvedValue({ count: 0, oldest: null }),
+      lockWorld: jest.fn().mockResolvedValue(undefined),
+      countLiveByWorld: jest.fn().mockResolvedValue({ count: 0, oldest: null }),
       insert: jest.fn().mockResolvedValue(record),
-      getOwner: jest.fn().mockResolvedValue({ deployer: '0xaccount', createdAt: new Date(NOW - 1_000) }),
+      getOwner: jest
+        .fn()
+        .mockResolvedValue({ deployer: '0xaccount', worldName: 'world.dcl.eth', createdAt: new Date(NOW - 1_000) }),
       chargeByteRate: jest.fn().mockResolvedValue({ bytes: 100n, retryAfterSeconds: 60 }),
       lockBudget: jest.fn().mockResolvedValue(undefined),
       upsertFiles: jest.fn().mockResolvedValue(undefined),
@@ -94,7 +108,9 @@ describe('when admitting partial uploads', () => {
         maxPendingBytes: 1000n,
         maxPartialUploadBytesPerMinute: 500,
         completedUploadTtlMs: 86_400_000,
-        maxPendingDeploymentsPerDeployer: 2
+        maxPendingDeploymentsPerDeployer: 2,
+        maxPendingDeploymentsPerWorld: 3,
+        pendingBytesPerWorldFactor: 2
       }
     } as unknown as Components)
   })
@@ -161,8 +177,34 @@ describe('when admitting partial uploads', () => {
         query: typeof query,
         findRecord: repository.findRecord.mock.calls[0][0],
         countByDeployer: repository.countByDeployer.mock.calls[0][0],
+        lockWorld: repository.lockWorld.mock.calls[0][0],
+        countLiveByWorld: repository.countLiveByWorld.mock.calls[0][0],
         insert: repository.insert.mock.calls[0][0]
-      }).toEqual({ query: 'function', findRecord: query, countByDeployer: query, insert: query })
+      }).toEqual({
+        query: 'function',
+        findRecord: query,
+        countByDeployer: query,
+        lockWorld: query,
+        countLiveByWorld: query,
+        insert: query
+      })
+    })
+
+    it("should take the world's lock after the deployer lock and before counting the world's uploads", () => {
+      const [deployerLock] = repository.lockDeployer.mock.invocationCallOrder
+      const [worldLock] = repository.lockWorld.mock.invocationCallOrder
+      const [worldCount] = repository.countLiveByWorld.mock.invocationCallOrder
+      expect({ afterDeployerLock: worldLock > deployerLock, beforeCount: worldLock < worldCount }).toEqual({
+        afterDeployerLock: true,
+        beforeCount: true
+      })
+    })
+
+    it("should lock and count only the lowercased world's live uploads", () => {
+      expect({
+        lock: repository.lockWorld.mock.calls[0][1],
+        count: repository.countLiveByWorld.mock.calls[0].slice(1)
+      }).toEqual({ lock: 'world.dcl.eth', count: ['world.dcl.eth', new Date(NOW - TTL_MS)] })
     })
 
     it('should return it with its expiry', () => {
@@ -285,6 +327,65 @@ describe('when admitting partial uploads', () => {
         message:
           'Too many partial uploads in progress for this account: 2 of the 2 allowed. Complete an upload or wait for expired uploads to be cleaned up.',
         retryAfter: 240
+      })
+    })
+  })
+
+  describe('and the world has its maximum of live uploads', () => {
+    let error: unknown
+
+    beforeEach(async () => {
+      repository.countLiveByWorld.mockResolvedValueOnce({ count: 3, oldest: new Date(NOW - 60_000) })
+      error = await admission.upsert(upload).catch((e: unknown) => e)
+    })
+
+    it("should reject with the world upload-count quota, retrying when the world's oldest upload expires", () => {
+      expect({
+        quota: (error as PartialUploadQuotaExceededError).quota,
+        message: (error as Error).message,
+        retryAfter: (error as PartialUploadQuotaExceededError).retryAfterSeconds
+      }).toEqual({
+        quota: 'uploads_per_world',
+        message:
+          'Too many partial uploads in progress for this world: 3 of the 3 allowed. Complete an upload or wait for one to expire.',
+        retryAfter: 240
+      })
+    })
+
+    it('should not create the upload', () => {
+      expect(repository.insert).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('and the world has one live upload fewer than its maximum', () => {
+    let outcome: unknown
+
+    beforeEach(async () => {
+      repository.countLiveByWorld.mockResolvedValueOnce({ count: 2, oldest: new Date(NOW - 60_000) })
+      outcome = await admission.upsert(upload).then(
+        () => 'admitted',
+        (e: unknown) => e
+      )
+    })
+
+    it('should admit the new upload', () => {
+      expect(outcome).toBe('admitted')
+    })
+  })
+
+  describe('and an existing upload of a world at its maximum is resumed', () => {
+    let pending: PendingScene
+
+    beforeEach(async () => {
+      repository.findRecord.mockResolvedValueOnce(record)
+      repository.countLiveByWorld.mockResolvedValueOnce({ count: 3, oldest: new Date(NOW - 60_000) })
+      pending = await admission.upsert({ ...upload, resumes: true })
+    })
+
+    it("should resume it without taking the world's lock", () => {
+      expect({ entityId: pending.entityId, worldLocks: repository.lockWorld.mock.calls }).toEqual({
+        entityId: 'entity',
+        worldLocks: []
       })
     })
   })
@@ -460,6 +561,98 @@ describe('when admitting partial uploads', () => {
         quota: 'bytes_per_server',
         message: 'This batch would stage 1001 bytes on the server, above its limit of 1000 bytes. Retry later.',
         retryAfter: 250
+      })
+    })
+  })
+
+  describe("and the world's live uploads exceed its byte budget", () => {
+    let error: unknown
+
+    beforeEach(async () => {
+      repository.getBudgetTotals.mockResolvedValueOnce(
+        totals({ own: 300n, account: 300n, world: 401n, total: 401n, worldOldest: new Date(NOW - 80_000) })
+      )
+      error = await admission.reserve('entity', [], 200n, 100).catch((e: unknown) => e)
+    })
+
+    it("should reject with the world byte quota, retrying when the world's oldest charged upload expires", () => {
+      expect({
+        quota: (error as PartialUploadQuotaExceededError).quota,
+        message: (error as Error).message,
+        retryAfter: (error as PartialUploadQuotaExceededError).retryAfterSeconds
+      }).toEqual({
+        quota: 'bytes_per_world',
+        message:
+          'This batch would stage 401 bytes for this world, above its limit of 400 bytes. Complete an upload or wait for one to expire.',
+        retryAfter: 220
+      })
+    })
+  })
+
+  describe('and both the world and the server byte budgets are exceeded', () => {
+    let error: unknown
+
+    beforeEach(async () => {
+      repository.getBudgetTotals.mockResolvedValueOnce(totals({ own: 100n, account: 100n, world: 401n, total: 1001n }))
+      error = await admission.reserve('entity', [], 200n, 100).catch((e: unknown) => e)
+    })
+
+    it('should reject with the world byte quota', () => {
+      expect((error as PartialUploadQuotaExceededError).quota).toBe('bytes_per_world')
+    })
+  })
+
+  describe("and the world's byte budget is exactly full", () => {
+    let outcome: unknown
+
+    beforeEach(async () => {
+      repository.getBudgetTotals.mockResolvedValueOnce(totals({ own: 100n, account: 100n, world: 400n, total: 400n }))
+      outcome = await admission.reserve('entity', [], 200n, 100).then(
+        () => 'admitted',
+        (e: unknown) => e
+      )
+    })
+
+    it('should admit the batch', () => {
+      expect(outcome).toBe('admitted')
+    })
+  })
+
+  describe('and the upload alone exceeds the world byte budget', () => {
+    let error: unknown
+
+    beforeEach(async () => {
+      repository.getBudgetTotals.mockResolvedValueOnce(
+        totals({ own: 401n, account: 401n, world: 401n, total: 401n, scene: 200n })
+      )
+      error = await admission.reserve('entity', [], 200n, 100).catch((e: unknown) => e)
+    })
+
+    it('should reject it as too large for the world budget', () => {
+      expect({
+        tooLarge: error instanceof PartialUploadTooLargeError,
+        quota: (error as PartialUploadTooLargeError).quota,
+        message: (error as Error).message
+      }).toEqual({
+        tooLarge: true,
+        quota: 'bytes_per_world',
+        message:
+          'This upload needs 401 bytes of staging, above the per-world partial upload limit of 400 bytes. Reduce its size.'
+      })
+    })
+  })
+
+  describe('and a batch is reserved', () => {
+    beforeEach(async () => {
+      await admission.reserve('entity', [], 200n, 100)
+    })
+
+    it("should total the upload's account and world, counting only uploads still live", () => {
+      expect(repository.getBudgetTotals.mock.calls[0][1]).toEqual({
+        entityId: 'entity',
+        deployer: '0xaccount',
+        worldName: 'world.dcl.eth',
+        liveCutoff: new Date(NOW - TTL_MS)
       })
     })
   })

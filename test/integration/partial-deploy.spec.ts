@@ -1506,10 +1506,10 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
     let stagingResponse: Awaited<ReturnType<typeof post>>
 
     beforeEach(async () => {
-      // Shrink the world budget so any real content exceeds it.
-      jest.spyOn(components.limitsManager, 'getMaxAllowedSizeInBytesFor').mockResolvedValue(1n)
+      // A world budget that just fits upload A's entity file under the per-world staging budget.
+      jest.spyOn(components.limitsManager, 'getMaxAllowedSizeInBytesFor').mockResolvedValue(BigInt(sizeOf(entityId)))
 
-      // Stage upload A (entity only, zero content bytes so far) — passes the 1-byte budget.
+      // Stage upload A (entity only, zero content bytes so far).
       const aAuth = Authenticator.signPayload(identity.authChain, entityId)
       stagingResponse = await post(buildForm([entityId], aAuth))
     })
@@ -1524,6 +1524,7 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
       beforeEach(async () => {
         // Upload B (a different entity on the same parcels) sends real content in one request; it is over
         // budget and must be rejected WITHOUT destroying A's pending row.
+        jest.spyOn(components.limitsManager, 'getMaxAllowedSizeInBytesFor').mockResolvedValue(1n)
         const b = await buildScene(['20,24'], Date.now() + 1000)
         const bAuth = Authenticator.signPayload(identity.authChain, b.entityId)
         overBudgetResponse = await post(

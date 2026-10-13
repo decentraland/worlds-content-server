@@ -25,12 +25,18 @@ test('when accounting for independent partial uploads', ({ components }) => {
   let limits: Record<string, number>
   let uploadLimits: UploadLimits
 
-  async function create(entity: Entity, deployer = signer, admittedAt = new Date(), resumes = false): Promise<void> {
+  async function create(
+    entity: Entity,
+    deployer = signer,
+    admittedAt = new Date(),
+    resumes = false,
+    worldName = 'test.dcl.eth'
+  ): Promise<void> {
     await manager.upsert({
       entityId: entity.id,
       entity,
       deployer,
-      worldName: 'test.dcl.eth',
+      worldName,
       parcels: ['0,0'],
       admittedAt,
       resumes
@@ -1089,6 +1095,223 @@ test('when accounting for independent partial uploads', ({ components }) => {
 
     it('should run GC once the mutation settles, without overlapping it', () => {
       expect({ deleting, overlapped }).toEqual({ deleting: true, overlapped: false })
+    })
+  })
+
+  describe('and deployers of one world share its staging budget', () => {
+    type LockClient = { query(sql: string): Promise<{ rowCount: number | null }>; release(): void }
+
+    function upload(id: string): Entity {
+      return { ...first, id, content: [{ hash: `content-${id}`, file: id }] }
+    }
+
+    function reserve(id: string, size: number, maxSceneBytes = 250n): Promise<void> {
+      return manager.reserve(id, [{ hash: `content-${id}`, size, stored: false, charged: true }], maxSceneBytes, size)
+    }
+
+    describe('and their uploads exceed the world byte budget', () => {
+      let error: unknown
+      let otherWorld: unknown
+
+      beforeEach(async () => {
+        await create(upload('a'), '0xa', new Date(Date.now() - 100_000))
+        await create(upload('b'), '0xb')
+        await create(upload('c'), '0xc')
+        await create(upload('d'), '0xd', new Date(), false, 'other.dcl.eth')
+        await create(upload('e'), '0xe', new Date(Date.now() - 200_000), false, 'other.dcl.eth')
+        await reserve('e', 1)
+        await reserve('a', 250)
+        await reserve('b', 250)
+        error = await reserve('c', 1).catch((e: unknown) => e)
+        otherWorld = await reserve('d', 250).then(
+          () => 'admitted',
+          (e: unknown) => e
+        )
+      })
+
+      it("should reject with the world byte quota, retrying when the world's oldest charged upload expires", () => {
+        expect({
+          quota: (error as PartialUploadQuotaExceededError).quota,
+          message: (error as Error).message,
+          retryAfter: (error as PartialUploadQuotaExceededError).retryAfterSeconds
+        }).toEqual({
+          quota: 'bytes_per_world',
+          message:
+            'This batch would stage 501 bytes for this world, above its limit of 500 bytes. Complete an upload or wait for one to expire.',
+          retryAfter: 200
+        })
+      })
+
+      it('should still admit a deployer of another world', () => {
+        expect(otherWorld).toBe('admitted')
+      })
+    })
+
+    describe('and the world has its maximum of live uploads', () => {
+      let error: unknown
+      let otherWorld: unknown
+      let pending: number
+
+      beforeEach(async () => {
+        await build({ maxPendingDeploymentsPerWorld: 2 })
+        await create(upload('a'), '0xa', new Date(Date.now() - 60_000))
+        await create(upload('b'), '0xb')
+        error = await create(upload('c'), '0xc', new Date(), false, 'TEST.dcl.eth').catch((e: unknown) => e)
+        otherWorld = await create(upload('d'), '0xd', new Date(), false, 'other.dcl.eth').then(
+          () => 'admitted',
+          (e: unknown) => e
+        )
+        pending = await pendingCount()
+      })
+
+      it("should reject with the world upload-count quota, retrying when the world's oldest upload expires", () => {
+        expect({
+          quota: (error as PartialUploadQuotaExceededError).quota,
+          message: (error as Error).message,
+          retryAfter: (error as PartialUploadQuotaExceededError).retryAfterSeconds
+        }).toEqual({
+          quota: 'uploads_per_world',
+          message:
+            'Too many partial uploads in progress for this world: 2 of the 2 allowed. Complete an upload or wait for one to expire.',
+          retryAfter: 240
+        })
+      })
+
+      it('should still admit an upload to another world', () => {
+        expect({ otherWorld, pending }).toEqual({ otherWorld: 'admitted', pending: 3 })
+      })
+    })
+
+    describe("and the world's upload awaiting cleanup would fill its upload count", () => {
+      let outcome: unknown
+
+      beforeEach(async () => {
+        await build({ maxPendingDeploymentsPerWorld: 1 })
+        await create(upload('a'), '0xa')
+        // Expired uploads can't be created, so this one is aged past its lifetime after the fact.
+        await components.database.query(SQL`UPDATE pending_scenes SET created_at = ${new Date(Date.now() - 400_000)}`)
+        outcome = await create(upload('b'), '0xb').then(
+          () => 'admitted',
+          (e: unknown) => e
+        )
+      })
+
+      it('should admit the new upload', () => {
+        expect(outcome).toBe('admitted')
+      })
+    })
+
+    describe("and the world's upload awaiting cleanup would fill its byte budget", () => {
+      let outcome: unknown
+
+      beforeEach(async () => {
+        await create(upload('a'), '0xa')
+        await create(upload('b'), '0xb')
+        await create(upload('c'), '0xc')
+        await reserve('a', 250)
+        await reserve('b', 250)
+        await components.database.query(
+          SQL`UPDATE pending_scenes SET created_at = ${new Date(Date.now() - 400_000)} WHERE entity_id = 'a'`
+        )
+        outcome = await reserve('c', 250).then(
+          () => 'admitted',
+          (e: unknown) => e
+        )
+      })
+
+      it('should admit the batch', () => {
+        expect(outcome).toBe('admitted')
+      })
+    })
+
+    describe('and deployers of the world start uploads concurrently', () => {
+      let lockClient: LockClient | undefined
+      let waitedOnWorld: boolean
+      let outcome: { fulfilled: number; rejections: unknown[] }
+      let pending: number
+
+      beforeEach(async () => {
+        await build({ maxPendingDeploymentsPerWorld: 1 })
+        lockClient = (await components.database.getPool().connect()) as unknown as LockClient
+        await lockClient.query('BEGIN')
+        await lockClient.query(`SELECT pg_advisory_xact_lock(hashtextextended('partial-upload-world:test.dcl.eth', 0))`)
+        const creations = Promise.allSettled(['a', 'b', 'c', 'd'].map((id) => create(upload(id), `0x${id}`)))
+        waitedOnWorld = await waitForAdvisoryLocks(
+          components.database,
+          'partial-upload-world:test.dcl.eth',
+          'waiting',
+          4
+        ).then(
+          () => true,
+          () => false
+        )
+        await lockClient.query('COMMIT')
+        lockClient.release()
+        lockClient = undefined
+        outcome = settle(await creations)
+        pending = await pendingCount()
+      })
+
+      afterEach(async () => {
+        if (lockClient) {
+          await lockClient.query('ROLLBACK').catch(() => undefined)
+          lockClient.release()
+        }
+      })
+
+      it('should admit only one upload, rejecting the others with the world upload-count quota', () => {
+        expect({ waitedOnWorld, outcome, pending }).toEqual({
+          waitedOnWorld: true,
+          outcome: {
+            fulfilled: 1,
+            rejections: Array(3).fill(
+              expect.objectContaining({ constructor: PartialUploadQuotaExceededError, quota: 'uploads_per_world' })
+            )
+          },
+          pending: 1
+        })
+      })
+    })
+
+    describe('and deployers of the world reserve batches concurrently', () => {
+      let lockClient: LockClient | undefined
+      let waitedOnBudget: boolean
+      let outcome: { fulfilled: number; rejections: unknown[] }
+
+      beforeEach(async () => {
+        for (const id of ['a', 'b', 'c']) await create(upload(id), `0x${id}`)
+        lockClient = (await components.database.getPool().connect()) as unknown as LockClient
+        await lockClient.query('BEGIN')
+        await lockClient.query(`SELECT pg_advisory_xact_lock(hashtextextended('partial-upload-budget', 0))`)
+        const reservations = Promise.allSettled(['a', 'b', 'c'].map((id) => reserve(id, 200)))
+        waitedOnBudget = await waitForAdvisoryLocks(components.database, 'partial-upload-budget', 'waiting', 3).then(
+          () => true,
+          () => false
+        )
+        await lockClient.query('COMMIT')
+        lockClient.release()
+        lockClient = undefined
+        outcome = settle(await reservations)
+      })
+
+      afterEach(async () => {
+        if (lockClient) {
+          await lockClient.query('ROLLBACK').catch(() => undefined)
+          lockClient.release()
+        }
+      })
+
+      it('should never admit more than the world byte budget, rejecting the rest with the world byte quota', () => {
+        expect({ waitedOnBudget, outcome }).toEqual({
+          waitedOnBudget: true,
+          outcome: {
+            fulfilled: 2,
+            rejections: [
+              expect.objectContaining({ constructor: PartialUploadQuotaExceededError, quota: 'bytes_per_world' })
+            ]
+          }
+        })
+      })
     })
   })
 })

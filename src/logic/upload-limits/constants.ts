@@ -25,6 +25,10 @@ export const DEFAULT_MAX_PARTIAL_UPLOAD_BYTES_PER_MINUTE = 512 * 1024 ** 2
 export const DEFAULT_COMPLETED_UPLOAD_TTL_MS = 24 * 60 * 60 * 1000
 /** Default partial uploads in progress per deployer. */
 export const DEFAULT_MAX_PENDING_DEPLOYMENTS_PER_DEPLOYER = 10
+/** Default staged bytes per world, as a multiple of the world's per-scene size cap. */
+export const DEFAULT_PENDING_BYTES_PER_WORLD_FACTOR = 2
+/** Default live partial uploads per world, across every deployer. */
+export const DEFAULT_MAX_PENDING_DEPLOYMENTS_PER_WORLD = 4
 
 /**
  * Default aggregate bytes in flight (written to temp files) across all concurrent multipart uploads.

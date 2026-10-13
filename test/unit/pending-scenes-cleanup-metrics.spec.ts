@@ -79,7 +79,9 @@ const UPLOAD_LIMITS = {
   maxPendingBytesPerDeployer: BigInt(MAX_PENDING_BYTES),
   maxPendingBytes: BigInt(MAX_PENDING_BYTES),
   maxPartialUploadBytesPerMinute: 512 * 1024 ** 2,
-  completedUploadTtlMs: 86_400_000
+  completedUploadTtlMs: 86_400_000,
+  maxPendingDeploymentsPerWorld: 4,
+  pendingBytesPerWorldFactor: 2
 } as UploadLimits
 
 // The real staging accounting over a mocked database, cleaned up by the real content GC.

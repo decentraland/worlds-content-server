@@ -20,6 +20,10 @@ export type UploadLimits = {
   completedUploadTtlMs: number
   /** MAX_PENDING_DEPLOYMENTS_PER_DEPLOYER. */
   maxPendingDeploymentsPerDeployer: number
+  /** PENDING_BYTES_PER_WORLD_FACTOR: a world's staging budget in multiples of its per-scene size cap. */
+  pendingBytesPerWorldFactor: number
+  /** MAX_PENDING_DEPLOYMENTS_PER_WORLD: live uploads per world across every deployer. */
+  maxPendingDeploymentsPerWorld: number
   /** MAX_IN_FLIGHT_UPLOAD_BYTES: aggregate multipart bytes in flight; at least the per-request minimum. */
   maxInFlightUploadBytes: number
   /** MIN_UPLOAD_RESERVATION_BYTES: bytes every admitted multipart request reserves. */

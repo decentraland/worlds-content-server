@@ -8,6 +8,7 @@ import {
   pendingExpiryCutoff
 } from '../content-references'
 import {
+  BudgetScope,
   BudgetTotals,
   ByteRateWindow,
   CompletedUpload,
@@ -92,6 +93,20 @@ export async function createPendingScenesRepository(
     return { count: Number(count.rows[0].count), oldest: count.rows[0].oldest }
   }
 
+  async function lockWorld(query: Query, worldName: string): Promise<void> {
+    await query(SQL`SELECT pg_advisory_xact_lock(hashtextextended(${'partial-upload-world:' + worldName}, 0))`)
+  }
+
+  async function countLiveByWorld(
+    query: Query,
+    worldName: string,
+    cutoff: Date
+  ): Promise<{ count: number; oldest: Date | null }> {
+    const count = await query<{ count: string; oldest: Date | null }>(SQL`SELECT COUNT(*) AS count,
+        MIN(created_at) AS oldest FROM pending_scenes WHERE world_name = ${worldName} AND created_at > ${cutoff}`)
+    return { count: Number(count.rows[0].count), oldest: count.rows[0].oldest }
+  }
+
   async function insert(query: Query, scene: NewPendingScene): Promise<PendingSceneRecord> {
     const result = await query<PendingSceneRow>(SQL`
         INSERT INTO pending_scenes (entity_id, world_name, parcels, entity, deployer, created_at)
@@ -103,14 +118,15 @@ export async function createPendingScenesRepository(
   async function getOwner(
     entityId: string,
     signal?: AbortSignal
-  ): Promise<{ deployer: string; createdAt: Date } | undefined> {
+  ): Promise<{ deployer: string; worldName: string; createdAt: Date } | undefined> {
     const owner = await raceWithSignal(
-      database.query<{ deployer: string; created_at: Date }>(
-        SQL`SELECT deployer, created_at FROM pending_scenes WHERE entity_id = ${entityId}`
+      database.query<{ deployer: string; world_name: string; created_at: Date }>(
+        SQL`SELECT deployer, world_name, created_at FROM pending_scenes WHERE entity_id = ${entityId}`
       ),
       signal
     )
-    return owner.rows[0] ? { deployer: owner.rows[0].deployer, createdAt: owner.rows[0].created_at } : undefined
+    const row = owner.rows[0]
+    return row ? { deployer: row.deployer, worldName: row.world_name, createdAt: row.created_at } : undefined
   }
 
   async function chargeByteRate(deployer: string, bytes: number, signal?: AbortSignal): Promise<ByteRateWindow> {
@@ -150,19 +166,26 @@ export async function createPendingScenesRepository(
       ) WHERE entity_id = ${entityId}`)
   }
 
-  async function getBudgetTotals(query: Query, entityId: string, deployer: string): Promise<BudgetTotals> {
+  async function getBudgetTotals(query: Query, scope: BudgetScope): Promise<BudgetTotals> {
+    const { entityId, deployer, worldName, liveCutoff } = scope
     const totals = await query<{
       account: string
+      world: string
       total: string
       own: string
       scene: string
       account_oldest: Date | null
+      world_oldest: Date | null
       oldest: Date | null
     }>(SQL`
         SELECT COALESCE(SUM(reserved_bytes) FILTER (WHERE deployer = ${deployer}), 0)::text AS account,
+          COALESCE(SUM(reserved_bytes) FILTER (WHERE world_name = ${worldName} AND created_at > ${liveCutoff}), 0)::text
+            AS world,
           COALESCE(SUM(reserved_bytes), 0)::text AS total,
           COALESCE(SUM(reserved_bytes) FILTER (WHERE entity_id = ${entityId}), 0)::text AS own,
           MIN(created_at) FILTER (WHERE deployer = ${deployer} AND reserved_bytes > 0) AS account_oldest,
+          MIN(created_at) FILTER (WHERE world_name = ${worldName} AND created_at > ${liveCutoff}
+            AND reserved_bytes > 0) AS world_oldest,
           MIN(created_at) FILTER (WHERE reserved_bytes > 0) AS oldest,
           (SELECT COALESCE(SUM(size), 0)::text FROM pending_scene_files
             WHERE entity_id = ${entityId} AND hash != ${entityId}) AS scene
@@ -170,10 +193,12 @@ export async function createPendingScenesRepository(
     const row = totals.rows[0]
     return {
       account: BigInt(row.account),
+      world: BigInt(row.world),
       total: BigInt(row.total),
       own: BigInt(row.own),
       scene: BigInt(row.scene),
       accountOldest: row.account_oldest,
+      worldOldest: row.world_oldest,
       oldest: row.oldest
     }
   }
@@ -321,6 +346,8 @@ export async function createPendingScenesRepository(
     lockDeployer,
     findRecord,
     countByDeployer,
+    lockWorld,
+    countLiveByWorld,
     insert,
     getOwner,
     chargeByteRate,

@@ -22,8 +22,10 @@ ID as the upload identifier; there is no session creation or explicit commit end
    collaborator's deploy permission.
 
 `400` covers validation, expiry and requests that alone exceed a budget (a batch above the per-minute
-byte rate, or an upload above the per-account staging budget); no retry can succeed. `429` with
-`Retry-After` means a budget is full because of other uploads or traffic. `408` covers processing
+byte rate, or an upload above the per-account or per-world staging budget); no retry can succeed. `429` with
+`Retry-After` means a budget is full because of other uploads or traffic; the quota is one of
+`uploads_per_account`, `uploads_per_world`, `bytes_per_account`, `bytes_per_world`, `bytes_per_server` or
+`bytes_per_minute` (the `reason` label of `partial_upload_throttled`). `408` covers processing
 deadlines. `413` means the body exceeds a multipart size or count limit; send smaller batches.
 Clients must distinguish `200` from `202`, handle terminal validation failures, retry transient
 transport failures, and use the returned missing list rather than subtracting a new global
@@ -45,8 +47,9 @@ staging sweep; files never attached to a deployment would otherwise be invisible
 
 ## Operation and rollout
 
-Default limits: 10 uploads/account, 1 GiB staged/account, 50 GiB staged/server database, 512 MiB accepted
-batch bytes/account/minute, 1-hour pending lifetime (expired uploads cleaned up every 5 minutes) and
+Default limits: 10 uploads/account, 4 live uploads/world, 1 GiB staged/account, twice the world's scene size
+cap staged/world, 50 GiB staged/server database, 512 MiB accepted batch bytes/account/minute, 1-hour pending
+lifetime (expired uploads cleaned up every 5 minutes) and
 24-hour completion retention. All are configured in `.env.default`. The staging budgets charge the bytes an
 upload stores itself (the manifest and content that was not in storage) and content that is in storage only
 because other pending uploads staged it or nothing references it, so pending uploads cannot keep content
@@ -56,8 +59,12 @@ manifest protects it from garbage collection. A batch file that is already store
 an earlier batch, is dropped without being stored again and keeps the charge decided for it, and every
 received byte counts against the per-minute rate. The scene size limit still
 counts every file of the scene; for DCL-name worlds it is the owner's remaining allowance capped at
-`MAX_SCENE_SIZE` (500 MiB), which startup requires to fit `MAX_PENDING_BYTES_PER_DEPLOYER`. Expired
-slots and bytes remain charged if physical cleanup fails; the failing upload is retried by the next run
+`MAX_SCENE_SIZE` (500 MiB), which startup requires to fit `MAX_PENDING_BYTES_PER_DEPLOYER`.
+A world owner can grant deploy permission to any number of addresses, each with its own account budgets,
+so the per-world limits (`MAX_PENDING_DEPLOYMENTS_PER_WORLD` and `PENDING_BYTES_PER_WORLD_FACTOR` times the
+world's scene size cap, 72 MiB for a 36 MiB ENS world) keep one world's deployers from filling the server
+budget for everyone else. They count only the world's live uploads, from every deployer. Expired slots and
+bytes stay charged to the account and server budgets if physical cleanup fails; the failing upload is retried by the next run
 without holding back later ones. Each run visits every upload expired by the database clock when it starts, unless uploads keep
 the content lock busy, and runs (scheduled or from `POST /gc`) never overlap. When uploads keep the content
 lock busy past the writer wait, `POST /gc` answers `503` with `Retry-After: 60`.
