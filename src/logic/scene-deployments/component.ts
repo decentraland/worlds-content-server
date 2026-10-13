@@ -332,7 +332,8 @@ export async function createSceneDeploymentsComponent(
           },
           receipts: [...receipts.values()],
           maxSceneBytes: maxSize,
-          worldSceneCapBytes: worldSceneCap,
+          // The two limits reads may see different whitelists; never budget the world below this scene's cap.
+          worldSceneCapBytes: worldSceneCap > maxSize ? worldSceneCap : maxSize,
           incomingBytes
         },
         signal

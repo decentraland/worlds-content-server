@@ -81,7 +81,7 @@ export type BudgetTotals = {
   scene: bigint
   /** Creation of the account's oldest upload holding charged bytes. */
   accountOldest: Date | null
-  /** Creation of the world's oldest live upload holding charged bytes. */
+  /** Creation of the world's oldest live upload holding charged content (entity file excluded). */
   worldOldest: Date | null
   /** Creation of the oldest upload holding charged bytes. */
   oldest: Date | null

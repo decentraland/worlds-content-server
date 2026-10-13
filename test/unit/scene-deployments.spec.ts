@@ -183,6 +183,21 @@ describe('when staging a partial deployment', () => {
     })
   })
 
+  describe("and the world's cap is read below the scene's cap", () => {
+    let worldSceneCapBytes: unknown
+
+    beforeEach(async () => {
+      const { limitsManager } = components as unknown as { limitsManager: Record<string, jest.Mock> }
+      limitsManager.getSceneSizeCapInBytesFor.mockResolvedValueOnce(8000n)
+      await stage(input)
+      worldSceneCapBytes = admitBatch.mock.calls[0][0].worldSceneCapBytes
+    })
+
+    it("should budget the world on the scene's cap", () => {
+      expect(worldSceneCapBytes).toBe(10000n)
+    })
+  })
+
   describe('and the batch was validated before the content lock', () => {
     beforeEach(async () => {
       input.prevalidation = { sawPending: false }

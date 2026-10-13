@@ -1198,6 +1198,28 @@ test('when accounting for independent partial uploads', ({ components }) => {
       })
     })
 
+    describe("and the world's oldest upload has staged only its entity file", () => {
+      let error: unknown
+
+      beforeEach(async () => {
+        await create(upload('z'), '0xz', new Date(Date.now() - 250_000))
+        await create(upload('a'), '0xa', new Date(Date.now() - 100_000))
+        await create(upload('b'), '0xb')
+        await create(upload('c'), '0xc')
+        await manager.reserve('z', [{ hash: 'z', size: 10, stored: false, charged: true }], caps(250n), 10)
+        await reserve('a', 250)
+        await reserve('b', 250)
+        error = await reserve('c', 1).catch((e: unknown) => e)
+      })
+
+      it("should retry when the world's oldest upload holding content expires", () => {
+        expect({
+          quota: (error as PartialUploadQuotaExceededError).quota,
+          retryAfter: (error as PartialUploadQuotaExceededError).retryAfterSeconds
+        }).toEqual({ quota: 'bytes_per_world', retryAfter: 200 })
+      })
+    })
+
     describe('and the world has its maximum of live uploads', () => {
       let error: unknown
       let otherWorld: unknown

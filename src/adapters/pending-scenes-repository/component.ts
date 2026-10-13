@@ -198,8 +198,6 @@ export async function createPendingScenesRepository(
           COALESCE(SUM(reserved_bytes), 0)::text AS total,
           COALESCE(SUM(reserved_bytes) FILTER (WHERE entity_id = ${entityId}), 0)::text AS own,
           MIN(created_at) FILTER (WHERE deployer = ${deployer} AND reserved_bytes > 0) AS account_oldest,
-          MIN(created_at) FILTER (WHERE world_name = ${worldName} AND created_at > ${liveCutoff}
-            AND reserved_bytes > 0) AS world_oldest,
           MIN(created_at) FILTER (WHERE reserved_bytes > 0) AS oldest,
           (SELECT COALESCE(SUM(size), 0)::text FROM pending_scene_files
             WHERE entity_id = ${entityId} AND hash != ${entityId}) AS scene,
@@ -208,7 +206,11 @@ export async function createPendingScenesRepository(
           -- Content only, like the scene size the world budget is a multiple of.
           (SELECT COALESCE(SUM(f.size), 0)::text FROM pending_scene_files f JOIN pending_scenes p USING (entity_id)
             WHERE p.world_name = ${worldName} AND p.created_at > ${liveCutoff} AND f.charged AND f.hash != f.entity_id)
-            AS world
+            AS world,
+          -- Same rows as the world sum, so Retry-After points at an upload whose expiry frees world bytes.
+          (SELECT MIN(p.created_at) FROM pending_scenes p WHERE p.world_name = ${worldName}
+            AND p.created_at > ${liveCutoff} AND EXISTS (SELECT 1 FROM pending_scene_files f
+              WHERE f.entity_id = p.entity_id AND f.charged AND f.hash != f.entity_id)) AS world_oldest
         FROM pending_scenes`)
     const row = totals.rows[0]
     return {
