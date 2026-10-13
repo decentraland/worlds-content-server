@@ -58,7 +58,7 @@ received byte counts against the per-minute rate. The scene size limit still
 counts every file of the scene; for DCL-name worlds it is the owner's remaining allowance capped at
 `MAX_SCENE_SIZE` (500 MiB), which startup requires to fit `MAX_PENDING_BYTES_PER_DEPLOYER`. Expired
 slots and bytes remain charged if physical cleanup fails; the failing upload is retried by the next run
-without holding back later ones. Each run visits every upload expired when it starts, unless uploads keep
+without holding back later ones. Each run visits every upload expired by the database clock when it starts, unless uploads keep
 the content lock busy, and runs (scheduled or from `POST /gc`) never overlap. When uploads keep the content
 lock busy past the writer wait, `POST /gc` answers `503` with `Retry-After: 60`.
 
@@ -89,7 +89,8 @@ Reserved-byte gauges are database snapshots updated by admission/cleanup, not in
 The progress integration test asserts one initial inventory and zero metadata probes afterwards, including
 the publishing batch (N probes instead of approximately 2NB for N hashes in B batches). Publication takes
 content sizes from the upload's receipts: GC never deletes content a live upload references, and the content
-lock is held through publication. Each instance judges expiry by its own clock, so GC and expired-upload cleanup
-only reclaim an upload 60 s after its lifetime ends; clock skew below that can't remove content another instance
-still publishes. Content deleted out of band between batches is not re-requested.
+lock is held through publication. GC, expired-upload cleanup and publication judge expiry on the database clock
+(`now()`, the transaction start), and a publication's transaction starts after it takes the shared content lock, so
+an upload GC already saw expired is refused at publication; admission uses the instance clock, which at worst wastes
+a batch. Content deleted out of band between batches is not re-requested.
 These counts are structural measurements, not S3 throughput or latency benchmarks.

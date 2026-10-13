@@ -606,7 +606,7 @@ describe('entity deployer', () => {
           0,
           {
             sceneReplacementAuthorization: unrestrictedReplacementAuthorization,
-            completesPartialUpload: { expiresAt: 42 },
+            completesPartialUpload: { ttlMs: 42 },
             storedEntityFile
           }
         )
@@ -632,7 +632,7 @@ describe('entity deployer', () => {
 
       it('should ask scene persistence to record the completion receipt', () => {
         expect(worldsDeployScene.mock.calls[0][4]).toEqual(
-          expect.objectContaining({ completesPartialUpload: { expiresAt: 42 } })
+          expect.objectContaining({ completesPartialUpload: { ttlMs: 42 } })
         )
       })
     })

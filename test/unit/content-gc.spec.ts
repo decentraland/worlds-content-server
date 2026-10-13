@@ -1,7 +1,6 @@
 import { ContentLockTimeoutError } from '../../src/adapters/content-locks/errors'
 import {
   createContentGcComponent,
-  EXPIRY_CLOCK_SKEW_GRACE_MS,
   ExpiredUploadsCleanup,
   GarbageCollection,
   IContentGcComponent
@@ -45,7 +44,8 @@ describe('when collecting unreferenced content', () => {
     info = jest.fn()
     pendingScenesRepository = {
       getReferencedContentKeys: jest.fn(
-        async (_cutoff: Date, candidates: string[]) => new Set(candidates.filter((key) => referencedKeys.includes(key)))
+        async (_ttlMs: number, candidates: string[]) =>
+          new Set(candidates.filter((key) => referencedKeys.includes(key)))
       ),
       listExpired: jest.fn().mockResolvedValue([]),
       getUploadKeys: jest.fn(),
@@ -94,10 +94,8 @@ describe('when collecting unreferenced content', () => {
       })
     })
 
-    it('should keep content held by uploads younger than the pending lifetime plus the clock-skew grace', () => {
-      expect(pendingScenesRepository.getReferencedContentKeys.mock.calls[0][0]).toEqual(
-        new Date(NOW - TTL_MS - EXPIRY_CLOCK_SKEW_GRACE_MS)
-      )
+    it('should keep content held by uploads live for the pending lifetime on the database clock', () => {
+      expect(pendingScenesRepository.getReferencedContentKeys.mock.calls[0][0]).toBe(TTL_MS)
     })
   })
 
@@ -146,14 +144,11 @@ describe('when collecting unreferenced content', () => {
       ])
     })
 
-    it('should list and release only uploads expired for longer than the clock-skew grace', () => {
+    it('should list and release uploads expired for the pending lifetime on the database clock', () => {
       expect({
         listed: pendingScenesRepository.listExpired.mock.calls[0][0],
         released: pendingScenesRepository.releaseExpired.mock.calls[0][1]
-      }).toEqual({
-        listed: new Date(NOW - TTL_MS - EXPIRY_CLOCK_SKEW_GRACE_MS),
-        released: new Date(NOW - TTL_MS - EXPIRY_CLOCK_SKEW_GRACE_MS)
-      })
+      }).toEqual({ listed: TTL_MS, released: TTL_MS })
     })
 
     it('should reclaim the expired upload after the sweep, deleting its objects before releasing it', () => {

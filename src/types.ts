@@ -165,8 +165,8 @@ export type SceneDeploymentData = {
   completesPartialUpload?: PartialUploadCompletion
 }
 
-/** Publication is refused once the upload is gone or `expiresAt` (epoch ms) has passed. */
-export type PartialUploadCompletion = { expiresAt: number }
+/** Publication is refused once the upload is gone or expired by the database clock for `ttlMs`. */
+export type PartialUploadCompletion = { ttlMs: number }
 
 export type SceneReplacementAuthorization = { mode: 'unrestricted-owner' } | { mode: 'scoped'; entityIds: string[] }
 

@@ -312,6 +312,7 @@ export async function initComponents(): Promise<AppComponents> {
     deploymentProcessing,
     metrics,
     storage,
+    uploadLimits,
     validator,
     worldsManager
   })

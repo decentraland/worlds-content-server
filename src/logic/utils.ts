@@ -10,7 +10,8 @@ export function errorMessage(error: unknown): string {
 
 /**
  * The single expiry rule of partial uploads: expired from `createdAt + ttl` on, live strictly before.
- * SQL mirrors it with `cutoff = now - ttl`: live `created_at > cutoff`, expired `created_at <= cutoff`.
+ * Admission applies it on the app clock; GC and publication apply it in SQL on the database clock
+ * (live `created_at > now() - ttl`, expired `<=`), so those two always agree.
  */
 export function isPastExpiry(expiresAt: Date | number, now: number = Date.now()): boolean {
   return now >= (typeof expiresAt === 'number' ? expiresAt : expiresAt.getTime())

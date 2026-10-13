@@ -292,7 +292,7 @@ test('WorldManagerAdapter', function ({ components }) {
   describe('when publishing the completion of a partial upload', () => {
     let created: Awaited<ReturnType<typeof components.worldCreator.createWorldWithScene>>
     let upload: typeof created.entity
-    let expiresAt: number
+    let ttlMs: number
     let removeUpload: boolean
     let caughtError: unknown
     let deployedEntityIds: string[]
@@ -303,7 +303,7 @@ test('WorldManagerAdapter', function ({ components }) {
       const { database, worldCreator } = components
       created = await worldCreator.createWorldWithScene()
       upload = { ...created.entity, id: `${created.entity.id}-partial` }
-      expiresAt = Date.now() + 60_000
+      ttlMs = 60 * 60 * 1000
       removeUpload = false
       await database.query(SQL`
         INSERT INTO pending_scenes (entity_id, world_name, parcels, entity, deployer)
@@ -320,7 +320,7 @@ test('WorldManagerAdapter', function ({ components }) {
           upload,
           created.owner.authChain[0].payload,
           { mode: 'unrestricted-owner' },
-          { authChain: created.owner.authChain, size: 123, completesPartialUpload: { expiresAt } }
+          { authChain: created.owner.authChain, size: 123, completesPartialUpload: { ttlMs } }
         )
         .then(() => undefined)
         .catch((error: unknown) => error)
@@ -347,10 +347,17 @@ test('WorldManagerAdapter', function ({ components }) {
       })
     })
 
-    describe('and the upload expired before publication', () => {
+    describe('and the database clock says the upload expired while this instance clock says it is live', () => {
       beforeEach(async () => {
-        expiresAt = Date.now() - 1
+        const backdated = await components.database.query<{ created_at: Date }>(SQL`
+          UPDATE pending_scenes SET created_at = now() - ${ttlMs / 1000}::float8 * interval '1 second'
+          WHERE entity_id = ${upload.id} RETURNING created_at`)
+        jest.spyOn(Date, 'now').mockReturnValue(backdated.rows[0].created_at.getTime() + 1000)
         await publish()
+      })
+
+      afterEach(() => {
+        jest.restoreAllMocks()
       })
 
       it('should refuse to publish it and keep the upload for cleanup', () => {

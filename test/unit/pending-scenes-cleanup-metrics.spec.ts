@@ -4,7 +4,6 @@ import { ContentLockTimeoutError } from '../../src/adapters/content-locks/errors
 import {
   CLEANUP_PAGE_SIZE,
   createContentGcComponent,
-  EXPIRY_CLOCK_SKEW_GRACE_MS,
   ExpiredUploadsCleanup,
   IContentGcComponent
 } from '../../src/logic/content-gc'
@@ -210,6 +209,26 @@ describe('when deleting expired partial uploads', () => {
     it('should prune receipts and rate windows and report the uploads left in the database', () => {
       expect(housekeeping(mocks)).toEqual(HOUSEKEEPING_RAN)
     })
+
+    it('should judge expiry against the database clock with the lifetime in seconds', () => {
+      const [listing] = statementsMatching(mocks, 'ORDER BY created_at, entity_id')
+      const [reference] = statementsMatching(mocks, 'WITH entities AS')
+      const [release] = statementsMatching(mocks, 'DELETE FROM pending_scenes WHERE entity_id')
+      expect({ listing, reference, release }).toEqual({
+        listing: expect.objectContaining({
+          text: expect.stringContaining("WHERE created_at <= (now() - $1::float8 * interval '1 second')"),
+          values: [DEFAULT_PENDING_DEPLOYMENT_TTL_MS / 1000, 100]
+        }),
+        reference: expect.objectContaining({
+          text: expect.stringContaining("WHERE created_at > (now() - $1::float8 * interval '1 second')"),
+          values: [DEFAULT_PENDING_DEPLOYMENT_TTL_MS / 1000, ['expired-000']]
+        }),
+        release: expect.objectContaining({
+          text: expect.stringContaining("AND created_at <= (now() - $2::float8 * interval '1 second')"),
+          values: ['expired-000', DEFAULT_PENDING_DEPLOYMENT_TTL_MS / 1000]
+        })
+      })
+    })
   })
 
   describe('and deleting the first expired upload from storage fails', () => {
@@ -315,12 +334,7 @@ describe('when deleting expired partial uploads', () => {
 
     it('should resume the second page after the last upload of the first', () => {
       const last = firstPage[firstPage.length - 1]
-      expect(listings[1].values).toEqual([
-        new Date(NOW - 60 * 60 * 1000 - EXPIRY_CLOCK_SKEW_GRACE_MS),
-        last.cursor,
-        last.entity_id,
-        100
-      ])
+      expect(listings[1].values).toEqual([DEFAULT_PENDING_DEPLOYMENT_TTL_MS / 1000, last.cursor, last.entity_id, 100])
     })
   })
 

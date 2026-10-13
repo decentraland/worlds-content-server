@@ -2,7 +2,11 @@ import SQL from 'sql-template-strings'
 import { AppComponents } from '../../types'
 import { raceWithSignal } from '../../logic/concurrency'
 import { Query } from '../upload-transaction'
-import { getPublishedContentKeys, getReferencedContentKeys as readReferencedContentKeys } from '../content-references'
+import {
+  getPublishedContentKeys,
+  getReferencedContentKeys as readReferencedContentKeys,
+  pendingExpiryCutoff
+} from '../content-references'
 import {
   BudgetTotals,
   ByteRateWindow,
@@ -67,8 +71,8 @@ export async function createPendingScenesRepository(
     return raceWithSignal(getPublishedContentKeys(database, hashes), signal)
   }
 
-  async function getReferencedContentKeys(pendingCutoff: Date, candidates: string[]): Promise<Set<string>> {
-    return readReferencedContentKeys(database, pendingCutoff, candidates)
+  async function getReferencedContentKeys(ttlMs: number, candidates: string[]): Promise<Set<string>> {
+    return readReferencedContentKeys(database, ttlMs, candidates)
   }
 
   async function lockDeployer(query: Query, deployer: string): Promise<void> {
@@ -217,7 +221,10 @@ export async function createPendingScenesRepository(
       : undefined
   }
 
-  async function recordPublication(query: Query, publication: PublicationRecord): Promise<{ consumed: boolean }> {
+  async function recordPublication(
+    query: Query,
+    publication: PublicationRecord
+  ): Promise<{ consumed: boolean; live: boolean }> {
     const { entityId } = publication
     // The completion receipt commits with the publication and survives pending cleanup, replacement,
     // undeployment and disconnects; only a partial finalizer gets one. It tracks the entity's latest
@@ -234,8 +241,16 @@ export async function createPendingScenesRepository(
       await query(SQL`DELETE FROM completed_scene_uploads WHERE entity_id = ${entityId}`)
     }
     // Any publication of the entity supersedes its pending upload, whose staged files are now stored.
-    const pendingUpload = await query(SQL`DELETE FROM pending_scenes WHERE entity_id = ${entityId} RETURNING 1`)
-    return { consumed: pendingUpload.rows.length > 0 }
+    const ttlMs = publication.completesPartialUpload?.ttlMs
+    const pendingUpload = await query<{ live: boolean }>(
+      SQL`DELETE FROM pending_scenes WHERE entity_id = ${entityId} RETURNING `.append(
+        ttlMs === undefined
+          ? SQL`true AS live`
+          : SQL`created_at > `.append(pendingExpiryCutoff(ttlMs)).append(' AS live')
+      )
+    )
+    const row = pendingUpload.rows[0]
+    return { consumed: !!row, live: !!row?.live }
   }
 
   async function deleteByEntityId(entityId: string): Promise<void> {
@@ -245,11 +260,13 @@ export async function createPendingScenesRepository(
   }
 
   async function listExpired(
-    cutoff: Date,
+    ttlMs: number,
     after: ExpiredUploadCursor | undefined,
     limit: number
   ): Promise<ExpiredUploadCursor[]> {
-    const query = SQL`SELECT entity_id, created_at::text AS cursor FROM pending_scenes WHERE created_at <= ${cutoff}`
+    const query = SQL`SELECT entity_id, created_at::text AS cursor FROM pending_scenes WHERE created_at <= `.append(
+      pendingExpiryCutoff(ttlMs)
+    )
     if (after) {
       query.append(SQL` AND (created_at, entity_id) > (${after.createdAt}::timestamptz, ${after.entityId})`)
     }
@@ -265,8 +282,12 @@ export async function createPendingScenesRepository(
     return keys.rows.map((row) => row.hash)
   }
 
-  async function releaseExpired(entityId: string, cutoff: Date): Promise<void> {
-    await database.query(SQL`DELETE FROM pending_scenes WHERE entity_id = ${entityId} AND created_at <= ${cutoff}`)
+  async function releaseExpired(entityId: string, ttlMs: number): Promise<void> {
+    await database.query(
+      SQL`DELETE FROM pending_scenes WHERE entity_id = ${entityId} AND created_at <= `.append(
+        pendingExpiryCutoff(ttlMs)
+      )
+    )
   }
 
   async function pruneCompleted(before: Date): Promise<void> {

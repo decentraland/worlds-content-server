@@ -9,10 +9,6 @@ export const GC_BATCH_SIZE = 1000
 /** Expired uploads fetched per cleanup query. */
 export const CLEANUP_PAGE_SIZE = 100
 
-// Instances judge expiry by their own clocks, so GC and cleanup reclaim an upload only this long after its TTL;
-// skew can't then delete staged content that another instance still publishes.
-export const EXPIRY_CLOCK_SKEW_GRACE_MS = 60_000
-
 /**
  * Creates the deletion of unreferenced content: the storage-wide sweep and expired-upload reclamation.
  * Every check/delete pair runs under the exclusive content lock, so publication can't race it.
@@ -37,14 +33,13 @@ export async function createContentGcComponent(
   // Keeps the cleanup's original logger name.
   const cleanupLogger = logs.getLogger('pending-scenes-manager')
   const ttlMs = uploadLimits.pendingDeploymentTtlMs
-  const reclaimableBefore = (): Date => new Date(Date.now() - ttlMs - EXPIRY_CLOCK_SKEW_GRACE_MS)
 
   async function deleteUnreferenced(keys: string[]): Promise<number> {
     let removed = 0
     for (let offset = 0; offset < keys.length; offset += GC_BATCH_SIZE) {
       const batch = keys.slice(offset, offset + GC_BATCH_SIZE)
       removed += await contentLocks.withWrite(async () => {
-        const referenced = await pendingScenesRepository.getReferencedContentKeys(reclaimableBefore(), batch)
+        const referenced = await pendingScenesRepository.getReferencedContentKeys(ttlMs, batch)
         const orphaned = batch.filter((key) => !referenced.has(key))
         if (orphaned.length) await storage.delete(orphaned)
         return orphaned.length
@@ -108,19 +103,18 @@ export async function createContentGcComponent(
   }
 
   async function sweepExpired(): Promise<ExpiredUploadsCleanup> {
-    const cutoff = reclaimableBefore()
     let removed = 0
     let failed = 0
     let after: ExpiredUploadCursor | undefined
     try {
-      // Pages until a short one: every upload expired before the cutoff is visited once.
+      // Pages until a short one: keyset order visits every expired upload once.
       for (;;) {
-        const page = await pendingScenesRepository.listExpired(cutoff, after, CLEANUP_PAGE_SIZE)
+        const page = await pendingScenesRepository.listExpired(ttlMs, after, CLEANUP_PAGE_SIZE)
         for (const upload of page) {
           after = upload
           const { entityId } = upload
           try {
-            await reclaimUpload(entityId, cutoff)
+            await reclaimUpload(entityId)
             removed++
             metrics.increment('partial_upload_expired_uploads')
           } catch (error) {
@@ -151,9 +145,9 @@ export async function createContentGcComponent(
    * Deletes an expired upload's orphaned staged objects, then releases its accounting.
    * @throws ContentLockTimeoutError when uploads keep the content lock busy.
    */
-  async function reclaimUpload(entityId: string, cutoff: Date): Promise<void> {
+  async function reclaimUpload(entityId: string): Promise<void> {
     await deleteUnreferenced(await pendingScenesRepository.getUploadKeys(entityId))
-    await pendingScenesRepository.releaseExpired(entityId, cutoff)
+    await pendingScenesRepository.releaseExpired(entityId, ttlMs)
   }
 
   return { deleteUnreferenced, collectGarbage, deleteExpiredUploads }

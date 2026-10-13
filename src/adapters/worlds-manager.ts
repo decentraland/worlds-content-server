@@ -38,7 +38,6 @@ import { Entity, EthAddress } from '@dcl/schemas'
 import { InvalidRequestError } from '@dcl/http-commons'
 import SQL, { type SQLStatement } from 'sql-template-strings'
 import { buildWorldRuntimeMetadata } from '../logic/world-runtime-metadata-utils'
-import { isPastExpiry } from '../logic/utils'
 import { AccessSetting, defaultAccess } from '../logic/access'
 import { connectWithSignal, isUniqueViolation } from './pg-client'
 import { PartialUploadExpiredError } from './pending-scenes-repository/errors'
@@ -735,16 +734,16 @@ export async function createWorldsManagerComponent({
       `)
 
       const partialUpload = deployment?.completesPartialUpload
-      const { consumed } = await pendingScenesRepository.recordPublication(query, {
+      const { consumed, live } = await pendingScenesRepository.recordPublication(query, {
         entityId: scene.id,
         deployer,
         worldName,
         parcels: scene.metadata?.scene?.parcels || [],
         publishedAt: new Date(creationTimestamp),
-        completesPartialUpload: !!partialUpload
+        completesPartialUpload: partialUpload
       })
-      // Re-checked at the commit boundary: a batch admitted just before expiry must not publish after it.
-      if (partialUpload && (!consumed || isPastExpiry(partialUpload.expiresAt))) {
+      // On GC's database clock: this transaction began under the shared lock, after any GC that saw it expired.
+      if (partialUpload && (!consumed || !live)) {
         throw new PartialUploadExpiredError()
       }
 

@@ -593,12 +593,9 @@ test('when accounting for independent partial uploads', ({ components }) => {
 
   describe('and one upload was created exactly one lifetime before the cutoff instant and another just after', () => {
     let cutoff: Date
-    let listed: string[]
     let counts: { live: number; expired: number }
     let charged: { bytes: number; expired: number }
-    let referenced: Set<string>
     let atCutoffLive: unknown
-    let remaining: string[]
 
     beforeEach(async () => {
       cutoff = new Date('2026-01-01T00:00:00.000Z')
@@ -616,19 +613,9 @@ test('when accounting for independent partial uploads', ({ components }) => {
           INSERT INTO pending_scene_files (entity_id, hash, size, stored, charged)
           VALUES (${entityId}, ${entityId + '-file'}, ${size}, true, true)`)
       }
-      listed = (await repository.listExpired(cutoff, undefined, 10)).map((upload) => upload.entityId)
       counts = await repository.countUploads(cutoff)
       charged = await repository.getChargedBytes(cutoff)
-      referenced = await repository.getReferencedContentKeys(cutoff, ['at-cutoff', 'after-cutoff'])
       atCutoffLive = await repository.getLive('at-cutoff', cutoff)
-      await repository.releaseExpired('at-cutoff', cutoff)
-      await repository.releaseExpired('after-cutoff', cutoff)
-      const result = await components.database.query<{ entity_id: string }>('SELECT entity_id FROM pending_scenes')
-      remaining = result.rows.map((row) => row.entity_id)
-    })
-
-    it('should list only the upload created at the cutoff as expired', () => {
-      expect(listed).toEqual(['at-cutoff'])
     })
 
     it('should count the upload created at the cutoff as expired and the other as live', () => {
@@ -639,15 +626,48 @@ test('when accounting for independent partial uploads', ({ components }) => {
       expect(charged).toEqual({ bytes: 150, expired: 100 })
     })
 
-    it('should keep only the upload created after the cutoff referencing its content', () => {
-      expect(referenced).toEqual(new Set(['after-cutoff']))
-    })
-
     it('should not return the upload created at the cutoff as live', () => {
       expect(atCutoffLive).toBeUndefined()
     })
+  })
 
-    it('should release only the upload created at the cutoff', () => {
+  describe("and one upload's lifetime ends exactly at the database's now and another's a microsecond later", () => {
+    let ttlMs: number
+    let listed: string[]
+    let referenced: Set<string>
+    let remaining: string[]
+
+    beforeEach(async () => {
+      ttlMs = 300_000
+      // One transaction pins now(), so every statement judges the same instant.
+      await components.database.withAsyncContextTransaction(async () => {
+        for (const [entityId, offset] of [
+          ['at-cutoff', '0'],
+          ['after-cutoff', '1 microsecond']
+        ]) {
+          await components.database.query(SQL`
+            INSERT INTO pending_scenes (entity_id, world_name, parcels, entity, deployer, created_at)
+            VALUES (${entityId}, 'test.dcl.eth', '{0,0}', ${JSON.stringify({ ...first, id: entityId })}::jsonb,
+              ${signer}, now() - ${ttlMs / 1000}::float8 * interval '1 second' + ${offset}::interval)`)
+        }
+        listed = (await repository.listExpired(ttlMs, undefined, 10)).map((upload) => upload.entityId)
+        referenced = await repository.getReferencedContentKeys(ttlMs, ['at-cutoff', 'after-cutoff'])
+        await repository.releaseExpired('at-cutoff', ttlMs)
+        await repository.releaseExpired('after-cutoff', ttlMs)
+      })
+      const result = await components.database.query<{ entity_id: string }>('SELECT entity_id FROM pending_scenes')
+      remaining = result.rows.map((row) => row.entity_id)
+    })
+
+    it('should list only the upload whose lifetime has ended as expired', () => {
+      expect(listed).toEqual(['at-cutoff'])
+    })
+
+    it('should keep only the live upload referencing its content', () => {
+      expect(referenced).toEqual(new Set(['after-cutoff']))
+    })
+
+    it('should release only the upload whose lifetime has ended', () => {
       expect(remaining).toEqual(['after-cutoff'])
     })
   })
@@ -927,6 +947,48 @@ test('when accounting for independent partial uploads', ({ components }) => {
 
       it('should release expired accounting without deleting content retained by the live upload', () => {
         expect({ stored, count }).toEqual({ stored: true, count: 1 })
+      })
+    })
+  })
+
+  describe('and garbage collection checks the content of an upload whose expiry the clocks disagree on', () => {
+    let createdAt: Date
+    let removed: number
+    let stored: boolean
+
+    beforeEach(async () => {
+      await create(first)
+      await components.storage.storeStream('content-a', bufferToStream(Buffer.alloc(10)))
+    })
+
+    describe('and the database clock says it expired while this instance clock says it is live', () => {
+      beforeEach(async () => {
+        const backdated = await components.database.query<{ created_at: Date }>(SQL`
+          UPDATE pending_scenes SET created_at = now() - ${uploadLimits.pendingDeploymentTtlMs / 1000}::float8 * interval '1 second'
+          WHERE entity_id = ${first.id} RETURNING created_at`)
+        createdAt = backdated.rows[0].created_at
+        jest.spyOn(Date, 'now').mockReturnValue(createdAt.getTime() + 1000)
+        removed = await gc.deleteUnreferenced(['content-a'])
+        stored = await components.storage.exist('content-a')
+      })
+
+      it('should delete its content as unreferenced', () => {
+        expect({ removed, stored }).toEqual({ removed: 1, stored: false })
+      })
+    })
+
+    describe('and the database clock says it is live while this instance clock says it expired', () => {
+      beforeEach(async () => {
+        const live = await components.database.query<{ created_at: Date }>(SQL`
+          SELECT created_at FROM pending_scenes WHERE entity_id = ${first.id}`)
+        createdAt = live.rows[0].created_at
+        jest.spyOn(Date, 'now').mockReturnValue(createdAt.getTime() + 2 * uploadLimits.pendingDeploymentTtlMs)
+        removed = await gc.deleteUnreferenced(['content-a'])
+        stored = await components.storage.exist('content-a')
+      })
+
+      it('should keep its content', () => {
+        expect({ removed, stored }).toEqual({ removed: 0, stored: true })
       })
     })
   })

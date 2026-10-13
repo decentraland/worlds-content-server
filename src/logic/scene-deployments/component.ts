@@ -81,6 +81,7 @@ export async function createSceneDeploymentsComponent(
     | 'partialUploadAdmission'
     | 'pendingScenesRepository'
     | 'storage'
+    | 'uploadLimits'
     | 'validator'
     | 'worldsManager'
     | 'deploymentProcessing'
@@ -95,6 +96,7 @@ export async function createSceneDeploymentsComponent(
     partialUploadAdmission,
     pendingScenesRepository,
     storage,
+    uploadLimits,
     validator,
     worldsManager,
     deploymentProcessing,
@@ -331,7 +333,7 @@ export async function createSceneDeploymentsComponent(
     )
     if (!pending) metrics.increment('partial_uploads_started')
 
-    // Re-checked right before storing: a batch admitted just before expiry must store nothing.
+    // Re-checked right before storing on this instance's clock; GC and publication use the database's.
     if (isPastExpiry(pendingRow.expiresAt)) {
       throw new PartialUploadExpiredError()
     }
@@ -386,7 +388,7 @@ export async function createSceneDeploymentsComponent(
           signal,
           deadlineAt,
           sceneReplacementAuthorization: deployment.sceneReplacementAuthorization,
-          completesPartialUpload: { expiresAt: pendingRow.expiresAt.getTime() },
+          completesPartialUpload: { ttlMs: uploadLimits.pendingDeploymentTtlMs },
           // A batch of this upload stored it; its id is the hash of these bytes.
           storedEntityFile: progress.has(entity.id)
         }

@@ -98,6 +98,7 @@ describe('when staging a partial deployment', () => {
         deleteByEntityId
       },
       storage: { fileInfo, storeStream },
+      uploadLimits: { pendingDeploymentTtlMs: 86_400_000 },
       validator: { validateStaging, validate },
       worldsManager: { hasNewerDeployedScene: jest.fn().mockResolvedValue(false), getDeployedScene }
     } as unknown as Components
@@ -474,10 +475,8 @@ describe('when staging a partial deployment', () => {
         await stage(input)
       })
 
-      it('should mark the publication as a partial finalization that expires with the upload', () => {
-        expect(deployEntity.mock.calls[0][7].completesPartialUpload).toEqual({
-          expiresAt: createdAt.getTime() + 86_400_000
-        })
+      it('should mark the publication as a partial finalization judged against the upload lifetime', () => {
+        expect(deployEntity.mock.calls[0][7].completesPartialUpload).toEqual({ ttlMs: 86_400_000 })
       })
 
       it('should report the completed upload with its batches and its duration since admission', () => {
