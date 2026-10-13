@@ -202,6 +202,30 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
     })
   })
 
+  // Accepted trade-off: publication trusts the receipts instead of probing storage again.
+  describe('when a stored file is deleted outside the service before the publishing batch', () => {
+    let finalStatus: number
+    let deployed: number
+    let deletedFile: unknown
+
+    beforeEach(async () => {
+      const authChain = Authenticator.signPayload(identity.authChain, entityId)
+      await post(buildForm([entityId, contentHashes[0]], authChain))
+      await components.storage.delete([contentHashes[0]])
+      finalStatus = (await post(buildForm(contentHashes.slice(1), authChain))).status
+      deployed = await countDeployedScenes()
+      deletedFile = await components.storage.retrieve(contentHashes[0])
+    })
+
+    it('should still publish the scene', () => {
+      expect({ finalStatus, deployed }).toEqual({ finalStatus: 200, deployed: 1 })
+    })
+
+    it('should leave the deleted file missing from storage', () => {
+      expect(deletedFile).toBeUndefined()
+    })
+  })
+
   describe('when the first batch fails to store after admission and the upload resumes', () => {
     let authChain: AuthChain
     let failedStatus: number
