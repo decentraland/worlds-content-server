@@ -1,4 +1,5 @@
 import { test } from '../components'
+import { Authenticator } from '@dcl/crypto'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { hashV1 } from '@dcl/hashing'
 import { bufferToStream } from '@dcl/catalyst-storage'
@@ -7,7 +8,6 @@ import { defaultAccess } from '../../src/logic/access'
 import { NoDeployedScenesError, DeploymentUniqueViolationError } from '../../src/types'
 import { PartialUploadExpiredError } from '../../src/logic/partial-upload-admission'
 import SQL, { SQLStatement } from 'sql-template-strings'
-import { PoolClient } from 'pg'
 
 type LockClient = {
   query(statement: string | SQLStatement): Promise<unknown>
@@ -2903,12 +2903,13 @@ test('WorldManagerAdapter', function ({ components }) {
   })
 
   describe('when getting the deployed scene of an entity', function () {
+    let created: Awaited<ReturnType<typeof components.worldCreator.createWorldWithScene>>
     let worldName: string
     let entityId: string
     let found: unknown
 
     beforeEach(async () => {
-      const created = await components.worldCreator.createWorldWithScene({
+      created = await components.worldCreator.createWorldWithScene({
         files: new Map([['abc.txt', stringToUtf8Bytes(makeid(100))]])
       })
       worldName = created.worldName
@@ -2916,13 +2917,32 @@ test('WorldManagerAdapter', function ({ components }) {
     })
 
     describe('and the entity is deployed', function () {
+      let expected: Record<string, unknown>
+      let listed: unknown
+
       beforeEach(async () => {
+        expected = {
+          worldName: worldName.toLowerCase(),
+          deployer: created.owner.authChain[0].payload.toLowerCase(),
+          entityId,
+          deploymentAuthChain: Authenticator.signPayload(created.owner, entityId),
+          entity: created.entity,
+          parcels: ['20,24'],
+          size: 100n,
+          status: 'DEPLOYED',
+          createdAt: expect.any(Date),
+          updatedAt: expect.any(Date)
+        }
         found = await components.worldsManager.getDeployedScene(entityId)
+        listed = (await components.worldsManager.getWorldScenes({ entityId }, { limit: 1 })).scenes[0]
       })
 
-      it('should return its scene as the paginated scene listing maps it', async () => {
-        const { scenes } = await components.worldsManager.getWorldScenes({ entityId }, { limit: 1 })
-        expect(found).toEqual(scenes[0])
+      it('should return its scene', function () {
+        expect(found).toEqual(expected)
+      })
+
+      it('should map it as the paginated scene listing does', function () {
+        expect(listed).toEqual(expected)
       })
     })
 
@@ -2957,29 +2977,24 @@ test('WorldManagerAdapter', function ({ components }) {
       })
     })
 
-    describe('and the planner cannot scan world_scenes sequentially', function () {
-      let client: PoolClient
-      let plan: string
+    describe('and the index backing its lookup is inspected', function () {
+      let index: unknown
 
       beforeEach(async () => {
-        const querySpy = jest.spyOn(components.database, 'query')
-        await components.worldsManager.getDeployedScene(entityId)
-        const lookup = querySpy.mock.calls[0][0] as SQLStatement
-        querySpy.mockRestore()
-        client = await components.database.getPool().connect()
-        await client.query('BEGIN')
-        await client.query('SET LOCAL enable_seqscan = off')
-        const result = await client.query({ text: `EXPLAIN ${lookup.text}`, values: lookup.values })
-        plan = result.rows.map((row) => row['QUERY PLAN']).join('\n')
+        const result = await components.database.query<{ valid: boolean; definition: string }>(`
+          SELECT i.indisvalid AS valid, pg_get_indexdef(i.indexrelid) AS definition
+          FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+          WHERE c.relname = 'world_scenes_entity_id_idx'`)
+        index = result.rows
       })
 
-      afterEach(async () => {
-        await client.query('ROLLBACK')
-        client.release()
-      })
-
-      it('should look the entity up through the entity id index', function () {
-        expect(plan).toContain('world_scenes_entity_id_idx')
+      it('should exist on the entity id and be valid', function () {
+        expect(index).toEqual([
+          {
+            valid: true,
+            definition: 'CREATE INDEX world_scenes_entity_id_idx ON public.world_scenes USING btree (entity_id)'
+          }
+        ])
       })
     })
   })

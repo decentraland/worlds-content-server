@@ -312,6 +312,44 @@ test('MigrationExecutor', function ({ components }) {
     })
   })
 
+  describe('when the entity id index already exists and is valid', () => {
+    let before: { oid: number; indisvalid: boolean; definition: string }[]
+    let after: { oid: number; indisvalid: boolean; definition: string }[]
+
+    async function readIndex(): Promise<{ oid: number; indisvalid: boolean; definition: string }[]> {
+      const result = await components.database.query<{ oid: number; indisvalid: boolean; definition: string }>(`
+        SELECT c.oid::int AS oid, i.indisvalid, pg_get_indexdef(i.indexrelid) AS definition FROM pg_index i
+        JOIN pg_class c ON c.oid = i.indexrelid WHERE c.relname = 'world_scenes_entity_id_idx'
+      `)
+      return result.rows
+    }
+
+    beforeEach(async () => {
+      before = await readIndex()
+      const migrations: Migration[] = [{ id: ENTITY_ID_INDEX_RERUN, run: entityIdIndexMigration.run }]
+      await createMigrationExecutor(components, { migrations })[START_COMPONENT]!({} as never)
+      after = await readIndex()
+    }, 30_000)
+
+    afterEach(async () => {
+      await components.database.query(SQL`DELETE FROM migrations WHERE name = ${ENTITY_ID_INDEX_RERUN}`)
+    })
+
+    it('should start from a single valid index on entity_id', () => {
+      expect(before).toEqual([
+        {
+          oid: expect.any(Number),
+          indisvalid: true,
+          definition: 'CREATE INDEX world_scenes_entity_id_idx ON public.world_scenes USING btree (entity_id)'
+        }
+      ])
+    })
+
+    it('should leave that same index in place when the migration reruns', () => {
+      expect(after).toEqual(before)
+    })
+  })
+
   describe('when the migrations table holds duplicate records from past races', () => {
     let recordedNames: string[]
     let uniqueIndexExists: boolean
