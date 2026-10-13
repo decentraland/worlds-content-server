@@ -62,6 +62,14 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
     return parseInt(result.rows[0].count)
   }
 
+  async function readPublishedSize(): Promise<string | undefined> {
+    const { database } = components
+    const result = await database.query<{ size: string }>(
+      SQL`SELECT size FROM world_scenes WHERE entity_id = ${entityId} AND status = 'DEPLOYED'`
+    )
+    return result.rows[0]?.size
+  }
+
   async function readAccounting(): Promise<{ reserved: unknown[]; rate: unknown[]; charged: Record<string, boolean> }> {
     const { database } = components
     const reserved = await database.query(SQL`SELECT reserved_bytes FROM pending_scenes WHERE entity_id = ${entityId}`)
@@ -136,6 +144,9 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
     let initialChecks: number
     let middleChecks: number
     let finalChecks: number
+    let finalStatus: number
+    let deployed: number
+    let size: string | undefined
 
     beforeEach(async () => {
       authChain = Authenticator.signPayload(identity.authChain, entityId)
@@ -146,19 +157,24 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
       await post(buildForm([contentHashes[0]], authChain))
       middleChecks = metadataSpy.mock.calls.length
       metadataSpy.mockClear()
-      await post(buildForm(contentHashes.slice(1), authChain))
+      finalStatus = (await post(buildForm(contentHashes.slice(1), authChain))).status
       finalChecks = metadataSpy.mock.calls.length
+      deployed = await countDeployedScenes()
+      size = await readPublishedSize()
     })
 
     afterEach(() => {
       metadataSpy.mockRestore()
     })
 
-    it('should inventory once, skip metadata for intermediate batches, and verify once at completion', () => {
-      expect({ initialChecks, middleChecks, finalChecks }).toEqual({
+    it('should inventory once and publish without probing storage metadata again', () => {
+      expect({ initialChecks, middleChecks, finalChecks, finalStatus, deployed, size }).toEqual({
         initialChecks: contentHashes.length,
         middleChecks: 0,
-        finalChecks: contentHashes.length
+        finalChecks: 0,
+        finalStatus: 200,
+        deployed: 1,
+        size: String(sizeOf(...contentHashes))
       })
     })
   })
@@ -221,14 +237,20 @@ test('Partial deployments POST /entities (partial=true)', function ({ components
     })
 
     describe('and the last batch uploads the remaining content', () => {
+      let deployed: number
+      let size: string | undefined
+
       beforeEach(async () => {
         response = await post(buildForm([contentHashes[1]], authChain))
+        deployed = await countDeployedScenes()
+        size = await readPublishedSize()
       })
 
-      it('should publish the scene', async () => {
-        expect({ status: response.status, deployed: await countDeployedScenes() }).toEqual({
+      it('should publish the scene sized with the content it found in storage', () => {
+        expect({ status: response.status, deployed, size }).toEqual({
           status: 200,
-          deployed: 1
+          deployed: 1,
+          size: String(sizeOf(...contentHashes))
         })
       })
     })

@@ -101,8 +101,8 @@ export type DeploymentToValidate = {
    * of now, so a multi-request upload can span longer than the TTL.
    */
   pendingCreatedAt?: Date
-  /** Storage metadata fetched once before validation, keyed by unique content hash. */
-  contentFileInfos?: Map<string, FileInfo | undefined>
+  /** Content sizes known before validation (storage metadata or upload receipts), keyed by unique content hash. */
+  contentFileInfos?: Map<string, Pick<FileInfo, 'size'> | undefined>
   /** Cancels request-scoped processing after disconnect or the configured processing deadline. */
   signal?: AbortSignal
   /** Replacement authority established during deployment authorization. */

@@ -791,27 +791,6 @@ test('when accounting for independent partial uploads', ({ components }) => {
     })
   })
 
-  describe('and a file already in storage is marked missing and re-uploaded', () => {
-    let accounting: unknown
-
-    beforeEach(async () => {
-      await create(first)
-      await manager.reserve(first.id, [{ hash: 'content-a', size: 400, stored: true, charged: false }], 1000n, 0)
-      await manager.markMissing(first.id, ['content-a'])
-      await manager.reserve(first.id, [{ hash: 'content-a', size: 400, stored: false, charged: true }], 1000n, 400)
-      const reserved = await components.database.query('SELECT reserved_bytes FROM pending_scenes')
-      const files = await components.database.query('SELECT hash, stored, charged FROM pending_scene_files')
-      accounting = { reserved: reserved.rows, files: files.rows }
-    })
-
-    it('should charge the re-uploaded file', () => {
-      expect(accounting).toEqual({
-        reserved: [{ reserved_bytes: '400' }],
-        files: [{ hash: 'content-a', stored: false, charged: true }]
-      })
-    })
-  })
-
   describe('and a charged file is later reported as already in storage', () => {
     let reserved: unknown
 

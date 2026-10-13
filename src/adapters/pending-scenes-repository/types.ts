@@ -104,8 +104,6 @@ export interface IPendingScenesRepository extends IBaseComponent {
   recordStored(query: Query, entityId: string, hashes: string[]): Promise<number>
   /** Returns stored file sizes by hash. */
   getProgress(entityId: string, signal?: AbortSignal): Promise<Map<string, number>>
-  /** Marks files as not stored. */
-  markMissing(query: Query, entityId: string, hashes: string[]): Promise<void>
   /** Returns the deployer's completion receipt completed at or after `completedSince`. */
   getCompleted(
     entityId: string,

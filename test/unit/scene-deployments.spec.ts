@@ -90,7 +90,6 @@ describe('when staging a partial deployment', () => {
         getByEntityId: getPending,
         admitBatch,
         recordStored,
-        markMissing: jest.fn(),
         getCompleted
       },
       pendingScenesRepository: {
@@ -393,7 +392,6 @@ describe('when staging a partial deployment', () => {
           ['b', 500]
         ])
       )
-      fileInfo.mockImplementation(async (hash) => ({ size: hash === 'a' ? 300 : 500 }))
       input.signal = new AbortController().signal
       input.deadlineAt = Date.now() + 60000
     })
@@ -413,13 +411,25 @@ describe('when staging a partial deployment', () => {
         })
       })
 
-      it('should publish the verified total size under the request signal and deadline', () => {
+      it('should publish the total size from the uploaded file and the stored progress under the request signal and deadline', () => {
         const [, , , , , , size, options] = deployEntity.mock.calls[0]
         expect([size, options.signal, options.deadlineAt]).toEqual([800, input.signal, input.deadlineAt])
       })
 
-      it('should perform only one final metadata pass', () => {
-        expect(fileInfo.mock.calls.map(([hash]) => hash)).toEqual(['a', 'b'])
+      it('should validate the content sizes recorded in the stored progress', () => {
+        expect(validate.mock.calls[0][0].contentFileInfos).toEqual(
+          new Map([
+            ['a', { size: 300 }],
+            ['b', { size: 500 }]
+          ])
+        )
+      })
+
+      it('should not look up storage metadata', () => {
+        expect({
+          metadata: fileInfo.mock.calls.length,
+          checks: increment.mock.calls.filter(([name]) => name === 'partial_upload_metadata_checks')
+        }).toEqual({ metadata: 0, checks: [] })
       })
 
       it('should pass the request signal into storage writes', () => {
@@ -456,26 +466,6 @@ describe('when staging a partial deployment', () => {
           batches: [['partial_upload_batches_per_upload', {}, 2]],
           lastedAtLeastItsAge: [true]
         })
-      })
-    })
-    describe('and storage has lost a previously acknowledged file', () => {
-      let result: Awaited<ReturnType<typeof stage>>
-
-      beforeEach(async () => {
-        fileInfo.mockResolvedValueOnce(undefined)
-        result = await stage(input)
-      })
-
-      it('should request that file again', () => {
-        expect(result).toEqual({ complete: false, missing: ['a'] })
-      })
-
-      it('should invalidate its receipt', () => {
-        expect(components.partialUploadAdmission.markMissing).toHaveBeenCalledWith('entity', ['a'], input.signal)
-      })
-
-      it('should not publish the entity', () => {
-        expect(deployEntity).not.toHaveBeenCalled()
       })
     })
   })
@@ -648,7 +638,6 @@ describe('when staging a partial deployment', () => {
           ['b', 500]
         ])
       )
-      fileInfo.mockImplementation(async (hash) => ({ size: hash === 'a' ? 300 : 500 }))
       deployEntity.mockRejectedValueOnce(
         new DeploymentUniqueViolationError('entity', Object.assign(new Error('duplicate key'), { code: '23505' }))
       )
@@ -687,7 +676,6 @@ describe('when staging a partial deployment', () => {
           ['b', 500]
         ])
       )
-      fileInfo.mockImplementation(async (hash) => ({ size: hash === 'a' ? 300 : 500 }))
       deployEntity.mockRejectedValueOnce(
         new DeploymentUniqueViolationError('entity', Object.assign(new Error('duplicate key'), { code: '23505' }))
       )
@@ -720,7 +708,6 @@ describe('when staging a partial deployment', () => {
       recordStages('admitBatch', admitBatch)
       recordStages('recordStored', recordStored)
       recordStages('getProgress', getProgress)
-      recordStages('markMissing', components.partialUploadAdmission.markMissing as jest.Mock)
       ;({ stage } = await createSceneDeploymentsComponent({
         ...components,
         deploymentProcessing: createDeploymentProcessingMock({ trackStage: recorder.trackStage })
@@ -775,7 +762,7 @@ describe('when staging a partial deployment', () => {
       })
     })
 
-    describe('and a resumed batch finds content missing at final verification', () => {
+    describe('and a resumed batch completes the upload', () => {
       beforeEach(async () => {
         let progressReads = 0
         getPending.mockResolvedValue({ createdAt: new Date(), deployer: 'deployer', initialized: true })
@@ -794,8 +781,8 @@ describe('when staging a partial deployment', () => {
         expect(stagesByCall.getProgress).toEqual([['admission'], ['admission']])
       })
 
-      it('should mark the missing content inside the admission stage', () => {
-        expect(stagesByCall.markMissing).toEqual([['admission']])
+      it('should not open a metadata stage', () => {
+        expect(recorder.trackStage.mock.calls.map(([stage]) => stage)).not.toContain('metadata')
       })
     })
   })

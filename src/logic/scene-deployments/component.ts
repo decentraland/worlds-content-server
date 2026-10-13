@@ -66,8 +66,8 @@ function getContentHashes(entity: Entity): string[] {
 /**
  * Deploys scenes, in a single request or staged across authenticated, entity-keyed upload batches. The
  * HTTP handler holds the shared content lock (and, for batches, the per-entity lock) through deploy and
- * stage, including final publication. Receipts avoid storage scans between initialization and final
- * verification; reservations remain charged on write failure.
+ * stage, including final publication. Storage is inventoried once, on the first batch; later batches and
+ * publication rely on the upload's receipts. Reservations remain charged on write failure.
  * @param components Validation, persistence, storage and telemetry dependencies.
  * @returns Scene deployment orchestration.
  */
@@ -355,23 +355,16 @@ export async function createSceneDeploymentsComponent(
     metrics.increment('partial_upload_batches', { outcome: missing.length ? 'incomplete' : 'finalizing' })
     if (missing.length) return { complete: false, missing }
 
-    // One full verification at completion. The shared content lock prevents GC from removing files
-    // during this check, authorization, storage writes, or the publication transaction.
-    const presentInfos = await metadata(contentHashes, signal)
-    const nowMissing = contentHashes.filter((hash) => presentInfos.get(hash) === undefined)
-    if (nowMissing.length) {
-      await deploymentProcessing.trackStage('admission', 1, () =>
-        partialUploadAdmission.markMissing(entity.id, nowMissing, signal)
-      )
-      return { complete: false, missing: nowMissing }
-    }
+    // Progress holds every hash's size once none is missing; GC keeps a live upload's content and can't
+    // run under the content lock held through publication, so storage isn't probed again.
+    const sizes = new Map(Array.from(progress, ([hash, size]) => [hash, { size }]))
     const present = new Map(contentHashes.map((hash) => [hash, true]))
     const deployment: DeploymentToValidate = {
       entity,
       files: deploymentFiles,
       authChain,
       contentHashesInStorage: present,
-      contentFileInfos: presentInfos,
+      contentFileInfos: sizes,
       pendingCreatedAt: pendingRow.createdAt,
       signal
     }
@@ -388,7 +381,7 @@ export async function createSceneDeploymentsComponent(
         deploymentFiles,
         entityFile,
         authChain,
-        calculateDeploymentSizeFromFileInfos(entity, deploymentFiles, presentInfos),
+        calculateDeploymentSizeFromFileInfos(entity, deploymentFiles, sizes),
         {
           signal,
           deadlineAt,

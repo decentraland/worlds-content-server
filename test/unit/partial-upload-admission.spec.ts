@@ -78,7 +78,6 @@ describe('when admitting partial uploads', () => {
       getBudgetTotals: jest.fn().mockResolvedValue(totals({ account: 100n, total: 100n, own: 100n, scene: 100n })),
       discardUnadmitted: jest.fn().mockResolvedValue(undefined),
       recordStored: jest.fn().mockResolvedValue(1),
-      markMissing: jest.fn().mockResolvedValue(undefined),
       pruneCompleted: jest.fn().mockResolvedValue(undefined),
       pruneByteRates: jest.fn().mockResolvedValue(undefined),
       getChargedBytes: jest.fn().mockResolvedValue({ bytes: 0, expired: 0 }),

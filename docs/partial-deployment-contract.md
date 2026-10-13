@@ -86,6 +86,8 @@ authentication and small in-memory steps are not timed.
 Every `deployment_processing_*` series carries `mode` (`regular` or `partial`), so single-request deployments and
 partial batches can be told apart; aggregating by `stage` alone still sums both.
 Reserved-byte gauges are database snapshots updated by admission/cleanup, not instantaneous counters.
-The progress integration test asserts one initial inventory, zero metadata probes for intermediate
-batches and one final verification (2N probes instead of approximately 2NB for N hashes in B batches).
+The progress integration test asserts one initial inventory and zero metadata probes afterwards, including
+the publishing batch (N probes instead of approximately 2NB for N hashes in B batches). Publication takes
+content sizes from the upload's receipts: GC never deletes content a live upload references, and the content
+lock is held through publication. Content deleted out of band between batches is not re-requested.
 These counts are structural measurements, not S3 throughput or latency benchmarks.

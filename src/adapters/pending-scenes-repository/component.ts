@@ -198,12 +198,6 @@ export async function createPendingScenesRepository(
     return new Map(result.rows.map((row) => [row.hash, Number(row.size)]))
   }
 
-  async function markMissing(query: Query, entityId: string, hashes: string[]): Promise<void> {
-    await query(
-      SQL`UPDATE pending_scene_files SET stored = false WHERE entity_id = ${entityId} AND hash = ANY(${hashes}::text[])`
-    )
-  }
-
   async function getCompleted(
     entityId: string,
     deployer: string,
@@ -316,7 +310,6 @@ export async function createPendingScenesRepository(
     discardUnadmitted,
     recordStored,
     getProgress,
-    markMissing,
     getCompleted,
     recordPublication,
     deleteByEntityId,
