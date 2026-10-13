@@ -9,15 +9,21 @@ import {
   PartialUploadQuotaExceededError,
   PartialUploadTooLargeError,
   PendingScene,
+  SceneSizeCaps,
   UpsertPendingScene
 } from '../../src/logic/partial-upload-admission'
-import { BudgetTotals, PendingSceneRecord } from '../../src/adapters/pending-scenes-repository'
+import { BudgetTotals, PendingSceneRecord, WorldUploadCounts } from '../../src/adapters/pending-scenes-repository'
 
 type Components = Parameters<typeof createPartialUploadAdmission>[0]
 
 const NOW = 1_800_000_000_000
 const TTL_MS = 300_000
 const CLEANUP_INTERVAL_MS = 120_000
+
+/** Size caps where the world's stable cap defaults to the upload's own scene cap. */
+function caps(maxSceneBytes: bigint, worldSceneCapBytes = maxSceneBytes): SceneSizeCaps {
+  return { maxSceneBytes, worldSceneCapBytes }
+}
 
 describe('when admitting partial uploads', () => {
   let repository: Record<string, jest.Mock>
@@ -28,12 +34,17 @@ describe('when admitting partial uploads', () => {
   let upload: UpsertPendingScene
   let record: PendingSceneRecord
 
+  function worldCounts(overrides: Partial<WorldUploadCounts>): WorldUploadCounts {
+    return { count: 0, oldest: null, deployerCount: 0, deployerOldest: null, ...overrides }
+  }
+
   function totals(overrides: Partial<BudgetTotals>): BudgetTotals {
     return {
       account: 0n,
       world: 0n,
       total: 0n,
       own: 0n,
+      ownContent: 0n,
       scene: 0n,
       accountOldest: null,
       worldOldest: null,
@@ -80,7 +91,7 @@ describe('when admitting partial uploads', () => {
       findRecord: jest.fn().mockResolvedValue(undefined),
       countByDeployer: jest.fn().mockResolvedValue({ count: 0, oldest: null }),
       lockWorld: jest.fn().mockResolvedValue(undefined),
-      countLiveByWorld: jest.fn().mockResolvedValue({ count: 0, oldest: null }),
+      countLiveByWorld: jest.fn().mockResolvedValue(worldCounts({})),
       insert: jest.fn().mockResolvedValue(record),
       getOwner: jest
         .fn()
@@ -200,11 +211,11 @@ describe('when admitting partial uploads', () => {
       })
     })
 
-    it("should lock and count only the lowercased world's live uploads", () => {
+    it("should lock and count only the lowercased world's live uploads, and the lowercased deployer's among them", () => {
       expect({
         lock: repository.lockWorld.mock.calls[0][1],
         count: repository.countLiveByWorld.mock.calls[0].slice(1)
-      }).toEqual({ lock: 'world.dcl.eth', count: ['world.dcl.eth', new Date(NOW - TTL_MS)] })
+      }).toEqual({ lock: 'world.dcl.eth', count: ['world.dcl.eth', '0xaccount', new Date(NOW - TTL_MS)] })
     })
 
     it('should return it with its expiry', () => {
@@ -335,7 +346,7 @@ describe('when admitting partial uploads', () => {
     let error: unknown
 
     beforeEach(async () => {
-      repository.countLiveByWorld.mockResolvedValueOnce({ count: 3, oldest: new Date(NOW - 60_000) })
+      repository.countLiveByWorld.mockResolvedValueOnce(worldCounts({ count: 3, oldest: new Date(NOW - 60_000) }))
       error = await admission.upsert(upload).catch((e: unknown) => e)
     })
 
@@ -361,7 +372,14 @@ describe('when admitting partial uploads', () => {
     let outcome: unknown
 
     beforeEach(async () => {
-      repository.countLiveByWorld.mockResolvedValueOnce({ count: 2, oldest: new Date(NOW - 60_000) })
+      repository.countLiveByWorld.mockResolvedValueOnce(
+        worldCounts({
+          count: 2,
+          oldest: new Date(NOW - 60_000),
+          deployerCount: 1,
+          deployerOldest: new Date(NOW - 60_000)
+        })
+      )
       outcome = await admission.upsert(upload).then(
         () => 'admitted',
         (e: unknown) => e
@@ -373,12 +391,43 @@ describe('when admitting partial uploads', () => {
     })
   })
 
+  describe("and the account holds its share of the world's uploads", () => {
+    let error: unknown
+
+    beforeEach(async () => {
+      repository.countLiveByWorld.mockResolvedValueOnce(
+        worldCounts({
+          count: 2,
+          oldest: new Date(NOW - 150_000),
+          deployerCount: 2,
+          deployerOldest: new Date(NOW - 100_000)
+        })
+      )
+      error = await admission.upsert(upload).catch((e: unknown) => e)
+    })
+
+    it("should reject with the world upload-count quota, retrying when the account's oldest upload in the world expires", () => {
+      expect({
+        quota: (error as PartialUploadQuotaExceededError).quota,
+        message: (error as Error).message,
+        retryAfter: (error as PartialUploadQuotaExceededError).retryAfterSeconds,
+        inserts: repository.insert.mock.calls.length
+      }).toEqual({
+        quota: 'uploads_per_world',
+        message:
+          'Too many partial uploads in progress for this account in this world: 2 of the 2 allowed. Complete an upload or wait for one to expire.',
+        retryAfter: 200,
+        inserts: 0
+      })
+    })
+  })
+
   describe('and an existing upload of a world at its maximum is resumed', () => {
     let pending: PendingScene
 
     beforeEach(async () => {
       repository.findRecord.mockResolvedValueOnce(record)
-      repository.countLiveByWorld.mockResolvedValueOnce({ count: 3, oldest: new Date(NOW - 60_000) })
+      repository.countLiveByWorld.mockResolvedValueOnce(worldCounts({ count: 3, oldest: new Date(NOW - 60_000) }))
       pending = await admission.upsert({ ...upload, resumes: true })
     })
 
@@ -395,7 +444,7 @@ describe('when admitting partial uploads', () => {
 
     beforeEach(async () => {
       repository.getOwner.mockResolvedValueOnce(undefined)
-      error = await admission.reserve('entity', [], 1000n, 100).catch((e: unknown) => e)
+      error = await admission.reserve('entity', [], caps(1000n), 100).catch((e: unknown) => e)
     })
 
     it('should ask for the manifest again as an invalid request', () => {
@@ -412,7 +461,7 @@ describe('when admitting partial uploads', () => {
 
     beforeEach(async () => {
       repository.getOwner.mockResolvedValueOnce({ deployer: '0xaccount', createdAt: new Date(NOW - TTL_MS - 1) })
-      error = await admission.reserve('entity', [], 1000n, 100).catch((e: unknown) => e)
+      error = await admission.reserve('entity', [], caps(1000n), 100).catch((e: unknown) => e)
     })
 
     it('should reject it as expired without charging the byte rate', () => {
@@ -428,7 +477,7 @@ describe('when admitting partial uploads', () => {
 
     beforeEach(async () => {
       repository.getOwner.mockResolvedValueOnce({ deployer: '0xaccount', createdAt: new Date(NOW - TTL_MS) })
-      error = await admission.reserve('entity', [], 1000n, 100).catch((e: unknown) => e)
+      error = await admission.reserve('entity', [], caps(1000n), 100).catch((e: unknown) => e)
     })
 
     it('should reject it as expired without charging the byte rate', () => {
@@ -444,7 +493,7 @@ describe('when admitting partial uploads', () => {
 
     beforeEach(async () => {
       repository.chargeByteRate.mockResolvedValueOnce({ bytes: 501n, retryAfterSeconds: 60 })
-      error = await admission.reserve('entity', [], 1000n, 501).catch((e: unknown) => e)
+      error = await admission.reserve('entity', [], caps(1000n), 501).catch((e: unknown) => e)
     })
 
     it('should reject it as too large for the byte rate', () => {
@@ -466,7 +515,7 @@ describe('when admitting partial uploads', () => {
 
     beforeEach(async () => {
       repository.chargeByteRate.mockResolvedValueOnce({ bytes: 600n, retryAfterSeconds: 30 })
-      error = await admission.reserve('entity', [], 1000n, 100).catch((e: unknown) => e)
+      error = await admission.reserve('entity', [], caps(1000n), 100).catch((e: unknown) => e)
     })
 
     it('should reject with the byte-rate quota, retrying when the window resets', () => {
@@ -488,7 +537,7 @@ describe('when admitting partial uploads', () => {
 
     beforeEach(async () => {
       repository.getBudgetTotals.mockResolvedValueOnce(totals({ scene: 1001n }))
-      error = await admission.reserve('entity', [], 1000n, 100).catch((e: unknown) => e)
+      error = await admission.reserve('entity', [], caps(1000n), 100).catch((e: unknown) => e)
     })
 
     it('should reject the scene as too big', () => {
@@ -501,7 +550,7 @@ describe('when admitting partial uploads', () => {
 
     beforeEach(async () => {
       repository.getBudgetTotals.mockResolvedValueOnce(totals({ own: 700n, account: 700n, total: 700n }))
-      error = await admission.reserve('entity', [], 1000n, 100).catch((e: unknown) => e)
+      error = await admission.reserve('entity', [], caps(1000n), 100).catch((e: unknown) => e)
     })
 
     it('should reject it as too large for the account budget', () => {
@@ -525,7 +574,7 @@ describe('when admitting partial uploads', () => {
       repository.getBudgetTotals.mockResolvedValueOnce(
         totals({ own: 300n, account: 700n, total: 700n, accountOldest: new Date(NOW - 100_000) })
       )
-      error = await admission.reserve('entity', [], 1000n, 100).catch((e: unknown) => e)
+      error = await admission.reserve('entity', [], caps(1000n), 100).catch((e: unknown) => e)
     })
 
     it("should reject with the account byte quota, retrying when the account's oldest charged upload expires", () => {
@@ -549,7 +598,7 @@ describe('when admitting partial uploads', () => {
       repository.getBudgetTotals.mockResolvedValueOnce(
         totals({ own: 300n, account: 300n, total: 1001n, oldest: new Date(NOW - 50_000) })
       )
-      error = await admission.reserve('entity', [], 1000n, 100).catch((e: unknown) => e)
+      error = await admission.reserve('entity', [], caps(1000n), 100).catch((e: unknown) => e)
     })
 
     it("should reject with the server byte quota, retrying when the server's oldest charged upload expires", () => {
@@ -572,7 +621,7 @@ describe('when admitting partial uploads', () => {
       repository.getBudgetTotals.mockResolvedValueOnce(
         totals({ own: 300n, account: 300n, world: 401n, total: 401n, worldOldest: new Date(NOW - 80_000) })
       )
-      error = await admission.reserve('entity', [], 200n, 100).catch((e: unknown) => e)
+      error = await admission.reserve('entity', [], caps(200n), 100).catch((e: unknown) => e)
     })
 
     it("should reject with the world byte quota, retrying when the world's oldest charged upload expires", () => {
@@ -594,7 +643,7 @@ describe('when admitting partial uploads', () => {
 
     beforeEach(async () => {
       repository.getBudgetTotals.mockResolvedValueOnce(totals({ own: 100n, account: 100n, world: 401n, total: 1001n }))
-      error = await admission.reserve('entity', [], 200n, 100).catch((e: unknown) => e)
+      error = await admission.reserve('entity', [], caps(200n), 100).catch((e: unknown) => e)
     })
 
     it('should reject with the world byte quota', () => {
@@ -607,7 +656,7 @@ describe('when admitting partial uploads', () => {
 
     beforeEach(async () => {
       repository.getBudgetTotals.mockResolvedValueOnce(totals({ own: 100n, account: 100n, world: 400n, total: 400n }))
-      outcome = await admission.reserve('entity', [], 200n, 100).then(
+      outcome = await admission.reserve('entity', [], caps(200n), 100).then(
         () => 'admitted',
         (e: unknown) => e
       )
@@ -618,14 +667,14 @@ describe('when admitting partial uploads', () => {
     })
   })
 
-  describe('and the upload alone exceeds the world byte budget', () => {
+  describe("and the upload's content alone exceeds the world byte budget", () => {
     let error: unknown
 
     beforeEach(async () => {
       repository.getBudgetTotals.mockResolvedValueOnce(
-        totals({ own: 401n, account: 401n, world: 401n, total: 401n, scene: 200n })
+        totals({ own: 401n, ownContent: 401n, account: 401n, world: 401n, total: 401n, scene: 401n })
       )
-      error = await admission.reserve('entity', [], 200n, 100).catch((e: unknown) => e)
+      error = await admission.reserve('entity', [], caps(1000n, 200n), 100).catch((e: unknown) => e)
     })
 
     it('should reject it as too large for the world budget', () => {
@@ -642,9 +691,45 @@ describe('when admitting partial uploads', () => {
     })
   })
 
+  describe('and an upload fits the world budget only without its entity file', () => {
+    let outcome: unknown
+
+    beforeEach(async () => {
+      repository.getBudgetTotals.mockResolvedValueOnce(
+        totals({ own: 550n, ownContent: 200n, account: 550n, world: 200n, total: 550n, scene: 200n })
+      )
+      outcome = await admission.reserve('entity', [], caps(200n), 100).then(
+        () => 'admitted',
+        (e: unknown) => e
+      )
+    })
+
+    it('should admit the batch', () => {
+      expect(outcome).toBe('admitted')
+    })
+  })
+
+  describe("and the world's live uploads fit its stable cap but not the upload's own scene cap", () => {
+    let outcome: unknown
+
+    beforeEach(async () => {
+      repository.getBudgetTotals.mockResolvedValueOnce(
+        totals({ own: 100n, ownContent: 100n, account: 100n, world: 700n, total: 700n, scene: 100n })
+      )
+      outcome = await admission.reserve('entity', [], caps(200n, 1000n), 100).then(
+        () => 'admitted',
+        (e: unknown) => e
+      )
+    })
+
+    it('should budget the world on its stable cap', () => {
+      expect(outcome).toBe('admitted')
+    })
+  })
+
   describe('and a batch is reserved', () => {
     beforeEach(async () => {
-      await admission.reserve('entity', [], 200n, 100)
+      await admission.reserve('entity', [], caps(200n), 100)
     })
 
     it("should total the upload's account and world, counting only uploads still live", () => {
@@ -667,7 +752,7 @@ describe('when admitting partial uploads', () => {
       repository.getBudgetTotals.mockResolvedValueOnce(
         totals({ own: 300n, account: 300n, total: 1001n, oldest: new Date(NOW - TTL_MS) })
       )
-      error = await admission.reserve('entity', [], 1000n, 100).catch((e: unknown) => e)
+      error = await admission.reserve('entity', [], caps(1000n), 100).catch((e: unknown) => e)
     })
 
     it('should retry when the next cleanup runs', () => {
@@ -696,7 +781,7 @@ describe('when admitting partial uploads', () => {
 
     beforeEach(async () => {
       repository.chargeByteRate.mockResolvedValueOnce({ bytes: 500n, retryAfterSeconds: 60 })
-      outcome = await admission.reserve('entity', [], 1000n, 500).then(
+      outcome = await admission.reserve('entity', [], caps(1000n), 500).then(
         () => 'admitted',
         (e: unknown) => e
       )
@@ -712,7 +797,7 @@ describe('when admitting partial uploads', () => {
 
     beforeEach(async () => {
       repository.chargeByteRate.mockResolvedValueOnce({ bytes: 500n, retryAfterSeconds: 30 })
-      outcome = await admission.reserve('entity', [], 1000n, 100).then(
+      outcome = await admission.reserve('entity', [], caps(1000n), 100).then(
         () => 'admitted',
         (e: unknown) => e
       )
@@ -728,7 +813,7 @@ describe('when admitting partial uploads', () => {
 
     beforeEach(async () => {
       repository.getBudgetTotals.mockResolvedValueOnce(totals({ own: 100n, account: 100n, total: 100n, scene: 1000n }))
-      outcome = await admission.reserve('entity', [], 1000n, 100).then(
+      outcome = await admission.reserve('entity', [], caps(1000n), 100).then(
         () => 'admitted',
         (e: unknown) => e
       )
@@ -744,7 +829,7 @@ describe('when admitting partial uploads', () => {
 
     beforeEach(async () => {
       repository.getBudgetTotals.mockResolvedValueOnce(totals({ own: 600n, account: 600n, total: 600n, scene: 600n }))
-      outcome = await admission.reserve('entity', [], 1000n, 100).then(
+      outcome = await admission.reserve('entity', [], caps(1000n), 100).then(
         () => 'admitted',
         (e: unknown) => e
       )
@@ -760,7 +845,7 @@ describe('when admitting partial uploads', () => {
 
     beforeEach(async () => {
       repository.getBudgetTotals.mockResolvedValueOnce(totals({ own: 100n, account: 100n, total: 1000n, scene: 100n }))
-      outcome = await admission.reserve('entity', [], 1000n, 100).then(
+      outcome = await admission.reserve('entity', [], caps(1000n), 100).then(
         () => 'admitted',
         (e: unknown) => e
       )
@@ -778,7 +863,7 @@ describe('when admitting partial uploads', () => {
       repository.getBudgetTotals.mockResolvedValueOnce(
         totals({ own: 300n, account: 300n, total: 1001n, oldest: new Date(NOW - 60_900) })
       )
-      error = await admission.reserve('entity', [], 1000n, 100).catch((e: unknown) => e)
+      error = await admission.reserve('entity', [], caps(1000n), 100).catch((e: unknown) => e)
     })
 
     it('should round the retry up to the next second', () => {
@@ -796,7 +881,7 @@ describe('when admitting partial uploads', () => {
       repository.getBudgetTotals.mockResolvedValueOnce(
         totals({ own: 300n, account: 300n, total: 1001n, oldest: new Date(NOW - TTL_MS) })
       )
-      error = await admission.reserve('entity', [], 1000n, 100).catch((e: unknown) => e)
+      error = await admission.reserve('entity', [], caps(1000n), 100).catch((e: unknown) => e)
     })
 
     it('should retry after one second', () => {
@@ -809,7 +894,7 @@ describe('when admitting partial uploads', () => {
 
     beforeEach(async () => {
       repository.getBudgetTotals.mockResolvedValueOnce(totals({ own: 300n, account: 300n, total: 1001n, oldest: null }))
-      error = await admission.reserve('entity', [], 1000n, 100).catch((e: unknown) => e)
+      error = await admission.reserve('entity', [], caps(1000n), 100).catch((e: unknown) => e)
     })
 
     it('should retry after one cleanup interval', () => {
@@ -819,7 +904,7 @@ describe('when admitting partial uploads', () => {
 
   describe('and a batch fits every budget', () => {
     beforeEach(async () => {
-      await admission.reserve('entity', [{ hash: 'a', size: 100, stored: false, charged: true }], 1000n, 100)
+      await admission.reserve('entity', [{ hash: 'a', size: 100, stored: false, charged: true }], caps(1000n), 100)
     })
 
     it('should take the budget lock before merging its files', () => {
@@ -845,7 +930,7 @@ describe('when admitting partial uploads', () => {
 
   describe('and a batch has no receipts', () => {
     beforeEach(async () => {
-      await admission.reserve('entity', [], 1000n, 0)
+      await admission.reserve('entity', [], caps(1000n), 0)
     })
 
     it('should not merge any file', () => {
@@ -857,7 +942,13 @@ describe('when admitting partial uploads', () => {
     let pending: PendingScene
 
     beforeEach(async () => {
-      pending = await admission.admitBatch({ upload, receipts: [], maxSceneBytes: 1000n, incomingBytes: 100 })
+      pending = await admission.admitBatch({
+        upload,
+        receipts: [],
+        maxSceneBytes: 1000n,
+        worldSceneCapBytes: 1000n,
+        incomingBytes: 100
+      })
     })
 
     it('should return the created upload', () => {
@@ -875,7 +966,7 @@ describe('when admitting partial uploads', () => {
     beforeEach(async () => {
       repository.countByDeployer.mockResolvedValueOnce({ count: 2, oldest: new Date(NOW - 60_000) })
       error = await admission
-        .admitBatch({ upload, receipts: [], maxSceneBytes: 1000n, incomingBytes: 100 })
+        .admitBatch({ upload, receipts: [], maxSceneBytes: 1000n, worldSceneCapBytes: 1000n, incomingBytes: 100 })
         .catch((e: unknown) => e)
     })
 
@@ -890,7 +981,7 @@ describe('when admitting partial uploads', () => {
     beforeEach(async () => {
       repository.chargeByteRate.mockRejectedValueOnce(new Error('budget exceeded'))
       error = await admission
-        .admitBatch({ upload, receipts: [], maxSceneBytes: 1000n, incomingBytes: 100 })
+        .admitBatch({ upload, receipts: [], maxSceneBytes: 1000n, worldSceneCapBytes: 1000n, incomingBytes: 100 })
         .catch((e: unknown) => e)
     })
 
@@ -909,7 +1000,7 @@ describe('when admitting partial uploads', () => {
       repository.chargeByteRate.mockRejectedValueOnce(new Error('budget exceeded'))
       repository.discardUnadmitted.mockRejectedValueOnce(new Error('database down'))
       error = await admission
-        .admitBatch({ upload, receipts: [], maxSceneBytes: 1000n, incomingBytes: 100 })
+        .admitBatch({ upload, receipts: [], maxSceneBytes: 1000n, worldSceneCapBytes: 1000n, incomingBytes: 100 })
         .catch((e: unknown) => e)
     })
 
@@ -923,7 +1014,13 @@ describe('when admitting partial uploads', () => {
       repository.findRecord.mockResolvedValueOnce(record)
       repository.chargeByteRate.mockRejectedValueOnce(new Error('rate exceeded'))
       await admission
-        .admitBatch({ upload: { ...upload, resumes: true }, receipts: [], maxSceneBytes: 1000n, incomingBytes: 100 })
+        .admitBatch({
+          upload: { ...upload, resumes: true },
+          receipts: [],
+          maxSceneBytes: 1000n,
+          worldSceneCapBytes: 1000n,
+          incomingBytes: 100
+        })
         .catch(() => undefined)
     })
 
@@ -936,7 +1033,7 @@ describe('when admitting partial uploads', () => {
     beforeEach(async () => {
       repository.findRecord.mockResolvedValueOnce({ ...record, deployer: '0xother' })
       await admission
-        .admitBatch({ upload, receipts: [], maxSceneBytes: 1000n, incomingBytes: 100 })
+        .admitBatch({ upload, receipts: [], maxSceneBytes: 1000n, worldSceneCapBytes: 1000n, incomingBytes: 100 })
         .catch(() => undefined)
     })
 

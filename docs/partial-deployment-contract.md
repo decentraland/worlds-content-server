@@ -47,8 +47,8 @@ staging sweep; files never attached to a deployment would otherwise be invisible
 
 ## Operation and rollout
 
-Default limits: 10 uploads/account, 4 live uploads/world, 1 GiB staged/account, twice the world's scene size
-cap staged/world, 50 GiB staged/server database, 512 MiB accepted batch bytes/account/minute, 1-hour pending
+Default limits: 10 uploads/account, 4 live uploads/world (3 for one account), 1 GiB staged/account, twice the
+world's scene size cap staged/world, 50 GiB staged/server database, 512 MiB accepted batch bytes/account/minute, 1-hour pending
 lifetime (expired uploads cleaned up every 5 minutes) and
 24-hour completion retention. All are configured in `.env.default`. The staging budgets charge the bytes an
 upload stores itself (the manifest and content that was not in storage) and content that is in storage only
@@ -61,9 +61,12 @@ received byte counts against the per-minute rate. The scene size limit still
 counts every file of the scene; for DCL-name worlds it is the owner's remaining allowance capped at
 `MAX_SCENE_SIZE` (500 MiB), which startup requires to fit `MAX_PENDING_BYTES_PER_DEPLOYER`.
 A world owner can grant deploy permission to any number of addresses, each with its own account budgets,
-so the per-world limits (`MAX_PENDING_DEPLOYMENTS_PER_WORLD` and `PENDING_BYTES_PER_WORLD_FACTOR` times the
-world's scene size cap, 72 MiB for a 36 MiB ENS world) keep one world's deployers from filling the server
-budget for everyone else. They count only the world's live uploads, from every deployer. Expired slots and
+so the per-world limits (`MAX_PENDING_DEPLOYMENTS_PER_WORLD`, of which one account may hold all but one, and
+`PENDING_BYTES_PER_WORLD_FACTOR` times the world's scene size cap) keep one world's deployers from filling the
+server budget for everyone else. The world's cap doesn't depend on the owner's allowance or the parcels: it is
+the whitelisted size, `ENS_MAX_SIZE` for ENS worlds (72 MiB of staging for 36 MiB) or `MAX_SCENE_SIZE`. The
+world byte budget counts content bytes, not entity files, so even with a factor of 1 a scene within the cap
+fits. Both world limits count only the world's live uploads, from every deployer. Expired slots and
 bytes stay charged to the account and server budgets if physical cleanup fails; the failing upload is retried by the next run
 without holding back later ones. Each run visits every upload expired by the database clock when it starts, unless uploads keep
 the content lock busy, and runs (scheduled or from `POST /gc`) never overlap. When uploads keep the content

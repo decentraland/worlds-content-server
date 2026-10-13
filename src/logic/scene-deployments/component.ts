@@ -278,8 +278,14 @@ export async function createSceneDeploymentsComponent(
         'Deployment failed: a newer scene is already deployed on one or more of these parcels.'
       )
     }
-    const maxSize = await deploymentProcessing.trackStage('limits', 1, () =>
-      raceWithSignal(limitsManager.getMaxAllowedSizeInBytesFor(worldName, parcels), signal)
+    const [maxSize, worldSceneCap] = await deploymentProcessing.trackStage('limits', 1, () =>
+      raceWithSignal(
+        Promise.all([
+          limitsManager.getMaxAllowedSizeInBytesFor(worldName, parcels),
+          limitsManager.getSceneSizeCapInBytesFor(worldName)
+        ]),
+        signal
+      )
     )
     const initialInfos = pending?.initialized
       ? new Map<string, FileInfo | undefined>()
@@ -326,6 +332,7 @@ export async function createSceneDeploymentsComponent(
           },
           receipts: [...receipts.values()],
           maxSceneBytes: maxSize,
+          worldSceneCapBytes: worldSceneCap,
           incomingBytes
         },
         signal

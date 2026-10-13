@@ -321,3 +321,93 @@ describe('when computing the per-scene size limit', () => {
     })
   })
 })
+
+describe("when computing a world's stable scene size cap", () => {
+  let configValues: Record<string, string>
+  let whitelistEntries: Whitelist
+  let nameOwnership: jest.Mocked<INameOwnership>
+  let walletStats: jest.Mocked<IWalletStats>
+  let worldsManager: jest.Mocked<IWorldsManager>
+  let result: bigint
+
+  async function capFor(worldName: string): Promise<bigint> {
+    const limitsManager = await createLimitsManagerComponent({
+      config: createConfigComponent(configValues),
+      uploadLimits: await loadUploadLimits(createConfigComponent(configValues)),
+      nameOwnership,
+      walletStats,
+      whitelist: createMockWhitelistComponent(whitelistEntries),
+      worldsManager
+    })
+    return limitsManager.getSceneSizeCapInBytesFor(worldName)
+  }
+
+  beforeEach(() => {
+    configValues = { MAX_PARCELS: '4', MAX_SIZE: '200', ENS_MAX_SIZE: '36', ALLOW_SDK6: 'false', MAX_SCENE_SIZE: '150' }
+    whitelistEntries = {}
+    nameOwnership = createMockedNameOwnership()
+    walletStats = { get: jest.fn() }
+    worldsManager = createMockedWorldsManager()
+  })
+
+  describe('and the world is a DCL name', () => {
+    beforeEach(async () => {
+      result = await capFor('owned.dcl.eth')
+    })
+
+    it('should return MAX_SCENE_SIZE', () => {
+      expect(result).toBe(150n * MB_BigInt)
+    })
+
+    it("should not look up the owner, its wallet or the deployed parcels' sizes", () => {
+      expect({
+        owners: nameOwnership.findOwners.mock.calls.length,
+        wallets: walletStats.get.mock.calls.length,
+        parcels: worldsManager.getDeployedSceneSizeForParcels.mock.calls.length
+      }).toEqual({ owners: 0, wallets: 0, parcels: 0 })
+    })
+  })
+
+  describe('and the world is whitelisted with a size', () => {
+    beforeEach(async () => {
+      whitelistEntries = { 'owned.dcl.eth': { max_size_in_mb: 300 } }
+      result = await capFor('Owned.dcl.eth')
+    })
+
+    it('should return the whitelisted size for the lowercased name', () => {
+      expect(result).toBe(300n * MB_BigInt)
+    })
+  })
+
+  describe('and the world is whitelisted without a size', () => {
+    beforeEach(async () => {
+      whitelistEntries = { 'owned.dcl.eth': { max_parcels: 10 } }
+      result = await capFor('owned.dcl.eth')
+    })
+
+    it('should return MAX_SIZE', () => {
+      expect(result).toBe(200n * MB_BigInt)
+    })
+  })
+
+  describe('and the world is an ENS name in mixed case', () => {
+    beforeEach(async () => {
+      result = await capFor('Cool.ETH')
+    })
+
+    it('should return ENS_MAX_SIZE', () => {
+      expect(result).toBe(36n * MB_BigInt)
+    })
+  })
+
+  describe('and name ownership validation is ignored', () => {
+    beforeEach(async () => {
+      configValues.IGNORE_NAME_OWNERSHIP_VALIDATION = 'true'
+      result = await capFor('owned.dcl.eth')
+    })
+
+    it('should return MAX_SIZE', () => {
+      expect(result).toBe(200n * MB_BigInt)
+    })
+  })
+})

@@ -17,7 +17,8 @@ import {
   IPendingScenesRepository,
   NewPendingScene,
   PendingSceneRecord,
-  PublicationRecord
+  PublicationRecord,
+  WorldUploadCounts
 } from './types'
 
 type PendingSceneRow = {
@@ -100,11 +101,25 @@ export async function createPendingScenesRepository(
   async function countLiveByWorld(
     query: Query,
     worldName: string,
+    deployer: string,
     cutoff: Date
-  ): Promise<{ count: number; oldest: Date | null }> {
-    const count = await query<{ count: string; oldest: Date | null }>(SQL`SELECT COUNT(*) AS count,
-        MIN(created_at) AS oldest FROM pending_scenes WHERE world_name = ${worldName} AND created_at > ${cutoff}`)
-    return { count: Number(count.rows[0].count), oldest: count.rows[0].oldest }
+  ): Promise<WorldUploadCounts> {
+    const counts = await query<{
+      count: string
+      oldest: Date | null
+      deployer_count: string
+      deployer_oldest: Date | null
+    }>(SQL`SELECT COUNT(*) AS count, MIN(created_at) AS oldest,
+        COUNT(*) FILTER (WHERE deployer = ${deployer}) AS deployer_count,
+        MIN(created_at) FILTER (WHERE deployer = ${deployer}) AS deployer_oldest
+      FROM pending_scenes WHERE world_name = ${worldName} AND created_at > ${cutoff}`)
+    const row = counts.rows[0]
+    return {
+      count: Number(row.count),
+      oldest: row.oldest,
+      deployerCount: Number(row.deployer_count),
+      deployerOldest: row.deployer_oldest
+    }
   }
 
   async function insert(query: Query, scene: NewPendingScene): Promise<PendingSceneRecord> {
@@ -173,14 +188,13 @@ export async function createPendingScenesRepository(
       world: string
       total: string
       own: string
+      own_content: string
       scene: string
       account_oldest: Date | null
       world_oldest: Date | null
       oldest: Date | null
     }>(SQL`
         SELECT COALESCE(SUM(reserved_bytes) FILTER (WHERE deployer = ${deployer}), 0)::text AS account,
-          COALESCE(SUM(reserved_bytes) FILTER (WHERE world_name = ${worldName} AND created_at > ${liveCutoff}), 0)::text
-            AS world,
           COALESCE(SUM(reserved_bytes), 0)::text AS total,
           COALESCE(SUM(reserved_bytes) FILTER (WHERE entity_id = ${entityId}), 0)::text AS own,
           MIN(created_at) FILTER (WHERE deployer = ${deployer} AND reserved_bytes > 0) AS account_oldest,
@@ -188,7 +202,13 @@ export async function createPendingScenesRepository(
             AND reserved_bytes > 0) AS world_oldest,
           MIN(created_at) FILTER (WHERE reserved_bytes > 0) AS oldest,
           (SELECT COALESCE(SUM(size), 0)::text FROM pending_scene_files
-            WHERE entity_id = ${entityId} AND hash != ${entityId}) AS scene
+            WHERE entity_id = ${entityId} AND hash != ${entityId}) AS scene,
+          (SELECT COALESCE(SUM(size), 0)::text FROM pending_scene_files
+            WHERE entity_id = ${entityId} AND hash != ${entityId} AND charged) AS own_content,
+          -- Content only, like the scene size the world budget is a multiple of.
+          (SELECT COALESCE(SUM(f.size), 0)::text FROM pending_scene_files f JOIN pending_scenes p USING (entity_id)
+            WHERE p.world_name = ${worldName} AND p.created_at > ${liveCutoff} AND f.charged AND f.hash != f.entity_id)
+            AS world
         FROM pending_scenes`)
     const row = totals.rows[0]
     return {
@@ -196,6 +216,7 @@ export async function createPendingScenesRepository(
       world: BigInt(row.world),
       total: BigInt(row.total),
       own: BigInt(row.own),
+      ownContent: BigInt(row.own_content),
       scene: BigInt(row.scene),
       accountOldest: row.account_oldest,
       worldOldest: row.world_oldest,

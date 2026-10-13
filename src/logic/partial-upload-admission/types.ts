@@ -18,11 +18,19 @@ export type UpsertPendingScene = {
   resumes: boolean
 }
 
+export type SceneSizeCaps = {
+  /** This upload's scene cap: the owner's allowance for its parcels, capped per scene. */
+  maxSceneBytes: bigint
+  /** The world's stable per-scene cap; the world staging budget is a multiple of it. */
+  worldSceneCapBytes: bigint
+}
+
 export type AdmitBatchInput = {
   upload: UpsertPendingScene
   /** Only charged receipts count toward the budgets; every receipt counts toward the scene size. */
   receipts: FileReceipt[]
   maxSceneBytes: bigint
+  worldSceneCapBytes: bigint
   /** Bytes received in this batch, charged against the byte rate. */
   incomingBytes: number
 }
@@ -44,12 +52,13 @@ export interface IPartialUploadAdmission {
    * content lock.
    * @throws PartialUploadExpiredError when the upload is gone or its lifetime from `admittedAt` has ended.
    * @throws PartialUploadOwnershipError when another account started the upload.
-   * @throws PartialUploadQuotaExceededError when the account or the world has its maximum of uploads.
+   * @throws PartialUploadQuotaExceededError when the account, the world or the account's share of the world
+   * has its maximum of uploads.
    */
   upsert(input: UpsertPendingScene, signal?: AbortSignal): Promise<PendingScene>
   /**
    * Reserves bytes before writes, including concurrent account/world/global budgets and incoming byte rate.
-   * The world budget is `maxSceneBytes` times the configured factor, counting live uploads only.
+   * The world budget is `worldSceneCapBytes` times the configured factor, counting live uploads only.
    * Only charged receipts count toward the budgets; every receipt counts toward the scene size.
    * @throws PartialUploadNotFoundError when the upload no longer exists.
    * @throws PartialUploadExpiredError when the upload has expired; nothing is charged then.
@@ -60,7 +69,7 @@ export interface IPartialUploadAdmission {
   reserve(
     entityId: string,
     receipts: FileReceipt[],
-    maxSceneBytes: bigint,
+    caps: SceneSizeCaps,
     incomingBytes: number,
     signal?: AbortSignal
   ): Promise<void>

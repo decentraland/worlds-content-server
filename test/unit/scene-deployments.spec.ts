@@ -83,7 +83,10 @@ describe('when staging a partial deployment', () => {
       coordinates: createCoordinatesComponent(),
       deploymentProcessing: createDeploymentProcessingMock(),
       entityDeployer: { deployEntity },
-      limitsManager: { getMaxAllowedSizeInBytesFor: jest.fn().mockResolvedValue(10000n) },
+      limitsManager: {
+        getMaxAllowedSizeInBytesFor: jest.fn().mockResolvedValue(10000n),
+        getSceneSizeCapInBytesFor: jest.fn().mockResolvedValue(20000n)
+      },
       logs: { getLogger: jest.fn() },
       metrics: { increment, observe },
       partialUploadAdmission: {
@@ -147,6 +150,36 @@ describe('when staging a partial deployment', () => {
         metadata: 0,
         reservations: 0
       })
+    })
+  })
+
+  describe('and two uploads to one world get different size credits for their parcels', () => {
+    let caps: unknown[]
+
+    beforeEach(async () => {
+      const { limitsManager } = components as unknown as { limitsManager: Record<string, jest.Mock> }
+      limitsManager.getMaxAllowedSizeInBytesFor.mockResolvedValueOnce(5000n).mockResolvedValueOnce(8000n)
+      await stage(input)
+      await stage({
+        ...input,
+        entity: {
+          ...input.entity,
+          id: 'other-entity',
+          pointers: ['5,5'],
+          metadata: { worldConfiguration: { name: 'world.dcl.eth' }, scene: { base: '5,5', parcels: ['5,5'] } }
+        }
+      })
+      caps = admitBatch.mock.calls.map(([batch]) => ({
+        maxSceneBytes: batch.maxSceneBytes,
+        worldSceneCapBytes: batch.worldSceneCapBytes
+      }))
+    })
+
+    it("should check each scene against its own credit but budget the world on the world's stable cap", () => {
+      expect(caps).toEqual([
+        { maxSceneBytes: 5000n, worldSceneCapBytes: 20000n },
+        { maxSceneBytes: 8000n, worldSceneCapBytes: 20000n }
+      ])
     })
   })
 

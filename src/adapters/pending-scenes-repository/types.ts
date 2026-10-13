@@ -47,6 +47,15 @@ export type ExpiredUploadCursor = { entityId: string; createdAt: string }
 /** The per-minute byte window of an account after charging a batch. */
 export type ByteRateWindow = { bytes: bigint; retryAfterSeconds: number }
 
+/** A world's live uploads. */
+export type WorldUploadCounts = {
+  count: number
+  oldest: Date | null
+  /** The deployer's uploads among them. */
+  deployerCount: number
+  deployerOldest: Date | null
+}
+
 /** The upload whose reservation reads the budget totals. */
 export type BudgetScope = {
   entityId: string
@@ -60,12 +69,14 @@ export type BudgetScope = {
 export type BudgetTotals = {
   /** Charged bytes of the account's uploads. */
   account: bigint
-  /** Charged bytes of the world's live uploads, from every deployer. */
+  /** Charged bytes of the world's live uploads, from every deployer, but their entity files. */
   world: bigint
   /** Charged bytes of every upload. */
   total: bigint
   /** Charged bytes of this upload. */
   own: bigint
+  /** Charged bytes of this upload but its entity file. */
+  ownContent: bigint
   /** Every known file of this upload but its entity file, charged or not. */
   scene: bigint
   /** Creation of the account's oldest upload holding charged bytes. */
@@ -102,8 +113,8 @@ export interface IPendingScenesRepository extends IBaseComponent {
   countByDeployer(query: Query, deployer: string): Promise<{ count: number; oldest: Date | null }>
   /** Serializes the transaction with every other one holding the same world's lock. */
   lockWorld(query: Query, worldName: string): Promise<void>
-  /** Counts a world's uploads created after `cutoff`, from every deployer, and finds the oldest one's creation. */
-  countLiveByWorld(query: Query, worldName: string, cutoff: Date): Promise<{ count: number; oldest: Date | null }>
+  /** Counts a world's uploads created after `cutoff`, in total and the deployer's, with each one's oldest. */
+  countLiveByWorld(query: Query, worldName: string, deployer: string, cutoff: Date): Promise<WorldUploadCounts>
   insert(query: Query, scene: NewPendingScene): Promise<PendingSceneRecord>
   /** Retrieves who owns an upload, its world and when it was created. */
   getOwner(

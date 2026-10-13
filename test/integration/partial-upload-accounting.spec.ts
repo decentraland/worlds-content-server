@@ -9,11 +9,17 @@ import {
   IPartialUploadAdmission,
   PartialUploadExpiredError,
   PartialUploadQuotaExceededError,
-  PartialUploadTooLargeError
+  PartialUploadTooLargeError,
+  SceneSizeCaps
 } from '../../src/logic/partial-upload-admission'
 import { DEFAULT_MAX_UPLOAD_SIZE_IN_BYTES, loadUploadLimits, UploadLimits } from '../../src/logic/upload-limits'
 import { createPendingScenesRepository, IPendingScenesRepository } from '../../src/adapters/pending-scenes-repository'
 import { CLEANUP_PAGE_SIZE, createContentGcComponent, IContentGcComponent } from '../../src/logic/content-gc'
+
+/** Size caps where the world's stable cap defaults to the upload's own scene cap. */
+function caps(maxSceneBytes: bigint, worldSceneCapBytes = maxSceneBytes): SceneSizeCaps {
+  return { maxSceneBytes, worldSceneCapBytes }
+}
 
 test('when accounting for independent partial uploads', ({ components }) => {
   let manager: IPartialUploadAdmission
@@ -174,7 +180,7 @@ test('when accounting for independent partial uploads', ({ components }) => {
       await create(first)
       await components.database.query(SQL`UPDATE pending_scenes SET created_at = now() - interval '2 days'`)
       reserveError = await manager
-        .reserve(first.id, [{ hash: 'content-a', size: 400, stored: false, charged: true }], 1000n, 400)
+        .reserve(first.id, [{ hash: 'content-a', size: 400, stored: false, charged: true }], caps(1000n), 400)
         .catch((error: unknown) => error)
       const reserved = await components.database.query('SELECT reserved_bytes FROM pending_scenes')
       const rate = await components.database.query('SELECT bytes FROM partial_upload_rates')
@@ -202,7 +208,7 @@ test('when accounting for independent partial uploads', ({ components }) => {
       await lockClient.query('BEGIN')
       await lockClient.query(`SELECT pg_advisory_xact_lock(hashtextextended('partial-upload-budget', 0))`)
       const reservation = manager
-        .reserve(first.id, [{ hash: 'content-a', size: 400, stored: false, charged: true }], 1000n, 400)
+        .reserve(first.id, [{ hash: 'content-a', size: 400, stored: false, charged: true }], caps(1000n), 400)
         .catch((error: unknown) => error)
       waitedOnBudget = await waitForAdvisoryLocks(components.database, 'partial-upload-budget', 'waiting').then(
         () => true,
@@ -243,8 +249,8 @@ test('when accounting for independent partial uploads', ({ components }) => {
       await create(second)
       outcome = settle(
         await Promise.allSettled([
-          manager.reserve(first.id, [{ hash: 'content-a', size: 400, stored: false, charged: true }], 1000n, 400),
-          manager.reserve(second.id, [{ hash: 'content-b', size: 400, stored: false, charged: true }], 1000n, 400)
+          manager.reserve(first.id, [{ hash: 'content-a', size: 400, stored: false, charged: true }], caps(1000n), 400),
+          manager.reserve(second.id, [{ hash: 'content-b', size: 400, stored: false, charged: true }], caps(1000n), 400)
         ])
       )
       count = await pendingCount()
@@ -277,8 +283,8 @@ test('when accounting for independent partial uploads', ({ components }) => {
       await create(second, '0xanother')
       outcome = settle(
         await Promise.allSettled([
-          manager.reserve(first.id, [{ hash: 'content-a', size: 600, stored: false, charged: true }], 1000n, 600),
-          manager.reserve(second.id, [{ hash: 'content-b', size: 600, stored: false, charged: true }], 1000n, 600)
+          manager.reserve(first.id, [{ hash: 'content-a', size: 600, stored: false, charged: true }], caps(1000n), 600),
+          manager.reserve(second.id, [{ hash: 'content-b', size: 600, stored: false, charged: true }], caps(1000n), 600)
         ])
       )
     })
@@ -296,8 +302,18 @@ test('when accounting for independent partial uploads', ({ components }) => {
   describe('and a retry reserves the same file again', () => {
     beforeEach(async () => {
       await create(first)
-      await manager.reserve(first.id, [{ hash: 'content-a', size: 400, stored: false, charged: true }], 1000n, 400)
-      await manager.reserve(first.id, [{ hash: 'content-a', size: 400, stored: false, charged: true }], 1000n, 400)
+      await manager.reserve(
+        first.id,
+        [{ hash: 'content-a', size: 400, stored: false, charged: true }],
+        caps(1000n),
+        400
+      )
+      await manager.reserve(
+        first.id,
+        [{ hash: 'content-a', size: 400, stored: false, charged: true }],
+        caps(1000n),
+        400
+      )
     })
     it('should charge storage once while charging both requests against the byte rate', async () => {
       const result = await components.database.query<{ reserved_bytes: string; bytes: string }>(
@@ -314,7 +330,7 @@ test('when accounting for independent partial uploads', ({ components }) => {
     beforeEach(async () => {
       await create(first)
       error = await manager
-        .reserve(first.id, [{ hash: 'content-a', size: 700, stored: false, charged: true }], 1000n, 700)
+        .reserve(first.id, [{ hash: 'content-a', size: 700, stored: false, charged: true }], caps(1000n), 700)
         .catch((e) => e)
       const result = await components.database.query<{ bytes: string }>('SELECT bytes FROM partial_upload_rates')
       rateBytes = result.rows[0].bytes
@@ -343,9 +359,14 @@ test('when accounting for independent partial uploads', ({ components }) => {
 
     beforeEach(async () => {
       await create(first)
-      await manager.reserve(first.id, [{ hash: 'content-a', size: 400, stored: false, charged: true }], 1000n, 400)
+      await manager.reserve(
+        first.id,
+        [{ hash: 'content-a', size: 400, stored: false, charged: true }],
+        caps(1000n),
+        400
+      )
       error = await manager
-        .reserve(first.id, [{ hash: 'content-b', size: 300, stored: false, charged: true }], 1000n, 300)
+        .reserve(first.id, [{ hash: 'content-b', size: 300, stored: false, charged: true }], caps(1000n), 300)
         .catch((e: unknown) => e)
     })
 
@@ -445,10 +466,15 @@ test('when accounting for independent partial uploads', ({ components }) => {
       await create({ ...first, id: 'other' }, '0xother', new Date(Date.now() - 150_000))
       await create(first, signer, new Date(Date.now() - 100_000))
       await create(second)
-      await manager.reserve('other', [{ hash: 'content-c', size: 50, stored: false, charged: true }], 1000n, 50)
-      await manager.reserve(first.id, [{ hash: 'content-a', size: 400, stored: false, charged: true }], 1000n, 400)
+      await manager.reserve('other', [{ hash: 'content-c', size: 50, stored: false, charged: true }], caps(1000n), 50)
+      await manager.reserve(
+        first.id,
+        [{ hash: 'content-a', size: 400, stored: false, charged: true }],
+        caps(1000n),
+        400
+      )
       error = await manager
-        .reserve(second.id, [{ hash: 'content-b', size: 300, stored: false, charged: true }], 1000n, 300)
+        .reserve(second.id, [{ hash: 'content-b', size: 300, stored: false, charged: true }], caps(1000n), 300)
         .catch((e: unknown) => e)
     })
 
@@ -473,9 +499,14 @@ test('when accounting for independent partial uploads', ({ components }) => {
       await create({ ...first, id: 'idle' }, '0xidle', new Date(Date.now() - 250_000))
       await create(first, '0xanother', new Date(Date.now() - 50_000))
       await create(second)
-      await manager.reserve(first.id, [{ hash: 'content-a', size: 500, stored: false, charged: true }], 1000n, 500)
+      await manager.reserve(
+        first.id,
+        [{ hash: 'content-a', size: 500, stored: false, charged: true }],
+        caps(1000n),
+        500
+      )
       error = await manager
-        .reserve(second.id, [{ hash: 'content-b', size: 550, stored: false, charged: true }], 1000n, 550)
+        .reserve(second.id, [{ hash: 'content-b', size: 550, stored: false, charged: true }], caps(1000n), 550)
         .catch((e: unknown) => e)
     })
 
@@ -497,7 +528,12 @@ test('when accounting for independent partial uploads', ({ components }) => {
 
     beforeEach(async () => {
       await create(first)
-      await manager.reserve(first.id, [{ hash: 'content-a', size: 100, stored: false, charged: true }], 1000n, 100)
+      await manager.reserve(
+        first.id,
+        [{ hash: 'content-a', size: 100, stored: false, charged: true }],
+        caps(1000n),
+        100
+      )
       await components.database.query(
         SQL`UPDATE partial_upload_rates SET window_started = now() - interval '30 seconds'`
       )
@@ -505,7 +541,7 @@ test('when accounting for independent partial uploads', ({ components }) => {
         .reserve(
           first.id,
           [{ hash: 'content-a', size: 100, stored: false, charged: true }],
-          1000n,
+          caps(1000n),
           DEFAULT_MAX_UPLOAD_SIZE_IN_BYTES
         )
         .catch((e: unknown) => e)
@@ -534,14 +570,14 @@ test('when accounting for independent partial uploads', ({ components }) => {
       await manager.reserve(
         first.id,
         [{ hash: 'content-a', size: 100, stored: false, charged: true }],
-        1000n,
+        caps(1000n),
         DEFAULT_MAX_UPLOAD_SIZE_IN_BYTES
       )
       await components.database.query(
         SQL`UPDATE partial_upload_rates SET window_started = now() - interval '61 seconds'`
       )
       error = await manager
-        .reserve(first.id, [{ hash: 'content-a', size: 100, stored: false, charged: true }], 1000n, 100)
+        .reserve(first.id, [{ hash: 'content-a', size: 100, stored: false, charged: true }], caps(1000n), 100)
         .then(() => undefined)
         .catch((e: unknown) => e)
       const result = await components.database.query<{ bytes: string; reset: boolean }>(
@@ -706,7 +742,7 @@ test('when accounting for independent partial uploads', ({ components }) => {
         .reserve(
           first.id,
           [{ hash: 'content-a', size: 100, stored: false, charged: true }],
-          1000n,
+          caps(1000n),
           DEFAULT_MAX_UPLOAD_SIZE_IN_BYTES + 1
         )
         .catch((e: unknown) => e)
@@ -736,7 +772,7 @@ test('when accounting for independent partial uploads', ({ components }) => {
     beforeEach(async () => {
       await create(first)
       await manager
-        .reserve(first.id, [{ hash: 'content-a', size: 700, stored: false, charged: true }], 1000n, 700)
+        .reserve(first.id, [{ hash: 'content-a', size: 700, stored: false, charged: true }], caps(1000n), 700)
         .catch(() => undefined)
       await repository.discardUnadmitted(first.id)
     })
@@ -749,7 +785,12 @@ test('when accounting for independent partial uploads', ({ components }) => {
   describe('and an admitted upload is discarded as unadmitted', () => {
     beforeEach(async () => {
       await create(first)
-      await manager.reserve(first.id, [{ hash: 'content-a', size: 400, stored: false, charged: true }], 1000n, 400)
+      await manager.reserve(
+        first.id,
+        [{ hash: 'content-a', size: 400, stored: false, charged: true }],
+        caps(1000n),
+        400
+      )
       await repository.discardUnadmitted(first.id)
     })
 
@@ -771,7 +812,7 @@ test('when accounting for independent partial uploads', ({ components }) => {
             { hash: 'content-a', size: 500, stored: true, charged: false },
             { hash: 'content-b', size: 200, stored: false, charged: true }
           ],
-          1000n,
+          caps(1000n),
           200
         )
         .catch((error: unknown) => error)
@@ -806,7 +847,7 @@ test('when accounting for independent partial uploads', ({ components }) => {
             { hash: 'content-a', size: 900, stored: true, charged: false },
             { hash: 'content-b', size: 200, stored: false, charged: true }
           ],
-          1000n,
+          caps(1000n),
           200
         )
         .catch((error: unknown) => error)
@@ -822,8 +863,13 @@ test('when accounting for independent partial uploads', ({ components }) => {
 
     beforeEach(async () => {
       await create(first)
-      await manager.reserve(first.id, [{ hash: 'content-a', size: 400, stored: false, charged: true }], 1000n, 400)
-      await manager.reserve(first.id, [{ hash: 'content-a', size: 400, stored: true, charged: false }], 1000n, 0)
+      await manager.reserve(
+        first.id,
+        [{ hash: 'content-a', size: 400, stored: false, charged: true }],
+        caps(1000n),
+        400
+      )
+      await manager.reserve(first.id, [{ hash: 'content-a', size: 400, stored: true, charged: false }], caps(1000n), 0)
       reserved = (await components.database.query('SELECT reserved_bytes FROM pending_scenes')).rows
     })
 
@@ -844,7 +890,7 @@ test('when accounting for independent partial uploads', ({ components }) => {
           { hash: 'content-a', size: 500, stored: true, charged: false },
           { hash: 'content-b', size: 100, stored: false, charged: true }
         ],
-        1000n,
+        caps(1000n),
         100
       )
       observe = jest.spyOn(components.metrics, 'observe')
@@ -871,14 +917,19 @@ test('when accounting for independent partial uploads', ({ components }) => {
   describe('and an expired upload still occupies storage', () => {
     function reserveSecond(): Promise<unknown> {
       return manager
-        .reserve(second.id, [{ hash: 'content-b', size: 400, stored: false, charged: true }], 1000n, 400)
+        .reserve(second.id, [{ hash: 'content-b', size: 400, stored: false, charged: true }], caps(1000n), 400)
         .then(() => undefined)
         .catch((error: unknown) => error)
     }
 
     beforeEach(async () => {
       await create(first)
-      await manager.reserve(first.id, [{ hash: 'content-a', size: 400, stored: false, charged: true }], 1000n, 400)
+      await manager.reserve(
+        first.id,
+        [{ hash: 'content-a', size: 400, stored: false, charged: true }],
+        caps(1000n),
+        400
+      )
       await components.storage.storeStream('content-a', bufferToStream(Buffer.alloc(400)))
       await components.database.query(SQL`UPDATE pending_scenes SET created_at = now() - interval '2 days'`)
       await create(second)
@@ -1105,8 +1156,8 @@ test('when accounting for independent partial uploads', ({ components }) => {
       return { ...first, id, content: [{ hash: `content-${id}`, file: id }] }
     }
 
-    function reserve(id: string, size: number, maxSceneBytes = 250n): Promise<void> {
-      return manager.reserve(id, [{ hash: `content-${id}`, size, stored: false, charged: true }], maxSceneBytes, size)
+    function reserve(id: string, size: number): Promise<void> {
+      return manager.reserve(id, [{ hash: `content-${id}`, size, stored: false, charged: true }], caps(250n), size)
     }
 
     describe('and their uploads exceed the world byte budget', () => {
@@ -1179,6 +1230,94 @@ test('when accounting for independent partial uploads', ({ components }) => {
 
       it('should still admit an upload to another world', () => {
         expect({ otherWorld, pending }).toEqual({ otherWorld: 'admitted', pending: 3 })
+      })
+    })
+
+    describe("and one account holds all but the last of the world's slots", () => {
+      let error: unknown
+      let otherAccount: unknown
+
+      beforeEach(async () => {
+        await build({ maxPendingDeploymentsPerWorld: 3 })
+        await create(upload('a1'), '0xa', new Date(Date.now() - 100_000))
+        await create(upload('a2'), '0xa')
+        error = await create(upload('a3'), '0xa').catch((e: unknown) => e)
+        otherAccount = await create(upload('b'), '0xb').then(
+          () => 'admitted',
+          (e: unknown) => e
+        )
+      })
+
+      it("should reject the account's next upload with the world upload-count quota, retrying when its oldest upload in the world expires", () => {
+        expect({
+          quota: (error as PartialUploadQuotaExceededError).quota,
+          message: (error as Error).message,
+          retryAfter: (error as PartialUploadQuotaExceededError).retryAfterSeconds
+        }).toEqual({
+          quota: 'uploads_per_world',
+          message:
+            'Too many partial uploads in progress for this account in this world: 2 of the 2 allowed. Complete an upload or wait for one to expire.',
+          retryAfter: 200
+        })
+      })
+
+      it('should still admit another account to the last slot', () => {
+        expect(otherAccount).toBe('admitted')
+      })
+    })
+
+    describe("and part of a world upload's content is already published", () => {
+      let outcome: unknown
+
+      beforeEach(async () => {
+        await create(upload('a'), '0xa')
+        await create(upload('b'), '0xb')
+        await create(upload('c'), '0xc')
+        await manager.reserve(
+          'a',
+          [
+            { hash: 'published', size: 200, stored: true, charged: false },
+            { hash: 'content-a', size: 50, stored: false, charged: true }
+          ],
+          caps(250n),
+          50
+        )
+        await reserve('b', 250)
+        outcome = await reserve('c', 200).then(
+          () => 'admitted',
+          (e: unknown) => e
+        )
+      })
+
+      it('should not charge the published content to the world budget', () => {
+        expect(outcome).toBe('admitted')
+      })
+    })
+
+    describe('and a scene at the world budget carries a large manifest', () => {
+      let outcome: unknown
+
+      beforeEach(async () => {
+        await build({ pendingBytesPerWorldFactor: 1 })
+        await create(upload('a'), '0xa')
+        outcome = await manager
+          .reserve(
+            'a',
+            [
+              { hash: 'a', size: 200, stored: false, charged: true },
+              { hash: 'content-a', size: 250, stored: false, charged: true }
+            ],
+            caps(250n),
+            450
+          )
+          .then(
+            () => 'admitted',
+            (e: unknown) => e
+          )
+      })
+
+      it('should admit it', () => {
+        expect(outcome).toBe('admitted')
       })
     })
 
