@@ -89,5 +89,7 @@ Reserved-byte gauges are database snapshots updated by admission/cleanup, not in
 The progress integration test asserts one initial inventory and zero metadata probes afterwards, including
 the publishing batch (N probes instead of approximately 2NB for N hashes in B batches). Publication takes
 content sizes from the upload's receipts: GC never deletes content a live upload references, and the content
-lock is held through publication. Content deleted out of band between batches is not re-requested.
+lock is held through publication. Each instance judges expiry by its own clock, so GC and expired-upload cleanup
+only reclaim an upload 60 s after its lifetime ends; clock skew below that can't remove content another instance
+still publishes. Content deleted out of band between batches is not re-requested.
 These counts are structural measurements, not S3 throughput or latency benchmarks.

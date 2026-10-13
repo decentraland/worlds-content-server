@@ -4,6 +4,7 @@ import { ContentLockTimeoutError } from '../../src/adapters/content-locks/errors
 import {
   CLEANUP_PAGE_SIZE,
   createContentGcComponent,
+  EXPIRY_CLOCK_SKEW_GRACE_MS,
   ExpiredUploadsCleanup,
   IContentGcComponent
 } from '../../src/logic/content-gc'
@@ -314,7 +315,12 @@ describe('when deleting expired partial uploads', () => {
 
     it('should resume the second page after the last upload of the first', () => {
       const last = firstPage[firstPage.length - 1]
-      expect(listings[1].values).toEqual([new Date(NOW - 60 * 60 * 1000), last.cursor, last.entity_id, 100])
+      expect(listings[1].values).toEqual([
+        new Date(NOW - 60 * 60 * 1000 - EXPIRY_CLOCK_SKEW_GRACE_MS),
+        last.cursor,
+        last.entity_id,
+        100
+      ])
     })
   })
 

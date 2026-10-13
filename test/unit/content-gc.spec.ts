@@ -1,6 +1,7 @@
 import { ContentLockTimeoutError } from '../../src/adapters/content-locks/errors'
 import {
   createContentGcComponent,
+  EXPIRY_CLOCK_SKEW_GRACE_MS,
   ExpiredUploadsCleanup,
   GarbageCollection,
   IContentGcComponent
@@ -93,8 +94,10 @@ describe('when collecting unreferenced content', () => {
       })
     })
 
-    it('should keep content held by uploads younger than the pending lifetime', () => {
-      expect(pendingScenesRepository.getReferencedContentKeys.mock.calls[0][0]).toEqual(new Date(NOW - TTL_MS))
+    it('should keep content held by uploads younger than the pending lifetime plus the clock-skew grace', () => {
+      expect(pendingScenesRepository.getReferencedContentKeys.mock.calls[0][0]).toEqual(
+        new Date(NOW - TTL_MS - EXPIRY_CLOCK_SKEW_GRACE_MS)
+      )
     })
   })
 
@@ -141,6 +144,16 @@ describe('when collecting unreferenced content', () => {
       expect(increment.mock.calls.filter(([metric]) => metric === 'garbage_collection_removed_keys')).toEqual([
         ['garbage_collection_removed_keys', {}, 1]
       ])
+    })
+
+    it('should list and release only uploads expired for longer than the clock-skew grace', () => {
+      expect({
+        listed: pendingScenesRepository.listExpired.mock.calls[0][0],
+        released: pendingScenesRepository.releaseExpired.mock.calls[0][1]
+      }).toEqual({
+        listed: new Date(NOW - TTL_MS - EXPIRY_CLOCK_SKEW_GRACE_MS),
+        released: new Date(NOW - TTL_MS - EXPIRY_CLOCK_SKEW_GRACE_MS)
+      })
     })
 
     it('should reclaim the expired upload after the sweep, deleting its objects before releasing it', () => {
