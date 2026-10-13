@@ -16,7 +16,7 @@ export type PrevalidateDeploymentInput = {
 
 export type DeployInput = {
   baseUrl: string
-  entityRaw: string
+  entityFile: Uint8Array
   /** The deployment returned by {@link ISceneDeploymentsComponent.prevalidateDeployment}. */
   deployment: DeploymentToValidate
   /** Request-scoped cancellation (client disconnect or the deployment-processing deadline). */
@@ -33,7 +33,7 @@ export type DeployResult = DeploymentResult & {
 export type StageDeploymentInput = {
   baseUrl: string
   entity: Entity
-  entityRaw: string
+  entityFile: Uint8Array
   authChain: AuthChain
   /** Files uploaded in this request; those not already present are charged, stored and recorded. */
   files: Map<string, DeploymentFile>

@@ -101,7 +101,7 @@ async function authenticateRequest(ctx: DeployEntityContext): Promise<Authentica
   return { entityId, authChain, isPartial }
 }
 
-type ParsedEntity = { entity: Entity; entityRaw: string }
+type ParsedEntity = { entity: Entity; entityFile: Uint8Array }
 
 /** Request work done before the content lock: only the request's own temp files and database reads. */
 type PreparedDeployment =
@@ -125,6 +125,9 @@ async function getBaseUrl(ctx: DeployEntityContext): Promise<string> {
   return (await ctx.components.config.getString('HTTP_BASE_URL')) || `https://${ctx.url.host}`
 }
 
+// Lenient like the catalysts (a BOM is skipped, invalid bytes are replaced); storage keeps the uploaded bytes.
+const entityFileDecoder = new TextDecoder()
+
 // Reads the entity JSON, small whatever the content size, from the object validation later hashes so the
 // buffer is memoized on it. `id` is spread last so scene metadata cannot override the authenticated id.
 async function readEntity(file: DeploymentFile, entityId: string, signal: AbortSignal): Promise<ParsedEntity> {
@@ -134,8 +137,8 @@ async function readEntity(file: DeploymentFile, entityId: string, signal: AbortS
       `The entity file is too large. The maximum allowed size is ${MAX_ENTITY_FILE_SIZE_IN_BYTES} bytes.`
     )
   }
-  const entityRaw = (await file.asBuffer(signal)).toString()
-  return { entity: { ...parseEntityJson(entityRaw), id: entityId }, entityRaw }
+  const entityFile = await file.asBuffer(signal)
+  return { entity: { ...parseEntityJson(entityFileDecoder.decode(entityFile)), id: entityId }, entityFile }
 }
 
 /** Answers a partial batch of an entity that is already published, from receipts or the live scene. */
@@ -306,7 +309,7 @@ async function deployEntityWithSignal(
   // Vanilla (single-request) deployment, validated before the lock up to its storage-backed checks.
   const result = await ctx.components.sceneDeployments.deploy({
     baseUrl: await getBaseUrl(ctx),
-    entityRaw: prepared.parsed.entityRaw,
+    entityFile: prepared.parsed.entityFile,
     deployment: prepared.deployment,
     signal,
     deadlineAt

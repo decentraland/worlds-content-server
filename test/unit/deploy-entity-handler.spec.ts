@@ -148,6 +148,48 @@ describe('deployEntity', () => {
     })
   })
 
+  describe('when the entity file is not valid UTF-8', () => {
+    let entityBytes: Buffer
+    let deploy: jest.Mock
+
+    beforeEach(async () => {
+      entityBytes = Buffer.concat([
+        Buffer.from('{"type":"scene","pointers":["0,0"],"content":[],"metadata":{"title":"a'),
+        Buffer.from([0xff]),
+        Buffer.from('"}}')
+      ])
+      deploy = jest.fn().mockResolvedValue({ message: 'deployed' })
+      const context = createContext(entityId, { [entityId]: makeFile(entityBytes) })
+      context.components.sceneDeployments.deploy = deploy
+      await deployEntity(context)
+    })
+
+    it('should deploy the uploaded bytes unchanged', () => {
+      expect(Buffer.from(deploy.mock.calls[0][0].entityFile)).toStrictEqual(entityBytes)
+    })
+  })
+
+  describe('when the entity file starts with a byte order mark', () => {
+    let deploy: jest.Mock
+
+    beforeEach(async () => {
+      const entityBytes = Buffer.concat([
+        Buffer.from([0xef, 0xbb, 0xbf]),
+        Buffer.from(JSON.stringify({ type: 'scene', pointers: ['0,0'], content: [] }))
+      ])
+      deploy = jest.fn().mockResolvedValue({ message: 'deployed' })
+      const context = createContext(entityId, { [entityId]: makeFile(entityBytes) })
+      context.components.sceneDeployments.deploy = deploy
+      await deployEntity(context)
+    })
+
+    it('should parse the entity after the byte order mark', () => {
+      expect(deploy.mock.calls[0][0].deployment.entity).toEqual(
+        expect.objectContaining({ id: entityId, type: 'scene', pointers: ['0,0'] })
+      )
+    })
+  })
+
   describe('when a regular deployment is not validly signed', () => {
     let validateSignatureSpy: jest.SpyInstance
     let withRead: jest.Mock
