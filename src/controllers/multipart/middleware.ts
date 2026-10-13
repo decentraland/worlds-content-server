@@ -39,6 +39,7 @@ import {
   DEFAULT_REJECTED_UPLOAD_DRAIN_TIMEOUT_MS
 } from './limits'
 import { MultipartFileSystem, MultipartParserOptions, MultipartRejectionReason } from './types'
+import { RequestArrivalContext } from '../request-arrival'
 
 /**
  * Lets an early-rejected request finish sending without retaining its body. Leaving it unread can
@@ -123,11 +124,22 @@ export function multipartParserWrapper<Ctx extends FormDataContext, T extends IH
   }
 
   return async function (ctx): Promise<T> {
+    // Unstamped routes measure from parser entry instead of arrival.
+    const { requestArrivedAt } = ctx as Partial<RequestArrivalContext>
+    const arrivedAt = typeof requestArrivedAt === 'number' ? requestArrivedAt : Date.now()
+    const reportReceived = (outcome: 'completed' | 'rejected'): void => {
+      notifySafely(options.onBodyReceived, {
+        route: options.route ?? 'unknown',
+        outcome,
+        durationSeconds: (Date.now() - arrivedAt) / 1000
+      })
+    }
     const emitRejection = (
       reason: MultipartRejectionReason,
       actualBytes: number,
       contentLengthPresent: boolean
     ): void => {
+      reportReceived('rejected')
       notifySafely(options.onTelemetry, {
         kind: 'rejected',
         route: options.route ?? 'unknown',
@@ -168,7 +180,7 @@ export function multipartParserWrapper<Ctx extends FormDataContext, T extends IH
     }
     const lease = acquisition.lease
     try {
-      const result = await parseAndHandle(ctx, lease, uploadTimeoutMs, declaredSize)
+      const result = await parseAndHandle(ctx, lease, uploadTimeoutMs, declaredSize, () => reportReceived('completed'))
       notifySafely(options.onTelemetry, {
         kind: 'completed',
         route: options.route ?? 'unknown',
@@ -197,7 +209,8 @@ export function multipartParserWrapper<Ctx extends FormDataContext, T extends IH
     ctx: IHttpServerComponent.DefaultContext,
     lease: InFlightUploadLease,
     timeoutMs: number,
-    declaredBytes: number | undefined
+    declaredBytes: number | undefined,
+    onReceived: () => void
   ): Promise<T> {
     let formDataParser: busboy.Busboy
     try {
@@ -483,6 +496,7 @@ export function multipartParserWrapper<Ctx extends FormDataContext, T extends IH
         throw new UploadCapacityError(totalBytes)
       }
 
+      onReceived()
       return await handler(newContext)
     } finally {
       // Close every descriptor before deleting the directory and releasing the outer lease. On

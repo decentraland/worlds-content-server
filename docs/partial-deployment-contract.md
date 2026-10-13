@@ -74,6 +74,17 @@ protection remains held until started writers settle, so an unresponsive backend
 
 Monitor `partial_upload_metadata_checks`, `partial_upload_batches`, `partial_upload_reserved_bytes`,
 `partial_upload_cleanup_backlog_bytes`, `partial_upload_cleanup_failed_uploads`, and the existing deployment stage duration/worker metrics.
+`multipart_upload_receive_duration_seconds{route,outcome}` times each body from request arrival until it is
+parsed (`completed`) or rejected, separating network time from server time. After parsing,
+`deployment_processing_stage_duration_seconds{stage}` splits `total` into `lookup` (pending-upload, replay,
+newer-scene and stored-manifest reads), `hash`, `authorization`, `lock` (waiting for the content lock),
+`limits` (size quota), `metadata`, `admission` (batch admission and progress bookkeeping), `storage` and
+`persistence`. These are disjoint, except `permission` (name ownership and parcel permission), which runs
+inside `authorization`. `lookup` and `admission` record one sample per call, so a request can add several;
+their `_sum` series still split `total`. `hash` only times files not hashed earlier in the request. Request
+authentication and small in-memory steps are not timed.
+Every `deployment_processing_*` series carries `mode` (`regular` or `partial`), so single-request deployments and
+partial batches can be told apart; aggregating by `stage` alone still sums both.
 Reserved-byte gauges are database snapshots updated by admission/cleanup, not instantaneous counters.
 The progress integration test asserts one initial inventory, zero metadata probes for intermediate
 batches and one final verification (2N probes instead of approximately 2NB for N hashes in B batches).

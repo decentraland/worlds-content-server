@@ -75,6 +75,78 @@ function answeringUploadErrors<C extends object, R extends IHttpServerComponent.
 }
 
 describe('multipartParserWrapper', function () {
+  describe('when the body-receive time is reported', () => {
+    let handler: jest.Mock
+    let onBodyReceived: jest.Mock
+    let receivedBeforeHandler: number
+    let parse: (ctx: any) => Promise<any>
+    let context: any
+
+    beforeEach(() => {
+      onBodyReceived = jest.fn()
+      handler = jest.fn(async () => {
+        receivedBeforeHandler = onBodyReceived.mock.calls.length
+        return { status: 200 }
+      })
+      parse = multipartParserWrapper(handler, {
+        inFlightUploadBudget: buildInFlightUploadBudget(),
+        maxSizeInBytes: 100,
+        onBodyReceived,
+        route: 'entities'
+      })
+    })
+
+    afterEach(() => {
+      jest.restoreAllMocks()
+    })
+
+    describe('and a stamped body is parsed', () => {
+      beforeEach(async () => {
+        const form = new FormData()
+        form.append('file', Buffer.alloc(10), { filename: 'small.bin' })
+        context = { ...createMultipartContext(form), requestArrivedAt: 7_500 }
+        jest.spyOn(Date, 'now').mockReturnValue(10_000)
+        await parse(context)
+      })
+
+      it('should report a completed receive timed from the arrival', () => {
+        expect(onBodyReceived.mock.calls).toEqual([[{ route: 'entities', outcome: 'completed', durationSeconds: 2.5 }]])
+      })
+
+      it('should report it before the handler runs', () => {
+        expect(receivedBeforeHandler).toBe(1)
+      })
+    })
+
+    describe('and a stamped body is rejected', () => {
+      beforeEach(async () => {
+        const form = new FormData()
+        form.append('file', Buffer.alloc(5000), { filename: 'big.bin' })
+        context = { ...createMultipartContext(form), requestArrivedAt: 7_500 }
+        jest.spyOn(Date, 'now').mockReturnValue(10_000)
+        await parse(context).catch(() => undefined)
+      })
+
+      it('should report a rejected receive timed from the arrival', () => {
+        expect(onBodyReceived.mock.calls).toEqual([[{ route: 'entities', outcome: 'rejected', durationSeconds: 2.5 }]])
+      })
+    })
+
+    describe('and the body is not stamped with its arrival', () => {
+      beforeEach(async () => {
+        const form = new FormData()
+        form.append('file', Buffer.alloc(10), { filename: 'small.bin' })
+        context = createMultipartContext(form)
+        jest.spyOn(Date, 'now').mockReturnValueOnce(1_000).mockReturnValue(1_500)
+        await parse(context)
+      })
+
+      it('should time the receive from parser entry', () => {
+        expect(onBodyReceived.mock.calls).toEqual([[{ route: 'entities', outcome: 'completed', durationSeconds: 0.5 }]])
+      })
+    })
+  })
+
   describe('when the parsed body exceeds the maximum allowed size', () => {
     let handler: jest.Mock
     let parse: (ctx: any) => Promise<any>

@@ -3,9 +3,10 @@ import { InvalidRequestError } from '@dcl/http-commons'
 import { FileInfo, IContentStorageComponent } from '@dcl/catalyst-storage'
 import { createSceneDeploymentsComponent, DeployResult, getContentFileInfos } from '../../src/logic/scene-deployments'
 import { createCoordinatesComponent } from '../../src/logic/coordinates'
-import { createDeploymentProcessingMock } from '../mocks/deployment-processing-mock'
+import { createDeploymentProcessingMock, createStageRecorder, StageRecorder } from '../mocks/deployment-processing-mock'
 import {
   DeploymentFile,
+  DeploymentProcessingStage,
   DeploymentToValidate,
   MissingSceneReplacementAuthorizationError,
   DeploymentUniqueViolationError
@@ -700,6 +701,107 @@ describe('when staging a partial deployment', () => {
 
     it('should propagate the original collision', () => {
       expect(error).toMatchObject({ message: 'duplicate key', code: '23505' })
+    })
+  })
+
+  describe('and its processing stages are tracked', () => {
+    let recorder: StageRecorder
+    let stagesByCall: Record<string, DeploymentProcessingStage[][]>
+
+    function recordStages(name: string, mock: jest.Mock): void {
+      const implementation = mock.getMockImplementation()
+      mock.mockImplementation((...args: unknown[]) => {
+        ;(stagesByCall[name] ??= []).push(recorder.openStages())
+        return implementation?.(...args)
+      })
+    }
+
+    // Called after a scenario sets its mocks: one-shot values would bypass the recording wrapper.
+    async function stageRecordingStages(): Promise<void> {
+      recordStages('getByEntityId', getPending)
+      recordStages('hasNewerDeployedScene', components.worldsManager.hasNewerDeployedScene as jest.Mock)
+      recordStages('getMaxAllowedSizeInBytesFor', components.limitsManager.getMaxAllowedSizeInBytesFor as jest.Mock)
+      recordStages('getPublishedContent', getPublishedContent)
+      recordStages('admitBatch', admitBatch)
+      recordStages('recordStored', recordStored)
+      recordStages('getProgress', getProgress)
+      recordStages('markMissing', components.partialUploadAdmission.markMissing as jest.Mock)
+      ;({ stage } = await createSceneDeploymentsComponent({
+        ...components,
+        deploymentProcessing: createDeploymentProcessingMock({ trackStage: recorder.trackStage })
+      }))
+      await stage(input)
+    }
+
+    beforeEach(() => {
+      recorder = createStageRecorder()
+      stagesByCall = {}
+    })
+
+    describe('and the batch admits a new upload', () => {
+      beforeEach(async () => {
+        await stageRecordingStages()
+      })
+
+      it('should read the pending upload inside the lookup stage', () => {
+        expect(stagesByCall.getByEntityId).toEqual([['lookup']])
+      })
+
+      it('should check for a newer scene inside the lookup stage', () => {
+        expect(stagesByCall.hasNewerDeployedScene).toEqual([['lookup']])
+      })
+
+      it('should look up the size limit inside the limits stage', () => {
+        expect(stagesByCall.getMaxAllowedSizeInBytesFor).toEqual([['limits']])
+      })
+
+      it('should read published content inside the admission stage', () => {
+        expect(stagesByCall.getPublishedContent).toEqual([['admission']])
+      })
+
+      it('should admit the batch inside the admission stage', () => {
+        expect(stagesByCall.admitBatch).toEqual([['admission']])
+      })
+
+      it('should record the stored files inside the admission stage', () => {
+        expect(stagesByCall.recordStored).toEqual([['admission']])
+      })
+
+      it('should read the progress inside the admission stage', () => {
+        expect(stagesByCall.getProgress).toEqual([['admission']])
+      })
+
+      it('should count each bookkeeping call as one item', () => {
+        expect(
+          recorder.trackStage.mock.calls
+            .filter(([stage]) => ['lookup', 'limits', 'admission'].includes(stage))
+            .map(([, items]) => items)
+        ).toEqual([1, 1, 1, 1, 1, 1, 1])
+      })
+    })
+
+    describe('and a resumed batch finds content missing at final verification', () => {
+      beforeEach(async () => {
+        let progressReads = 0
+        getPending.mockResolvedValue({ createdAt: new Date(), deployer: 'deployer', initialized: true })
+        getProgress.mockImplementation(async () =>
+          progressReads++ === 0
+            ? new Map([['b', 500]])
+            : new Map([
+                ['a', 300],
+                ['b', 500]
+              ])
+        )
+        await stageRecordingStages()
+      })
+
+      it('should read the progress before and after storing inside the admission stage', () => {
+        expect(stagesByCall.getProgress).toEqual([['admission'], ['admission']])
+      })
+
+      it('should mark the missing content inside the admission stage', () => {
+        expect(stagesByCall.markMissing).toEqual([['admission']])
+      })
     })
   })
 })

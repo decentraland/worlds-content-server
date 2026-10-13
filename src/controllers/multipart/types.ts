@@ -23,6 +23,13 @@ export type MultipartTelemetryEvent =
   | (MultipartTelemetryEventBase & { kind: 'completed' })
   | (MultipartTelemetryEventBase & { kind: 'rejected'; reason: MultipartRejectionReason })
 
+export type MultipartBodyReceivedEvent = {
+  route: string
+  outcome: 'completed' | 'rejected'
+  /** From request arrival (or parser entry when unstamped) until the body was parsed or rejected. */
+  durationSeconds: number
+}
+
 export type MultipartCleanupErrorEvent = {
   route: string
   error: Error
@@ -53,6 +60,8 @@ export type MultipartParserOptions = {
   route?: string
   /** Receives completion and rejection events for logging and metrics. */
   onTelemetry?: (event: MultipartTelemetryEvent) => void
+  /** Receives how long the body took to arrive, before the handler runs or once it is rejected. */
+  onBodyReceived?: (event: MultipartBodyReceivedEvent) => void
   /** Receives temporary-directory cleanup failures for logging and metrics. */
   onCleanupError?: (event: MultipartCleanupErrorEvent) => void
   /** Filesystem operations used for temporary uploads. Defaults to Node's filesystem. */

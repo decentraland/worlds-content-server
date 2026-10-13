@@ -20,7 +20,12 @@ import { createWorldsManagerMockComponent } from '../../mocks/worlds-manager-moc
 import { createCoordinatesComponent } from '../../../src/logic/coordinates'
 import { createMockedPermissionsComponent } from '../../mocks/permissions-component-mock'
 import { IPermissionsComponent } from '../../../src/logic/permissions'
-import { createDeploymentProcessingMock } from '../../mocks/deployment-processing-mock'
+import {
+  createDeploymentProcessingMock,
+  createStageRecorder,
+  StageRecorder
+} from '../../mocks/deployment-processing-mock'
+import { DeploymentProcessingStage, DeploymentToValidate } from '../../../src/types'
 
 describe('validator', function () {
   let config: IConfigComponent
@@ -255,6 +260,116 @@ describe('validator', function () {
 
     it('should reject with the cancellation reason without waiting for the hung validation', () => {
       expect(caughtError).toBe(abortReason)
+    })
+  })
+
+  describe('when the processing stages of a validation are tracked', () => {
+    let recorder: StageRecorder
+    let deployment: DeploymentToValidate
+    let hashStages: DeploymentProcessingStage[][]
+    let permissionStages: DeploymentProcessingStage[][]
+    let deniedNameStages: DeploymentProcessingStage[][]
+    let validator: ReturnType<typeof createValidator>
+
+    beforeEach(async () => {
+      recorder = createStageRecorder()
+      hashStages = []
+      permissionStages = []
+      deniedNameStages = []
+      deployment = await createSceneDeployment(identity.authChain)
+      // The entity file is also hashed by the entity id check, outside the hash stage.
+      for (const [hash, file] of deployment.files) {
+        if (hash === deployment.entity.id) continue
+        const getHash = file.getHash
+        file.getHash = (signal?: AbortSignal) => {
+          hashStages.push(recorder.openStages())
+          return getHash(signal)
+        }
+      }
+      validator = createValidator({
+        ...components,
+        deploymentProcessing: createDeploymentProcessingMock({ trackStage: recorder.trackStage }),
+        nameDenyListChecker: {
+          checkNameDenyList: jest.fn(async () => {
+            deniedNameStages.push(recorder.openStages())
+            return true
+          })
+        } as unknown as INameDenyListChecker,
+        namePermissionChecker: {
+          checkPermission: jest.fn(async () => {
+            permissionStages.push(recorder.openStages())
+            return true
+          })
+        } as unknown as IWorldNamePermissionChecker
+      })
+    })
+
+    describe('and a staging deployment checks its permission', () => {
+      beforeEach(async () => {
+        await validator.validateStaging(deployment)
+      })
+
+      it('should hash the uploaded content files inside the hash stage', () => {
+        expect(hashStages).toEqual([['hash']])
+      })
+
+      it('should count the uploaded files as the hash stage items', () => {
+        expect(recorder.trackStage).toHaveBeenCalledWith('hash', deployment.files.size, expect.any(Function))
+      })
+
+      it('should check the permission inside the permission stage, nested in authorization', () => {
+        expect(permissionStages).toEqual([['authorization', 'permission']])
+      })
+
+      it('should check banned names inside the authorization stage', () => {
+        expect(deniedNameStages).toEqual([['authorization']])
+      })
+    })
+
+    describe('and a staging deployment skips its permission check', () => {
+      beforeEach(async () => {
+        await validator.validateStaging(deployment, { skipPermissionCheck: true })
+      })
+
+      it('should not open the permission stage', () => {
+        expect(recorder.trackStage).not.toHaveBeenCalledWith('permission', expect.anything(), expect.anything())
+      })
+    })
+
+    describe('and a full deployment is validated', () => {
+      beforeEach(async () => {
+        await validator.validate(deployment)
+      })
+
+      it('should check the permission inside the permission stage, nested in authorization', () => {
+        expect(permissionStages).toEqual([['authorization', 'permission']])
+      })
+
+      it('should check the size limit inside the limits stage', () => {
+        expect(recorder.trackStage).toHaveBeenCalledWith('limits', 1, expect.any(Function))
+      })
+    })
+
+    describe('and every file was hashed earlier in the request', () => {
+      beforeEach(async () => {
+        for (const file of deployment.files.values()) file.isHashed = () => true
+        await validator.validate(deployment)
+      })
+
+      it('should not open the hash stage', () => {
+        expect(recorder.trackStage).not.toHaveBeenCalledWith('hash', expect.anything(), expect.anything())
+      })
+    })
+
+    describe('and only the entity file was hashed earlier in the request', () => {
+      beforeEach(async () => {
+        deployment.files.get(deployment.entity.id)!.isHashed = () => true
+        await validator.validate(deployment)
+      })
+
+      it('should count only the files still to hash as the hash stage items', () => {
+        expect(recorder.trackStage).toHaveBeenCalledWith('hash', deployment.files.size - 1, expect.any(Function))
+      })
     })
   })
 })

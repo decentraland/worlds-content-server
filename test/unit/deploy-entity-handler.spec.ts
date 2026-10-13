@@ -7,14 +7,19 @@ import {
   MAX_ENTITY_FILE_SIZE_IN_BYTES
 } from '../../src/controllers/handlers/deploy-entity-handler'
 import { InvalidRequestError } from '@dcl/http-commons'
-import { createDeploymentProcessingMock } from '../mocks/deployment-processing-mock'
+import { createDeploymentProcessingMock, createStageRecorder, StageRecorder } from '../mocks/deployment-processing-mock'
 import {
   DeploymentProcessingAbortedError,
   DeploymentProcessingTimeoutError
 } from '../../src/logic/deployment-processing'
 import { hashV1 } from '@dcl/hashing'
 import { Authenticator } from '@dcl/crypto'
-import { DeploymentToValidate, DeploymentUniqueViolationError, SceneReplacementConflictError } from '../../src/types'
+import {
+  DeploymentProcessingStage,
+  DeploymentToValidate,
+  DeploymentUniqueViolationError,
+  SceneReplacementConflictError
+} from '../../src/types'
 import { PartialUploadQuotaExceededError, PartialUploadTooLargeError } from '../../src/logic/partial-upload-admission'
 import { createSceneDeploymentsComponent } from '../../src/logic/scene-deployments'
 
@@ -117,6 +122,35 @@ describe('deployEntity', () => {
       url: new URL('https://request.example/entities')
     } as unknown as DeployContext
   }
+
+  describe('when a request is deployed', () => {
+    let context: DeployContext
+
+    beforeEach(() => {
+      context = createContext(entityId, {})
+    })
+
+    describe('and it is a regular deployment', () => {
+      beforeEach(async () => {
+        await deployEntity(context).catch(() => undefined)
+      })
+
+      it('should process it in the regular mode', () => {
+        expect(context.components.deploymentProcessing.runInMode).toHaveBeenCalledWith('regular', expect.any(Function))
+      })
+    })
+
+    describe('and it is a partial batch', () => {
+      beforeEach(async () => {
+        context.formData.fields.partial = makeField('true')
+        await deployEntity(context).catch(() => undefined)
+      })
+
+      it('should process it in the partial mode', () => {
+        expect(context.components.deploymentProcessing.runInMode).toHaveBeenCalledWith('partial', expect.any(Function))
+      })
+    })
+  })
 
   describe('when the entity file referenced by entityId is missing from the request', () => {
     let context: DeployContext
@@ -869,6 +903,139 @@ describe('deployEntity', () => {
           body: expect.objectContaining({ creationTimestamp: 456 }),
           lookups: 0
         })
+      })
+    })
+  })
+
+  describe('when the processing stages of a partial resume request are tracked', () => {
+    let recorder: StageRecorder
+    let context: DeployContext
+    let stagesByCall: Record<string, DeploymentProcessingStage[][]>
+    let withRead: jest.Mock
+
+    function recording<T>(name: string, implementation: () => T): jest.Mock {
+      return jest.fn(() => {
+        ;(stagesByCall[name] ??= []).push(recorder.openStages())
+        return implementation()
+      })
+    }
+
+    beforeEach(async () => {
+      recorder = createStageRecorder()
+      stagesByCall = {}
+      const content = Buffer.from('content')
+      const contentHash = await hashV1(content)
+      context = createContext(entityId, { [contentHash]: makeFile(content) })
+      context.formData.fields.partial = makeField('true')
+      withRead = recording('withRead', () => undefined)
+      context.components = {
+        ...context.components,
+        contentLocks: {
+          withRead: async (operation: (signal: AbortSignal) => Promise<unknown>, signal: AbortSignal) => {
+            withRead()
+            return operation(signal)
+          }
+        },
+        deploymentProcessing: createDeploymentProcessingMock({
+          trackStage: recorder.trackStage,
+          trackWorker: jest.fn(async <T>(_stage: DeploymentProcessingStage, operation: () => Promise<T>) => {
+            ;(stagesByCall.hashWorker ??= []).push(recorder.openStages())
+            return operation()
+          }) as jest.MockedFunction<<T>(stage: DeploymentProcessingStage, operation: () => Promise<T>) => Promise<T>>
+        }),
+        partialUploadAdmission: {
+          getByEntityId: recording('getByEntityId', async () => ({
+            deployer: '0x0000000000000000000000000000000000000001',
+            createdAt: new Date()
+          })),
+          getCompleted: recording('getCompleted', async () => undefined)
+        },
+        storage: {
+          retrieve: recording('retrieve', async () => ({ asStream: async () => bufferToStream(Buffer.from('{}')) }))
+        },
+        sceneDeployments: {
+          findPublication: jest.fn().mockResolvedValue(undefined),
+          stage: recording('stage', async () => ({ complete: false, missing: [] }))
+        }
+      } as unknown as DeployContext['components']
+    })
+
+    describe('and the batch is staged', () => {
+      beforeEach(async () => {
+        await deployEntity(context)
+      })
+
+      it('should read the pending upload inside the lookup stage before and under the lock', () => {
+        expect(stagesByCall.getByEntityId).toEqual([
+          ['total', 'lookup'],
+          ['total', 'lookup']
+        ])
+      })
+
+      it('should check for a replay inside the lookup stage before and under the lock', () => {
+        expect(stagesByCall.getCompleted).toEqual([
+          ['total', 'lookup'],
+          ['total', 'lookup']
+        ])
+      })
+
+      it('should read the stored manifest back inside the lookup stage', () => {
+        expect(stagesByCall.retrieve).toEqual([['total', 'lookup']])
+      })
+
+      it('should hash the uploaded content file inside the hash stage', () => {
+        expect(stagesByCall.hashWorker).toEqual([['total', 'hash']])
+      })
+
+      it('should count the uploaded files as the hash stage items', () => {
+        expect(recorder.trackStage).toHaveBeenCalledWith('hash', 1, expect.any(Function))
+      })
+
+      it('should wait for the content lock inside the lock stage', () => {
+        expect(stagesByCall.withRead).toEqual([['total', 'lock']])
+      })
+
+      it('should close the lock stage once the lock is acquired', () => {
+        expect(stagesByCall.stage).toEqual([['total']])
+      })
+    })
+
+    describe('and the content lock cannot be acquired', () => {
+      let lockError: Error
+      let lockStageOutcome: unknown
+
+      beforeEach(async () => {
+        lockError = new Error('lock unavailable')
+        context.components.contentLocks = {
+          withRead: jest.fn().mockRejectedValue(lockError)
+        } as unknown as DeployContext['components']['contentLocks']
+        await deployEntity(context).catch(() => undefined)
+        const lockCall = recorder.trackStage.mock.calls.findIndex(([stage]) => stage === 'lock')
+        lockStageOutcome = await recorder.trackStage.mock.results[lockCall].value.catch((error: unknown) => error)
+      })
+
+      it('should fail the lock stage with the lock error', () => {
+        expect(lockStageOutcome).toBe(lockError)
+      })
+    })
+
+    describe('and the content lock returns without running the operation', () => {
+      let lockStageState: string
+
+      beforeEach(async () => {
+        context.components.contentLocks = {
+          withRead: jest.fn().mockResolvedValue({ status: 200, body: {} })
+        } as unknown as DeployContext['components']['contentLocks']
+        await deployEntity(context).catch(() => undefined)
+        const lockCall = recorder.trackStage.mock.calls.findIndex(([stage]) => stage === 'lock')
+        lockStageState = await Promise.race([
+          recorder.trackStage.mock.results[lockCall].value.then(() => 'settled'),
+          new Promise<string>((resolve) => setImmediate(() => resolve('pending')))
+        ])
+      })
+
+      it('should still close the lock stage', () => {
+        expect(lockStageState).toBe('settled')
       })
     })
   })

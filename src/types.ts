@@ -84,6 +84,8 @@ export type DeploymentFile = {
   getStream(signal?: AbortSignal): Readable
   /** Calculates and memoizes the file's CIDv1. */
   getHash(signal?: AbortSignal): Promise<string>
+  /** Whether getHash already ran, so another call reuses its result. */
+  isHashed?(): boolean
   /** Reads the full file into a Buffer. Intended for small files such as the entity JSON. */
   asBuffer(signal?: AbortSignal): Promise<Buffer>
 }
@@ -107,7 +109,19 @@ export type DeploymentToValidate = {
   sceneReplacementAuthorization?: SceneReplacementAuthorization
 }
 
-export type DeploymentProcessingStage = 'total' | 'authorization' | 'metadata' | 'hash' | 'storage' | 'persistence'
+/** `permission` runs inside `authorization`; every other stage is disjoint within `total`. */
+export type DeploymentProcessingStage =
+  | 'total'
+  | 'authorization'
+  | 'permission'
+  | 'metadata'
+  | 'hash'
+  | 'limits'
+  | 'lookup'
+  | 'lock'
+  | 'admission'
+  | 'storage'
+  | 'persistence'
 
 export type DeploymentAbortContext = {
   signal: AbortSignal
@@ -115,6 +129,9 @@ export type DeploymentAbortContext = {
   deadlineAt: number
   dispose(): void
 }
+
+/** Which upload protocol a deployment request uses, recorded as the `mode` label of the processing metrics. */
+export type DeploymentMode = 'regular' | 'partial'
 
 export interface IDeploymentProcessingComponent extends IBaseComponent {
   /** Maximum number of content files uploaded concurrently by one deployment. */
@@ -131,6 +148,8 @@ export interface IDeploymentProcessingComponent extends IBaseComponent {
   trackStage<T>(stage: DeploymentProcessingStage, items: number, operation: () => Promise<T>): Promise<T>
   /** Records the number of workers currently active in a bounded processing stage. */
   trackWorker<T>(stage: DeploymentProcessingStage, operation: () => Promise<T>): Promise<T>
+  /** Runs a request's processing so every stage and worker it tracks is labelled with its mode. */
+  runInMode<T>(mode: DeploymentMode, operation: () => Promise<T>): Promise<T>
 }
 
 export type SceneDeploymentData = {
