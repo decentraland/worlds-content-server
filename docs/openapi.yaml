@@ -1316,12 +1316,15 @@ paths:
         rules the deployment validation applies. The world name is case-insensitive.
 
         - **Query (parcels)**: Optional, repeatable. The parcels the scene will occupy, as in its `scene.json`
-          (e.g. `?parcels=0,0&parcels=0,1`). They must pass the same checks as a deployment's pointers: unique,
-          canonical `x,y` coordinates (no leading zeros, whitespace or `-0`) within bounds, so a 200 means the list
-          is deployable as is. The size limit credits back only the deployed scenes overlapping them, as a
+          (e.g. `?parcels=0,0&parcels=0,1`). They must pass the same format and bounds checks as a deployment's
+          pointers: unique, canonical `x,y` coordinates (no leading zeros, whitespace or `-0`) within bounds. A 200
+          doesn't mean the list is deployable: a deployment can still be rejected for exceeding `maxParcels` or for
+          missing permissions. The size limit credits back only the deployed scenes overlapping them, as a
           deployment to them would.
-        - **Size**: the query string counts toward the server's 16 KB request header limit, so a request fails with
-          a 431 above roughly 900 (coordinates like `-150,-150`) to 1,300 (coordinates like `0,0`) parcels.
+        - **Size**: the query string shares the server's 16 KB request header limit with every other header (cookies,
+          proxy-added headers), so a request fails with a 431 above roughly 800 to 1,300 parcels, depending on
+          coordinate length and on `,` being encoded as `%2C` (as `URLSearchParams` does). A proxy in front may
+          answer 414 instead.
         - **Accuracy**: `maxParcels` always matches deployment validation. `maxSceneSizeInBytes` matches deployment
           validation exactly when `parcels` lists the scene's parcels; without it, the whole world's deployed size
           is credited back, so it's an upper bound.

@@ -47,6 +47,22 @@ test('world limits handler GET /world/:world_name/limits', function ({ component
     })
   })
 
+  describe('when the parcels make the request headers exceed the server limit', () => {
+    let sizeSpy: jest.SpyInstance
+
+    beforeEach(async () => {
+      sizeSpy = jest.spyOn(components.limitsManager, 'getMaxAllowedSizeInBytesFor')
+      const query = new URLSearchParams(
+        Array.from({ length: 2000 }, (_, i) => ['parcels', `${(i % 200) - 100},${Math.floor(i / 200) - 5}`])
+      )
+      response = await components.localFetch.fetch(`/world/privileged.dcl.eth/limits?${query.toString()}`)
+    })
+
+    it('should be rejected with a 431 before computing any limit', () => {
+      expect({ status: response.status, computed: sizeSpy.mock.calls.length }).toEqual({ status: 431, computed: 0 })
+    })
+  })
+
   describe('when the world name is deny-listed', () => {
     let sizeSpy: jest.SpyInstance
 

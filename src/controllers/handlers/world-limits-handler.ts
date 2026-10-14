@@ -12,10 +12,12 @@ import { areValidScenePointers, getDeploymentParcels } from '../../logic/validat
  * back. Without `parcels` the whole world's deployed size is credited back, so the result is an
  * upper bound: a deployment that doesn't replace every scene of the world may get a lower limit.
  *
- * `parcels` must pass the same checks as a deployment's pointers (unique, canonical, in bounds),
- * so a 200 means the list is deployable as is. The query string is bounded by Node's 16 KB
- * request header limit, so lists above roughly 900 to 1,300 parcels get a 431 before reaching
- * this handler.
+ * `parcels` must pass the same format and bounds checks as a deployment's pointers (unique,
+ * canonical, in bounds). A 200 doesn't mean the list is deployable: a deployment can still be
+ * rejected for exceeding `maxParcels` or for missing permissions. The query string shares Node's
+ * 16 KB request header limit with every other header, so depending on coordinate length and on
+ * `,` being encoded as `%2C`, lists above roughly 800 to 1,300 parcels get a 431 (or a 414 from a
+ * proxy) before reaching this handler.
  *
  * @throws {InvalidRequestError} When the parcels aren't unique canonical "x,y" coordinates or a
  * parcel is out of bounds.

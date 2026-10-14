@@ -163,8 +163,10 @@ async function setUp(
     ])
   )
   const worldsManager = createMockedWorldsManager()
+  // Credits back by parcel set, so the order the parcels arrive in doesn't matter
+  const sceneParcelSet = [...SCENE_PARCELS].sort().join('|')
   worldsManager.getDeployedSceneSizeForParcels.mockImplementation(async (_worldName, parcels) =>
-    JSON.stringify(parcels) === JSON.stringify(SCENE_PARCELS) ? overlappingSize : 0n
+    [...parcels].sort().join('|') === sceneParcelSet ? overlappingSize : 0n
   )
   const coordinates = createCoordinatesComponent()
   const limitsManager = await createLimitsManagerComponent({
