@@ -5,6 +5,9 @@ import { WorldOwnerNotFoundError } from '../../adapters/limits-manager'
 import { MAX_WORLD_PARCELS } from '../../logic/coordinates'
 import { getDeploymentParcels } from '../../logic/validations/parcels'
 
+// Stricter than the shared parser, which keeps accepting stored values like "1.5,0".
+const INTEGER_PARCEL_REGEX = /^\s*-?\d+\s*,\s*-?\d+\s*$/
+
 /**
  * Returns the scene limits a deployment to the world is checked against.
  *
@@ -37,6 +40,9 @@ export async function getWorldLimitsHandler(
       )
     }
     for (const parcel of rawParcels) {
+      if (!INTEGER_PARCEL_REGEX.test(parcel)) {
+        throw new InvalidRequestError(`Invalid coordinate values: ${parcel}`)
+      }
       try {
         coordinates.parseCoordinate(parcel)
       } catch (error) {

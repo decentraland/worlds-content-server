@@ -4,7 +4,6 @@ import { BoundingRectangle, Coordinate, ICoordinatesComponent } from './types'
 const MIN_PARCEL_COORDINATE = -150
 const MAX_PARCEL_COORDINATE = 150
 const PARCEL_COORD_REGEX = /^\s*(-?\d+)\s*,\s*(-?\d+)\s*$/
-const INTEGER_COORDINATE_REGEX = /^\s*-?\d+\s*$/
 
 /** Number of distinct in-bounds parcels, so no scene can occupy more. */
 export const MAX_WORLD_PARCELS = (MAX_PARCEL_COORDINATE - MIN_PARCEL_COORDINATE + 1) ** 2
@@ -40,12 +39,12 @@ export function createCoordinatesComponent(): ICoordinatesComponent {
       throw new Error(`Invalid coordinate format: ${coordinateString}`)
     }
 
-    if (!INTEGER_COORDINATE_REGEX.test(parts[0]) || !INTEGER_COORDINATE_REGEX.test(parts[1])) {
-      throw new Error(`Invalid coordinate values: ${coordinateString}`)
-    }
-
     const x = parseInt(parts[0], 10)
     const y = parseInt(parts[1], 10)
+
+    if (isNaN(x) || isNaN(y)) {
+      throw new Error(`Invalid coordinate values: ${coordinateString}`)
+    }
 
     if (x < MIN_PARCEL_COORDINATE || x > MAX_PARCEL_COORDINATE) {
       throw new Error(

@@ -96,6 +96,17 @@ describe('when getting the limits of a world', () => {
     })
   })
 
+  describe('and a requested parcel has trailing non-digit characters', () => {
+    beforeEach(async () => {
+      query = '?parcels=1abc,2'
+      await run()
+    })
+
+    it('should reject the request with the coordinate values error', () => {
+      expect(error).toEqual(new InvalidRequestError('Invalid coordinate values: 1abc,2'))
+    })
+  })
+
   describe('and a requested parcel has a non-integer coordinate', () => {
     beforeEach(async () => {
       query = '?parcels=1.5,0'
