@@ -4,7 +4,7 @@ import { createValidationResult, OK } from './utils'
 import { ContentMapping } from '@dcl/schemas/dist/misc/content-mapping'
 import { FileInfo } from '@dcl/catalyst-storage'
 import { isNameOwnershipValidationIgnored } from '../name-ownership-validation'
-import { getDeploymentParcels } from './parcels'
+import { areValidScenePointers, getDeploymentParcels } from './parcels'
 
 /** Default cap on content files per deployment, used when MAX_FILE_COUNT is unset. */
 export const DEFAULT_MAX_FILE_COUNT = 10000
@@ -40,10 +40,7 @@ export function createValidateScenePointers(_components: Pick<ValidatorComponent
       return createValidationResult(['Scene pointers and parcels must be unique canonical parcel coordinates.'])
     }
 
-    if (
-      declaredPointers.length === 0 ||
-      !SceneParcels.validate({ base: declaredPointers[0], parcels: declaredPointers })
-    ) {
+    if (!areValidScenePointers(declaredPointers)) {
       return createValidationResult(['Scene pointers and parcels must be unique canonical parcel coordinates.'])
     }
 

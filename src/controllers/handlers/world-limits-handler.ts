@@ -2,23 +2,23 @@ import { IHttpServerComponent } from '@dcl/core-commons'
 import { InvalidRequestError, NotFoundError } from '@dcl/http-commons'
 import { HandlerContextWithPath } from '../../types'
 import { WorldOwnerNotFoundError } from '../../adapters/limits-manager'
-import { MAX_WORLD_PARCELS } from '../../logic/coordinates'
-import { getDeploymentParcels } from '../../logic/validations/parcels'
-
-// Stricter than the shared parser, which keeps accepting stored values like "1.5,0".
-const INTEGER_PARCEL_REGEX = /^\s*-?\d+\s*,\s*-?\d+\s*$/
+import { areValidScenePointers, getDeploymentParcels } from '../../logic/validations/parcels'
 
 /**
  * Returns the scene limits a deployment to the world is checked against.
  *
  * `maxParcels` always matches the deployment validation. `maxSceneSizeInBytes` matches it exactly
- * when `parcels` lists the scene's parcels: they are canonicalized and deduplicated the way the
- * deployment's pointers are, so only the deployed scenes overlapping them are credited back.
- * Without `parcels` the whole world's deployed size is credited back, so the result is an upper
- * bound: a deployment that doesn't replace every scene of the world may get a lower limit.
+ * when `parcels` lists the scene's parcels: only the deployed scenes overlapping them are credited
+ * back. Without `parcels` the whole world's deployed size is credited back, so the result is an
+ * upper bound: a deployment that doesn't replace every scene of the world may get a lower limit.
  *
- * @throws {InvalidRequestError} When a parcel is malformed or out of bounds, or there are more
- * parcels than the world grid holds.
+ * `parcels` must pass the same checks as a deployment's pointers (unique, canonical, in bounds),
+ * so a 200 means the list is deployable as is. The query string is bounded by Node's 16 KB
+ * request header limit, so lists above roughly 900 to 1,300 parcels get a 431 before reaching
+ * this handler.
+ *
+ * @throws {InvalidRequestError} When the parcels aren't unique canonical "x,y" coordinates or a
+ * parcel is out of bounds.
  * @throws {NotFoundError} When the world name is deny-listed or its owner can't be determined.
  */
 export async function getWorldLimitsHandler(
@@ -32,24 +32,19 @@ export async function getWorldLimitsHandler(
 
   let parcels: string[] | undefined
   if (ctx.url.searchParams.has('parcels')) {
-    const rawParcels = ctx.url.searchParams.getAll('parcels')
-    // A scene can't occupy more parcels than the grid holds, so this never rejects a deployment.
-    if (rawParcels.length > MAX_WORLD_PARCELS) {
-      throw new InvalidRequestError(
-        `Cannot compute limits for more than ${MAX_WORLD_PARCELS} parcels, the size of the world grid.`
-      )
+    const requestedParcels = ctx.url.searchParams.getAll('parcels')
+    if (!areValidScenePointers(requestedParcels)) {
+      throw new InvalidRequestError('Parcels must be unique canonical "x,y" coordinates, as in a scene\'s parcels.')
     }
-    for (const parcel of rawParcels) {
-      if (!INTEGER_PARCEL_REGEX.test(parcel)) {
-        throw new InvalidRequestError(`Invalid coordinate values: ${parcel}`)
-      }
+    for (const parcel of requestedParcels) {
       try {
         coordinates.parseCoordinate(parcel)
       } catch (error) {
         throw new InvalidRequestError((error as Error).message)
       }
     }
-    parcels = getDeploymentParcels(rawParcels, coordinates)
+    // A no-op for valid parcels; shared so every size-limit caller derives them the same way.
+    parcels = getDeploymentParcels(requestedParcels, coordinates)
   }
 
   if (!(await nameDenyListChecker.checkNameDenyList(worldName))) {

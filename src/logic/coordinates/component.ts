@@ -5,9 +5,6 @@ const MIN_PARCEL_COORDINATE = -150
 const MAX_PARCEL_COORDINATE = 150
 const PARCEL_COORD_REGEX = /^\s*(-?\d+)\s*,\s*(-?\d+)\s*$/
 
-/** Number of distinct in-bounds parcels, so no scene can occupy more. */
-export const MAX_WORLD_PARCELS = (MAX_PARCEL_COORDINATE - MIN_PARCEL_COORDINATE + 1) ** 2
-
 export function createCoordinatesComponent(): ICoordinatesComponent {
   /**
    * Canonicalizes a parcel coordinate to "<x>,<y>" (no leading zeros, whitespace or signed

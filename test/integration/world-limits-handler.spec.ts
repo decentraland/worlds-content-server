@@ -30,9 +30,9 @@ test('world limits handler GET /world/:world_name/limits', function ({ component
     })
   })
 
-  describe('when requesting the limits with an invalid parcel', () => {
+  describe('when requesting the limits with a parcel a deployment would reject as non-canonical', () => {
     beforeEach(async () => {
-      response = await components.localFetch.fetch('/world/privileged.dcl.eth/limits?parcels=a,b')
+      response = await components.localFetch.fetch('/world/privileged.dcl.eth/limits?parcels=0,0&parcels=-0,1')
       body = await response.json()
     })
 
@@ -41,7 +41,7 @@ test('world limits handler GET /world/:world_name/limits', function ({ component
         status: 400,
         body: {
           error: 'Bad request',
-          message: 'Invalid coordinate values: a,b'
+          message: 'Parcels must be unique canonical "x,y" coordinates, as in a scene\'s parcels.'
         }
       })
     })

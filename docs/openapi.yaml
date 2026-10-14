@@ -1315,9 +1315,13 @@ paths:
         Returns the scene limits a deployment to this world is checked against, computed with the same
         rules the deployment validation applies. The world name is case-insensitive.
 
-        - **Query (parcels)**: Optional, repeatable. The parcels the scene will occupy (e.g. `?parcels=0,0&parcels=0,1`).
-          They are canonicalized and deduplicated the way a deployment's pointers are, and the size limit credits
-          back only the deployed scenes overlapping them, as a deployment to them would.
+        - **Query (parcels)**: Optional, repeatable. The parcels the scene will occupy, as in its `scene.json`
+          (e.g. `?parcels=0,0&parcels=0,1`). They must pass the same checks as a deployment's pointers: unique,
+          canonical `x,y` coordinates (no leading zeros, whitespace or `-0`) within bounds, so a 200 means the list
+          is deployable as is. The size limit credits back only the deployed scenes overlapping them, as a
+          deployment to them would.
+        - **Size**: the query string counts toward the server's 16 KB request header limit, so a request fails with
+          a 431 above roughly 900 (coordinates like `-150,-150`) to 1,300 (coordinates like `0,0`) parcels.
         - **Accuracy**: `maxParcels` always matches deployment validation. `maxSceneSizeInBytes` matches deployment
           validation exactly when `parcels` lists the scene's parcels; without it, the whole world's deployed size
           is credited back, so it's an upper bound.
@@ -1335,15 +1339,18 @@ paths:
         - name: parcels
           in: query
           required: false
-          description: A parcel the scene will occupy, as "x,y". Repeat the parameter for each parcel.
+          description: |
+            A parcel the scene will occupy, as a canonical "x,y" coordinate. Repeat the parameter for each parcel;
+            parcels must not repeat. The request header limit caps the list at roughly 900 to 1,300 parcels.
           style: form
           explode: true
           schema:
             type: array
-            maxItems: 90601
+            minItems: 1
+            uniqueItems: true
             items:
               type: string
-              pattern: '^\s*-?\d+\s*,\s*-?\d+\s*$'
+              pattern: '^(?:0|-?[1-9][0-9]*),(?:0|-?[1-9][0-9]*)$'
               example: '0,0'
       responses:
         '200':
@@ -1354,8 +1361,8 @@ paths:
                 $ref: '#/components/schemas/WorldLimits'
         '400':
           description: |
-            Invalid parcels: a parcel is not an integer "x,y" pair, a coordinate is out of bounds (-150 to 150),
-            or more parcels were sent than the world grid holds (90601).
+            Invalid parcels: a parcel is not a canonical integer "x,y" coordinate, a parcel is repeated, or a
+            coordinate is out of bounds (-150 to 150).
           content:
             application/json:
               schema:
@@ -1366,6 +1373,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '431':
+          description: The request headers, including the `parcels` query string, exceed the server's 16 KB limit
 
   /worlds:
     get:

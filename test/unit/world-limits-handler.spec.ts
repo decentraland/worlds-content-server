@@ -2,7 +2,7 @@ import { InvalidRequestError, NotFoundError } from '@dcl/http-commons'
 import { IHttpServerComponent } from '@dcl/core-commons'
 import { getWorldLimitsHandler } from '../../src/controllers/handlers/world-limits-handler'
 import { WorldOwnerNotFoundError } from '../../src/adapters/limits-manager'
-import { createCoordinatesComponent, MAX_WORLD_PARCELS } from '../../src/logic/coordinates'
+import { createCoordinatesComponent } from '../../src/logic/coordinates'
 import { ILimitsManager, INameDenyListChecker, MB_BigInt } from '../../src/types'
 
 type HandlerContext = Parameters<typeof getWorldLimitsHandler>[0]
@@ -66,14 +66,14 @@ describe('when getting the limits of a world', () => {
     })
   })
 
-  describe('and parcels are requested with repeated, duplicated and non-canonical values', () => {
+  describe('and parcels are requested as unique canonical coordinates', () => {
     beforeEach(async () => {
-      query = '?parcels=00,00&parcels=0,0&parcels=-0,1'
+      query = '?parcels=0,0&parcels=0,1&parcels=-1,0'
       await run()
     })
 
-    it('should compute the size limit for the canonical, deduplicated parcels', () => {
-      expect(limitsManager.getMaxAllowedSizeInBytesFor).toHaveBeenCalledWith('my-world.dcl.eth', ['0,0', '0,1'])
+    it('should compute the size limit for the requested parcels', () => {
+      expect(limitsManager.getMaxAllowedSizeInBytesFor).toHaveBeenCalledWith('my-world.dcl.eth', ['0,0', '0,1', '-1,0'])
     })
 
     it('should respond with the limits', () => {
@@ -81,14 +81,25 @@ describe('when getting the limits of a world', () => {
     })
   })
 
-  describe('and a requested parcel is not an "x,y" coordinate', () => {
+  describe.each([
+    ['a parcel is repeated', '?parcels=0,0&parcels=0,1&parcels=0,0'],
+    ['a parcel has a signed zero', '?parcels=-0,1'],
+    ['a parcel has a leading zero', '?parcels=01,0'],
+    ['a parcel has whitespace', '?parcels=%200,0'],
+    ['a parcel has more than two values', '?parcels=0,0,1'],
+    ['a parcel has trailing non-digit characters', '?parcels=1abc,2'],
+    ['a parcel has a non-integer coordinate', '?parcels=1.5,0'],
+    ['the parcels parameter is empty', '?parcels=']
+  ])('and %s', (_case, requestedQuery) => {
     beforeEach(async () => {
-      query = '?parcels=0,0&parcels=0,0,1'
+      query = requestedQuery
       await run()
     })
 
-    it('should reject the request as invalid', () => {
-      expect(error).toBeInstanceOf(InvalidRequestError)
+    it('should reject the request as a deployment would reject the pointers', () => {
+      expect(error).toEqual(
+        new InvalidRequestError('Parcels must be unique canonical "x,y" coordinates, as in a scene\'s parcels.')
+      )
     })
 
     it('should not compute any limit', () => {
@@ -96,29 +107,7 @@ describe('when getting the limits of a world', () => {
     })
   })
 
-  describe('and a requested parcel has trailing non-digit characters', () => {
-    beforeEach(async () => {
-      query = '?parcels=1abc,2'
-      await run()
-    })
-
-    it('should reject the request with the coordinate values error', () => {
-      expect(error).toEqual(new InvalidRequestError('Invalid coordinate values: 1abc,2'))
-    })
-  })
-
-  describe('and a requested parcel has a non-integer coordinate', () => {
-    beforeEach(async () => {
-      query = '?parcels=1.5,0'
-      await run()
-    })
-
-    it('should reject the request with the coordinate values error', () => {
-      expect(error).toEqual(new InvalidRequestError('Invalid coordinate values: 1.5,0'))
-    })
-  })
-
-  describe('and more parcels are requested than the permission assignment cap', () => {
+  describe('and more than five hundred unique parcels are requested', () => {
     let parcels: string[]
 
     beforeEach(async () => {
@@ -129,47 +118,6 @@ describe('when getting the limits of a world', () => {
 
     it('should compute the size limit for every requested parcel', () => {
       expect(limitsManager.getMaxAllowedSizeInBytesFor).toHaveBeenCalledWith('my-world.dcl.eth', parcels)
-    })
-  })
-
-  describe('and more parcels are requested than the world grid holds', () => {
-    beforeEach(async () => {
-      query = `?${'parcels=0,0&'.repeat(MAX_WORLD_PARCELS)}parcels=0,0`
-      await run()
-    })
-
-    it('should reject the request with the grid size error', () => {
-      expect(error).toEqual(
-        new InvalidRequestError(
-          `Cannot compute limits for more than ${MAX_WORLD_PARCELS} parcels, the size of the world grid.`
-        )
-      )
-    })
-
-    it('should not compute any limit', () => {
-      expect(limitsManager.getMaxAllowedSizeInBytesFor).not.toHaveBeenCalled()
-    })
-  })
-
-  describe('and exactly as many parcels are requested as the world grid holds', () => {
-    beforeEach(async () => {
-      query = `?${'parcels=0,0&'.repeat(MAX_WORLD_PARCELS - 1)}parcels=0,0`
-      await run()
-    })
-
-    it('should compute the size limit for the deduplicated parcels', () => {
-      expect(limitsManager.getMaxAllowedSizeInBytesFor).toHaveBeenCalledWith('my-world.dcl.eth', ['0,0'])
-    })
-  })
-
-  describe('and the parcels parameter is empty', () => {
-    beforeEach(async () => {
-      query = '?parcels='
-      await run()
-    })
-
-    it('should reject the request as invalid', () => {
-      expect(error).toBeInstanceOf(InvalidRequestError)
     })
   })
 

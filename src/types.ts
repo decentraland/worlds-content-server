@@ -65,7 +65,6 @@ export type GlobalContext = {
 
 export const MB = 1024 * 1024
 export const MB_BigInt = 1024n * 1024n
-export const MAX_PARCELS_PER_PERMISSION = 500
 
 export type Migration = {
   id: string
