@@ -42,6 +42,7 @@ import { walletConnectedWorldHandler } from './handlers/wallet-connected-world-h
 import { getScenesHandler, undeploySceneHandler } from './handlers/scenes-handler'
 import { getWorldSettingsHandler, updateWorldSettingsHandler } from './handlers/world-settings-handler'
 import { getWorldManifestHandler } from './handlers/world-manifest-handler'
+import { getWorldLimitsHandler } from './handlers/world-limits-handler'
 import { permissionParcelsSchema } from './schemas/permission-parcels-schema'
 import { getWorldsHandler } from './handlers/worlds-handler'
 import { reprocessABSchema } from './schemas/reprocess-ab-schemas'
@@ -233,6 +234,9 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
 
   // World manifest
   router.get('/world/:world_name/manifest', getWorldManifestHandler)
+
+  // Scene limits a deployment to the world is checked against
+  router.get('/world/:world_name/limits', getWorldLimitsHandler)
 
   // Worlds listing
   router.get('/worlds', getWorldsHandler)

@@ -1,5 +1,6 @@
-import { AppComponents, ILimitsManager, MB_BigInt, Whitelist } from '../types'
-import { isNameOwnershipValidationIgnored } from '../logic/name-ownership-validation'
+import { AppComponents, ILimitsManager, MB_BigInt, Whitelist } from '../../types'
+import { isNameOwnershipValidationIgnored } from '../../logic/name-ownership-validation'
+import { WorldOwnerNotFoundError } from './errors'
 
 const bigIntMax = (...args: bigint[]) => args.reduce((m, e) => (e > m ? e : m))
 const bigIntMin = (...args: bigint[]) => args.reduce((m, e) => (e < m ? e : m))
@@ -67,7 +68,7 @@ export async function createLimitsManagerComponent({
       const owners = await nameOwnership.findOwners([worldName])
       const owner = owners.get(worldName)
       if (!owner) {
-        throw new Error(`Could not determine owner for world ${worldName}`)
+        throw new WorldOwnerNotFoundError(worldName)
       }
 
       const stats = await walletStats.get(owner)

@@ -1,4 +1,4 @@
-import { createLimitsManagerComponent } from '../../src/adapters/limits-manager'
+import { createLimitsManagerComponent, WorldOwnerNotFoundError } from '../../src/adapters/limits-manager'
 import { loadUploadLimits } from '../../src/logic/upload-limits'
 import { createConfigComponent } from '@well-known-components/env-config-provider'
 import { createMockedNameOwnership } from '../mocks/name-ownership-mock'
@@ -88,6 +88,9 @@ describe('limits manager', function () {
     expect(await limitsManager.getAllowSdk6For('no-owner.dcl.eth')).toBeFalsy()
     await expect(limitsManager.getMaxAllowedSizeInBytesFor('no-owner.dcl.eth')).rejects.toThrowError(
       'Could not determine owner for world no-owner.dcl.eth'
+    )
+    await expect(limitsManager.getMaxAllowedSizeInBytesFor('no-owner.dcl.eth')).rejects.toBeInstanceOf(
+      WorldOwnerNotFoundError
     )
     expect(await limitsManager.getMaxAllowedParcelsFor('no-owner.dcl.eth')).toBe(4)
   })
