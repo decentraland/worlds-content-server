@@ -41,9 +41,31 @@ test('world limits handler GET /world/:world_name/limits', function ({ component
         status: 400,
         body: {
           error: 'Bad request',
-          message: 'Invalid parcel format: "a,b". Expected "x,y" format (e.g., "0,0" or "-5,10").'
+          message: 'Invalid coordinate values: a,b'
         }
       })
+    })
+  })
+
+  describe('when the world name is deny-listed', () => {
+    let sizeSpy: jest.SpyInstance
+
+    beforeEach(async () => {
+      jest.spyOn(components.nameDenyListChecker, 'checkNameDenyList').mockResolvedValueOnce(false)
+      sizeSpy = jest.spyOn(components.limitsManager, 'getMaxAllowedSizeInBytesFor')
+      response = await components.localFetch.fetch('/world/Banned.dcl.eth/limits')
+      body = await response.json()
+    })
+
+    it('should respond with a 404 and the repo error body', () => {
+      expect({ status: response.status, body }).toEqual({
+        status: 404,
+        body: { error: 'Not Found', message: 'World "banned.dcl.eth" not found.' }
+      })
+    })
+
+    it('should not compute the size limit', () => {
+      expect(sizeSpy).not.toHaveBeenCalled()
     })
   })
 

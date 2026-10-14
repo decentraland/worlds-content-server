@@ -2,25 +2,40 @@ import { IHttpServerComponent } from '@dcl/core-commons'
 import { InvalidRequestError, NotFoundError } from '@dcl/http-commons'
 import { HandlerContextWithPath } from '../../types'
 import { WorldOwnerNotFoundError } from '../../adapters/limits-manager'
-import { validateParcels } from '../../logic/validations/parcels'
+import { MAX_WORLD_PARCELS } from '../../logic/coordinates'
+import { getDeploymentParcels } from '../../logic/validations/parcels'
 
 /**
  * Returns the scene limits a deployment to the world is checked against.
- * Parcels are canonicalized and deduplicated exactly as the size validation does.
+ *
+ * `maxParcels` always matches the deployment validation. `maxSceneSizeInBytes` matches it exactly
+ * when `parcels` lists the scene's parcels: they are canonicalized and deduplicated the way the
+ * deployment's pointers are, so only the deployed scenes overlapping them are credited back.
+ * Without `parcels` the whole world's deployed size is credited back, so the result is an upper
+ * bound: a deployment that doesn't replace every scene of the world may get a lower limit.
+ *
+ * @throws {InvalidRequestError} When a parcel is malformed or out of bounds, or there are more
+ * parcels than the world grid holds.
+ * @throws {NotFoundError} When the world name is deny-listed or its owner can't be determined.
  */
 export async function getWorldLimitsHandler(
   ctx: Pick<
-    HandlerContextWithPath<'coordinates' | 'limitsManager', '/world/:world_name/limits'>,
+    HandlerContextWithPath<'coordinates' | 'limitsManager' | 'nameDenyListChecker', '/world/:world_name/limits'>,
     'components' | 'params' | 'url'
   >
 ): Promise<IHttpServerComponent.IResponse> {
-  const { coordinates, limitsManager } = ctx.components
+  const { coordinates, limitsManager, nameDenyListChecker } = ctx.components
   const worldName = ctx.params.world_name.toLowerCase()
 
   let parcels: string[] | undefined
   if (ctx.url.searchParams.has('parcels')) {
     const rawParcels = ctx.url.searchParams.getAll('parcels')
-    validateParcels(rawParcels)
+    // A scene can't occupy more parcels than the grid holds, so this never rejects a deployment.
+    if (rawParcels.length > MAX_WORLD_PARCELS) {
+      throw new InvalidRequestError(
+        `Cannot compute limits for more than ${MAX_WORLD_PARCELS} parcels, the size of the world grid.`
+      )
+    }
     for (const parcel of rawParcels) {
       try {
         coordinates.parseCoordinate(parcel)
@@ -28,7 +43,11 @@ export async function getWorldLimitsHandler(
         throw new InvalidRequestError((error as Error).message)
       }
     }
-    parcels = Array.from(new Set(coordinates.canonicalizeParcels(rawParcels)))
+    parcels = getDeploymentParcels(rawParcels, coordinates)
+  }
+
+  if (!(await nameDenyListChecker.checkNameDenyList(worldName))) {
+    throw new NotFoundError(`World "${worldName}" not found.`)
   }
 
   try {

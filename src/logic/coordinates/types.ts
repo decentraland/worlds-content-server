@@ -22,7 +22,7 @@ export type ICoordinatesComponent = {
    *
    * @param coordinateString - The coordinate string to parse
    * @returns The parsed Coordinate object
-   * @throws {Error} If the coordinate string is invalid
+   * @throws {Error} If the string is not an integer "x,y" pair or is out of bounds
    */
   parseCoordinate(coordinateString: string): Coordinate
 

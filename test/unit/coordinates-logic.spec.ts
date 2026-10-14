@@ -118,6 +118,20 @@ describe('CoordinatesComponent', () => {
         })
       })
 
+      describe('and the values have surrounding whitespace and leading zeros', () => {
+        let coordinateString: string
+        let result: Coordinate
+
+        beforeEach(() => {
+          coordinateString = ' 03 , -04 '
+          result = coordinatesComponent.parseCoordinate(coordinateString)
+        })
+
+        it('should parse them by value', () => {
+          expect(result).toEqual({ x: 3, y: -4 })
+        })
+      })
+
       describe('and the coordinates are at the minimum boundary (-150)', () => {
         let coordinateString: string
         let result: Coordinate
@@ -191,6 +205,34 @@ describe('CoordinatesComponent', () => {
 
         it('should throw an error with the correct message', () => {
           expect(() => coordinatesComponent.parseCoordinate(coordinateString)).toThrow('Invalid coordinate values: a,b')
+        })
+      })
+
+      describe('and a value has trailing non-digit characters', () => {
+        let coordinateString: string
+
+        beforeEach(() => {
+          coordinateString = '1abc,2'
+        })
+
+        it('should throw an error with the correct message', () => {
+          expect(() => coordinatesComponent.parseCoordinate(coordinateString)).toThrow(
+            'Invalid coordinate values: 1abc,2'
+          )
+        })
+      })
+
+      describe('and a value is not an integer', () => {
+        let coordinateString: string
+
+        beforeEach(() => {
+          coordinateString = '1,2.5'
+        })
+
+        it('should throw an error with the correct message', () => {
+          expect(() => coordinatesComponent.parseCoordinate(coordinateString)).toThrow(
+            'Invalid coordinate values: 1,2.5'
+          )
         })
       })
 

@@ -2,13 +2,14 @@ import { InvalidRequestError, NotFoundError } from '@dcl/http-commons'
 import { IHttpServerComponent } from '@dcl/core-commons'
 import { getWorldLimitsHandler } from '../../src/controllers/handlers/world-limits-handler'
 import { WorldOwnerNotFoundError } from '../../src/adapters/limits-manager'
-import { createCoordinatesComponent } from '../../src/logic/coordinates'
-import { ILimitsManager, MB_BigInt } from '../../src/types'
+import { createCoordinatesComponent, MAX_WORLD_PARCELS } from '../../src/logic/coordinates'
+import { ILimitsManager, INameDenyListChecker, MB_BigInt } from '../../src/types'
 
 type HandlerContext = Parameters<typeof getWorldLimitsHandler>[0]
 
 describe('when getting the limits of a world', () => {
   let limitsManager: jest.Mocked<ILimitsManager>
+  let nameDenyListChecker: jest.Mocked<INameDenyListChecker>
   let query: string
   let worldName: string
   let response: IHttpServerComponent.IResponse | undefined
@@ -16,7 +17,7 @@ describe('when getting the limits of a world', () => {
 
   async function run(): Promise<void> {
     const context: HandlerContext = {
-      components: { coordinates: createCoordinatesComponent(), limitsManager },
+      components: { coordinates: createCoordinatesComponent(), limitsManager, nameDenyListChecker },
       params: { world_name: worldName },
       url: new URL(`http://localhost/world/${worldName}/limits${query}`)
     }
@@ -37,6 +38,10 @@ describe('when getting the limits of a world', () => {
       getMaxAllowedParcelsFor: jest.fn().mockResolvedValue(4),
       getMaxAllowedSizeInBytesFor: jest.fn().mockResolvedValue(120n * MB_BigInt),
       getSceneSizeCapInBytesFor: jest.fn()
+    }
+    nameDenyListChecker = {
+      checkNameDenyList: jest.fn().mockResolvedValue(true),
+      getBannedNames: jest.fn()
     }
   })
 
@@ -97,10 +102,52 @@ describe('when getting the limits of a world', () => {
       await run()
     })
 
-    it('should reject the request with the parcel format error', () => {
+    it('should reject the request with the coordinate values error', () => {
+      expect(error).toEqual(new InvalidRequestError('Invalid coordinate values: 1.5,0'))
+    })
+  })
+
+  describe('and more parcels are requested than the permission assignment cap', () => {
+    let parcels: string[]
+
+    beforeEach(async () => {
+      parcels = Array.from({ length: 502 }, (_, i) => `${(i % 301) - 150},${Math.floor(i / 301)}`)
+      query = `?${parcels.map((parcel) => `parcels=${parcel}`).join('&')}`
+      await run()
+    })
+
+    it('should compute the size limit for every requested parcel', () => {
+      expect(limitsManager.getMaxAllowedSizeInBytesFor).toHaveBeenCalledWith('my-world.dcl.eth', parcels)
+    })
+  })
+
+  describe('and more parcels are requested than the world grid holds', () => {
+    beforeEach(async () => {
+      query = `?${'parcels=0,0&'.repeat(MAX_WORLD_PARCELS)}parcels=0,0`
+      await run()
+    })
+
+    it('should reject the request with the grid size error', () => {
       expect(error).toEqual(
-        new InvalidRequestError('Invalid parcel format: "1.5,0". Expected "x,y" format (e.g., "0,0" or "-5,10").')
+        new InvalidRequestError(
+          `Cannot compute limits for more than ${MAX_WORLD_PARCELS} parcels, the size of the world grid.`
+        )
       )
+    })
+
+    it('should not compute any limit', () => {
+      expect(limitsManager.getMaxAllowedSizeInBytesFor).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('and exactly as many parcels are requested as the world grid holds', () => {
+    beforeEach(async () => {
+      query = `?${'parcels=0,0&'.repeat(MAX_WORLD_PARCELS - 1)}parcels=0,0`
+      await run()
+    })
+
+    it('should compute the size limit for the deduplicated parcels', () => {
+      expect(limitsManager.getMaxAllowedSizeInBytesFor).toHaveBeenCalledWith('my-world.dcl.eth', ['0,0'])
     })
   })
 
@@ -125,6 +172,25 @@ describe('when getting the limits of a world', () => {
       expect(error).toEqual(
         new InvalidRequestError('Coordinate X value 151 is out of bounds. Must be between -150 and 150.')
       )
+    })
+  })
+
+  describe('and the world name is deny-listed', () => {
+    beforeEach(async () => {
+      nameDenyListChecker.checkNameDenyList.mockResolvedValueOnce(false)
+      await run()
+    })
+
+    it('should check the lowercased world name against the deny list', () => {
+      expect(nameDenyListChecker.checkNameDenyList).toHaveBeenCalledWith('my-world.dcl.eth')
+    })
+
+    it('should fail with a not found error', () => {
+      expect(error).toEqual(new NotFoundError('World "my-world.dcl.eth" not found.'))
+    })
+
+    it('should not compute any limit', () => {
+      expect(limitsManager.getMaxAllowedSizeInBytesFor).not.toHaveBeenCalled()
     })
   })
 

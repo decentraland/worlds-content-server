@@ -1316,8 +1316,13 @@ paths:
         rules the deployment validation applies. The world name is case-insensitive.
 
         - **Query (parcels)**: Optional, repeatable. The parcels the scene will occupy (e.g. `?parcels=0,0&parcels=0,1`).
-          The size limit credits back only the deployed scenes overlapping these parcels, as a deployment to
-          them would. When omitted, the whole world's deployed size is credited back.
+          They are canonicalized and deduplicated the way a deployment's pointers are, and the size limit credits
+          back only the deployed scenes overlapping them, as a deployment to them would.
+        - **Accuracy**: `maxParcels` always matches deployment validation. `maxSceneSizeInBytes` matches deployment
+          validation exactly when `parcels` lists the scene's parcels; without it, the whole world's deployed size
+          is credited back, so it's an upper bound.
+        - **Not exposed**: other deploy-time limits, such as the content file count (`MAX_FILE_COUNT`) and the
+          per-world staging budget for pending partial uploads, are not returned and can still reject a deployment.
       operationId: worldsContentServer_getWorldLimits
       parameters:
         - name: world_name
@@ -1335,10 +1340,10 @@ paths:
           explode: true
           schema:
             type: array
-            maxItems: 500
+            maxItems: 90601
             items:
               type: string
-              pattern: '^-?\d+,-?\d+$'
+              pattern: '^\s*-?\d+\s*,\s*-?\d+\s*$'
               example: '0,0'
       responses:
         '200':
@@ -1348,13 +1353,15 @@ paths:
               schema:
                 $ref: '#/components/schemas/WorldLimits'
         '400':
-          description: Invalid parcels
+          description: |
+            Invalid parcels: a parcel is not an integer "x,y" pair, a coordinate is out of bounds (-150 to 150),
+            or more parcels were sent than the world grid holds (90601).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '404':
-          description: The owner of the world name could not be determined
+          description: The world name is deny-listed or its owner could not be determined
           content:
             application/json:
               schema:
