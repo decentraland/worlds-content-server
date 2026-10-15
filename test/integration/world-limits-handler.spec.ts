@@ -53,7 +53,7 @@ test('world limits handler GET /world/:world_name/limits', function ({ component
     beforeEach(async () => {
       sizeSpy = jest.spyOn(components.limitsManager, 'getMaxAllowedSizeInBytesFor')
       const query = new URLSearchParams(
-        Array.from({ length: 2000 }, (_, i) => ['parcels', `${(i % 200) - 100},${Math.floor(i / 200) - 5}`])
+        Array.from({ length: 1200 }, (_, i) => ['parcels', `${(i % 200) - 100},${Math.floor(i / 200) - 5}`])
       )
       response = await components.localFetch.fetch(`/world/privileged.dcl.eth/limits?${query.toString()}`)
     })

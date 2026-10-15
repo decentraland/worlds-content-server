@@ -1344,7 +1344,7 @@ paths:
           required: false
           description: |
             A parcel the scene will occupy, as a canonical "x,y" coordinate. Repeat the parameter for each parcel;
-            parcels must not repeat. The request header limit caps the list at roughly 900 to 1,300 parcels.
+            parcels must not repeat. The request header limit caps the list at roughly 800 to 1,300 parcels.
           style: form
           explode: true
           schema:
