@@ -965,6 +965,49 @@ test('WorldManagerAdapter', function ({ components }) {
       })
     })
 
+    describe('when a scene would replace several multi-parcel scenes', function () {
+      let fullListSize: bigint
+      let onePerSceneSize: bigint
+      let replacedSize: bigint
+
+      beforeEach(async () => {
+        const { worldCreator, worldsManager } = components
+
+        const worldName = worldCreator.randomWorldName()
+        for (const parcels of [['0,0', '0,1'], ['1,0', '1,1'], ['5,5']]) {
+          const files = new Map<string, Uint8Array>()
+          files.set('abc.txt', stringToUtf8Bytes(makeid(100 * parcels.length)))
+          await worldCreator.createWorldWithScene({
+            worldName,
+            metadata: {
+              main: 'abc.txt',
+              scene: { base: parcels[0], parcels },
+              worldConfiguration: { name: worldName }
+            },
+            files
+          })
+        }
+
+        const { scenes } = await worldsManager.getWorldScenes({ worldName })
+        replacedSize = scenes
+          .filter((scene) => !scene.parcels.includes('5,5'))
+          .reduce((total, scene) => total + scene.size, BigInt(0))
+
+        fullListSize = await worldsManager.getDeployedSceneSizeForParcels(worldName, [
+          '0,0',
+          '0,1',
+          '1,0',
+          '1,1',
+          '2,0'
+        ])
+        onePerSceneSize = await worldsManager.getDeployedSceneSizeForParcels(worldName, ['0,1', '1,0'])
+      })
+
+      it('should return the same size for one parcel of each replaced scene as for the full parcel list', () => {
+        expect({ fullListSize, onePerSceneSize }).toEqual({ fullListSize: replacedSize, onePerSceneSize: replacedSize })
+      })
+    })
+
     describe('when the world has only undeployed scenes', function () {
       let worldName: string
 

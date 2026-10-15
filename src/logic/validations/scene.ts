@@ -1,25 +1,13 @@
 import { DeploymentFile, DeploymentToValidate, Validation, ValidationResult, ValidatorComponents } from '../../types'
 import { Entity, Scene, SceneParcels } from '@dcl/schemas'
 import { createValidationResult, OK } from './utils'
-import { ICoordinatesComponent } from '../coordinates'
 import { ContentMapping } from '@dcl/schemas/dist/misc/content-mapping'
 import { FileInfo } from '@dcl/catalyst-storage'
 import { isNameOwnershipValidationIgnored } from '../name-ownership-validation'
+import { areValidScenePointers, getDeploymentParcels } from './parcels'
 
 /** Default cap on content files per deployment, used when MAX_FILE_COUNT is unset. */
 export const DEFAULT_MAX_FILE_COUNT = 10000
-
-/**
- * Returns the canonicalized, de-duplicated parcels a deployment targets. Uses the entity
- * pointers as the source of truth — `createValidateScenePointers` guarantees they equal
- * `scene.parcels`, which is what the scene is actually placed on.
- */
-function getDeploymentParcels(
-  deployment: DeploymentToValidate,
-  coordinates: Pick<ICoordinatesComponent, 'canonicalizeParcels'>
-): string[] {
-  return Array.from(new Set(coordinates.canonicalizeParcels(deployment.entity.pointers)))
-}
 
 export const validateSceneEntity: Validation = async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
   if (!Scene.validate(deployment.entity.metadata)) {
@@ -52,10 +40,7 @@ export function createValidateScenePointers(_components: Pick<ValidatorComponent
       return createValidationResult(['Scene pointers and parcels must be unique canonical parcel coordinates.'])
     }
 
-    if (
-      declaredPointers.length === 0 ||
-      !SceneParcels.validate({ base: declaredPointers[0], parcels: declaredPointers })
-    ) {
+    if (!areValidScenePointers(declaredPointers)) {
       return createValidationResult(['Scene pointers and parcels must be unique canonical parcel coordinates.'])
     }
 
@@ -129,7 +114,7 @@ export function createValidateDeploymentPermission(
   return async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
     const worldSpecifiedName = deployment.entity.metadata.worldConfiguration.name
     const signer = deployment.authChain[0].payload
-    const parcels = getDeploymentParcels(deployment, components.coordinates)
+    const parcels = getDeploymentParcels(deployment.entity.pointers, components.coordinates)
 
     if (await isNameOwnershipValidationIgnored(components.config)) {
       // This is deliberately an explicit development/test-only bypass. The
@@ -184,7 +169,7 @@ export function createValidateSceneDimensions(components: Pick<ValidatorComponen
     const worldName = deployment.entity.metadata.worldConfiguration.name
 
     const maxParcels = await components.limitsManager.getMaxAllowedParcelsFor(worldName || '')
-    if (getDeploymentParcels(deployment, components.coordinates).length > maxParcels) {
+    if (getDeploymentParcels(deployment.entity.pointers, components.coordinates).length > maxParcels) {
       return createValidationResult([`Max allowed scene dimensions is ${maxParcels} parcels.`])
     }
 
@@ -200,7 +185,7 @@ export function createValidateSceneDimensions(components: Pick<ValidatorComponen
 export function createValidateParcelCoordinates(components: Pick<ValidatorComponents, 'coordinates'>) {
   return async (deployment: DeploymentToValidate): Promise<ValidationResult> => {
     const errors: string[] = []
-    for (const parcel of getDeploymentParcels(deployment, components.coordinates)) {
+    for (const parcel of getDeploymentParcels(deployment.entity.pointers, components.coordinates)) {
       try {
         components.coordinates.parseCoordinate(parcel)
       } catch (error: any) {
@@ -265,7 +250,7 @@ export function createValidateSize(
     const maxTotalSizeInBytes = await components.deploymentProcessing.trackStage('limits', 1, () =>
       components.limitsManager.getMaxAllowedSizeInBytesFor(
         worldName || '',
-        getDeploymentParcels(deployment, components.coordinates)
+        getDeploymentParcels(deployment.entity.pointers, components.coordinates)
       )
     )
 

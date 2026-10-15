@@ -18,11 +18,14 @@ export type BoundingRectangle = {
 
 export type ICoordinatesComponent = {
   /**
-   * Parses a coordinate string (e.g., "10,20" or "-5,-10") into a Coordinate object
+   * Parses a coordinate string (e.g., "10,20" or "-5,-10") into a Coordinate object. Parsing is
+   * lenient, as with `parseInt`: each value is read up to its first non-digit, so "1.5,0" parses
+   * as 1,0 and "1abc,2" as 1,2. Use it on validated coordinates when an exact format matters.
    *
    * @param coordinateString - The coordinate string to parse
    * @returns The parsed Coordinate object
-   * @throws {Error} If the coordinate string is invalid
+   * @throws {Error} If the string doesn't have exactly two comma-separated values, a value doesn't
+   * start with an integer, or a coordinate is out of bounds
    */
   parseCoordinate(coordinateString: string): Coordinate
 

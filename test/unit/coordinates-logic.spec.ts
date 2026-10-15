@@ -118,6 +118,20 @@ describe('CoordinatesComponent', () => {
         })
       })
 
+      describe('and the values have surrounding whitespace and leading zeros', () => {
+        let coordinateString: string
+        let result: Coordinate
+
+        beforeEach(() => {
+          coordinateString = ' 03 , -04 '
+          result = coordinatesComponent.parseCoordinate(coordinateString)
+        })
+
+        it('should parse them by value', () => {
+          expect(result).toEqual({ x: 3, y: -4 })
+        })
+      })
+
       describe('and the coordinates are at the minimum boundary (-150)', () => {
         let coordinateString: string
         let result: Coordinate

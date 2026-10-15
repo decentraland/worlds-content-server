@@ -13,6 +13,7 @@ import {
 import { mapWithConcurrency, raceWithSignal } from '../concurrency'
 import { DEFAULT_CONTENT_FILE_INFO_CONCURRENCY } from '../deployment-processing'
 import { calculateDeploymentSizeFromFileInfos } from '../validations/scene'
+import { getDeploymentParcels } from '../validations/parcels'
 import { FileReceipt } from '../../adapters/pending-scenes-repository/types'
 import { PartialUploadExpiredError, PendingScene } from '../partial-upload-admission'
 import {
@@ -267,7 +268,7 @@ export async function createSceneDeploymentsComponent(
     // Only validated manifests may cause storage lookups or affect staging state.
     const contentHashes = Array.from(new Set(getContentHashes(entity)))
     const worldName = entity.metadata.worldConfiguration.name.toLowerCase()
-    const parcels = Array.from(new Set(coordinates.canonicalizeParcels(entity.pointers)))
+    const parcels = getDeploymentParcels(entity.pointers, coordinates)
     const hasNewerScene =
       !pending &&
       (await deploymentProcessing.trackStage('lookup', 1, () =>
