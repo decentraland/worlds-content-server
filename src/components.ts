@@ -214,7 +214,7 @@ export async function initComponents(): Promise<AppComponents> {
     storage
   })
 
-  const walletStats = await createWalletStatsComponent({ config, database, fetch, logs, worldsManager })
+  const walletStats = await createWalletStatsComponent({ config, database, fetch, logs })
 
   const whitelist = await createWhitelistComponent({ config, fetch, logs })
 
