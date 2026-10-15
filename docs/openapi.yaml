@@ -1315,19 +1315,22 @@ paths:
         Returns the scene limits a deployment to this world is checked against, computed with the same
         rules the deployment validation applies. The world name is case-insensitive.
 
-        - **Query (parcels)**: Optional, repeatable. The parcels the scene will occupy, as in its `scene.json`
+        - **Query (parcels)**: Optional, repeatable. Parcels the scene will occupy, as in its `scene.json`
           (e.g. `?parcels=0,0&parcels=0,1`). They must pass the same format and bounds checks as a deployment's
           pointers: unique, canonical `x,y` coordinates (no leading zeros, whitespace or `-0`) within bounds. A 200
           doesn't mean the list is deployable: a deployment can still be rejected for exceeding `maxParcels` or for
           missing permissions. The size limit credits back only the deployed scenes overlapping them, as a
-          deployment to them would.
+          deployment to them would, so the parcels only need to identify the scenes being replaced: one parcel of
+          each replaced scene (found with `POST /world/{world_name}/scenes`), or any one of the scene's parcels when
+          it replaces none, gives the same limit as the full list. Large scenes should send that instead of every
+          parcel.
         - **Size**: the query string shares the server's 16 KB request header limit with every other header (cookies,
           proxy-added headers), so a request fails with a 431 above roughly 800 to 1,300 parcels, depending on
           coordinate length and on `,` being encoded as `%2C` (as `URLSearchParams` does). A proxy in front may
           answer 414 instead.
         - **Accuracy**: `maxParcels` always matches deployment validation. `maxSceneSizeInBytes` matches deployment
-          validation exactly when `parcels` lists the scene's parcels; without it, the whole world's deployed size
-          is credited back, so it's an upper bound.
+          validation exactly when `parcels` includes a parcel of every scene the deployment replaces; without it, the
+          whole world's deployed size is credited back, so it's an upper bound.
         - **Not exposed**: other deploy-time limits, such as the content file count (`MAX_FILE_COUNT`) and the
           per-world staging budget for pending partial uploads, are not returned and can still reject a deployment.
       operationId: worldsContentServer_getWorldLimits
@@ -1344,7 +1347,8 @@ paths:
           required: false
           description: |
             A parcel the scene will occupy, as a canonical "x,y" coordinate. Repeat the parameter for each parcel;
-            parcels must not repeat. The request header limit caps the list at roughly 800 to 1,300 parcels.
+            parcels must not repeat. One parcel per replaced scene is enough. The request header limit caps the list
+            at roughly 800 to 1,300 parcels.
           style: form
           explode: true
           schema:

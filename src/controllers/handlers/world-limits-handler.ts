@@ -7,10 +7,12 @@ import { areValidScenePointers, getDeploymentParcels } from '../../logic/validat
 /**
  * Returns the scene limits a deployment to the world is checked against.
  *
- * `maxParcels` always matches the deployment validation. `maxSceneSizeInBytes` matches it exactly
- * when `parcels` lists the scene's parcels: only the deployed scenes overlapping them are credited
- * back. Without `parcels` the whole world's deployed size is credited back, so the result is an
- * upper bound: a deployment that doesn't replace every scene of the world may get a lower limit.
+ * `maxParcels` always matches the deployment validation. `parcels` only identifies the deployed
+ * scenes the deployment replaces, whose size is credited back to `maxSceneSizeInBytes`. Any of the
+ * scene's parcels that include one parcel of each replaced scene give the exact limit, so large
+ * scenes should send one parcel per replaced scene (plus one of their own when none is replaced)
+ * rather than all of them. Without `parcels` the whole world's deployed size is credited back, so
+ * the result is an upper bound: a deployment that doesn't replace every scene may get less.
  *
  * `parcels` must pass the same format and bounds checks as a deployment's pointers (unique,
  * canonical, in bounds). A 200 doesn't mean the list is deployable: a deployment can still be
