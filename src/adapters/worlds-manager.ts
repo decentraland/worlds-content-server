@@ -28,17 +28,49 @@ import {
   SceneDeploymentStatus,
   SceneDeploymentData,
   SceneReplacementAuthorization,
+  DeploymentUniqueViolationError,
   SceneReplacementConflictError,
-  SceneUndeploymentResult
+  SceneUndeploymentResult,
+  WorldScene
 } from '../types'
 import { streamToBuffer } from '@dcl/catalyst-storage'
 import { Entity, EthAddress } from '@dcl/schemas'
+import { InvalidRequestError } from '@dcl/http-commons'
 import SQL, { type SQLStatement } from 'sql-template-strings'
 import { buildWorldRuntimeMetadata } from '../logic/world-runtime-metadata-utils'
 import { AccessSetting, defaultAccess } from '../logic/access'
-import { raceWithSignal } from '../logic/concurrency'
+import { connectWithSignal, isUniqueViolation } from './pg-client'
+import { PartialUploadExpiredError } from './pending-scenes-repository/errors'
 
 type BoundingRow = { min_x: number; max_x: number; min_y: number; max_y: number }
+
+type WorldSceneRow = {
+  world_name: string
+  entity_id: string
+  deployer: string
+  deployment_auth_chain: any
+  entity: any
+  parcels: string[]
+  size: string
+  status: string
+  created_at: Date
+  updated_at: Date
+}
+
+function toWorldScene(row: WorldSceneRow): WorldScene {
+  return {
+    worldName: row.world_name,
+    deployer: row.deployer,
+    entityId: row.entity_id,
+    deploymentAuthChain: row.deployment_auth_chain,
+    entity: row.entity,
+    parcels: row.parcels,
+    size: BigInt(row.size),
+    status: row.status as SceneDeploymentStatus,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  }
+}
 
 /**
  * A change to a world's stored settings.
@@ -169,12 +201,21 @@ export async function createWorldsManagerComponent({
   logs,
   database,
   nameDenyListChecker,
+  pendingScenesRepository,
   search,
   storage,
   thumbnails
 }: Pick<
   AppComponents,
-  'settingsPolicy' | 'coordinates' | 'logs' | 'database' | 'nameDenyListChecker' | 'search' | 'storage' | 'thumbnails'
+  | 'settingsPolicy'
+  | 'coordinates'
+  | 'logs'
+  | 'database'
+  | 'nameDenyListChecker'
+  | 'pendingScenesRepository'
+  | 'search'
+  | 'storage'
+  | 'thumbnails'
 >): Promise<IWorldsManager> {
   const logger = logs.getLogger('worlds-manager')
   const {
@@ -185,16 +226,14 @@ export async function createWorldsManagerComponent({
     getRectangleCenter
   } = coordinates
 
-  type DeploymentTransactionResult<T extends Record<string, unknown>> = { rows: T[] }
+  // The query closure returns the result so in-transaction reads (the advisory lock and the newer-scene
+  // ordering check) can run on the same connection as the writes — on the signal path that is a dedicated
+  // pool connection, and `database.query` would use a different one, silently running them outside the tx.
+  // `rowCount` is kept alongside the typed rows because newerDeployedSceneExists counts through it.
+  type DeploymentTransactionResult<T extends Record<string, unknown>> = { rows: T[]; rowCount: number | null }
   type DeploymentTransactionQuery = <T extends Record<string, unknown> = Record<string, never>>(
     statement: SQLStatement
   ) => Promise<DeploymentTransactionResult<T>>
-  type DeploymentTransactionClient = {
-    query<T extends Record<string, unknown> = Record<string, never>>(
-      statement: string | SQLStatement
-    ): Promise<DeploymentTransactionResult<T>>
-    release(error?: Error): void
-  }
 
   /**
    * Runs deployment persistence on a dedicated connection which is destroyed on cancellation.
@@ -212,20 +251,8 @@ export async function createWorldsManagerComponent({
       return
     }
 
-    signal.throwIfAborted()
-    const acquireClient = database.getPool().connect() as Promise<DeploymentTransactionClient>
-    let client: Awaited<typeof acquireClient>
-    try {
-      client = await raceWithSignal(acquireClient, signal)
-    } catch (error) {
-      // If cancellation wins while the pool is saturated, release the eventual acquisition instead
-      // of leaking a checked-out connection after this request has already returned.
-      void acquireClient.then(
-        (acquiredClient) => acquiredClient.release(),
-        () => undefined
-      )
-      throw error
-    }
+    // A connection acquired after cancellation is released rather than leaked.
+    const client = await connectWithSignal(database.getPool(), signal)
 
     let released = false
     let commitStarted = false
@@ -403,6 +430,43 @@ export async function createWorldsManagerComponent({
     return metadata
   }
 
+  // Whether a strictly-newer DEPLOYED scene (Decentraland ordering: greater entity.timestamp, tie broken
+  // by greater entity id) already occupies any of the given parcels. Shared by deployScene's atomic
+  // in-transaction guard and the public hasNewerDeployedScene fast-fail. Runs in the ambient transaction
+  // when called from within one. Parcels are expected already canonicalized.
+  async function newerDeployedSceneExists(
+    worldNameLower: string,
+    sceneId: string,
+    sceneTimestamp: number,
+    parcels: string[],
+    exec: (statement: SQLStatement) => Promise<{ rowCount: number | null }> = (statement) => database.query(statement)
+  ): Promise<boolean> {
+    const result = await exec(SQL`
+      SELECT 1 FROM world_scenes
+      WHERE world_name = ${worldNameLower}
+        AND status = 'DEPLOYED'
+        AND parcels && ${parcels}::text[]
+        AND entity_id != ${sceneId}
+        -- ::numeric, not ::bigint: the schema allows a fractional entity.timestamp, and a bigint cast
+        -- would make this query (and with it every overlapping deploy) error on such a stored entity.
+        AND ( (entity->>'timestamp')::numeric > ${sceneTimestamp}
+              OR ((entity->>'timestamp')::numeric = ${sceneTimestamp} AND entity_id > ${sceneId}) )
+      LIMIT 1
+    `)
+    return (result.rowCount ?? 0) > 0
+  }
+
+  // Non-authoritative fast-fail for the deploy path: lets a caller reject a stale deploy BEFORE storing
+  // its content, so a rejected older deploy doesn't leave orphaned objects in storage until GC. The
+  // authoritative, race-free check is inside deployScene (under the per-world lock).
+  async function hasNewerDeployedScene(worldName: string, scene: Entity): Promise<boolean> {
+    const parcels = coordinates.canonicalizeParcels(scene.metadata?.scene?.parcels || [])
+    if (!parcels.length) {
+      return false
+    }
+    return newerDeployedSceneExists(worldName.toLowerCase(), scene.id, scene.timestamp, parcels)
+  }
+
   /**
    * Deploys a scene to a world
    *
@@ -433,7 +497,7 @@ export async function createWorldsManagerComponent({
     owner: EthAddress,
     replacementAuthorization: SceneReplacementAuthorization,
     deployment?: SceneDeploymentData
-  ): Promise<{ metadataUpdated: boolean }> {
+  ): Promise<{ metadataUpdated: boolean; creationTimestamp?: number }> {
     // Canonicalize so the stored parcels, the overlap-based replacement here, the undeploy
     // authorization, and the size credit-back all compare parcels by value (e.g. "00,00" ==
     // "0,0"). Otherwise a non-canonical scene.parcels could dodge replacement / over-credit.
@@ -495,8 +559,36 @@ export async function createWorldsManagerComponent({
     const insertPatch: WorldSettingsPatch = maySyncSettings ? scenePatch : {}
 
     let metadataUpdated = false
+    let creationTimestamp = Date.now()
 
     await withDeploymentTransaction(deployment?.signal, async (query) => {
+      // Serialize concurrent deploys to the same world so the "reject if a newer scene already holds
+      // these parcels" check below is atomic with the soft-delete + insert. Both the vanilla and the
+      // partial-finalize paths reach deployScene, so this is the single place deployment ordering is
+      // enforced for world scenes — without the lock, a newer deploy could commit between another
+      // deploy's check and its write, and the older one would silently undeploy it. It runs through the
+      // query closure so, on the signal path, the lock is held by the same dedicated connection that
+      // performs the writes (database.query would run on a different connection and defeat the lock).
+      await query(
+        SQL`SELECT pg_advisory_xact_lock(hashtextextended(${'world_scene_deploy:' + worldName.toLowerCase()}, 0))`
+      )
+      // Taken under the lock so publications of a world are timestamped in commit order.
+      creationTimestamp = Date.now()
+
+      // Reject if a strictly-newer scene (Decentraland ordering: greater entity.timestamp, tie broken
+      // by greater entity id) already occupies any of these parcels. This makes an older deploy — most
+      // importantly a stale partial finalize — unable to overwrite a newer one, atomically under the
+      // lock above rather than via a racy pre-write check in the caller. The check runs through the same
+      // query closure, so it observes the state the lock protects.
+      if (await newerDeployedSceneExists(worldName.toLowerCase(), scene.id, scene.timestamp, parcels, query)) {
+        throw new InvalidRequestError(
+          `Deployment failed: a newer scene is already deployed on one or more of these parcels.`
+        )
+      }
+
+      // Bound the remaining statements by the processing deadline (a transaction-local statement_timeout),
+      // cleared right before COMMIT further down. The advisory-lock wait above is instead bounded by the
+      // cancellation signal — a disconnect or the deadline destroys the connection and releases the wait.
       if (deployment?.deadlineAt !== undefined) {
         const remainingMs = Math.max(1, deployment.deadlineAt - Date.now())
         await query(SQL`SELECT set_config('statement_timeout', ${remainingMs.toString()}, true)`)
@@ -572,6 +664,11 @@ export async function createWorldsManagerComponent({
         metadataUpdated = maySyncSettings
       }
 
+      // Every statement below excludes this entity's own row. Keeping a DEPLOYED self-row untouched is
+      // what makes a concurrent re-deploy of the same entity collide on the (world_name, entity_id)
+      // primary key below (the idempotency signal the partial finalize relies on): without the
+      // exclusion the UPDATE would flip the winner's fresh row to UNDEPLOYED and a second finalize
+      // would deploy again — double-publishing the SNS event and double-counting the deployment.
       if (replacementAuthorization.mode === 'unrestricted-owner') {
         // World-name owners may replace every overlapping scene.
         await query(SQL`
@@ -579,6 +676,7 @@ export async function createWorldsManagerComponent({
           WHERE world_name = ${worldName.toLowerCase()}
           AND parcels && ${parcels}::text[]
           AND status = 'DEPLOYED'
+          AND entity_id != ${scene.id}
         `)
       } else {
         // Parcel-scoped deployers may replace only the exact scenes whose full footprints were
@@ -589,20 +687,36 @@ export async function createWorldsManagerComponent({
           WHERE world_name = ${worldName.toLowerCase()}
           AND parcels && ${parcels}::text[]
           AND status = 'DEPLOYED'
+          AND entity_id != ${scene.id}
           AND entity_id = ANY(${replacementAuthorization.entityIds}::text[])
         `)
 
+        // The self-row is excluded here too: a re-deploy of an already-DEPLOYED entity must fall
+        // through to the primary-key collision (idempotent success), not be reported as someone
+        // else's unreplaceable scene.
         const unexpectedOverlap = await query<{ entity_id: string }>(SQL`
           SELECT entity_id FROM world_scenes
           WHERE world_name = ${worldName.toLowerCase()}
           AND parcels && ${parcels}::text[]
           AND status = 'DEPLOYED'
+          AND entity_id != ${scene.id}
           LIMIT 1
         `)
         if (unexpectedOverlap.rows.length > 0) {
           throw new SceneReplacementConflictError(worldName)
         }
       }
+
+      // A previous undeploy of this same entity soft-deletes its row, which still owns the
+      // (world_name, entity_id) primary key and would make the insert below fail forever for a
+      // redeploy. Remove it. A DEPLOYED self-row is deliberately left alone (the statements above
+      // exclude it) so a concurrent finalize of the same entity still hits the unique violation.
+      await query(SQL`
+        DELETE FROM world_scenes
+        WHERE world_name = ${worldName.toLowerCase()}
+        AND entity_id = ${scene.id}
+        AND status = 'UNDEPLOYED'
+      `)
 
       // Insert new scene
       await query(SQL`
@@ -618,10 +732,24 @@ export async function createWorldsManagerComponent({
           ${parcels}::text[],
           ${size},
           'DEPLOYED',
-          ${new Date()},
-          ${new Date()}
+          ${new Date(creationTimestamp)},
+          ${new Date(creationTimestamp)}
         )
       `)
+
+      const partialUpload = deployment?.completesPartialUpload
+      const { consumed, live } = await pendingScenesRepository.recordPublication(query, {
+        entityId: scene.id,
+        deployer,
+        worldName,
+        parcels: scene.metadata?.scene?.parcels || [],
+        publishedAt: new Date(creationTimestamp),
+        completesPartialUpload: partialUpload
+      })
+      // On GC's database clock: this transaction began under the shared lock, after any GC that saw it expired.
+      if (partialUpload && (!consumed || !live)) {
+        throw new PartialUploadExpiredError()
+      }
 
       // Update denormalized scene stats
       await query(buildRecalculateWorldSceneStatsQuery(worldName.toLowerCase()))
@@ -632,9 +760,12 @@ export async function createWorldsManagerComponent({
         // as a pre-commit failure. Request cancellation still applies until COMMIT begins.
         await query(SQL`SELECT set_config('statement_timeout', ${'0'}, true)`)
       }
+    }).catch((error: unknown) => {
+      // Most commonly a concurrent publication of this same entity colliding on the primary key.
+      throw isUniqueViolation(error) ? new DeploymentUniqueViolationError(scene.id, error) : error
     })
 
-    return { metadataUpdated }
+    return { metadataUpdated, creationTimestamp }
   }
 
   async function storeAccess(worldName: string, access: AccessSetting): Promise<void> {
@@ -906,36 +1037,20 @@ export async function createWorldsManagerComponent({
     // Execute both queries concurrently
     const [countResult, result] = await Promise.all([
       database.query<{ total: string }>(countQuery),
-      database.query<{
-        world_name: string
-        entity_id: string
-        deployer: string
-        deployment_auth_chain: any
-        entity: any
-        parcels: string[]
-        size: string
-        status: string
-        created_at: Date
-        updated_at: Date
-      }>(mainQuery)
+      database.query<WorldSceneRow>(mainQuery)
     ])
 
     const total = parseInt(countResult.rows[0]?.total || '0', 10)
 
-    const scenes = result.rows.map((row) => ({
-      worldName: row.world_name,
-      deployer: row.deployer,
-      entityId: row.entity_id,
-      deploymentAuthChain: row.deployment_auth_chain,
-      entity: row.entity,
-      parcels: row.parcels,
-      size: BigInt(row.size),
-      status: row.status as SceneDeploymentStatus,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at
-    }))
+    return { scenes: result.rows.map(toWorldScene), total }
+  }
 
-    return { scenes, total }
+  async function getDeployedScene(entityId: string, worldName?: string): Promise<WorldScene | undefined> {
+    const query = SQL`SELECT * FROM world_scenes WHERE entity_id = ${entityId} AND status = 'DEPLOYED'`
+    if (worldName) query.append(SQL` AND world_name = ${worldName.toLowerCase()}`)
+    query.append(SQL` ORDER BY created_at ASC LIMIT 1`)
+    const result = await database.query<WorldSceneRow>(query)
+    return result.rows[0] ? toWorldScene(result.rows[0]) : undefined
   }
 
   async function undeployScene(
@@ -1543,6 +1658,7 @@ export async function createWorldsManagerComponent({
     getDeployedWorldCount,
     getMetadataForWorld,
     getEntityForWorlds,
+    hasNewerDeployedScene,
     deployScene,
     undeployScene,
     storeAccess,
@@ -1550,6 +1666,7 @@ export async function createWorldsManagerComponent({
     undeployWorld,
     getContributableDomains,
     getWorldScenes,
+    getDeployedScene,
     updateWorldSettings,
     getWorldSettings,
     getTotalWorldSize,

@@ -2,9 +2,10 @@ import { Readable } from 'stream'
 import { Authenticator } from '@dcl/crypto'
 import { Entity, EntityType, Events, WorldSettingsChangedEvent } from '@dcl/schemas'
 import { generateLazyValidator } from '@dcl/schemas/dist/validation'
-import { createEntityDeployer, DEFAULT_STORAGE_UPLOAD_CONCURRENCY } from '../../src/adapters/entity-deployer'
-import { AppComponents, DeploymentFile, IEntityDeployer } from '../../src/types'
-import { createDeploymentProcessingMock } from '../mocks/deployment-processing-mock'
+import { createEntityDeployer } from '../../src/adapters/entity-deployer'
+import { DEFAULT_STORAGE_UPLOAD_CONCURRENCY } from '../../src/logic/deployment-processing'
+import { AppComponents, DeploymentFile, DeploymentProcessingStage, IEntityDeployer } from '../../src/types'
+import { createDeploymentProcessingMock, createStageRecorder, StageRecorder } from '../mocks/deployment-processing-mock'
 import { createSceneDeployment } from './validations/shared'
 import { getIdentity } from '../utils'
 
@@ -79,7 +80,11 @@ function createComponents(
     },
     snsClient: { publishMessage: jest.fn().mockResolvedValue({ MessageId: 'mid', SequenceNumber: 'seq' }) },
     storage: { storeStream: storageStoreStream },
-    worldsManager: { deployScene: worldsDeployScene, getWorldSettings: worldsGetWorldSettings }
+    worldsManager: {
+      deployScene: worldsDeployScene,
+      getWorldSettings: worldsGetWorldSettings,
+      hasNewerDeployedScene: jest.fn().mockResolvedValue(false)
+    }
   } as unknown as EntityDeployerComponents
   return { components, loggerError, loggerWarn, worldsDeployScene, worldsGetWorldSettings }
 }
@@ -117,12 +122,10 @@ describe('entity deployer', () => {
         entity,
         new Map(contentHashes.map((hash) => [hash, false])),
         files,
-        JSON.stringify(entity),
+        Buffer.from(JSON.stringify(entity)),
         [],
         12,
-        undefined,
-        undefined,
-        unrestrictedReplacementAuthorization
+        { sceneReplacementAuthorization: unrestrictedReplacementAuthorization }
       )
       contentUploadCalls = storageStoreStream.mock.calls.filter(([hash]) => contentHashes.includes(hash)).length
       // The real-timer paced uploads can exceed the default 5s hook budget when jest runs the
@@ -179,7 +182,7 @@ describe('entity deployer', () => {
           entity,
           new Map(contentHashes.map((hash) => [hash, false])),
           files,
-          JSON.stringify(entity),
+          Buffer.from(JSON.stringify(entity)),
           [],
           3
         )
@@ -202,6 +205,37 @@ describe('entity deployer', () => {
         startedUploads: ['hash-0', 'hash-1'],
         worldDeployments: 0
       })
+    })
+  })
+
+  describe('when a scene deployment checks for a newer scene', () => {
+    let recorder: StageRecorder
+    let newerSceneCheckStages: DeploymentProcessingStage[][]
+
+    beforeEach(async () => {
+      recorder = createStageRecorder()
+      newerSceneCheckStages = []
+      const setup = createComponents(jest.fn().mockResolvedValue(undefined), 2)
+      setup.components.deploymentProcessing = createDeploymentProcessingMock({ trackStage: recorder.trackStage })
+      ;(setup.components.worldsManager.hasNewerDeployedScene as jest.Mock).mockImplementation(async () => {
+        newerSceneCheckStages.push(recorder.openStages())
+        return false
+      })
+      const entity = createScene(['hash'])
+      await createEntityDeployer(setup.components).deployEntity(
+        'https://worlds.example',
+        entity,
+        new Map([['hash', true]]),
+        new Map(),
+        Buffer.from(JSON.stringify(entity)),
+        [],
+        1,
+        { sceneReplacementAuthorization: unrestrictedReplacementAuthorization }
+      )
+    })
+
+    it('should run the check inside the lookup stage', () => {
+      expect(newerSceneCheckStages).toEqual([['lookup']])
     })
   })
 
@@ -231,12 +265,10 @@ describe('entity deployer', () => {
           [missingHash, false]
         ]),
         files,
-        JSON.stringify(entity),
+        Buffer.from(JSON.stringify(entity)),
         [],
         2,
-        undefined,
-        undefined,
-        unrestrictedReplacementAuthorization
+        { sceneReplacementAuthorization: unrestrictedReplacementAuthorization }
       )
       uploadedContentHashes = storageStoreStream.mock.calls
         .map(([hash]) => hash)
@@ -294,10 +326,10 @@ describe('entity deployer', () => {
           entity,
           new Map(contentHashes.map((hash) => [hash, false])),
           files,
-          JSON.stringify(entity),
+          Buffer.from(JSON.stringify(entity)),
           [],
           3,
-          controller.signal
+          { signal: controller.signal }
         )
         .catch((error) => error)
     })
@@ -321,47 +353,64 @@ describe('entity deployer', () => {
     })
   })
 
-  describe('when the request is aborted while a content upload never settles', () => {
+  describe('when cancellation races with a storage writer still settling', () => {
     let caughtError: unknown
     let worldsDeployScene: jest.Mock
+    let settledBeforeWriter: boolean
+    let releaseWriter: () => void
 
     beforeEach(async () => {
       const controller = new AbortController()
       const contentHashes = ['hash-0', 'hash-1']
       const storageStoreStream = jest.fn((hash: string) =>
-        hash === 'hash-0' ? new Promise<void>(() => undefined) : Promise.resolve()
+        hash === 'hash-0'
+          ? new Promise<void>((resolve) => {
+              releaseWriter = resolve
+            })
+          : Promise.resolve()
       )
       const setup = createComponents(storageStoreStream, 2)
       worldsDeployScene = setup.worldsDeployScene
       const entity = createScene(contentHashes)
       const files = new Map(contentHashes.map((hash) => [hash, createDeploymentFile(hash)]))
-      const deployer: IEntityDeployer = createEntityDeployer(setup.components)
-
-      const deployment = deployer.deployEntity(
-        'https://worlds.example',
-        entity,
-        new Map(contentHashes.map((hash) => [hash, false])),
-        files,
-        JSON.stringify(entity),
-        [],
-        2,
-        controller.signal
-      )
+      const deployer = createEntityDeployer(setup.components)
+      settledBeforeWriter = false
+      const deployment = deployer
+        .deployEntity(
+          'https://worlds.example',
+          entity,
+          new Map(contentHashes.map((hash) => [hash, false])),
+          files,
+          Buffer.from(JSON.stringify(entity)),
+          [],
+          2,
+          { signal: controller.signal }
+        )
+        .catch((error) => {
+          settledBeforeWriter = true
+          return error
+        })
       await new Promise<void>((resolve) => setImmediate(resolve))
       controller.abort(new Error('deadline exceeded'))
-      caughtError = await deployment.catch((error) => error)
+      await new Promise<void>((resolve) => setImmediate(resolve))
+      const earlySettlement = settledBeforeWriter
+      releaseWriter()
+      caughtError = await deployment
+      settledBeforeWriter = earlySettlement
     })
 
     afterEach(() => {
       jest.resetAllMocks()
     })
 
-    it('should reject with the abort reason instead of waiting for the wedged upload', () => {
+    it('should keep the content protection until writers settle and never publish', () => {
       expect({
         error: caughtError instanceof Error ? caughtError.message : caughtError,
+        settledBeforeWriter,
         worldDeployments: worldsDeployScene.mock.calls.length
       }).toEqual({
         error: 'deadline exceeded',
+        settledBeforeWriter: false,
         worldDeployments: 0
       })
     })
@@ -394,12 +443,14 @@ describe('entity deployer', () => {
         entity,
         new Map(),
         new Map(),
-        JSON.stringify(entity),
+        Buffer.from(JSON.stringify(entity)),
         [],
         0,
-        controller.signal,
-        Date.now() + 10,
-        unrestrictedReplacementAuthorization
+        {
+          signal: controller.signal,
+          deadlineAt: Date.now() + 10,
+          sceneReplacementAuthorization: unrestrictedReplacementAuthorization
+        }
       )
     })
 
@@ -435,12 +486,10 @@ describe('entity deployer', () => {
         entity,
         new Map(),
         new Map(),
-        JSON.stringify(entity),
+        Buffer.from(JSON.stringify(entity)),
         [],
         0,
-        undefined,
-        undefined,
-        unrestrictedReplacementAuthorization
+        { sceneReplacementAuthorization: unrestrictedReplacementAuthorization }
       )
     })
 
@@ -481,7 +530,7 @@ describe('entity deployer', () => {
         entity,
         new Map(),
         new Map(),
-        JSON.stringify(entity),
+        Buffer.from(JSON.stringify(entity)),
         [],
         0
       )
@@ -499,6 +548,176 @@ describe('entity deployer', () => {
     })
   })
 
+  describe('when the entity file is not valid UTF-8', () => {
+    let entityFile: Buffer
+    let storedEntityFile: Buffer | undefined
+
+    beforeEach(async () => {
+      const entity = createScene([], true)
+      entityFile = Buffer.concat([Buffer.from('{"metadata":"a'), Buffer.from([0xff]), Buffer.from('"}')])
+      storedEntityFile = undefined
+      const storageStoreStream = jest.fn(async (hash: string, stream: AsyncIterable<Uint8Array>) => {
+        if (hash !== entity.id) return
+        const chunks: Uint8Array[] = []
+        for await (const chunk of stream) chunks.push(chunk)
+        storedEntityFile = Buffer.concat(chunks)
+      })
+      const setup = createComponents(storageStoreStream, 2)
+      await createEntityDeployer(setup.components).deployEntity(
+        'https://worlds.example',
+        entity,
+        new Map((entity.content ?? []).map(({ hash }) => [hash, true])),
+        new Map(),
+        entityFile,
+        [],
+        0,
+        { sceneReplacementAuthorization: unrestrictedReplacementAuthorization }
+      )
+    })
+
+    it('should store the entity file byte for byte', () => {
+      expect(storedEntityFile).toStrictEqual(entityFile)
+    })
+  })
+
+  describe('when a scene deployment finalizes a partial upload', () => {
+    let worldsDeployScene: jest.Mock
+    let hasNewerDeployedScene: jest.Mock
+
+    beforeEach(async () => {
+      const setup = createComponents(jest.fn().mockResolvedValue(undefined), 2)
+      worldsDeployScene = setup.worldsDeployScene
+      hasNewerDeployedScene = setup.components.worldsManager.hasNewerDeployedScene as jest.Mock
+      const entity = createScene(['hash'])
+      await createEntityDeployer(setup.components).deployEntity(
+        'https://worlds.example',
+        entity,
+        new Map([['hash', true]]),
+        new Map(),
+        Buffer.from(JSON.stringify(entity)),
+        [],
+        0,
+        {
+          sceneReplacementAuthorization: unrestrictedReplacementAuthorization,
+          completesPartialUpload: { ttlMs: 42 }
+        }
+      )
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    it('should leave the newer-scene check to scene persistence', () => {
+      expect(hasNewerDeployedScene).not.toHaveBeenCalled()
+    })
+
+    it('should ask scene persistence to record the completion receipt', () => {
+      expect(worldsDeployScene.mock.calls[0][4]).toEqual(
+        expect.objectContaining({ completesPartialUpload: { ttlMs: 42 } })
+      )
+    })
+  })
+
+  describe('when a scene deployment writes its entity file', () => {
+    let storageStoreStream: jest.Mock
+    let deployEntity: () => Promise<unknown>
+    let storedEntityFile: boolean | undefined
+
+    beforeEach(() => {
+      storageStoreStream = jest.fn().mockResolvedValue(undefined)
+      const setup = createComponents(storageStoreStream, 2)
+      const entity = createScene(['hash'])
+      const deployer = createEntityDeployer(setup.components)
+      storedEntityFile = undefined
+      deployEntity = () =>
+        deployer.deployEntity(
+          'https://worlds.example',
+          entity,
+          new Map([['hash', true]]),
+          new Map(),
+          Buffer.from(JSON.stringify(entity)),
+          [],
+          0,
+          { sceneReplacementAuthorization: unrestrictedReplacementAuthorization, storedEntityFile }
+        )
+    })
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    describe('and the entity file is already stored', () => {
+      beforeEach(async () => {
+        storedEntityFile = true
+        await deployEntity()
+      })
+
+      it('should store only the auth chain', () => {
+        expect(storageStoreStream.mock.calls.map(([key]) => key)).toEqual(['entity-id.auth'])
+      })
+    })
+
+    describe('and the entity file is not known to be stored', () => {
+      beforeEach(async () => {
+        await deployEntity()
+      })
+
+      it('should store the entity file and the auth chain', () => {
+        expect(storageStoreStream.mock.calls.map(([key]) => key).sort()).toEqual(['entity-id', 'entity-id.auth'])
+      })
+    })
+  })
+
+  describe('when a scene is deployed to a world', () => {
+    let increment: jest.Mock
+    let worldName: string
+
+    async function deployTo(name: string): Promise<void> {
+      const setup = createComponents(jest.fn().mockResolvedValue(undefined), 2)
+      ;(setup.components.nameOwnership.findOwners as jest.Mock).mockResolvedValue(new Map([[name, '0xowner']]))
+      increment = setup.components.metrics.increment as jest.Mock
+      const entity = createScene([])
+      entity.metadata.worldConfiguration.name = name
+      await createEntityDeployer(setup.components).deployEntity(
+        'https://worlds.example',
+        entity,
+        new Map(),
+        new Map(),
+        Buffer.from(JSON.stringify(entity)),
+        [],
+        0,
+        { sceneReplacementAuthorization: unrestrictedReplacementAuthorization }
+      )
+    }
+
+    afterEach(() => {
+      jest.resetAllMocks()
+    })
+
+    describe('and its DCL name is mixed case', () => {
+      beforeEach(async () => {
+        worldName = 'Foo.DCL.eth'
+        await deployTo(worldName)
+      })
+
+      it('should count the deployment as a dcl-name world', () => {
+        expect(increment).toHaveBeenCalledWith('world_deployments_counter', { kind: 'dcl-name' })
+      })
+    })
+
+    describe('and its ENS name only ends in dcl.eth without the dot', () => {
+      beforeEach(async () => {
+        worldName = 'foodcl.eth'
+        await deployTo(worldName)
+      })
+
+      it('should count the deployment as an ens-name world', () => {
+        expect(increment).toHaveBeenCalledWith('world_deployments_counter', { kind: 'ens-name' })
+      })
+    })
+  })
+
   describe('when the world name has no resolvable owner', () => {
     let caughtError: unknown
     let worldsDeployScene: jest.Mock
@@ -511,7 +730,15 @@ describe('entity deployer', () => {
       const deployer = createEntityDeployer(setup.components)
 
       caughtError = await deployer
-        .deployEntity('https://worlds.example', entity, new Map(), new Map(), JSON.stringify(entity), [], 0)
+        .deployEntity(
+          'https://worlds.example',
+          entity,
+          new Map(),
+          new Map(),
+          Buffer.from(JSON.stringify(entity)),
+          [],
+          0
+        )
         .catch((error) => error)
     })
 
@@ -558,12 +785,10 @@ describe('entity deployer', () => {
         entity,
         new Map(),
         new Map(),
-        JSON.stringify(entity),
+        Buffer.from(JSON.stringify(entity)),
         [],
         12,
-        undefined,
-        undefined,
-        unrestrictedReplacementAuthorization
+        { sceneReplacementAuthorization: unrestrictedReplacementAuthorization }
       )
     })
 
@@ -636,12 +861,10 @@ describe('entity deployer', () => {
         entity,
         new Map(),
         new Map(),
-        JSON.stringify(entity),
+        Buffer.from(JSON.stringify(entity)),
         [],
         12,
-        undefined,
-        undefined,
-        unrestrictedReplacementAuthorization
+        { sceneReplacementAuthorization: unrestrictedReplacementAuthorization }
       )
     })
 
@@ -682,12 +905,10 @@ describe('entity deployer', () => {
         entity,
         new Map(),
         new Map(),
-        JSON.stringify(entity),
+        Buffer.from(JSON.stringify(entity)),
         [],
         12,
-        undefined,
-        undefined,
-        unrestrictedReplacementAuthorization
+        { sceneReplacementAuthorization: unrestrictedReplacementAuthorization }
       )
     })
 
@@ -721,12 +942,10 @@ describe('entity deployer', () => {
       deployment.entity,
       deployment.contentHashesInStorage,
       deployment.files,
-      JSON.stringify(deployment.entity),
+      Buffer.from(JSON.stringify(deployment.entity)),
       deployment.authChain,
       0,
-      undefined,
-      undefined,
-      unrestrictedReplacementAuthorization
+      { sceneReplacementAuthorization: unrestrictedReplacementAuthorization }
     )
 
     expect(setup.worldsDeployScene).toHaveBeenCalledWith(

@@ -7,6 +7,8 @@ import { IPgComponent } from '@dcl/pg-component'
 import { IBlockingComponent } from '../../src/adapters/blocking'
 import { createConfigComponent } from '@well-known-components/env-config-provider'
 import { IConfigComponent } from '@well-known-components/interfaces'
+import { SQLStatement } from 'sql-template-strings'
+import { sqlText } from '../utils'
 
 describe('UpdateOwnerJob', () => {
   const badOwner = '0xbad0000000000000000000000000000000000001'
@@ -79,6 +81,152 @@ describe('UpdateOwnerJob', () => {
       const [, keepWallets] = blocking.collectStaleBlockingRecords.mock.calls[0]
       expect(keepWallets.has(badOwner)).toBe(true)
       expect(keepWallets.has(goodOwner)).toBe(false)
+    })
+  })
+
+  describe('when a world name cannot be resolved to an owner', () => {
+    let querySpy: jest.SpyInstance
+
+    beforeEach(async () => {
+      blocking = createMockBlockingComponent()
+      // A spare result so a stray write would succeed and only the query assertion can catch it.
+      database = createDatabaseMock([
+        {
+          rows: [
+            { name: 'bad-world.dcl.eth', owner: badOwner, size: '100' },
+            { name: 'good-world.dcl.eth', owner: goodOwner, size: '100' }
+          ],
+          rowCount: 2
+        },
+        { rows: [], rowCount: 1 }
+      ])
+      querySpy = jest.spyOn(database, 'query')
+
+      // bad-world's owner cannot be resolved (subgraph lag / partial RPC degradation) — the resolver
+      // reports undefined without throwing. good-world resolves normally.
+      const nameOwnership = createMockedNameOwnership({
+        findOwners: jest.fn().mockResolvedValue(
+          new Map([
+            ['bad-world.dcl.eth', undefined],
+            ['good-world.dcl.eth', goodOwner]
+          ])
+        )
+      })
+
+      const job = await createUpdateOwnerJob({ blocking, config, database, logs, nameOwnership })
+      await job.run()
+    })
+
+    afterEach(() => {
+      querySpy.mockRestore()
+    })
+
+    it('should not overwrite the stored owner with the resolution gap', () => {
+      // Only the worlds enumeration may run: any write, whatever its casing or verb, fails this.
+      expect(querySpy.mock.calls.map(([sql]) => sqlText(sql).trim())).toEqual([
+        expect.stringMatching(
+          /^SELECT w\.name, w\.owner, COALESCE\(SUM\(ws\.size\), 0\)::text as size\s+FROM worlds w\s/
+        )
+      ])
+    })
+
+    it('should protect the unresolved wallet from the stale-record cleanup', () => {
+      const [, keepWallets] = blocking.collectStaleBlockingRecords.mock.calls[0]
+      expect({ protectedBad: keepWallets.has(badOwner), protectedGood: keepWallets.has(goodOwner) }).toEqual({
+        protectedBad: true,
+        protectedGood: false
+      })
+    })
+
+    it('should still evaluate the resolved owner and not the unresolved one', () => {
+      expect(blocking.blockIfOverQuota.mock.calls).toEqual([[goodOwner]])
+    })
+  })
+
+  describe('when a wallet owns one unresolved world and one resolved world', () => {
+    const sharedOwner = '0x5000000000000000000000000000000000000003'
+
+    beforeEach(async () => {
+      blocking = createMockBlockingComponent()
+      database = createDatabaseMock([
+        {
+          rows: [
+            { name: 'lagging-world.dcl.eth', owner: sharedOwner, size: '100' },
+            { name: 'resolved-world.dcl.eth', owner: sharedOwner, size: '100' }
+          ],
+          rowCount: 2
+        }
+      ])
+      const nameOwnership = createMockedNameOwnership({
+        findOwners: jest.fn().mockResolvedValue(
+          new Map([
+            ['lagging-world.dcl.eth', undefined],
+            ['resolved-world.dcl.eth', sharedOwner]
+          ])
+        )
+      })
+
+      const job = await createUpdateOwnerJob({ blocking, config, database, logs, nameOwnership })
+      await job.run()
+    })
+
+    it('should evaluate the wallet through its resolved world', () => {
+      expect(blocking.blockIfOverQuota.mock.calls).toEqual([[sharedOwner]])
+    })
+
+    it('should not protect the wallet from the stale-record cleanup', () => {
+      const [, keepWallets] = blocking.collectStaleBlockingRecords.mock.calls[0]
+      expect(keepWallets.has(sharedOwner)).toBe(false)
+    })
+  })
+
+  describe('when a world has changed owner', () => {
+    const newOwner = '0xAbC0000000000000000000000000000000000004'
+    let querySpy: jest.SpyInstance
+
+    beforeEach(async () => {
+      blocking = createMockBlockingComponent()
+      database = createDatabaseMock([
+        { rows: [{ name: 'bad-world.dcl.eth', owner: badOwner, size: '100' }], rowCount: 1 },
+        { rows: [], rowCount: 1 }
+      ])
+      querySpy = jest.spyOn(database, 'query')
+      const nameOwnership = createMockedNameOwnership({
+        findOwners: jest.fn().mockResolvedValue(new Map([['bad-world.dcl.eth', newOwner]]))
+      })
+
+      const job = await createUpdateOwnerJob({ blocking, config, database, logs, nameOwnership })
+      await job.run()
+    })
+
+    it('should store the new owner lowercased', () => {
+      const updates = querySpy.mock.calls.map(([sql]) => sql).filter((sql) => sqlText(sql).includes('UPDATE'))
+      expect(updates.map((sql: SQLStatement) => sql.values)).toEqual([[newOwner.toLowerCase(), 'bad-world.dcl.eth']])
+    })
+
+    it('should evaluate the blocking status of the new owner only', () => {
+      expect(blocking.blockIfOverQuota.mock.calls).toEqual([[newOwner]])
+    })
+  })
+
+  describe('when no world name can be resolved at all', () => {
+    beforeEach(async () => {
+      blocking = createMockBlockingComponent()
+
+      const nameOwnership = createMockedNameOwnership({
+        findOwners: jest.fn().mockResolvedValue(new Map())
+      })
+
+      const job = await createUpdateOwnerJob({ blocking, config, database, logs, nameOwnership })
+      await job.run()
+    })
+
+    it('should protect every stored wallet from the stale-record cleanup instead of mass-unblocking', () => {
+      const [, keepWallets] = blocking.collectStaleBlockingRecords.mock.calls[0]
+      expect({ protectedBad: keepWallets.has(badOwner), protectedGood: keepWallets.has(goodOwner) }).toEqual({
+        protectedBad: true,
+        protectedGood: true
+      })
     })
   })
 

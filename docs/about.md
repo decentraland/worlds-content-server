@@ -32,5 +32,5 @@ Once a scene is uploaded to the Worlds server you can access it by using the Dec
 ### Limitations: 
 
 - Even if you withhold more than one name, only one deployment per account is supported at this time.
-- The upload size limit is the same as a deployment to a Catalyst (200MB) 
+- A scene's size limit is the smaller of 500 MiB and the owner's remaining storage allowance (100 MiB per NAME, LAND or 2000 MANA, shared across the owner's worlds)
 - Once uploaded, it cannot be destroyed, but you may override it with a new deployment

@@ -1,3 +1,7 @@
+import { createContentLocks } from './adapters/content-locks/component'
+import { createSourceUploadLimits } from './adapters/source-upload-limits'
+import { createInFlightUploadBudget } from './adapters/in-flight-upload-budget'
+import { createClientSourceComponent } from './logic/client-source'
 import { createDotEnvConfigComponent } from '@well-known-components/env-config-provider'
 import {
   createServerComponent,
@@ -24,6 +28,11 @@ import { createWorldsIndexerComponent } from './adapters/worlds-indexer'
 
 import { createValidator } from './logic/validations'
 import { createEntityDeployer } from './adapters/entity-deployer'
+import { createPendingScenesRepository } from './adapters/pending-scenes-repository'
+import { createPartialUploadAdmission } from './logic/partial-upload-admission'
+import { createContentGcComponent } from './logic/content-gc'
+import { loadUploadLimits } from './logic/upload-limits'
+import { createSceneDeploymentsComponent } from './logic/scene-deployments'
 import { createMigrationExecutor } from './adapters/migration-executor'
 import { createNameDenyListChecker } from './adapters/name-deny-list-checker'
 import { createDatabaseComponent } from './adapters/database-component'
@@ -68,6 +77,7 @@ import { createRateLimiterComponent } from './logic/rate-limiter'
 import { createDenyListComponent } from './logic/denylist'
 import { createBansComponent } from './adapters/bans-adapter'
 import { createEvictionJob } from './adapters/eviction-job'
+import { createPartialUploadCleanupJob } from './adapters/partial-upload-cleanup-job'
 import { createDeploymentProcessingComponent } from './logic/deployment-processing'
 import { isNameOwnershipValidationIgnored } from './logic/name-ownership-validation'
 
@@ -80,6 +90,8 @@ export async function initComponents(): Promise<AppComponents> {
   const logger = logs.getLogger('components')
   const commitHash = (await config.getString('COMMIT_HASH')) || 'unknown'
   logger.info(`Initializing components. Version: ${commitHash}`)
+  // Fails startup on invalid or contradicting upload limits before anything else is created.
+  const uploadLimits = await loadUploadLimits(config)
 
   const server = await createServerComponent<GlobalContext>(
     { config, logs },
@@ -175,6 +187,10 @@ export async function initComponents(): Promise<AppComponents> {
   })
 
   const database = await createDatabaseComponent({ config, logs, metrics })
+  const contentLocks = await createContentLocks({ config, logs, metrics })
+  const sourceUploadLimits = await createSourceUploadLimits({ uploadLimits })
+  const inFlightUploadBudget = await createInFlightUploadBudget({ metrics, uploadLimits })
+  const clientSource = await createClientSourceComponent({ config })
 
   const coordinates = createCoordinatesComponent()
 
@@ -184,6 +200,8 @@ export async function initComponents(): Promise<AppComponents> {
 
   const search = await createSearchComponent({ database, logs })
 
+  const pendingScenesRepository = await createPendingScenesRepository({ database })
+
   const worldsManager = await createWorldsManagerComponent({
     settingsPolicy,
     coordinates,
@@ -191,11 +209,12 @@ export async function initComponents(): Promise<AppComponents> {
     logs,
     database,
     nameDenyListChecker,
+    pendingScenesRepository,
     search,
     storage
   })
 
-  const walletStats = await createWalletStatsComponent({ config, database, fetch, logs, worldsManager })
+  const walletStats = await createWalletStatsComponent({ config, database, fetch, logs })
 
   const whitelist = await createWhitelistComponent({ config, fetch, logs })
 
@@ -204,6 +223,7 @@ export async function initComponents(): Promise<AppComponents> {
   const limitsManager = await createLimitsManagerComponent({
     config,
     nameOwnership,
+    uploadLimits,
     walletStats,
     whitelist,
     worldsManager
@@ -266,14 +286,38 @@ export async function initComponents(): Promise<AppComponents> {
     worldsManager
   })
 
-  const migrationExecutor = createMigrationExecutor({
-    config,
+  const partialUploadAdmission = await createPartialUploadAdmission({
+    database,
+    metrics,
+    pendingScenesRepository,
+    uploadLimits
+  })
+  const contentGc = await createContentGcComponent({
     logs,
-    database: database,
-    nameOwnership,
+    metrics,
     storage,
+    contentLocks,
+    partialUploadAdmission,
+    pendingScenesRepository,
+    uploadLimits
+  })
+
+  const sceneDeployments = await createSceneDeploymentsComponent({
+    coordinates,
+    entityDeployer,
+    limitsManager,
+    logs,
+    partialUploadAdmission,
+    pendingScenesRepository,
+    deploymentProcessing,
+    metrics,
+    storage,
+    uploadLimits,
+    validator,
     worldsManager
   })
+
+  const migrationExecutor = createMigrationExecutor({ config, logs, database, nameOwnership, storage })
 
   const notificationService = await createNotificationsClientComponent({ config, fetch, logs })
 
@@ -299,6 +343,7 @@ export async function initComponents(): Promise<AppComponents> {
   const worlds = createWorldsComponent({ blocking, coordinates, logs, snsClient, worldsManager })
 
   const evictionJob = await createEvictionJob({ config, logs, worlds })
+  const partialUploadCleanupJob = await createPartialUploadCleanupJob({ logs, contentGc, uploadLimits })
 
   const denyList = await createDenyListComponent({ config, fetch, logs })
   const bans = await createBansComponent({ config, fetch, logs })
@@ -329,7 +374,17 @@ export async function initComponents(): Promise<AppComponents> {
   }
   const rateLimiter = await createRateLimiterComponent({ config, logs, redis })
 
+  // Lifecycle starts components sequentially in this order: the database, then migrations, then
+  // everything that serves requests or runs jobs against the schema.
   return {
+    database,
+    migrationExecutor,
+    contentLocks,
+    contentGc,
+    sourceUploadLimits,
+    inFlightUploadBudget,
+    uploadLimits,
+    clientSource,
     access,
     accessChangeHandler,
     accessChecker,
@@ -339,19 +394,18 @@ export async function initComponents(): Promise<AppComponents> {
     config,
     settingsPolicy,
     coordinates,
-    database,
     deploymentProcessing,
     denyList,
     entityDeployer,
     ethereumProvider,
     evictionJob,
+    partialUploadCleanupJob,
     fetch,
     limitsManager,
     livekitClient,
     logs,
     marketplaceSubGraph,
     metrics,
-    migrationExecutor,
     blocking,
     nameDenyListChecker,
     nameOwnership,
@@ -359,6 +413,9 @@ export async function initComponents(): Promise<AppComponents> {
     nats,
     notificationService,
     participantKicker,
+    sceneDeployments,
+    partialUploadAdmission,
+    pendingScenesRepository,
     peersRegistry,
     permissions,
     permissionsManager,

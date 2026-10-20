@@ -12,13 +12,13 @@ type CommsMetadata = {
 
 export async function commsAdapterHandler(
   context: HandlerContextWithPath<
-    'access' | 'commsAdapter' | 'config' | 'namePermissionChecker' | 'rateLimiter' | 'worlds',
+    'access' | 'clientSource' | 'commsAdapter' | 'config' | 'namePermissionChecker' | 'rateLimiter' | 'worlds',
     '/get-comms-adapter/:roomId'
   > &
     DecentralandSignatureContext<CommsMetadata>
 ): Promise<IHttpServerComponent.IResponse> {
   const {
-    components: { access, commsAdapter, config, namePermissionChecker, rateLimiter, worlds }
+    components: { access, clientSource, commsAdapter, config, namePermissionChecker, rateLimiter, worlds }
   } = context
 
   const authMetadata = context.verification!.authMetadata
@@ -39,7 +39,7 @@ export async function commsAdapterHandler(
   }
 
   const identity = context.verification!.auth
-  const subject = extractCommsRateLimitSubject(context.request, identity)
+  const subject = extractCommsRateLimitSubject(clientSource, context.request, identity)
   const accessSetting = await access.getAccessForWorld(worldName)
   const isSharedSecret = accessSetting.type === AccessType.SharedSecret
 

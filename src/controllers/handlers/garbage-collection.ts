@@ -1,91 +1,42 @@
 import { HandlerContextWithPath } from '../../types'
 import { IHttpServerComponent } from '@dcl/core-commons'
+import { ContentLockTimeoutError } from '../../adapters/content-locks/errors'
 
-function formatSecs(millis: number): string {
-  return `${(millis / 1000).toFixed(2)} secs`
-}
+/** Retry hint when uploads keep the content lock busy. */
+export const GC_DEFERRED_RETRY_AFTER_SECONDS = 60
 
+type GarbageCollectionContext = HandlerContextWithPath<'contentGc' | 'metrics', '/gc'>
+
+/**
+ * Runs garbage collection, recording its outcome, duration and last success. Answers 503 with
+ * Retry-After when uploads keep the content lock busy.
+ */
 export async function garbageCollectionHandler(
-  context: HandlerContextWithPath<'database' | 'logs' | 'storage', '/gc'>
+  context: GarbageCollectionContext
 ): Promise<IHttpServerComponent.IResponse> {
-  const { database, logs, storage } = context.components
-  const logger = logs.getLogger('garbage-collection')
-
-  async function getAllActiveKeys() {
-    const start = Date.now()
-    logger.info('Getting all keys active in the database...')
-
-    const activeKeys = new Set<string>()
-
-    // Get all scenes from world_scenes table
-    const scenesResult = await database.query<{
-      entity_id: string
-      entity: {
-        content?: Array<{ hash: string }>
+  const { contentGc, metrics } = context.components
+  const { end } = metrics.startTimer('garbage_collection_duration_seconds')
+  let outcome: 'success' | 'deferred' | 'error' = 'error'
+  try {
+    const { removed, expiredUploads } = await contentGc.collectGarbage()
+    outcome = 'success'
+    metrics.observe('garbage_collection_last_success_timestamp_seconds', {}, Date.now() / 1000)
+    return {
+      status: 200,
+      body: { message: `Garbage collection removed ${removed} unused keys.`, expiredUploads }
+    }
+  } catch (error) {
+    if (error instanceof ContentLockTimeoutError) {
+      outcome = 'deferred'
+      return {
+        status: 503,
+        headers: { 'Retry-After': String(GC_DEFERRED_RETRY_AFTER_SECONDS) },
+        body: { error: 'Service Unavailable', message: error.message }
       }
-    }>('SELECT entity_id, entity FROM world_scenes WHERE entity IS NOT NULL')
-    scenesResult.rows.forEach((row) => {
-      // Add entity file and deployment auth-chain
-      activeKeys.add(row.entity_id)
-      activeKeys.add(`${row.entity_id}.auth`)
-
-      // Add all referenced content files
-      if (row.entity.content) {
-        for (const file of row.entity.content) {
-          activeKeys.add(file.hash)
-        }
-      }
-    })
-
-    // Get all world thumbnail hashes and add them as active keys
-    const thumbnailsResult = await database.query<{ thumbnail_hash: string }>(
-      'SELECT thumbnail_hash FROM worlds WHERE thumbnail_hash IS NOT NULL'
-    )
-    thumbnailsResult.rows.forEach((row) => {
-      activeKeys.add(row.thumbnail_hash)
-    })
-
-    logger.info(`Done in ${formatSecs(Date.now() - start)}. Database contains ${activeKeys.size} active keys.`)
-
-    return activeKeys
-  }
-
-  logger.info('Starting garbage collection...')
-
-  const activeKeys = await getAllActiveKeys()
-
-  logger.info('Getting keys from storage that are not currently active...')
-  const start = Date.now()
-  let totalRemovedKeys = 0
-  const batch = new Set<string>()
-  for await (const key of storage.allFileIds()) {
-    if (!activeKeys.has(key)) {
-      batch.add(key)
     }
-
-    if (batch.size === 1000) {
-      logger.info(`Deleting a batch of ${batch.size} keys from storage...`)
-      await storage.delete([...batch])
-      totalRemovedKeys += batch.size
-      batch.clear()
-    }
-  }
-
-  if (batch.size > 0) {
-    logger.info(`Deleting a batch of ${batch.size} keys from storage...`)
-    await storage.delete([...batch])
-    totalRemovedKeys += batch.size
-  }
-  logger.info(
-    `Done in ${formatSecs(Date.now() - start)}. Deleted ${totalRemovedKeys} keys that are not active in the storage.`
-  )
-
-  logger.info('Garbage collection finished.')
-
-  return {
-    status: 200,
-    body: {
-      message: `Garbage collection removed ${totalRemovedKeys} unused keys.`
-    }
+    throw error
+  } finally {
+    end()
+    metrics.increment('garbage_collection_runs', { outcome })
   }
 }

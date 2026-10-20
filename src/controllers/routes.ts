@@ -1,14 +1,15 @@
 import { Router } from '@dcl/http-server'
 import {
-  createInFlightUploadBudget,
-  InFlightUploadBudget,
-  InFlightUploadBudgetSnapshot,
+  createMultipartUploadTelemetry,
+  DEPLOYMENT_FIELD_LIMITS,
   MAX_WORLD_SETTINGS_UPLOAD_SIZE_IN_BYTES,
-  MultipartCleanupErrorEvent,
-  multipartParserWrapper,
-  MultipartTelemetryEvent
-} from '../logic/multipart'
+  multipartParserWrapper
+} from './multipart'
+import { DEFAULT_MAX_UPLOAD_SIZE_IN_BYTES } from '../logic/upload-limits'
 import { BaseComponents, GlobalContext } from '../types'
+import { stampRequestArrival } from './request-arrival'
+import { uploadErrorHandler } from './upload-error-handler'
+import { createSourceUploadAdmission } from './source-upload-admission'
 import { availableContentHandler, getContentFile, headContentFile } from './handlers/content-file-handler'
 import { deployEntity } from './handlers/deploy-entity-handler'
 import { worldAboutHandler } from './handlers/world-about-handler'
@@ -41,103 +42,24 @@ import { walletConnectedWorldHandler } from './handlers/wallet-connected-world-h
 import { getScenesHandler, undeploySceneHandler } from './handlers/scenes-handler'
 import { getWorldSettingsHandler, updateWorldSettingsHandler } from './handlers/world-settings-handler'
 import { getWorldManifestHandler } from './handlers/world-manifest-handler'
+import { getWorldLimitsHandler } from './handlers/world-limits-handler'
 import { permissionParcelsSchema } from './schemas/permission-parcels-schema'
 import { getWorldsHandler } from './handlers/worlds-handler'
 import { reprocessABSchema } from './schemas/reprocess-ab-schemas'
 import { getWorldScenesSchema } from './schemas/scenes-query-schemas'
 import { worldCommsHandler } from './handlers/world-comms-handler'
 
-export type MultipartUploadGuard = {
-  inFlightUploadBudget: InFlightUploadBudget
-  uploadTimeoutMs: number | undefined
-  onTelemetry: (event: MultipartTelemetryEvent) => void
-  onCleanupError: (event: MultipartCleanupErrorEvent) => void
-}
-
 /**
- * Creates the process-wide multipart limiter and connects its state and outcomes to application
- * metrics and logs. All multipart routes must share the returned budget.
- *
- * @param components Configuration, logging, and metrics dependencies used by the limiter.
- * @returns The shared upload budget, configured timeout, telemetry callback, and cleanup-error callback.
+ * Runs a handler under the shared content lock; a client disconnect stops waiting for the lock.
+ * @param contentLocks The content locks.
+ * @param handler The handler to run while holding the lock.
+ * @returns The wrapped handler.
  */
-export async function createMultipartUploadGuard(
-  components: Pick<BaseComponents, 'config' | 'logs' | 'metrics'>
-): Promise<MultipartUploadGuard> {
-  const { config, logs, metrics } = components
-  const logger = logs.getLogger('multipart-uploads')
-  const maxInFlightUploadBytes = await config.getNumber('MAX_IN_FLIGHT_UPLOAD_BYTES')
-  const maxConcurrentUploads = await config.getNumber('MAX_CONCURRENT_UPLOADS')
-  const maxInFlightUploadFiles = await config.getNumber('MAX_IN_FLIGHT_UPLOAD_FILES')
-  const maxOrphanedUploadDirectories = await config.getNumber('MAX_ORPHANED_UPLOAD_DIRECTORIES')
-  const uploadTimeoutMs = await config.getNumber('MULTIPART_UPLOAD_TIMEOUT_MS')
-  const onStateChange = ({
-    reservedBytes,
-    orphanedBytes,
-    reservedFiles,
-    orphanedFiles,
-    orphanedDirectories,
-    activeUploads
-  }: InFlightUploadBudgetSnapshot): void => {
-    metrics.observe('multipart_upload_reserved_bytes', {}, reservedBytes)
-    metrics.observe('multipart_upload_orphaned_bytes', {}, orphanedBytes)
-    metrics.observe('multipart_upload_reserved_files', {}, reservedFiles)
-    metrics.observe('multipart_upload_orphaned_files', {}, orphanedFiles)
-    metrics.observe('multipart_upload_orphaned_directories', {}, orphanedDirectories)
-    metrics.observe('multipart_upload_active', {}, activeUploads)
-  }
-  const inFlightUploadBudget = createInFlightUploadBudget(
-    maxInFlightUploadBytes,
-    maxConcurrentUploads,
-    onStateChange,
-    maxInFlightUploadFiles,
-    maxOrphanedUploadDirectories
-  )
-  const onTelemetry = (event: MultipartTelemetryEvent): void => {
-    metrics.observe(
-      'multipart_upload_size_bytes',
-      {
-        route: event.route,
-        content_length: event.contentLengthPresent ? 'present' : 'absent',
-        outcome: event.kind
-      },
-      event.actualBytes
-    )
-    if (event.kind === 'rejected') {
-      metrics.increment('multipart_upload_rejections', { route: event.route, reason: event.reason })
-      logger.warn('Multipart upload rejected', {
-        route: event.route,
-        reason: event.reason,
-        actualBytes: event.actualBytes,
-        reservedBytes: event.snapshot.reservedBytes,
-        orphanedBytes: event.snapshot.orphanedBytes,
-        reservedFiles: event.snapshot.reservedFiles,
-        orphanedFiles: event.snapshot.orphanedFiles,
-        orphanedDirectories: event.snapshot.orphanedDirectories,
-        capacity: event.snapshot.capacity,
-        maxInFlightUploadFiles: event.snapshot.maxInFlightUploadFiles,
-        maxOrphanedUploadDirectories: event.snapshot.maxOrphanedUploadDirectories,
-        activeUploads: event.snapshot.activeUploads,
-        maxConcurrentUploads: event.snapshot.maxConcurrentUploads,
-        contentLengthPresent: String(event.contentLengthPresent)
-      })
-    }
-  }
-  const onCleanupError = ({ route, error, attempt, willRetry }: MultipartCleanupErrorEvent): void => {
-    if (attempt === 0) {
-      metrics.increment('multipart_upload_cleanup_failures', { route })
-    } else {
-      metrics.increment('multipart_upload_cleanup_retry_failures', { route })
-    }
-    logger.warn('Failed to clean up multipart upload directory', {
-      route,
-      error: error.message,
-      attempt,
-      willRetry: String(willRetry)
-    })
-  }
-
-  return { inFlightUploadBudget, uploadTimeoutMs, onTelemetry, onCleanupError }
+export function withSharedContentLock<C extends { request: { signal?: AbortSignal } }, R>(
+  contentLocks: Pick<BaseComponents['contentLocks'], 'withRead'>,
+  handler: (ctx: C) => Promise<R>
+): (ctx: C) => Promise<R> {
+  return (ctx) => contentLocks.withRead(() => handler(ctx), ctx.request.signal)
 }
 
 export async function setupRouter(globalContext: GlobalContext): Promise<Router<GlobalContext>> {
@@ -244,23 +166,32 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
 
   const router = new Router<GlobalContext>()
   router.use(errorHandler)
+  router.use(uploadErrorHandler())
 
-  // Aggregate buffered-bytes budget for multipart uploads. Tune per container ephemeral storage;
-  // falls back to the parser's default when unset.
-  const { inFlightUploadBudget, uploadTimeoutMs, onTelemetry, onCleanupError } = await createMultipartUploadGuard(
-    globalContext.components
-  )
+  // Every multipart route shares the process-wide in-flight budget (MAX_IN_FLIGHT_UPLOAD_BYTES).
+  const { inFlightUploadBudget, uploadLimits } = globalContext.components
+  const uploadTimeoutMs = uploadLimits.multipartUploadTimeoutMs
+  const { onTelemetry, onBodyReceived, onCleanupError } = createMultipartUploadTelemetry(globalContext.components)
 
   router.get('/world/:world_name/about', worldAboutHandler)
 
   // Post world scene(s)
+  // Stamped on arrival, then every body holds a share of its source's in-flight uploads until the
+  // request ends, all before the body is read.
   router.post(
     '/entities',
+    stampRequestArrival(),
+    createSourceUploadAdmission(globalContext.components, {
+      route: 'entities',
+      maxRequestBytes: DEFAULT_MAX_UPLOAD_SIZE_IN_BYTES
+    }),
     multipartParserWrapper(deployEntity, {
+      limits: DEPLOYMENT_FIELD_LIMITS,
       inFlightUploadBudget,
       uploadTimeoutMs,
       route: 'entities',
       onTelemetry,
+      onBodyReceived,
       onCleanupError
     })
   )
@@ -282,19 +213,30 @@ export async function setupRouter(globalContext: GlobalContext): Promise<Router<
   router.get('/world/:world_name/settings', getWorldSettingsHandler)
   router.put(
     '/world/:world_name/settings',
+    stampRequestArrival(),
+    // Shares the in-flight parser budget, so every request also takes its source's share.
+    createSourceUploadAdmission(globalContext.components, {
+      route: 'world-settings',
+      maxRequestBytes: MAX_WORLD_SETTINGS_UPLOAD_SIZE_IN_BYTES
+    }),
     signedFetchMiddleware,
-    multipartParserWrapper(updateWorldSettingsHandler, {
+    multipartParserWrapper(withSharedContentLock(globalContext.components.contentLocks, updateWorldSettingsHandler), {
       inFlightUploadBudget,
       maxSizeInBytes: MAX_WORLD_SETTINGS_UPLOAD_SIZE_IN_BYTES,
       uploadTimeoutMs,
       route: 'world-settings',
       onTelemetry,
-      onCleanupError
+      onBodyReceived,
+      onCleanupError,
+      repeatableFields: ['categories']
     })
   )
 
   // World manifest
   router.get('/world/:world_name/manifest', getWorldManifestHandler)
+
+  // Scene limits a deployment to the world is checked against
+  router.get('/world/:world_name/limits', getWorldLimitsHandler)
 
   // Worlds listing
   router.get('/worlds', getWorldsHandler)

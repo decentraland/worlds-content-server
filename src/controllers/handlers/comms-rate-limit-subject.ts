@@ -1,5 +1,10 @@
 import { IHttpServerComponent } from '@dcl/core-commons'
+import { IClientSourceComponent } from '../../logic/client-source'
 
-export function extractCommsRateLimitSubject(request: IHttpServerComponent.IRequest, identity: string): string {
-  return request.headers.get('cf-connecting-ip') || identity
+export function extractCommsRateLimitSubject(
+  clientSource: IClientSourceComponent,
+  request: IHttpServerComponent.IRequest,
+  identity: string
+): string {
+  return clientSource.getClientSource(request) || identity
 }

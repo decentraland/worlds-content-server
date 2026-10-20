@@ -13,6 +13,8 @@ import {
   validateBaseEntity,
   validateEntityId,
   validateFiles,
+  validateUploadedFiles,
+  validateNoMissingFiles,
   validateSignature,
   validateSigner,
   validateSupportedEntityType
@@ -139,6 +141,73 @@ describe('common validations', function () {
       expect(result.errors[0]).toContain('in the future')
       expect(result.errors[0]).toContain('Max allowed: 900 secs.')
     })
+
+    describe('when the deployment belongs to a partial upload', () => {
+      let uploadStartedAt: number
+      let entityTimestamp: number
+      let result: Awaited<ReturnType<ReturnType<typeof createValidateDeploymentTtl>>>
+
+      beforeEach(() => {
+        uploadStartedAt = Date.now() - 60 * 60 * 1000
+      })
+
+      describe('and the upload started within the TTL of an entity now older than the TTL', () => {
+        beforeEach(async () => {
+          entityTimestamp = uploadStartedAt - 5_000
+          const deployment = await createSceneDeployment(identity.authChain, {
+            type: EntityType.SCENE,
+            pointers: ['0,0'],
+            timestamp: entityTimestamp,
+            metadata: { worldConfiguration: { name: 'whatever.dcl.eth' } },
+            files: []
+          })
+          deployment.pendingCreatedAt = new Date(uploadStartedAt)
+          result = await createValidateDeploymentTtl(components)(deployment)
+        })
+
+        it('should accept it', () => {
+          expect(result.ok()).toBe(true)
+        })
+      })
+
+      describe('and the upload started after the TTL of the entity', () => {
+        beforeEach(async () => {
+          entityTimestamp = uploadStartedAt - 20_000
+          const deployment = await createSceneDeployment(identity.authChain, {
+            type: EntityType.SCENE,
+            pointers: ['0,0'],
+            timestamp: entityTimestamp,
+            metadata: { worldConfiguration: { name: 'whatever.dcl.eth' } },
+            files: []
+          })
+          deployment.pendingCreatedAt = new Date(uploadStartedAt)
+          result = await createValidateDeploymentTtl(components)(deployment)
+        })
+
+        it('should reject it with the entity age at the upload start', () => {
+          expect(result.errors).toEqual(['Deployment was created 20 secs ago. Max allowed: 10 secs.'])
+        })
+      })
+
+      describe('and the entity is too far in the future relative to the upload start', () => {
+        beforeEach(async () => {
+          entityTimestamp = uploadStartedAt + 16 * 60 * 1000
+          const deployment = await createSceneDeployment(identity.authChain, {
+            type: EntityType.SCENE,
+            pointers: ['0,0'],
+            timestamp: entityTimestamp,
+            metadata: { worldConfiguration: { name: 'whatever.dcl.eth' } },
+            files: []
+          })
+          deployment.pendingCreatedAt = new Date(uploadStartedAt)
+          result = await createValidateDeploymentTtl(components)(deployment)
+        })
+
+        it('should reject it with the skew relative to the upload start', () => {
+          expect(result.errors).toEqual(['Deployment was created 960 secs in the future. Max allowed: 900 secs.'])
+        })
+      })
+    })
   })
 
   describe('validateAuthChain', () => {
@@ -211,43 +280,75 @@ describe('common validations', function () {
     })
   })
 
-  describe('validateFiles', () => {
-    it('validateFiles OK', async () => {
-      const entityFiles = new Map<string, Uint8Array>()
-      entityFiles.set('abc.txt', Buffer.from(stringToUtf8Bytes('asd')))
+  describe('when validating the files uploaded in the request', () => {
+    let deployment: DeploymentToValidate
+    let result: Awaited<ReturnType<typeof validateUploadedFiles>>
 
-      const deployment = await createSceneDeployment(identity.authChain)
-
-      const result = await validateFiles(deployment)
-      expect(result.ok()).toBeTruthy()
+    beforeEach(async () => {
+      deployment = await createSceneDeployment(identity.authChain)
     })
 
-    it('validateFiles with errors', async () => {
-      const entityFiles = new Map<string, Uint8Array>()
-      entityFiles.set('abc.txt', Buffer.from(stringToUtf8Bytes('asd')))
-
-      const deployment = await createSceneDeployment(identity.authChain)
-
-      // Alter the files to make it fail
-      deployment.files.set(await hashV1(Buffer.from('efg')), bufferToDeploymentFile(Buffer.from('efg')))
-      deployment.files.set(await hashV0(Buffer.from('igh')), bufferToDeploymentFile(Buffer.from('igh')))
-      deployment.entity.content.push({
-        file: 'def.txt',
-        hash: 'bafkreie3yaomoex7orli7fumfwgk5abgels5o5fiauxfijzlzoiymqppdi'
+    describe('and every uploaded file is referenced and well hashed', () => {
+      beforeEach(async () => {
+        result = await validateUploadedFiles(deployment)
       })
 
-      const result = await validateFiles(deployment)
-      expect(result.ok()).toBeFalsy()
-      expect(result.errors).toContain('Extra file detected bafkreigu77uot3qljdv2oftqmer2ogd7glvohpolbz3whza6kmzgppmkkm')
-      expect(result.errors).toContain(
-        'Only CIDv1 are allowed for content files: QmPeE5zaej9HogrHRfS1NejWsTuh4qcFZCc4Q7LMnwdTMK'
-      )
-      expect(result.errors).toContain(
-        "The hashed file doesn't match the provided content: QmPeE5zaej9HogrHRfS1NejWsTuh4qcFZCc4Q7LMnwdTMK"
-      )
-      expect(result.errors).toContain(
-        'The file bafkreie3yaomoex7orli7fumfwgk5abgels5o5fiauxfijzlzoiymqppdi (def.txt) is neither present in the storage or in the provided entity'
-      )
+      it('should accept them', () => {
+        expect(result.ok()).toBe(true)
+      })
+    })
+
+    describe('and it includes an unreferenced file and a non-CIDv1 file', () => {
+      beforeEach(async () => {
+        deployment.files.set(await hashV1(Buffer.from('efg')), bufferToDeploymentFile(Buffer.from('efg')))
+        deployment.files.set(await hashV0(Buffer.from('igh')), bufferToDeploymentFile(Buffer.from('igh')))
+        result = await validateUploadedFiles(deployment)
+      })
+
+      it('should report the extra, non-CIDv1 and mismatching files', () => {
+        expect(result.errors).toEqual(
+          expect.arrayContaining([
+            'Extra file detected bafkreigu77uot3qljdv2oftqmer2ogd7glvohpolbz3whza6kmzgppmkkm',
+            'Only CIDv1 are allowed for content files: QmPeE5zaej9HogrHRfS1NejWsTuh4qcFZCc4Q7LMnwdTMK',
+            "The hashed file doesn't match the provided content: QmPeE5zaej9HogrHRfS1NejWsTuh4qcFZCc4Q7LMnwdTMK"
+          ])
+        )
+      })
+    })
+  })
+
+  describe('when validating that no referenced file is missing', () => {
+    let validatedDeployment: DeploymentToValidate
+    let missingResult: Awaited<ReturnType<typeof validateNoMissingFiles>>
+
+    beforeEach(async () => {
+      validatedDeployment = await createSceneDeployment(identity.authChain)
+    })
+
+    describe('and every referenced file is uploaded', () => {
+      beforeEach(async () => {
+        missingResult = await validateNoMissingFiles(validatedDeployment)
+      })
+
+      it('should accept the deployment', () => {
+        expect(missingResult.ok()).toBe(true)
+      })
+    })
+
+    describe('and a referenced file is neither uploaded nor stored', () => {
+      beforeEach(async () => {
+        validatedDeployment.entity.content.push({
+          file: 'def.txt',
+          hash: 'bafkreie3yaomoex7orli7fumfwgk5abgels5o5fiauxfijzlzoiymqppdi'
+        })
+        missingResult = await validateNoMissingFiles(validatedDeployment)
+      })
+
+      it('should report the missing file', () => {
+        expect(missingResult.errors).toContain(
+          'The file bafkreie3yaomoex7orli7fumfwgk5abgels5o5fiauxfijzlzoiymqppdi (def.txt) is neither present in the storage or in the provided entity'
+        )
+      })
     })
 
     describe('when the deployment contains more files than the hashing concurrency limit', () => {

@@ -15,7 +15,13 @@ export async function createEvictionJob(
     { logs },
     async () => {
       logger.info('Running eviction job...')
-      const evicted = await worlds.evictUndeployedWorlds(evictionTtlMs)
+      // Expired partial uploads have their own, more frequent job (partial-upload-cleanup-job).
+      let evicted = 0
+      try {
+        evicted = await worlds.evictUndeployedWorlds(evictionTtlMs)
+      } catch (error) {
+        logger.error(`Failed to evict undeployed scenes: ${error}`)
+      }
       logger.info(`Eviction completed. Deleted ${evicted} scene(s).`)
     },
     ONE_DAY_MS,

@@ -5,9 +5,7 @@ import { ContentMapping } from '@dcl/schemas/dist/misc/content-mapping'
 
 export const migration: Migration = {
   id: '0012_store_world_owner_and_size',
-  run: async (
-    components: Pick<MigratorComponents, 'config' | 'database' | 'nameOwnership' | 'storage' | 'worldsManager'>
-  ) => {
+  run: async (components: Pick<MigratorComponents, 'config' | 'database' | 'nameOwnership' | 'storage'>) => {
     const worlds = await components.database.query(
       'SELECT name, entity, owner FROM worlds WHERE entity IS NOT NULL ORDER BY name'
     )

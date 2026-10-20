@@ -10,6 +10,109 @@ export const metricDeclarations = {
   ...logMetricDeclarations,
   ...theGraphMetricDeclarations,
   ...pgMetricDeclarations,
+  partial_upload_metadata_checks: {
+    help: 'Content metadata checks performed by partial uploads',
+    type: IMetricsComponent.CounterType
+  },
+  partial_upload_batches: {
+    help: 'Accepted partial upload batches',
+    type: IMetricsComponent.CounterType,
+    labelNames: ['outcome']
+  },
+  partial_upload_reserved_bytes: {
+    help: 'Staging bytes reserved, including expired uploads awaiting cleanup',
+    type: IMetricsComponent.GaugeType
+  },
+  partial_upload_cleanup_backlog_bytes: {
+    help: 'Expired staging bytes awaiting successful cleanup',
+    type: IMetricsComponent.GaugeType
+  },
+  partial_upload_capacity_bytes: {
+    help: 'Server-wide staging byte cap for partial uploads (MAX_PENDING_BYTES)',
+    type: IMetricsComponent.GaugeType
+  },
+  partial_upload_requests: {
+    help: 'Partial upload batches by response outcome',
+    type: IMetricsComponent.CounterType,
+    // outcome=(accepted|finalized|validation_error|throttled|timeout|aborted|error)
+    labelNames: ['outcome']
+  },
+  partial_upload_throttled: {
+    help: 'Partial upload batches answered 429, by the quota that rejected them',
+    type: IMetricsComponent.CounterType,
+    // reason=(uploads_per_account|uploads_per_world|bytes_per_account|bytes_per_world|bytes_per_server|bytes_per_minute)
+    labelNames: ['reason']
+  },
+  partial_uploads_started: {
+    help: 'Partial uploads whose first batch was admitted',
+    type: IMetricsComponent.CounterType
+  },
+  partial_uploads_completed: {
+    help: 'Partial uploads published by their final batch',
+    type: IMetricsComponent.CounterType
+  },
+  partial_uploads_pending: {
+    help: 'Partial uploads in the database at the last cleanup run (server-wide)',
+    type: IMetricsComponent.GaugeType,
+    // state=(live|expired)
+    labelNames: ['state']
+  },
+  partial_upload_duration_seconds: {
+    help: 'Time from a partial upload first batch arrival to its publication',
+    type: IMetricsComponent.HistogramType,
+    buckets: [5, 15, 30, 60, 120, 300, 600, 900, 1800, 2700, 3600]
+  },
+  partial_upload_batches_per_upload: {
+    help: 'Stored batches a partial upload took until publication',
+    type: IMetricsComponent.HistogramType,
+    buckets: [1, 2, 3, 5, 10, 20, 50, 100, 250]
+  },
+  partial_upload_expired_uploads: {
+    help: 'Expired partial uploads reclaimed by cleanup',
+    type: IMetricsComponent.CounterType
+  },
+  partial_upload_cleanup_failed_uploads: {
+    help: 'Expired partial uploads a cleanup run failed to reclaim (retried next run)',
+    type: IMetricsComponent.CounterType
+  },
+  partial_upload_cleanup_runs: {
+    help: 'Expired partial upload cleanup runs',
+    type: IMetricsComponent.CounterType,
+    // outcome=(success|deferred|error); deferred means the content lock stayed busy, error that an upload failed
+    labelNames: ['outcome']
+  },
+  partial_upload_cleanup_duration_seconds: {
+    help: 'Duration of expired partial upload cleanup runs',
+    type: IMetricsComponent.HistogramType,
+    buckets: [0.1, 0.5, 1, 5, 15, 30, 60, 120, 300]
+  },
+  partial_upload_cleanup_last_success_timestamp_seconds: {
+    help: 'Unix time of the last cleanup run that reclaimed every expired upload it visited',
+    type: IMetricsComponent.GaugeType
+  },
+  garbage_collection_runs: {
+    help: 'Garbage collection runs (POST /gc)',
+    type: IMetricsComponent.CounterType,
+    // outcome=(success|deferred|error); deferred means the content lock stayed busy
+    labelNames: ['outcome']
+  },
+  garbage_collection_duration_seconds: {
+    help: 'Duration of garbage collection runs',
+    type: IMetricsComponent.HistogramType,
+    buckets: [1, 5, 15, 60, 300, 900, 1800, 3600, 7200]
+  },
+  garbage_collection_last_success_timestamp_seconds: {
+    help: 'Unix time of the last garbage collection run that completed',
+    type: IMetricsComponent.GaugeType
+  },
+  garbage_collection_removed_keys: {
+    help: 'Unreferenced storage keys deleted by garbage collection',
+    type: IMetricsComponent.CounterType
+  },
+  content_lock_writer_timeouts: {
+    help: 'Garbage collection or cleanup batches deferred because uploads kept the content lock busy',
+    type: IMetricsComponent.CounterType
+  },
   world_deployments_counter: {
     help: 'Count world deployments',
     type: IMetricsComponent.CounterType,
@@ -17,6 +120,10 @@ export const metricDeclarations = {
   },
   multipart_upload_reserved_bytes: {
     help: 'Bytes currently reserved by multipart uploads',
+    type: IMetricsComponent.GaugeType
+  },
+  multipart_upload_capacity_bytes: {
+    help: 'Capacity of the multipart in-flight upload budget (MAX_IN_FLIGHT_UPLOAD_BYTES)',
     type: IMetricsComponent.GaugeType
   },
   multipart_upload_active: {
@@ -44,6 +151,11 @@ export const metricDeclarations = {
     type: IMetricsComponent.CounterType,
     labelNames: ['route', 'reason']
   },
+  multipart_upload_unattributed: {
+    help: 'Multipart uploads without a client source, so not bound by the per-source limits',
+    type: IMetricsComponent.CounterType,
+    labelNames: ['route']
+  },
   multipart_upload_cleanup_failures: {
     help: 'Multipart upload directories whose initial cleanup attempt failed',
     type: IMetricsComponent.CounterType,
@@ -60,32 +172,38 @@ export const metricDeclarations = {
     labelNames: ['route', 'content_length', 'outcome'],
     buckets: [1024, 1024 * 1024, 10 * 1024 * 1024, 100 * 1024 * 1024, 350 * 1024 * 1024]
   },
-  deployment_processing_stage_duration_seconds: {
-    help: 'Duration of deployment processing stages after multipart parsing',
+  multipart_upload_receive_duration_seconds: {
+    help: 'Time from request arrival until the multipart body is fully received and parsed, or rejected',
     type: IMetricsComponent.HistogramType,
-    labelNames: ['stage', 'outcome'],
+    labelNames: ['route', 'outcome'],
+    buckets: [0.1, 0.5, 1, 2.5, 5, 10, 20, 30, 60, 120, 300, 600]
+  },
+  deployment_processing_stage_duration_seconds: {
+    help: 'Duration of deployment processing stages after multipart parsing; permission is nested in authorization',
+    type: IMetricsComponent.HistogramType,
+    labelNames: ['stage', 'mode', 'outcome'],
     buckets: [0.01, 0.05, 0.1, 0.5, 1, 5, 15, 30, 60, 120, 300]
   },
   deployment_processing_stage_items: {
     help: 'Number of content items handled by each deployment processing stage',
     type: IMetricsComponent.HistogramType,
-    labelNames: ['stage'],
+    labelNames: ['stage', 'mode'],
     buckets: [1, 10, 100, 1000, 10000]
   },
   deployment_processing_stage_active: {
     help: 'Deployment requests currently executing each processing stage',
     type: IMetricsComponent.GaugeType,
-    labelNames: ['stage']
+    labelNames: ['stage', 'mode']
   },
   deployment_processing_worker_active: {
     help: 'Workers currently active in each deployment processing stage',
     type: IMetricsComponent.GaugeType,
-    labelNames: ['stage']
+    labelNames: ['stage', 'mode']
   },
   deployment_processing_failures: {
     help: 'Deployment processing stage failures by outcome',
     type: IMetricsComponent.CounterType,
-    labelNames: ['stage', 'outcome']
+    labelNames: ['stage', 'mode', 'outcome']
   }
 }
 

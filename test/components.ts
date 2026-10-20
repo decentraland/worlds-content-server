@@ -16,6 +16,11 @@ import { createWorldsIndexerComponent } from '../src/adapters/worlds-indexer'
 import { IFetchComponent } from '@dcl/core-commons'
 
 import { createValidator } from '../src/logic/validations'
+import { createInFlightUploadBudget } from '../src/adapters/in-flight-upload-budget'
+import { createPendingScenesRepository } from '../src/adapters/pending-scenes-repository'
+import { createPartialUploadAdmission } from '../src/logic/partial-upload-admission'
+import { createContentGcComponent } from '../src/logic/content-gc'
+import { createSceneDeploymentsComponent } from '../src/logic/scene-deployments'
 import { createTestMetricsComponent } from '@dcl/metrics'
 import { metricDeclarations } from '../src/metrics'
 import { createEntityDeployer } from '../src/adapters/entity-deployer'
@@ -90,7 +95,7 @@ export const test = createRunner<TestComponents>({
 async function initComponents(): Promise<TestComponents> {
   const components = await originalInitComponents()
 
-  const { logs, database } = components
+  const { logs, database, uploadLimits } = components
   const config = await createDotEnvConfigComponent(
     { path: ['.env.default', '.env'] },
     {
@@ -100,6 +105,8 @@ async function initComponents(): Promise<TestComponents> {
   )
 
   const metrics = createTestMetricsComponent(metricDeclarations)
+  // Reports its state to the test metrics the integration tests read.
+  const inFlightUploadBudget = await createInFlightUploadBudget({ metrics, uploadLimits })
 
   const storage = createInMemoryStorage()
 
@@ -149,12 +156,15 @@ async function initComponents(): Promise<TestComponents> {
 
   const thumbnails = await createThumbnailsComponent({ logs, storage })
 
+  const pendingScenesRepository = await createPendingScenesRepository({ database })
+
   const worldsManager = await createWorldsManagerComponent({
     settingsPolicy,
     coordinates,
     logs,
     database,
     nameDenyListChecker,
+    pendingScenesRepository,
     search,
     storage,
     thumbnails
@@ -228,6 +238,38 @@ async function initComponents(): Promise<TestComponents> {
     storage,
     worldsManager
   })
+
+  const partialUploadAdmission = await createPartialUploadAdmission({
+    database,
+    metrics,
+    pendingScenesRepository,
+    uploadLimits
+  })
+  const contentGc = await createContentGcComponent({
+    logs,
+    metrics,
+    storage,
+    contentLocks: components.contentLocks,
+    partialUploadAdmission,
+    pendingScenesRepository,
+    uploadLimits
+  })
+
+  const sceneDeployments = await createSceneDeploymentsComponent({
+    coordinates,
+    entityDeployer,
+    limitsManager,
+    logs,
+    partialUploadAdmission,
+    pendingScenesRepository,
+    deploymentProcessing: components.deploymentProcessing,
+    metrics,
+    storage,
+    uploadLimits,
+    validator,
+    worldsManager
+  })
+
   const status = createMockStatusComponent()
 
   const updateOwnerJob = await createMockUpdateOwnerJob({})
@@ -247,6 +289,7 @@ async function initComponents(): Promise<TestComponents> {
   const worlds = createWorldsComponent({ blocking, coordinates, logs, worldsManager, snsClient })
 
   const evictionJob = { start: jest.fn(), stop: jest.fn() }
+  const partialUploadCleanupJob = { start: jest.fn(), stop: jest.fn() }
 
   const redis = createRedisMock()
   const rateLimiter = await createRateLimiterComponent({ config, logs, redis })
@@ -274,13 +317,16 @@ async function initComponents(): Promise<TestComponents> {
     comms,
     config,
     commsAdapter,
+    contentGc,
     settingsPolicy,
     coordinates,
     deploymentProcessing: components.deploymentProcessing,
     denyList,
     entityDeployer,
     evictionJob,
+    partialUploadCleanupJob,
     fetch,
+    inFlightUploadBudget,
     limitsManager,
     localFetch: await createAuthenticatedLocalFetchComponent(config),
     marketplaceSubGraph: createMockNameSubGraph(),
@@ -291,6 +337,9 @@ async function initComponents(): Promise<TestComponents> {
     nats: createMockNatsComponent(),
     permissionsManager,
     peersRegistry,
+    sceneDeployments,
+    partialUploadAdmission,
+    pendingScenesRepository,
     queueConsumer,
     rateLimiter,
     redis,

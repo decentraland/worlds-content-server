@@ -2,9 +2,57 @@ import { bufferToStream, IContentStorageComponent, streamToBuffer } from '@dcl/c
 import { ILoggerComponent } from '@well-known-components/interfaces'
 import { WorldMetadata } from '../types'
 import { stringToUtf8Bytes } from 'eth-connect'
+import { InvalidRequestError } from '@dcl/http-commons'
 
 export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+/**
+ * The single expiry rule of partial uploads: expired from `createdAt + ttl` on, live strictly before.
+ * Admission applies it on the app clock; GC and publication apply it in SQL on the database clock
+ * (live `created_at > now() - ttl`, expired `<=`), so those two always agree.
+ */
+export function isPastExpiry(expiresAt: Date | number, now: number = Date.now()): boolean {
+  return now >= (typeof expiresAt === 'number' ? expiresAt : expiresAt.getTime())
+}
+
+/** Formats a byte count for client-facing messages. */
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} bytes`
+  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KiB`
+  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MiB`
+  return `${(bytes / 1024 ** 3).toFixed(1)} GiB`
+}
+
+/** Calls an observer, swallowing its errors: observability must never change admission state or the HTTP response. */
+export function notifySafely<T>(listener: ((event: T) => void) | undefined, event: T): void {
+  try {
+    listener?.(event)
+  } catch {
+    // Ignored on purpose; see above.
+  }
+}
+
+export function requireString(val: string | null | undefined): string {
+  if (typeof val !== 'string') throw new InvalidRequestError('A string was expected')
+  return val
+}
+
+/**
+ * The user-facing success message for a scene deployment: the parcels covered plus the play URL.
+ * Shared by the normal deploy path and both idempotent duplicate-deploy responses (vanilla retry and
+ * concurrent partial finalize) so a retried deploy gets the same full message — the CLI surfaces it
+ * as the preview instructions.
+ */
+export function buildSceneDeploymentMessage(baseUrl: string, worldName: string, parcels: string[]): string {
+  const worldUrl = `${baseUrl}/world/${worldName}`
+  // Use the first parcel as the position
+  const position = (parcels[0] ?? '0,0').split(',')
+  return [
+    `Your scene was deployed to World "${worldName}" at parcels: ${parcels.join(', ')}!`,
+    `Access world: https://play.decentraland.org/?realm=${encodeURIComponent(worldUrl)}&position=${encodeURIComponent(position.join(','))}`
+  ].join('\n')
 }
 
 export function deepEqual(a: any, b: any) {

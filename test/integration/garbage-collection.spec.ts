@@ -4,6 +4,8 @@ import { Entity, IPFSv2 } from '@dcl/schemas'
 import { makeid } from '../utils'
 import { bufferToStream } from '@dcl/catalyst-storage'
 import { createHash } from 'crypto'
+import { ContentLockTimeoutError } from '../../src/adapters/content-locks/errors'
+import { GC_DEFERRED_RETRY_AFTER_SECONDS } from '../../src/controllers/handlers/garbage-collection'
 
 test('when performing garbage collection through /gc', function ({ components }) {
   let authSecret: string
@@ -213,6 +215,28 @@ test('when performing garbage collection through /gc', function ({ components })
       expect(response.status).toEqual(200)
       expect(await response.json()).toMatchObject({
         message: 'Garbage collection removed 0 unused keys.'
+      })
+    })
+  })
+
+  describe('and uploads keep the content lock busy past the writer wait', () => {
+    let status: number
+    let retryAfter: string | null
+    let body: unknown
+
+    beforeEach(async () => {
+      jest.spyOn(components.contentGc, 'collectGarbage').mockRejectedValueOnce(new ContentLockTimeoutError())
+      const response = await triggerGC()
+      status = response.status
+      retryAfter = response.headers.get('Retry-After')
+      body = await response.json()
+    })
+
+    it('should respond with 503 and a retry hint instead of a server error', () => {
+      expect({ status, retryAfter, body }).toEqual({
+        status: 503,
+        retryAfter: String(GC_DEFERRED_RETRY_AFTER_SECONDS),
+        body: { error: 'Service Unavailable', message: 'The content lock is still busy, please retry shortly.' }
       })
     })
   })

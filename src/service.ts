@@ -18,9 +18,7 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
   // set the context to be passed to the handlers
   components.server.setContext(globalContext)
 
-  // start ports: db, listeners, synchronizations, etc
+  // start ports: db, migrations, listeners, synchronizations, etc. The migration executor applies
+  // pending migrations as it starts, before the server and workers that depend on the schema.
   await startComponents()
-
-  // Run the migrations
-  await components.migrationExecutor.run()
 }

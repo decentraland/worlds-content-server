@@ -3,11 +3,14 @@ import { EthAddress } from '@dcl/schemas'
 import SQL from 'sql-template-strings'
 import { withRetry } from '../logic/utils'
 
+const DEFAULT_STATS_TIMEOUT_MS = 3000
+
 export async function createWalletStatsComponent(
-  components: Pick<AppComponents, 'config' | 'database' | 'logs' | 'fetch' | 'worldsManager'>
+  components: Pick<AppComponents, 'config' | 'database' | 'logs' | 'fetch'>
 ): Promise<IWalletStats> {
   const logger = components.logs.getLogger('wallet-stats')
   const url = await components.config.getString('DCL_NAME_STATS_URL')
+  const timeoutMs = (await components.config.getNumber('DCL_NAME_STATS_TIMEOUT_MS')) ?? DEFAULT_STATS_TIMEOUT_MS
   if (url) {
     logger.info(`Using DCL wallet stats from ${url}.`)
   } else {
@@ -27,9 +30,19 @@ export async function createWalletStatsComponent(
 
     return await withRetry(
       async () => {
-        const result = await components.fetch.fetch(`${url}/account-holdings/${wallet}`, { method: 'POST' })
-        const json = await result.json()
-        return json['data']
+        // Bounds each attempt, body included, so a stalled stats service can't hang its callers.
+        const abortController = new AbortController()
+        const timer = setTimeout(() => abortController.abort(), timeoutMs)
+        try {
+          const result = await components.fetch.fetch(`${url}/account-holdings/${wallet}`, {
+            method: 'POST',
+            abortController
+          })
+          const json = await result.json()
+          return json['data']
+        } finally {
+          clearTimeout(timer)
+        }
       },
       {
         maxRetries: 3,
@@ -39,22 +52,17 @@ export async function createWalletStatsComponent(
     )
   }
 
+  // The deployed size of each world the wallet owns, in one query rather than one per world.
   async function fetchStoredData(wallet: string): Promise<{ name: string; size: bigint }[]> {
-    const rows = await components.database.query<Pick<WorldRecord, 'name'>>(SQL`
-        SELECT name FROM worlds WHERE owner = ${wallet.toLowerCase()}`)
+    const result = await components.database.query<Pick<WorldRecord, 'name'> & { size: string }>(SQL`
+        SELECT w.name, COALESCE(SUM(ws.size), 0) AS size
+        FROM worlds w
+        LEFT JOIN world_scenes ws ON ws.world_name = LOWER(w.name) AND ws.status = 'DEPLOYED'
+        WHERE w.owner = ${wallet.toLowerCase()}
+        GROUP BY w.name
+        ORDER BY w.name`)
 
-    // Calculate total size from all scenes for each world
-    const worldsData = await Promise.all(
-      rows.rows.map(async (row) => {
-        const totalSize = await components.worldsManager.getTotalWorldSize(row.name)
-        return {
-          name: row.name,
-          size: totalSize
-        }
-      })
-    )
-
-    return worldsData
+    return result.rows.map((row) => ({ name: row.name, size: BigInt(row.size) }))
   }
 
   async function fetchBlockedStatus(wallet: string): Promise<Date | undefined> {

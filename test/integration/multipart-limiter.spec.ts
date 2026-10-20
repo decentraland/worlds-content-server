@@ -4,24 +4,26 @@ import { defaultServerConfig } from '@dcl/test-helpers'
 import { createRecordConfigComponent } from '@well-known-components/env-config-provider'
 import { createLogComponent } from '@well-known-components/logger'
 import { errorHandler } from '@dcl/http-commons'
+import { uploadErrorHandler } from '../../src/controllers/upload-error-handler'
 import { ClientRequest, request } from 'http'
 import {
-  createInFlightUploadBudget,
-  InFlightUploadBudget,
-  InFlightUploadBudgetSnapshot,
-  multipartParserWrapper,
-  MultipartTelemetryEvent
-} from '../../src/logic/multipart'
+  buildInFlightUploadBudget,
+  IInFlightUploadBudget,
+  InFlightUploadBudgetSnapshot
+} from '../../src/adapters/in-flight-upload-budget'
+import { multipartParserWrapper, MultipartTelemetryEvent } from '../../src/controllers/multipart'
 
 type TestServer = {
   baseUrl: string
-  inFlightUploadBudget: InFlightUploadBudget
+  inFlightUploadBudget: IInFlightUploadBudget
   stop: () => Promise<void>
 }
 
+type UploadResult = { status: number; body: string; retryAfter?: string }
+
 type PendingUpload = {
   request: ClientRequest
-  response: Promise<{ status: number; body: string }>
+  response: Promise<UploadResult>
 }
 
 const BOUNDARY = '----MultipartLimiterBoundary'
@@ -30,7 +32,9 @@ async function startMultipartServer(options: {
   capacity: number
   maxSizeInBytes?: number
   maxWireSizeInBytes?: number
-  maxConcurrentUploads?: number
+  minUploadReservationBytes?: number
+  uploadFileOverheadBytes?: number
+  maxFiles?: number
   timeoutMs?: number
   handler?: () => Promise<{ status: number }>
   onTelemetry?: (event: MultipartTelemetryEvent) => void
@@ -40,16 +44,22 @@ async function startMultipartServer(options: {
   const logs = await createLogComponent({ config })
   const server = await createServerComponent<Record<string, never>>({ config, logs }, { http: {} })
   const router = new Router<Record<string, never>>()
-  const inFlightUploadBudget = createInFlightUploadBudget(options.capacity, options.maxConcurrentUploads)
+  // Payload-only by default so byte cases stay exact; cases opt into the fixed charges.
+  const inFlightUploadBudget = buildInFlightUploadBudget(options.capacity, {
+    minUploadReservationBytes: options.minUploadReservationBytes ?? 0,
+    uploadFileOverheadBytes: options.uploadFileOverheadBytes ?? 0
+  })
   const handler = options.handler ?? (async () => ({ status: 200 }))
 
   router.use(errorHandler as any)
+  router.use(uploadErrorHandler())
   router.post(
     '/upload',
     multipartParserWrapper(handler, {
       inFlightUploadBudget,
       maxSizeInBytes: options.maxSizeInBytes ?? options.capacity,
       maxWireSizeInBytes: options.maxWireSizeInBytes,
+      limits: options.maxFiles === undefined ? undefined : { files: options.maxFiles },
       onTelemetry: options.onTelemetry,
       route: 'integration-test',
       uploadTimeoutMs: options.timeoutMs
@@ -69,7 +79,7 @@ async function startMultipartServer(options: {
 function openChunkedUpload(baseUrl: string): PendingUpload {
   let settled = false
   let uploadRequest: ClientRequest
-  const response = new Promise<{ status: number; body: string }>((resolve, reject) => {
+  const response = new Promise<UploadResult>((resolve, reject) => {
     uploadRequest = request(
       `${baseUrl}/upload`,
       {
@@ -81,7 +91,11 @@ function openChunkedUpload(baseUrl: string): PendingUpload {
         uploadResponse.on('data', (chunk: Buffer) => chunks.push(chunk))
         uploadResponse.on('end', () => {
           settled = true
-          resolve({ status: uploadResponse.statusCode!, body: Buffer.concat(chunks).toString() })
+          resolve({
+            status: uploadResponse.statusCode!,
+            body: Buffer.concat(chunks).toString(),
+            retryAfter: uploadResponse.headers['retry-after']
+          })
         })
       }
     )
@@ -103,7 +117,7 @@ function finishUpload(upload: PendingUpload, bytes: number): void {
   upload.request.end(`\r\n--${BOUNDARY}--\r\n`)
 }
 
-function sendKnownLengthUpload(baseUrl: string, bytes: number): Promise<{ status: number; body: string }> {
+function sendKnownLengthUpload(baseUrl: string, bytes: number): Promise<UploadResult> {
   const body = Buffer.concat([
     Buffer.from(
       `--${BOUNDARY}\r\nContent-Disposition: form-data; name="file"; filename="file.bin"\r\nContent-Type: application/octet-stream\r\n\r\n`
@@ -138,7 +152,7 @@ function sendKnownLengthUpload(baseUrl: string, bytes: number): Promise<{ status
 describe('multipart limiter over HTTP', () => {
   describe('when an upload has a known Content-Length including multipart framing', () => {
     let server: TestServer
-    let result: { status: number; body: string }
+    let result: UploadResult
     let stateAfterUpload: InFlightUploadBudgetSnapshot
     let releaseExistingUpload: () => void
 
@@ -166,7 +180,7 @@ describe('multipart limiter over HTTP', () => {
 
   describe('when a small chunked upload has no Content-Length', () => {
     let server: TestServer
-    let result: { status: number; body: string }
+    let result: UploadResult
     let stateAfterUpload: InFlightUploadBudgetSnapshot
 
     beforeEach(async () => {
@@ -195,8 +209,8 @@ describe('multipart limiter over HTTP', () => {
     let server: TestServer
     let releaseFirstUpload: () => void
     let firstUpload: PendingUpload
-    let secondResult: { status: number; body: string }
-    let recoveryResult: { status: number; body: string }
+    let secondResult: UploadResult
+    let recoveryResult: UploadResult
     let stateAfterRecovery: InFlightUploadBudgetSnapshot
 
     beforeEach(async () => {
@@ -241,8 +255,16 @@ describe('multipart limiter over HTTP', () => {
       jest.clearAllMocks()
     })
 
-    it('should reject the upload that exceeds available bytes', () => {
-      expect(secondResult.status).toBe(503)
+    it('should reject the upload that exceeds available bytes with 503 and a retry hint', () => {
+      expect({
+        status: secondResult.status,
+        retryAfter: secondResult.retryAfter,
+        body: JSON.parse(secondResult.body)
+      }).toEqual({
+        status: 503,
+        retryAfter: '5',
+        body: { error: 'Service Unavailable', message: 'Server is buffering too many uploads, please retry shortly.' }
+      })
     })
 
     it('should admit a later upload after capacity is released', () => {
@@ -254,12 +276,12 @@ describe('multipart limiter over HTTP', () => {
     })
   })
 
-  describe('when the concurrent upload limit is reached', () => {
+  describe('when the per-request minimum reservation fills the budget', () => {
     let server: TestServer
     let releaseFirstUpload: () => void
     let firstUpload: PendingUpload
-    let secondResult: { status: number; body: string }
-    let recoveryResult: { status: number; body: string }
+    let secondResult: UploadResult
+    let recoveryResult: UploadResult
     let stateAfterRecovery: InFlightUploadBudgetSnapshot
 
     beforeEach(async () => {
@@ -278,7 +300,7 @@ describe('multipart limiter over HTTP', () => {
           return { status: 200 }
         })
         .mockResolvedValue({ status: 200 })
-      server = await startMultipartServer({ capacity: 100, handler, maxConcurrentUploads: 1 })
+      server = await startMultipartServer({ capacity: 100, handler, minUploadReservationBytes: 100 })
 
       firstUpload = openChunkedUpload(server.baseUrl)
       finishUpload(firstUpload, 10)
@@ -304,7 +326,7 @@ describe('multipart limiter over HTTP', () => {
       jest.clearAllMocks()
     })
 
-    it('should reject the additional concurrent upload', () => {
+    it('should reject the additional small upload', () => {
       expect(secondResult.status).toBe(503)
     })
 
@@ -317,15 +339,65 @@ describe('multipart limiter over HTTP', () => {
     })
   })
 
+  describe('when more small uploads arrive than the budget divided by the default 16 MiB minimum', () => {
+    let server: TestServer
+    let releaseHeldUploads: () => void
+    let heldUploads: PendingUpload[]
+    let extraResult: UploadResult
+
+    beforeEach(async () => {
+      let held = 0
+      let signalAllHeld: () => void
+      const allHeld = new Promise<void>((resolve) => {
+        signalAllHeld = resolve
+      })
+      const gate = new Promise<void>((resolve) => {
+        releaseHeldUploads = resolve
+      })
+      const handler = jest.fn(async () => {
+        if (++held === 2) signalAllHeld()
+        await gate
+        return { status: 200 }
+      })
+      // 32 MiB / 16 MiB = 2 concurrent small uploads.
+      server = await startMultipartServer({
+        capacity: 32 * 1024 ** 2,
+        maxSizeInBytes: 1024 ** 2,
+        maxFiles: 10,
+        minUploadReservationBytes: 16 * 1024 ** 2,
+        uploadFileOverheadBytes: 16 * 1024,
+        handler
+      })
+      heldUploads = [openChunkedUpload(server.baseUrl), openChunkedUpload(server.baseUrl)]
+      heldUploads.forEach((upload) => finishUpload(upload, 10))
+      await allHeld
+
+      const extraUpload = openChunkedUpload(server.baseUrl)
+      finishUpload(extraUpload, 10)
+      extraResult = await extraUpload.response
+    })
+
+    afterEach(async () => {
+      releaseHeldUploads()
+      await Promise.all(heldUploads.map((upload) => upload.response))
+      await server.stop()
+      jest.clearAllMocks()
+    })
+
+    it('should reject the extra upload with a 503', () => {
+      expect(extraResult.status).toBe(503)
+    })
+  })
+
   describe('when a chunked request stalls before completing its body', () => {
     let server: TestServer
     let stalledUpload: PendingUpload
-    let timeoutResult: { status: number; body: string }
-    let recoveryResult: { status: number; body: string }
+    let timeoutResult: UploadResult
+    let recoveryResult: UploadResult
     let stateAfterTimeout: InFlightUploadBudgetSnapshot
 
     beforeEach(async () => {
-      server = await startMultipartServer({ capacity: 100, maxConcurrentUploads: 1, timeoutMs: 25 })
+      server = await startMultipartServer({ capacity: 100, minUploadReservationBytes: 100, timeoutMs: 25 })
       stalledUpload = openChunkedUpload(server.baseUrl)
       stalledUpload.request.write(Buffer.alloc(10))
       timeoutResult = await stalledUpload.response
@@ -343,11 +415,16 @@ describe('multipart limiter over HTTP', () => {
       jest.clearAllMocks()
     })
 
-    it('should respond with a 408', () => {
-      expect(timeoutResult.status).toBe(408)
+    it('should respond with a 408 stating the deadline, the bytes received and the rate', () => {
+      expect({ status: timeoutResult.status, message: JSON.parse(timeoutResult.body).message }).toEqual({
+        status: 408,
+        message: expect.stringMatching(
+          /^The upload did not finish within 0\.025 s: received \d+ bytes \(about \d+\.\d KiB\/s\)\. Retry on a faster connection or send smaller batches\.$/
+        )
+      })
     })
 
-    it('should release the concurrent upload slot', () => {
+    it('should release the upload reservation', () => {
       expect(recoveryResult.status).toBe(200)
     })
 
@@ -359,7 +436,7 @@ describe('multipart limiter over HTTP', () => {
   describe('when a stalled chunked request exceeds the shared byte budget', () => {
     let server: TestServer
     let upload: PendingUpload
-    let result: { status: number; body: string }
+    let result: UploadResult
     let stateAfterRejection: InFlightUploadBudgetSnapshot
     let releaseExistingUpload: () => void
     let onTelemetry: jest.Mock
@@ -403,7 +480,7 @@ describe('multipart limiter over HTTP', () => {
   describe('when a stalled chunked request exceeds its payload limit', () => {
     let server: TestServer
     let upload: PendingUpload
-    let result: { status: number; body: string }
+    let result: UploadResult
     let stateAfterRejection: InFlightUploadBudgetSnapshot
     let onTelemetry: jest.Mock
 
@@ -428,8 +505,8 @@ describe('multipart limiter over HTTP', () => {
       jest.clearAllMocks()
     })
 
-    it('should respond with 400 without waiting for the upload timeout', () => {
-      expect(result.status).toBe(400)
+    it('should respond with 413 without waiting for the upload timeout', () => {
+      expect(result.status).toBe(413)
     })
 
     it('should report a payload-size rejection', () => {
@@ -444,7 +521,7 @@ describe('multipart limiter over HTTP', () => {
   describe('when a chunked request exceeds its wire-size limit and then stalls', () => {
     let server: TestServer
     let upload: PendingUpload
-    let result: { status: number; body: string }
+    let result: UploadResult
     let stateAfterRejection: InFlightUploadBudgetSnapshot
 
     beforeEach(async () => {
@@ -460,8 +537,8 @@ describe('multipart limiter over HTTP', () => {
       jest.clearAllMocks()
     })
 
-    it('should respond with 400 without waiting for the upload timeout', () => {
-      expect(result.status).toBe(400)
+    it('should respond with 413 without waiting for the upload timeout', () => {
+      expect(result.status).toBe(413)
     })
 
     it('should release all reserved bytes and the upload slot', () => {

@@ -1,15 +1,17 @@
 import { test } from '../components'
 import { Entity } from '@dcl/schemas'
+import { Authenticator } from '@dcl/crypto'
 import { stringToUtf8Bytes } from 'eth-connect'
 import { hashV1 } from '@dcl/hashing'
 import { bufferToStream } from '@dcl/catalyst-storage'
-import { makeid } from '../utils'
+import { makeid, waitForAdvisoryLocks } from '../utils'
 import { defaultAccess } from '../../src/logic/access'
-import { NoDeployedScenesError } from '../../src/types'
-import SQL from 'sql-template-strings'
+import { NoDeployedScenesError, DeploymentUniqueViolationError } from '../../src/types'
+import { PartialUploadExpiredError } from '../../src/logic/partial-upload-admission'
+import SQL, { SQLStatement } from 'sql-template-strings'
 
 type LockClient = {
-  query(statement: string): Promise<unknown>
+  query(statement: string | SQLStatement): Promise<unknown>
   release(): void
 }
 
@@ -193,6 +195,287 @@ test('WorldManagerAdapter', function ({ components }) {
           message: expect.stringContaining('Scene replacement authorization changed')
         }),
         deployedEntityIds: [originalEntityId]
+      })
+    })
+  })
+
+  describe('when the same entity is already deployed', () => {
+    let caughtError: unknown
+
+    beforeEach(async () => {
+      const { worldCreator, worldsManager } = components
+      const created = await worldCreator.createWorldWithScene()
+
+      caughtError = await worldsManager
+        .deployScene(
+          created.worldName,
+          created.entity,
+          created.owner.authChain[0].payload,
+          { mode: 'unrestricted-owner' },
+          { authChain: created.owner.authChain, size: 123 }
+        )
+        .catch((error) => error)
+    })
+
+    it('should reject it as a unique violation, keeping the database error as its cause', () => {
+      expect({
+        isUniqueViolation: caughtError instanceof DeploymentUniqueViolationError,
+        cause: (caughtError as DeploymentUniqueViolationError).cause
+      }).toEqual({ isUniqueViolation: true, cause: expect.objectContaining({ code: '23505' }) })
+    })
+  })
+
+  describe('when deploying a scene directly over the parcels of a deployed one', () => {
+    let created: Awaited<ReturnType<typeof components.worldCreator.createWorldWithScene>>
+
+    // Bypasses the entity deployer's fast-fail, so only deployScene's in-transaction check decides.
+    function deployDirectly(entity: typeof created.entity): Promise<unknown> {
+      return components.worldsManager.deployScene(
+        created.worldName,
+        entity,
+        created.owner.authChain[0].payload,
+        { mode: 'unrestricted-owner' },
+        { authChain: created.owner.authChain, size: 123 }
+      )
+    }
+
+    async function deployedEntityIds(): Promise<string[]> {
+      const result = await components.worldsManager.getWorldScenes({ worldName: created.worldName })
+      return result.scenes.map((scene) => scene.entityId)
+    }
+
+    beforeEach(async () => {
+      created = await components.worldCreator.createWorldWithScene()
+    })
+
+    describe('and the incoming scene is older', () => {
+      let caughtError: unknown
+      let deployed: string[]
+
+      beforeEach(async () => {
+        const older = {
+          ...created.entity,
+          id: `${created.entityId}-older`,
+          timestamp: created.entity.timestamp - 1_000
+        }
+        caughtError = await deployDirectly(older).catch((error) => error)
+        deployed = await deployedEntityIds()
+      })
+
+      it('should reject it as stale', () => {
+        expect(caughtError).toEqual(
+          expect.objectContaining({
+            message: 'Deployment failed: a newer scene is already deployed on one or more of these parcels.'
+          })
+        )
+      })
+
+      it('should keep the newer scene deployed', () => {
+        expect(deployed).toEqual([created.entityId])
+      })
+    })
+
+    describe('and the incoming scene has the same timestamp and a lower entity id', () => {
+      let caughtError: unknown
+      let deployed: string[]
+
+      beforeEach(async () => {
+        // A proper prefix sorts first under any collation.
+        const lower = { ...created.entity, id: created.entityId.slice(0, -1) }
+        caughtError = await deployDirectly(lower).catch((error) => error)
+        deployed = await deployedEntityIds()
+      })
+
+      it('should reject it as stale', () => {
+        expect(caughtError).toEqual(
+          expect.objectContaining({
+            message: 'Deployment failed: a newer scene is already deployed on one or more of these parcels.'
+          })
+        )
+      })
+
+      it('should keep the deployed scene', () => {
+        expect(deployed).toEqual([created.entityId])
+      })
+    })
+
+    describe('and the incoming scene has the same timestamp and a higher entity id', () => {
+      let higherId: string
+      let deployed: string[]
+
+      beforeEach(async () => {
+        higherId = `${created.entityId}z`
+        await deployDirectly({ ...created.entity, id: higherId })
+        deployed = await deployedEntityIds()
+      })
+
+      it('should replace the deployed scene', () => {
+        expect(deployed).toEqual([higherId])
+      })
+    })
+
+    describe('and the deployed scene has a fractional timestamp', () => {
+      let newerId: string
+      let caughtError: unknown
+      let deployed: string[]
+
+      beforeEach(async () => {
+        await components.database.query(
+          SQL`UPDATE world_scenes SET entity = jsonb_set(entity, '{timestamp}', to_jsonb(${created.entity.timestamp + 0.5}::numeric))
+              WHERE world_name = ${created.worldName.toLowerCase()} AND entity_id = ${created.entityId}`
+        )
+        newerId = `${created.entityId}-newer`
+        caughtError = await deployDirectly({ ...created.entity, id: newerId, timestamp: created.entity.timestamp + 1 })
+          .then(() => undefined)
+          .catch((error) => error)
+        deployed = await deployedEntityIds()
+      })
+
+      it('should compare it without failing and deploy the newer scene', () => {
+        expect({ caughtError, deployed }).toEqual({ caughtError: undefined, deployed: [newerId] })
+      })
+    })
+
+    describe('and another transaction holds the per-world deploy lock', () => {
+      let lockClient: LockClient | undefined
+      let settledWhileLocked: boolean
+      let deployed: string[]
+
+      beforeEach(async () => {
+        const { database } = components
+        const newerId = `${created.entityId}-newer`
+        lockClient = (await database.getPool().connect()) as unknown as LockClient
+        await lockClient.query('BEGIN')
+        const lockKey = `world_scene_deploy:${created.worldName.toLowerCase()}`
+        await lockClient.query(SQL`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`)
+        let settled = false
+        const deployment = deployDirectly({
+          ...created.entity,
+          id: newerId,
+          timestamp: created.entity.timestamp + 1
+        }).finally(() => {
+          settled = true
+        })
+        // Throws unless the deploy queues behind the held lock.
+        await waitForAdvisoryLocks(database, lockKey, 'waiting')
+        settledWhileLocked = settled
+        await lockClient.query('ROLLBACK')
+        lockClient.release()
+        lockClient = undefined
+        await deployment
+        deployed = await deployedEntityIds()
+      })
+
+      afterEach(async () => {
+        if (lockClient) {
+          await lockClient.query('ROLLBACK').catch(() => undefined)
+          lockClient.release()
+        }
+      })
+
+      it('should wait for the lock before deploying', () => {
+        expect(settledWhileLocked).toBe(false)
+      })
+
+      it('should deploy the scene once the lock is released', () => {
+        expect(deployed).toEqual([`${created.entityId}-newer`])
+      })
+    })
+  })
+
+  describe('when publishing the completion of a partial upload', () => {
+    let created: Awaited<ReturnType<typeof components.worldCreator.createWorldWithScene>>
+    let upload: typeof created.entity
+    let ttlMs: number
+    let removeUpload: boolean
+    let caughtError: unknown
+    let deployedEntityIds: string[]
+    let pendingUploads: number
+    let completionReceipts: number
+
+    beforeEach(async () => {
+      const { database, worldCreator } = components
+      created = await worldCreator.createWorldWithScene()
+      upload = { ...created.entity, id: `${created.entity.id}-partial` }
+      ttlMs = 60 * 60 * 1000
+      removeUpload = false
+      await database.query(SQL`
+        INSERT INTO pending_scenes (entity_id, world_name, parcels, entity, deployer)
+        VALUES (${upload.id}, ${created.worldName}, ${upload.pointers}::text[], ${upload}::jsonb,
+          ${created.owner.authChain[0].payload.toLowerCase()})`)
+    })
+
+    async function publish(): Promise<void> {
+      const { database, worldsManager } = components
+      if (removeUpload) await database.query(SQL`DELETE FROM pending_scenes WHERE entity_id = ${upload.id}`)
+      caughtError = await worldsManager
+        .deployScene(
+          created.worldName,
+          upload,
+          created.owner.authChain[0].payload,
+          { mode: 'unrestricted-owner' },
+          { authChain: created.owner.authChain, size: 123, completesPartialUpload: { ttlMs } }
+        )
+        .then(() => undefined)
+        .catch((error: unknown) => error)
+      const result = await worldsManager.getWorldScenes({ worldName: created.worldName })
+      deployedEntityIds = result.scenes.map((scene) => scene.entityId)
+      const pending = await database.query(SQL`SELECT 1 FROM pending_scenes WHERE entity_id = ${upload.id}`)
+      pendingUploads = pending.rowCount
+      const receipts = await database.query(SQL`SELECT 1 FROM completed_scene_uploads WHERE entity_id = ${upload.id}`)
+      completionReceipts = receipts.rowCount
+    }
+
+    describe('and the upload is still live', () => {
+      beforeEach(async () => {
+        await publish()
+      })
+
+      it('should publish it, drop the upload and record the completion receipt', () => {
+        expect({ caughtError, deployedEntityIds, pendingUploads, completionReceipts }).toEqual({
+          caughtError: undefined,
+          deployedEntityIds: [upload.id],
+          pendingUploads: 0,
+          completionReceipts: 1
+        })
+      })
+    })
+
+    describe('and the database clock says the upload expired while this instance clock says it is live', () => {
+      beforeEach(async () => {
+        const backdated = await components.database.query<{ created_at: Date }>(SQL`
+          UPDATE pending_scenes SET created_at = now() - ${ttlMs / 1000}::float8 * interval '1 second'
+          WHERE entity_id = ${upload.id} RETURNING created_at`)
+        jest.spyOn(Date, 'now').mockReturnValue(backdated.rows[0].created_at.getTime() + 1000)
+        await publish()
+      })
+
+      afterEach(() => {
+        jest.restoreAllMocks()
+      })
+
+      it('should refuse to publish it and keep the upload for cleanup', () => {
+        expect({ caughtError, deployedEntityIds, pendingUploads, completionReceipts }).toEqual({
+          caughtError: expect.any(PartialUploadExpiredError),
+          deployedEntityIds: [created.entityId],
+          pendingUploads: 1,
+          completionReceipts: 0
+        })
+      })
+    })
+
+    describe('and cleanup already removed the upload', () => {
+      beforeEach(async () => {
+        removeUpload = true
+        await publish()
+      })
+
+      it('should refuse to publish it', () => {
+        expect({ caughtError, deployedEntityIds, completionReceipts }).toEqual({
+          caughtError: expect.any(PartialUploadExpiredError),
+          deployedEntityIds: [created.entityId],
+          completionReceipts: 0
+        })
       })
     })
   })
@@ -773,6 +1056,49 @@ test('WorldManagerAdapter', function ({ components }) {
         const size = await worldsManager.getDeployedSceneSizeForParcels(worldName, ['5,5'])
 
         expect(size).toBe(BigInt(0))
+      })
+    })
+
+    describe('when a scene would replace several multi-parcel scenes', function () {
+      let fullListSize: bigint
+      let onePerSceneSize: bigint
+      let replacedSize: bigint
+
+      beforeEach(async () => {
+        const { worldCreator, worldsManager } = components
+
+        const worldName = worldCreator.randomWorldName()
+        for (const parcels of [['0,0', '0,1'], ['1,0', '1,1'], ['5,5']]) {
+          const files = new Map<string, Uint8Array>()
+          files.set('abc.txt', stringToUtf8Bytes(makeid(100 * parcels.length)))
+          await worldCreator.createWorldWithScene({
+            worldName,
+            metadata: {
+              main: 'abc.txt',
+              scene: { base: parcels[0], parcels },
+              worldConfiguration: { name: worldName }
+            },
+            files
+          })
+        }
+
+        const { scenes } = await worldsManager.getWorldScenes({ worldName })
+        replacedSize = scenes
+          .filter((scene) => !scene.parcels.includes('5,5'))
+          .reduce((total, scene) => total + scene.size, BigInt(0))
+
+        fullListSize = await worldsManager.getDeployedSceneSizeForParcels(worldName, [
+          '0,0',
+          '0,1',
+          '1,0',
+          '1,1',
+          '2,0'
+        ])
+        onePerSceneSize = await worldsManager.getDeployedSceneSizeForParcels(worldName, ['0,1', '1,0'])
+      })
+
+      it('should return the same size for one parcel of each replaced scene as for the full parcel list', () => {
+        expect({ fullListSize, onePerSceneSize }).toEqual({ fullListSize: replacedSize, onePerSceneSize: replacedSize })
       })
     })
 
@@ -2097,10 +2423,14 @@ test('WorldManagerAdapter', function ({ components }) {
           { authChain: created.owner.authChain, size: 100 }
         )
 
-        // Replace both scenes with a single scene spanning all their parcels
+        // Replace both scenes with a single scene spanning all their parcels. The timestamp must be
+        // newer than both: deployScene rejects a deploy that an already-deployed overlapping scene
+        // outranks, and with the spread timestamp the tie would break on entity id ('-second' sorts
+        // above '-replacement').
         const replacementEntity = {
           ...created.entity,
           id: `${created.entity.id}-replacement`,
+          timestamp: created.entity.timestamp + 1,
           metadata: {
             ...created.entity.metadata,
             display: { title: 'Replacement Title', description: 'Replacement Desc' },
@@ -2705,6 +3035,103 @@ test('WorldManagerAdapter', function ({ components }) {
 
       it('should roll back the metadata refresh', function () {
         expect(settings?.title).toBe('Original Title')
+      })
+    })
+  })
+
+  describe('when getting the deployed scene of an entity', function () {
+    let created: Awaited<ReturnType<typeof components.worldCreator.createWorldWithScene>>
+    let worldName: string
+    let entityId: string
+    let found: unknown
+
+    beforeEach(async () => {
+      created = await components.worldCreator.createWorldWithScene({
+        files: new Map([['abc.txt', stringToUtf8Bytes(makeid(100))]])
+      })
+      worldName = created.worldName
+      entityId = created.entityId
+    })
+
+    describe('and the entity is deployed', function () {
+      let expected: Record<string, unknown>
+      let listed: unknown
+
+      beforeEach(async () => {
+        expected = {
+          worldName: worldName.toLowerCase(),
+          deployer: created.owner.authChain[0].payload.toLowerCase(),
+          entityId,
+          deploymentAuthChain: Authenticator.signPayload(created.owner, entityId),
+          entity: created.entity,
+          parcels: ['20,24'],
+          size: 100n,
+          status: 'DEPLOYED',
+          createdAt: expect.any(Date),
+          updatedAt: expect.any(Date)
+        }
+        found = await components.worldsManager.getDeployedScene(entityId)
+        listed = (await components.worldsManager.getWorldScenes({ entityId }, { limit: 1 })).scenes[0]
+      })
+
+      it('should return its scene', function () {
+        expect(found).toEqual(expected)
+      })
+
+      it('should map it as the paginated scene listing does', function () {
+        expect(listed).toEqual(expected)
+      })
+    })
+
+    describe('and it is looked up within its world, named in another case', function () {
+      beforeEach(async () => {
+        found = await components.worldsManager.getDeployedScene(entityId, worldName.toUpperCase())
+      })
+
+      it('should return its scene', function () {
+        expect(found).toEqual(expect.objectContaining({ entityId, worldName: worldName.toLowerCase() }))
+      })
+    })
+
+    describe('and it is looked up within another world', function () {
+      beforeEach(async () => {
+        found = await components.worldsManager.getDeployedScene(entityId, `other-${worldName}`)
+      })
+
+      it('should return nothing', function () {
+        expect(found).toBeUndefined()
+      })
+    })
+
+    describe('and the entity was undeployed', function () {
+      beforeEach(async () => {
+        await components.worldsManager.undeployWorld(worldName)
+        found = await components.worldsManager.getDeployedScene(entityId)
+      })
+
+      it('should return nothing', function () {
+        expect(found).toBeUndefined()
+      })
+    })
+
+    describe('and the index backing its lookup is inspected', function () {
+      let index: unknown
+
+      beforeEach(async () => {
+        const result = await components.database.query<{ valid: boolean; definition: string }>(`
+          SELECT i.indisvalid AS valid, pg_get_indexdef(i.indexrelid) AS definition
+          FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+          WHERE c.relname = 'world_scenes_entity_id_idx'`)
+        index = result.rows
+      })
+
+      it('should exist on the entity id and be valid', function () {
+        expect(index).toEqual([
+          {
+            valid: true,
+            definition: 'CREATE INDEX world_scenes_entity_id_idx ON public.world_scenes USING btree (entity_id)'
+          }
+        ])
       })
     })
   })

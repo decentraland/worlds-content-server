@@ -1,6 +1,6 @@
-import { FormDataContext } from './multipart'
+import { FormDataContext } from './form-data'
 import { AuthChain } from '@dcl/schemas'
-import { requireString } from '../controllers/handlers/deploy-entity-handler'
+import { requireString } from './utils'
 import { InvalidRequestError } from '@dcl/http-commons'
 
 export function extractAuthChain(ctx: FormDataContext): AuthChain {

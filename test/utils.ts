@@ -1,10 +1,13 @@
-import { Authenticator } from '@dcl/crypto'
+import { Authenticator, IdentityType } from '@dcl/crypto'
+import { createUnsafeIdentity } from '@dcl/crypto/dist/crypto'
 import { Readable } from 'stream'
 import { IContentStorageComponent } from '@dcl/catalyst-storage'
 import { stringToUtf8Bytes } from 'eth-connect'
-import { AuthChain } from '@dcl/schemas'
+import { AuthChain, AuthLinkType } from '@dcl/schemas'
 import { AUTH_CHAIN_HEADER_PREFIX, AUTH_METADATA_HEADER, AUTH_TIMESTAMP_HEADER } from '@dcl/crypto-middleware'
 import { IPgComponent } from '@dcl/pg-component'
+import SQL, { SQLStatement } from 'sql-template-strings'
+import FormData from 'form-data'
 import { getAuthHeaders, getIdentity, type Identity } from '@dcl/test-helpers'
 import { IWorldsManager } from '../src/types'
 
@@ -12,6 +15,11 @@ import { IWorldsManager } from '../src/types'
 // stays in step with `@dcl/crypto-middleware` instead of drifting in a hand-rolled copy per repo.
 export { getAuthHeaders, getIdentity }
 export type { Identity }
+
+// Text of a query issued either as a plain string or a SQL template.
+export function sqlText(sql: string | SQLStatement): string {
+  return typeof sql === 'string' ? sql : sql.text
+}
 
 export async function storeJson(storage: IContentStorageComponent, fileId: string, data: any) {
   const buffer = stringToUtf8Bytes(JSON.stringify(data))
@@ -40,7 +48,8 @@ export async function cleanup(storage: IContentStorageComponent, db: IPgComponen
   }
   await storage.delete(files)
 
-  await db.query(`TRUNCATE worlds, world_scenes CASCADE`)
+  // `pending_scenes` has no FK to `worlds`, so the CASCADE above never reaches it — truncate explicitly.
+  await db.query(`TRUNCATE worlds, world_scenes, pending_scenes, completed_scene_uploads, partial_upload_rates CASCADE`)
 }
 
 /**
@@ -146,4 +155,102 @@ export function makePngBytes(length: number = 500): Uint8Array {
   const signature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
   const filler = Buffer.from(makeid(Math.max(0, length - signature.length)), 'utf8')
   return new Uint8Array(Buffer.concat([signature, filler]))
+}
+
+/**
+ * Signs `payload` for `owner` through a chain of `links` links: the signer, `links - 2` ephemeral
+ * hops and the signed payload. The first ephemeral payload's free-text line is padded so the
+ * payload takes `firstEphemeralPayloadBytes` bytes, still forming a valid chain.
+ */
+export function signThroughChainOf(
+  links: number,
+  owner: IdentityType,
+  payload: string,
+  firstEphemeralPayloadBytes?: number
+): AuthChain {
+  const expiration = new Date(Date.now() + 10 * 60 * 1000)
+  const chain: AuthChain = [{ type: AuthLinkType.SIGNER, payload: owner.address, signature: '' }]
+  let authority = owner
+  for (let hop = 0; hop < links - 2; hop++) {
+    const ephemeral = createUnsafeIdentity()
+    let message = Authenticator.getEphemeralMessage(ephemeral.address, expiration)
+    if (hop === 0 && firstEphemeralPayloadBytes !== undefined) {
+      message = 'x'.repeat(firstEphemeralPayloadBytes - Buffer.byteLength(message)) + message
+    }
+    chain.push({
+      type: AuthLinkType.ECDSA_PERSONAL_EPHEMERAL,
+      payload: message,
+      signature: Authenticator.createSignature(authority, message)
+    })
+    authority = ephemeral
+  }
+  chain.push({
+    type: AuthLinkType.ECDSA_PERSONAL_SIGNED_ENTITY,
+    payload,
+    signature: Authenticator.createSignature(authority, payload)
+  })
+  return chain
+}
+
+/**
+ * Counts the sessions holding (`granted`) or queued on (`waiting`) the advisory lock keyed by
+ * `hashtextextended(keyName, 0)` in this database, so other locks can't skew the count.
+ */
+export async function countAdvisoryLocks(
+  db: IPgComponent,
+  keyName: string,
+  state: 'granted' | 'waiting'
+): Promise<number> {
+  const result = await db.query<{ count: string }>(SQL`
+    SELECT COUNT(*) AS count
+    FROM pg_locks l, (SELECT hashtextextended(${keyName}, 0) AS k) h
+    WHERE l.locktype = 'advisory'
+      AND l.objsubid = 1
+      AND l.granted = ${state === 'granted'}
+      AND l.database = (SELECT oid FROM pg_database WHERE datname = current_database())
+      AND l.classid = ((h.k >> 32) & 4294967295)::oid
+      AND l.objid = (h.k & 4294967295)::oid
+  `)
+  return Number(result.rows[0].count)
+}
+
+/** Polls until {@link countAdvisoryLocks} reaches `count`; throws on the deadline instead of hanging. */
+export async function waitForAdvisoryLocks(
+  db: IPgComponent,
+  keyName: string,
+  state: 'granted' | 'waiting',
+  count = 1,
+  timeoutMs = 3_000
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while ((await countAdvisoryLocks(db, keyName, state)) < count) {
+    if (Date.now() >= deadline)
+      throw new Error(`Timed out waiting for ${count} ${state} advisory lock(s) on ${keyName}`)
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+}
+
+/**
+ * Builds a POST /entities multipart body: the entity id, the `partial` flag when set, the auth chain
+ * and the files under `keys`, in the order clients send them.
+ */
+export function buildDeploymentForm(
+  entityId: string,
+  authChain: AuthChain,
+  files: Map<string, Uint8Array>,
+  keys: string[],
+  partial = false
+): FormData {
+  const form = new FormData()
+  form.append('entityId', entityId)
+  if (partial) form.append('partial', 'true')
+  authChain.forEach((link, i) => {
+    form.append(`authChain[${i}][type]`, link.type)
+    form.append(`authChain[${i}][payload]`, link.payload)
+    form.append(`authChain[${i}][signature]`, link.signature ?? '')
+  })
+  for (const key of keys) {
+    form.append(key, Buffer.from(files.get(key)!), { filename: key })
+  }
+  return form
 }

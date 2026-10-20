@@ -1,3 +1,4 @@
+import type { IContentLocks } from './adapters/content-locks/types'
 import type {
   IBaseComponent,
   IConfigComponent,
@@ -15,7 +16,7 @@ import { IBlockingComponent } from './adapters/blocking'
 import { IWhitelistComponent } from './adapters/whitelist'
 import { AuthChain, AuthLink, Entity, EthAddress, IPFSv2 } from '@dcl/schemas'
 import { Readable } from 'stream'
-import { MigrationExecutor } from './adapters/migration-executor'
+import { MigrationDatabase, MigrationExecutor } from './adapters/migration-executor'
 import { IPgComponent } from '@dcl/pg-component'
 import { AuthIdentity } from '@dcl/crypto'
 import { IFetchComponent } from '@dcl/core-commons'
@@ -26,6 +27,16 @@ import { ISettingsComponent } from './logic/settings'
 import { ISchemaValidatorComponent } from '@dcl/schema-validator-component'
 import { IWorldSettingsPolicyComponent } from './logic/world-settings-policy'
 import { ICoordinatesComponent } from './logic/coordinates'
+// Type-only imports so the central types module can reference these component interfaces (for
+// AppComponents below) without a runtime import cycle through their component.ts factories.
+import type { IPendingScenesRepository } from './adapters/pending-scenes-repository/types'
+import type { IPartialUploadAdmission } from './logic/partial-upload-admission/types'
+import type { IContentGcComponent } from './logic/content-gc/types'
+import type { UploadLimits } from './logic/upload-limits/types'
+import type { ISourceUploadLimits } from './adapters/source-upload-limits/types'
+import type { IInFlightUploadBudget } from './adapters/in-flight-upload-budget/types'
+import type { IClientSourceComponent } from './logic/client-source/types'
+import type { ISceneDeploymentsComponent } from './logic/scene-deployments/types'
 import { ISearchComponent } from './adapters/search'
 import {
   IPermissionsComponent,
@@ -54,7 +65,6 @@ export type GlobalContext = {
 
 export const MB = 1024 * 1024
 export const MB_BigInt = 1024n * 1024n
-export const MAX_PARCELS_PER_PERMISSION = 500
 
 export type Migration = {
   id: string
@@ -73,6 +83,8 @@ export type DeploymentFile = {
   getStream(signal?: AbortSignal): Readable
   /** Calculates and memoizes the file's CIDv1. */
   getHash(signal?: AbortSignal): Promise<string>
+  /** Whether getHash already ran, so another call reuses its result. */
+  isHashed?(): boolean
   /** Reads the full file into a Buffer. Intended for small files such as the entity JSON. */
   asBuffer(signal?: AbortSignal): Promise<Buffer>
 }
@@ -82,15 +94,33 @@ export type DeploymentToValidate = {
   files: Map<string, DeploymentFile>
   authChain: AuthChain
   contentHashesInStorage: Map<string, boolean>
-  /** Storage metadata fetched once before validation, keyed by unique content hash. */
-  contentFileInfos?: Map<string, FileInfo | undefined>
+  /**
+   * created_at of the pending (partial) upload for this entity, set only by partial staging and
+   * finalization. The deployment TTL check validates the entity timestamp against this anchor instead
+   * of now, so a multi-request upload can span longer than the TTL.
+   */
+  pendingCreatedAt?: Date
+  /** Content sizes known before validation (storage metadata or upload receipts), keyed by unique content hash. */
+  contentFileInfos?: Map<string, Pick<FileInfo, 'size'> | undefined>
   /** Cancels request-scoped processing after disconnect or the configured processing deadline. */
   signal?: AbortSignal
   /** Replacement authority established during deployment authorization. */
   sceneReplacementAuthorization?: SceneReplacementAuthorization
 }
 
-export type DeploymentProcessingStage = 'total' | 'authorization' | 'metadata' | 'hash' | 'storage' | 'persistence'
+/** `permission` runs inside `authorization`; every other stage is disjoint within `total`. */
+export type DeploymentProcessingStage =
+  | 'total'
+  | 'authorization'
+  | 'permission'
+  | 'metadata'
+  | 'hash'
+  | 'limits'
+  | 'lookup'
+  | 'lock'
+  | 'admission'
+  | 'storage'
+  | 'persistence'
 
 export type DeploymentAbortContext = {
   signal: AbortSignal
@@ -98,6 +128,9 @@ export type DeploymentAbortContext = {
   deadlineAt: number
   dispose(): void
 }
+
+/** Which upload protocol a deployment request uses, recorded as the `mode` label of the processing metrics. */
+export type DeploymentMode = 'regular' | 'partial'
 
 export interface IDeploymentProcessingComponent extends IBaseComponent {
   /** Maximum number of content files uploaded concurrently by one deployment. */
@@ -114,6 +147,8 @@ export interface IDeploymentProcessingComponent extends IBaseComponent {
   trackStage<T>(stage: DeploymentProcessingStage, items: number, operation: () => Promise<T>): Promise<T>
   /** Records the number of workers currently active in a bounded processing stage. */
   trackWorker<T>(stage: DeploymentProcessingStage, operation: () => Promise<T>): Promise<T>
+  /** Runs a request's processing so every stage and worker it tracks is labelled with its mode. */
+  runInMode<T>(mode: DeploymentMode, operation: () => Promise<T>): Promise<T>
 }
 
 export type SceneDeploymentData = {
@@ -125,7 +160,12 @@ export type SceneDeploymentData = {
   deadlineAt?: number
   /** Cancels persistence until the transaction reaches its commit boundary. */
   signal?: AbortSignal
+  /** Set when this publication finalizes a partial upload, so its signer gets a completion receipt. */
+  completesPartialUpload?: PartialUploadCompletion
 }
+
+/** Publication is refused once the upload is gone or expired by the database clock for `ttlMs`. */
+export type PartialUploadCompletion = { ttlMs: number }
 
 export type SceneReplacementAuthorization =
   | { mode: 'unrestricted-owner' }
@@ -331,6 +371,19 @@ export interface Validator {
   validateAfterStorage(deployment: DeploymentToValidate): Promise<ValidationResult>
   /** Runs the complete validation pipeline. */
   validate(deployment: DeploymentToValidate): Promise<ValidationResult>
+  /**
+   * Validations a partial (staging) scene deployment must pass before its full content set is present:
+   * everything except content-completeness and the storage-backed size check.
+   *
+   * `skipPermissionCheck` skips the (slow, external) deployment-permission check. Safe only when the
+   * upload already has a non-expired pending record: creating that record required passing the
+   * permission check, uploaded bytes are hash-verified against the staged manifest, and the finalize
+   * step re-runs the full validation (including permission) before anything goes live.
+   */
+  validateStaging(
+    deployment: DeploymentToValidate,
+    options?: { skipPermissionCheck?: boolean }
+  ): Promise<ValidationResult>
 }
 
 export type ValidationResult = {
@@ -351,12 +404,17 @@ export type ValidatorComponents = Pick<
   | 'worldsManager'
 >
 
-export type MigratorComponents = Pick<
-  AppComponents,
-  'config' | 'logs' | 'database' | 'nameOwnership' | 'storage' | 'worldsManager'
->
+/** No pool-backed component on purpose: every migration statement must run on the lock session. */
+export type MigratorComponents = Pick<AppComponents, 'config' | 'logs' | 'nameOwnership' | 'storage'> & {
+  database: MigrationDatabase
+}
 
 export type Validation = (deployment: DeploymentToValidate) => ValidationResult | Promise<ValidationResult>
+
+// IPendingScenesRepository lives in ./adapters/pending-scenes-repository/types; PendingScene / UpsertPendingScene /
+// IPartialUploadAdmission live in ./logic/partial-upload-admission/types
+// StageDeploymentInput / StageDeploymentResult / ISceneDeploymentsComponent live in
+// ./logic/scene-deployments/types (both imported above for AppComponents).
 
 export type INameOwnership = {
   findOwners(worldNames: string[]): Promise<ReadonlyMap<string, EthAddress | undefined>>
@@ -419,6 +477,11 @@ export type ILimitsManager = {
   getAllowSdk6For(worldName: string): Promise<boolean>
   getMaxAllowedParcelsFor(worldName: string): Promise<number>
   getMaxAllowedSizeInBytesFor(worldName: string, parcels?: string[]): Promise<bigint>
+  /**
+   * The world's per-scene size cap before the owner's allowance applies: stable across uploads and
+   * never below {@link ILimitsManager.getMaxAllowedSizeInBytesFor}. Needs no owner or wallet lookups.
+   */
+  getSceneSizeCapInBytesFor(worldName: string): Promise<bigint>
 }
 
 export type WorldBoundingRectangle = {
@@ -461,6 +524,21 @@ export class SceneReplacementConflictError extends Error {
   }
 }
 
+/**
+ * The publication hit a unique constraint (SQLSTATE 23505), most commonly because the same entity is already
+ * deployed. Callers verify the publication before answering with it, and otherwise rethrow `cause`.
+ */
+export class DeploymentUniqueViolationError extends Error {
+  constructor(
+    entityId: string,
+    /** The original database error. */
+    readonly cause: unknown
+  ) {
+    super(`Deployment of scene "${entityId}" collided with an existing row.`)
+    this.name = 'DeploymentUniqueViolationError'
+  }
+}
+
 export class MissingSceneReplacementAuthorizationError extends Error {
   constructor(entityId: string) {
     super(`Cannot deploy scene "${entityId}": replacement authorization is missing.`)
@@ -481,14 +559,23 @@ export type IWorldsManager = {
   getDeployedWorldCount(): Promise<{ ens: number; dcl: number }>
   getMetadataForWorld(worldName: string): Promise<WorldMetadata | undefined>
   getEntityForWorlds(worldNames: string[]): Promise<Entity[]>
-  /** Persists a scene and its already-calculated deployment metadata. */
+  /**
+   * Whether a strictly-newer scene (deployment ordering) is already deployed on this scene's parcels.
+   * A non-authoritative fast-fail for the deploy path (reject before storing content); deployScene
+   * performs the authoritative, race-free check under a per-world lock.
+   */
+  hasNewerDeployedScene(worldName: string, scene: Entity): Promise<boolean>
+  /**
+   * Persists a scene and its already-calculated deployment metadata.
+   * @throws DeploymentUniqueViolationError when the publication hits a unique constraint.
+   */
   deployScene(
     worldName: string,
     scene: Entity,
     owner: EthAddress,
     replacementAuthorization: SceneReplacementAuthorization,
     deployment?: SceneDeploymentData
-  ): Promise<{ metadataUpdated: boolean }>
+  ): Promise<{ metadataUpdated: boolean; creationTimestamp?: number }>
   /** Atomically undeploys matching scenes and returns the rows actually changed. */
   undeployScene(worldName: string, parcels: string[], authorizedEntityIds?: string[]): Promise<SceneUndeploymentResult>
   storeAccess(worldName: string, access: AccessSetting): Promise<void>
@@ -499,6 +586,8 @@ export type IWorldsManager = {
   undeployWorld(worldName: string): Promise<void>
   getContributableDomains(address: string): Promise<{ domains: ContributorDomain[]; count: number }>
   getWorldScenes(filters?: GetWorldScenesFilters, options?: GetWorldScenesOptions): Promise<GetWorldScenesResult>
+  /** Retrieves the oldest DEPLOYED scene of an entity, optionally within a world, without counting matches. */
+  getDeployedScene(entityId: string, worldName?: string): Promise<WorldScene | undefined>
   updateWorldSettings(worldName: string, owner: EthAddress, settings: WorldSettings): Promise<UpdateWorldSettingsResult>
   getWorldSettings(worldName: string): Promise<WorldSettings | undefined>
   getTotalWorldSize(worldName: string): Promise<bigint>
@@ -572,6 +661,7 @@ export type IWorldsIndexer = {
 }
 
 export type DeploymentResult = {
+  creationTimestamp?: number
   message: string
 }
 
@@ -581,13 +671,24 @@ export type IEntityDeployer = {
     entity: Entity,
     allContentHashesInStorage: Map<string, boolean>,
     files: Map<string, DeploymentFile>,
-    entityJson: string,
+    entityFile: Uint8Array,
     authChain: AuthLink[],
     deploymentSize: number,
-    signal?: AbortSignal,
-    deadlineAt?: number,
-    sceneReplacementAuthorization?: SceneReplacementAuthorization
+    options?: DeployEntityOptions
   ): Promise<DeploymentResult>
+}
+
+export type DeployEntityOptions = {
+  /** Cancels storage writes and persistence until the commit boundary. */
+  signal?: AbortSignal
+  /** Absolute processing deadline used to bound the persistence transaction. */
+  deadlineAt?: number
+  /** Required for scenes; checked by persistence against the parcels being replaced. */
+  sceneReplacementAuthorization?: SceneReplacementAuthorization
+  /** The publication finalizes a partial upload; see SceneDeploymentData.completesPartialUpload. */
+  completesPartialUpload?: PartialUploadCompletion
+  /** The entity file is already stored as uploaded, so only its auth chain is written. */
+  storedEntityFile?: boolean
 }
 
 export type AwsConfig = {
@@ -640,11 +741,14 @@ export type BaseComponents = {
   config: IConfigComponent
   settingsPolicy: IWorldSettingsPolicyComponent
   coordinates: ICoordinatesComponent
+  contentLocks: IContentLocks
+  contentGc: IContentGcComponent
   database: IPgComponent
   deploymentProcessing: IDeploymentProcessingComponent
   entityDeployer: IEntityDeployer
   ethereumProvider: HTTPProvider
   evictionJob: IJobComponent
+  partialUploadCleanupJob: IJobComponent
   fetch: IFetchComponent
   limitsManager: ILimitsManager
   livekitClient: LivekitClient
@@ -652,6 +756,15 @@ export type BaseComponents = {
   marketplaceSubGraph: ISubgraphComponent
   metrics: IMetricsComponent<keyof typeof metricDeclarations>
   migrationExecutor: MigrationExecutor
+  sceneDeployments: ISceneDeploymentsComponent
+  partialUploadAdmission: IPartialUploadAdmission
+  pendingScenesRepository: IPendingScenesRepository
+  sourceUploadLimits: ISourceUploadLimits
+  /** Process-wide byte budget shared by every multipart route. */
+  inFlightUploadBudget: IInFlightUploadBudget
+  /** Validated upload size, quota and lifetime settings (plain values, no lifecycle). */
+  uploadLimits: UploadLimits
+  clientSource: IClientSourceComponent
   nats: INatsComponent
   nameDenyListChecker: INameDenyListChecker
   nameOwnership: INameOwnership

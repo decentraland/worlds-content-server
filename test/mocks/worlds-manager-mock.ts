@@ -238,6 +238,11 @@ export async function createWorldsManagerMockComponent({
     }
   }
 
+  async function getDeployedScene(entityId: string, worldName?: string): Promise<WorldScene | undefined> {
+    const { scenes } = await getWorldScenes(worldName ? { worldName, entityId } : { entityId }, { limit: 1 })
+    return scenes[0]
+  }
+
   async function updateWorldSettings(
     worldName: string,
     _owner: EthAddress,
@@ -352,6 +357,10 @@ export async function createWorldsManagerMockComponent({
     return 0
   }
 
+  async function hasNewerDeployedScene(_worldName: string, _scene: Entity): Promise<boolean> {
+    return false
+  }
+
   async function modifyAccessAtomically(
     worldName: string,
     modifier: (currentAccess: AccessSetting) => AccessSetting
@@ -379,6 +388,7 @@ export async function createWorldsManagerMockComponent({
     storeAccess,
     undeployWorld,
     getWorldScenes,
+    getDeployedScene,
     updateWorldSettings,
     getWorldSettings,
     getTotalWorldSize,
@@ -390,7 +400,8 @@ export async function createWorldsManagerMockComponent({
     worldExists,
     getWorldNamesByCommunityId,
     modifyAccessAtomically,
-    evictUndeployedScenes
+    evictUndeployedScenes,
+    hasNewerDeployedScene
   }
 }
 
@@ -410,6 +421,7 @@ export function createMockedWorldsManager(
     undeployWorld: jest.fn(),
     getContributableDomains: jest.fn(),
     getWorldScenes: jest.fn(),
+    getDeployedScene: jest.fn(),
     getTotalWorldSize: jest.fn(),
     getDeployedSceneSizeForParcels: jest.fn(),
     getWorldBoundingRectangle: jest.fn(),
@@ -418,6 +430,7 @@ export function createMockedWorldsManager(
     getWorldNamesByCommunityId: jest.fn(),
     modifyAccessAtomically: jest.fn(),
     evictUndeployedScenes: jest.fn(),
+    hasNewerDeployedScene: jest.fn(),
     ...overrides
   } as jest.Mocked<IWorldsManager>
 }

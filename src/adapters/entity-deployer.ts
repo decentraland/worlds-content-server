@@ -1,15 +1,17 @@
 import {
   AppComponents,
   DeploymentFile,
+  DeployEntityOptions,
   DeploymentResult,
   IEntityDeployer,
-  MissingSceneReplacementAuthorizationError,
-  SceneReplacementAuthorization
+  MissingSceneReplacementAuthorizationError
 } from '../types'
 import { AuthLink, Entity, EntityType, Events, WorldDeploymentEvent } from '@dcl/schemas'
 import { bufferToStream } from '@dcl/catalyst-storage'
 import { stringToUtf8Bytes } from 'eth-connect'
+import { InvalidRequestError } from '@dcl/http-commons'
 import { mapWithConcurrency, raceWithSignal } from '../logic/concurrency'
+import { buildSceneDeploymentMessage } from '../logic/utils'
 import { buildWorldSettingsChangedEvent } from '../logic/worlds/world-settings-changed-event'
 import { Authenticator } from '@dcl/crypto'
 import { isNameOwnershipValidationIgnored } from '../logic/name-ownership-validation'
@@ -19,13 +21,8 @@ type PostDeploymentHook = (
   entity: Entity,
   authChain: AuthLink[],
   deploymentSize: number,
-  signal?: AbortSignal,
-  deadlineAt?: number,
-  sceneReplacementAuthorization?: SceneReplacementAuthorization
+  options: DeployEntityOptions
 ) => Promise<DeploymentResult>
-
-/** Maximum number of independent content-addressed objects uploaded concurrently. */
-export { DEFAULT_STORAGE_UPLOAD_CONCURRENCY } from '../logic/deployment-processing'
 
 /**
  * Creates the deployment component that uploads content and commits validated scenes.
@@ -59,18 +56,38 @@ export function createEntityDeployer(
     entity: Entity,
     allContentHashesInStorage: Map<string, boolean>,
     files: Map<string, DeploymentFile>,
-    entityJson: string,
+    entityFile: Uint8Array,
     authChain: AuthLink[],
     deploymentSize: number,
-    signal?: AbortSignal,
-    deadlineAt?: number,
-    sceneReplacementAuthorization?: SceneReplacementAuthorization
+    options: DeployEntityOptions = {}
   ): Promise<DeploymentResult> {
+    const { signal, completesPartialUpload, storedEntityFile } = options
+    // Fast-fail BEFORE writing anything to storage if a newer scene already holds these parcels. This is
+    // non-authoritative (deployScene re-checks atomically under a lock), but it keeps a rejected older
+    // deploy from leaving its content/entity/auth objects orphaned in storage until the next GC. Only
+    // scenes carry a world name; other entity types skip it. A partial finalize skips it too: its content
+    // is already staged, and its upload keeps the auth chain it writes until expiry cleanup.
+    if (entity.metadata?.worldConfiguration?.name && !completesPartialUpload) {
+      const worldName = entity.metadata.worldConfiguration.name
+      if (
+        await deploymentProcessing.trackStage('lookup', 1, () => worldsManager.hasNewerDeployedScene(worldName, entity))
+      ) {
+        throw new InvalidRequestError(
+          `Deployment failed: a newer scene is already deployed on one or more of these parcels.`
+        )
+      }
+    }
+
     const contentByHash = new Map((entity.content || []).map((file) => [file.hash, file]))
     const filesToStore = Array.from(contentByHash).filter(([hash]) => !allContentHashesInStorage.get(hash))
     logger.info(`Storing ${filesToStore.length} files`, { entityId: entity.id })
+    const entityObjects: [string, Uint8Array][] = [
+      // The entity file is stored as uploaded: its bytes are what the id hashes.
+      ...(storedEntityFile ? [] : [[entity.id, entityFile] as [string, Uint8Array]]),
+      [entity.id + '.auth', stringToUtf8Bytes(JSON.stringify(authChain))]
+    ]
 
-    await deploymentProcessing.trackStage('storage', filesToStore.length + 2, async () => {
+    await deploymentProcessing.trackStage('storage', filesToStore.length + entityObjects.length, async () => {
       await mapWithConcurrency(
         filesToStore,
         deploymentProcessing.storageConcurrency,
@@ -80,33 +97,25 @@ export function createEntityDeployer(
           )
           allContentHashesInStorage.set(hash, true)
         },
-        // On abort every active upload is cancelled through the same signal and every source
-        // stream is destroyed by its own listener, so waiting for them adds no file safety. Not
-        // waiting keeps the request (and its stage gauges and upload lease) from being tied to a
-        // transport that ignores cancellation; such stragglers stay observed inside
-        // mapWithConcurrency.
-        { signal, waitForActiveOnAbort: false }
+        // Keep the shared content/GC protection until every writer settles. Releasing it while
+        // an aborted transport can still write would allow an unaccounted object after cleanup.
+        { signal, waitForActiveOnAbort: true }
       )
 
       signal?.throwIfAborted()
       logger.info(`Storing entity`, { cid: entity.id })
       await mapWithConcurrency(
-        [
-          [entity.id, entityJson],
-          [entity.id + '.auth', JSON.stringify(authChain)]
-        ] as const,
+        entityObjects,
         2,
         ([id, content]) =>
-          deploymentProcessing.trackWorker('storage', () =>
-            storage.storeStream(id, bufferToStream(stringToUtf8Bytes(content)), signal)
-          ),
-        { signal, waitForActiveOnAbort: false }
+          deploymentProcessing.trackWorker('storage', () => storage.storeStream(id, bufferToStream(content), signal)),
+        { signal, waitForActiveOnAbort: true }
       )
     })
 
     signal?.throwIfAborted()
     return await deploymentProcessing.trackStage('persistence', 1, () =>
-      postDeployment(baseUrl, entity, authChain, deploymentSize, signal, deadlineAt, sceneReplacementAuthorization)
+      postDeployment(baseUrl, entity, authChain, deploymentSize, options)
     )
   }
 
@@ -119,12 +128,10 @@ export function createEntityDeployer(
     entity: Entity,
     authChain: AuthLink[],
     deploymentSize: number,
-    signal?: AbortSignal,
-    deadlineAt?: number,
-    sceneReplacementAuthorization?: SceneReplacementAuthorization
+    options: DeployEntityOptions
   ): Promise<DeploymentResult> {
     const hookForType = postDeploymentHooks[entity.type] || noPostDeploymentHook
-    return hookForType(baseUrl, entity, authChain, deploymentSize, signal, deadlineAt, sceneReplacementAuthorization)
+    return hookForType(baseUrl, entity, authChain, deploymentSize, options)
   }
 
   async function noPostDeploymentHook(
@@ -132,9 +139,7 @@ export function createEntityDeployer(
     _entity: Entity,
     _authChain: AuthLink[],
     _deploymentSize: number,
-    _signal?: AbortSignal,
-    _deadlineAt?: number,
-    _sceneReplacementAuthorization?: SceneReplacementAuthorization
+    _options: DeployEntityOptions
   ): Promise<DeploymentResult> {
     return { message: 'No post deployment hook for this entity type' }
   }
@@ -144,11 +149,10 @@ export function createEntityDeployer(
     entity: Entity,
     authChain: AuthLink[],
     deploymentSize: number,
-    signal?: AbortSignal,
-    deadlineAt?: number,
-    sceneReplacementAuthorization?: SceneReplacementAuthorization
+    options: DeployEntityOptions
   ) {
     const { config, metrics, snsClient } = components
+    const { signal, deadlineAt, sceneReplacementAuthorization, completesPartialUpload } = options
 
     // determine the name to use for deploying the world
     const worldName = entity.metadata.worldConfiguration.name
@@ -169,7 +173,7 @@ export function createEntityDeployer(
     }
 
     signal?.throwIfAborted()
-    const { metadataUpdated } = await worldsManager.deployScene(
+    const { metadataUpdated, creationTimestamp } = await worldsManager.deployScene(
       worldName,
       entity,
       owner,
@@ -178,11 +182,12 @@ export function createEntityDeployer(
         authChain,
         size: deploymentSize,
         ...(deadlineAt === undefined ? {} : { deadlineAt }),
-        ...(signal === undefined ? {} : { signal })
+        ...(signal === undefined ? {} : { signal }),
+        ...(completesPartialUpload ? { completesPartialUpload } : {})
       }
     )
 
-    const kind = worldName.endsWith('dcl.eth') ? 'dcl-name' : 'ens-name'
+    const kind = worldName.toLowerCase().endsWith('.dcl.eth') ? 'dcl-name' : 'ens-name'
     metrics.increment('world_deployments_counter', { kind })
 
     // Persistence is the deployment's success boundary. These hooks are best-effort: wait for them
@@ -269,14 +274,9 @@ export function createEntityDeployer(
       }
     }
 
-    const worldUrl = `${baseUrl}/world/${worldName}`
-    // Use the first parcel as the position
-    const position = parcels[0].split(',')
     return {
-      message: [
-        `Your scene was deployed to World "${worldName}" at parcels: ${parcels.join(', ')}!`,
-        `Access world: https://play.decentraland.org/?realm=${encodeURIComponent(worldUrl)}&position=${encodeURIComponent(position.join(','))}`
-      ].join('\n')
+      ...(creationTimestamp === undefined ? {} : { creationTimestamp }),
+      message: buildSceneDeploymentMessage(baseUrl, worldName, parcels)
     }
   }
 
