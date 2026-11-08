@@ -286,7 +286,7 @@ async function initComponents(): Promise<TestComponents> {
     worldsManager
   })
 
-  const worlds = createWorldsComponent({ blocking, coordinates, logs, worldsManager, snsClient })
+  const worlds = createWorldsComponent({ blocking, coordinates, logs, nameDenyListChecker, worldsManager, snsClient })
 
   const evictionJob = { start: jest.fn(), stop: jest.fn() }
   const partialUploadCleanupJob = { start: jest.fn(), stop: jest.fn() }
