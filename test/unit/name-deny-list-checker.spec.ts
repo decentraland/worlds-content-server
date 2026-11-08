@@ -16,6 +16,51 @@ describe('name deny list checker', function () {
     logs = await createLogComponent({ config })
   })
 
+  it('blocks exact configured world names without a remote service, preserving unrelated names', async () => {
+    config = createConfigComponent({
+      BLOCKED_WORLD_NAMES: ' Blocked.dcl.eth, , Other.eth,blocked.dcl.eth, '
+    })
+    const fetch = await createFetchComponent()
+    fetch.fetch = jest.fn().mockRejectedValue(new Error('should never be called'))
+    const checker = await createNameDenyListChecker({ config, logs, fetch })
+
+    await expect(checker.checkNameDenyList('BLOCKED.dcl.eth')).resolves.toBe(false)
+    await expect(checker.checkNameDenyList('other.eth')).resolves.toBe(false)
+    await expect(checker.checkNameDenyList('blocked.eth')).resolves.toBe(true)
+    await expect(checker.checkNameDenyList('good.dcl.eth')).resolves.toBe(true)
+    await expect(checker.getBannedNames()).resolves.toEqual(['blocked.dcl.eth', 'other.eth'])
+    expect(fetch.fetch).not.toHaveBeenCalled()
+  })
+
+  it('keeps configured blocks effective when the remote list is unavailable', async () => {
+    config = createConfigComponent({
+      BLOCKED_WORLD_NAMES: 'blocked.dcl.eth',
+      DCL_LISTS_URL: 'https://some-api.dcl.net'
+    })
+    const fetch = await createFetchComponent()
+    fetch.fetch = jest.fn().mockRejectedValue(new Error('offline'))
+    const checker = await createNameDenyListChecker({ config, logs, fetch })
+
+    await expect(checker.checkNameDenyList('blocked.dcl.eth')).resolves.toBe(false)
+    expect(fetch.fetch).not.toHaveBeenCalled()
+    await expect(checker.getBannedNames()).resolves.toContain('blocked.dcl.eth')
+    await expect(checker.checkNameDenyList('blocked.dcl.eth')).resolves.toBe(false)
+  })
+
+  it('adds configured blocks without replacing the remote denylist', async () => {
+    config = createConfigComponent({
+      BLOCKED_WORLD_NAMES: 'blocked.dcl.eth',
+      DCL_LISTS_URL: 'https://some-api.dcl.net'
+    })
+    const fetch = await createFetchComponent()
+    fetch.fetch = jest.fn().mockResolvedValue({ json: async () => ({ data: ['remote-banned'] }) })
+    const checker = await createNameDenyListChecker({ config, logs, fetch })
+
+    await expect(checker.checkNameDenyList('remote-banned.dcl.eth')).resolves.toBe(false)
+    await expect(checker.checkNameDenyList('blocked.dcl.eth')).resolves.toBe(false)
+    await expect(checker.getBannedNames()).resolves.toEqual(['blocked.dcl.eth', 'remote-banned'])
+  })
+
   it('when no url provided, it creates a component that does not validate anything, always accepts the names', async () => {
     config = createConfigComponent({
       LOG_LEVEL: 'DEBUG'

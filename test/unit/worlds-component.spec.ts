@@ -1,6 +1,7 @@
 import { createWorldsComponent } from '../../src/logic/worlds/component'
 import { IWorldsComponent } from '../../src/logic/worlds/types'
 import {
+  INameDenyListChecker,
   IWorldsManager,
   SceneDeploymentStatus,
   SceneUndeploymentResult,
@@ -59,6 +60,7 @@ function createSceneUndeploymentResult(scenes: WorldScene[]): SceneUndeploymentR
 
 describe('WorldsComponent', () => {
   let worldsComponent: IWorldsComponent
+  let nameDenyListChecker: jest.Mocked<INameDenyListChecker>
   let worldsManager: jest.Mocked<IWorldsManager>
   let snsClient: jest.Mocked<IPublisherComponent>
   let blocking: jest.Mocked<IBlockingComponent>
@@ -67,6 +69,10 @@ describe('WorldsComponent', () => {
   let logger: jest.Mocked<ILoggerComponent.ILogger>
 
   beforeEach(() => {
+    nameDenyListChecker = {
+      checkNameDenyList: jest.fn().mockResolvedValue(true),
+      getBannedNames: jest.fn().mockResolvedValue([])
+    }
     worldsManager = {
       getRawWorldRecords: jest.fn().mockResolvedValue({ records: [], total: 0 }),
       getWorldScenes: jest.fn(),
@@ -93,6 +99,7 @@ describe('WorldsComponent', () => {
     logs = createMockLogs({ getLogger: jest.fn().mockReturnValue(logger) })
 
     worldsComponent = createWorldsComponent({
+      nameDenyListChecker,
       blocking,
       coordinates,
       logs,
@@ -159,6 +166,14 @@ describe('WorldsComponent', () => {
   })
 
   describe('when checking if a world is valid', () => {
+    it('rejects a banned world before consulting stored records, without a quota grace period', async () => {
+      nameDenyListChecker.checkNameDenyList.mockResolvedValueOnce(false)
+
+      await expect(worldsComponent.isWorldValid('blocked.dcl.eth')).resolves.toBe(false)
+      expect(nameDenyListChecker.checkNameDenyList).toHaveBeenCalledWith('blocked.dcl.eth')
+      expect(worldsManager.getRawWorldRecords).not.toHaveBeenCalled()
+    })
+
     describe('and the world does not exist', () => {
       beforeEach(() => {
         worldsManager.getRawWorldRecords.mockResolvedValueOnce({

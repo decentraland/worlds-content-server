@@ -5,6 +5,12 @@ export async function createNameDenyListChecker(
   components: Pick<AppComponents, 'config' | 'logs' | 'fetch'>
 ): Promise<INameDenyListChecker> {
   const logger = components.logs.getLogger('name-deny-list-provider')
+  const blockedWorldNames = new Set(
+    ((await components.config.getString('BLOCKED_WORLD_NAMES')) ?? '')
+      .split(',')
+      .map((name) => name.trim().toLowerCase())
+      .filter(Boolean)
+  )
   const url = await components.config.getString('DCL_LISTS_URL')
   if (url) {
     logger.info(`Using name deny list from ${url}.`)
@@ -37,6 +43,10 @@ export async function createNameDenyListChecker(
   })
 
   const checkNameDenyList = async (worldName: string): Promise<boolean> => {
+    if (blockedWorldNames.has(worldName.toLowerCase())) {
+      logger.warn(`Name ${worldName} is blocked by BLOCKED_WORLD_NAMES`)
+      return false
+    }
     const bannedNames = await nameDenyListCache.fetch(NAME_DENY_LIST_ENTRY)
     // Compare case-insensitively, otherwise a banned name could be deployed by changing its case
     const normalizedName = worldName.toLowerCase().replace('.eth', '').replace('.dcl', '')
@@ -50,7 +60,8 @@ export async function createNameDenyListChecker(
 
   const getBannedNames = async (): Promise<string[]> => {
     const bannedNames = await nameDenyListCache.fetch(NAME_DENY_LIST_ENTRY)
-    return bannedNames?.map((name) => name.replace('.eth', '').replace('.dcl', '')) ?? []
+    const remoteNames = bannedNames?.map((name) => name.replace('.eth', '').replace('.dcl', '')) ?? []
+    return [...new Set([...blockedWorldNames, ...remoteNames])]
   }
 
   return {

@@ -13,13 +13,16 @@ import { buildWorldScenesUndeploymentEvent } from './world-scenes-undeployment-e
  * 4. Handles world and scene undeployment with event publishing
  * 5. Rechecks the owner's blocked status after freeing space
  *
- * @param components Required components: blocking, coordinates, logs, snsClient, worldsManager
+ * @param components Required components: blocking, coordinates, logs, nameDenyListChecker, snsClient, worldsManager
  * @returns IWorldsComponent implementation
  */
 export const createWorldsComponent = (
-  components: Pick<AppComponents, 'blocking' | 'coordinates' | 'logs' | 'snsClient' | 'worldsManager'>
+  components: Pick<
+    AppComponents,
+    'blocking' | 'coordinates' | 'logs' | 'nameDenyListChecker' | 'snsClient' | 'worldsManager'
+  >
 ): IWorldsComponent => {
-  const { blocking, coordinates, logs, snsClient, worldsManager } = components
+  const { blocking, coordinates, logs, nameDenyListChecker, snsClient, worldsManager } = components
   const logger = logs.getLogger('worlds-component')
 
   /**
@@ -66,6 +69,9 @@ export const createWorldsComponent = (
    * @returns true if the world exists and is valid, false otherwise
    */
   async function isWorldValid(worldName: string): Promise<boolean> {
+    if (!(await nameDenyListChecker.checkNameDenyList(worldName))) {
+      return false
+    }
     const { records } = await worldsManager.getRawWorldRecords({ worldName })
 
     // World doesn't exist
