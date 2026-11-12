@@ -167,7 +167,9 @@ export type SceneDeploymentData = {
 /** Publication is refused once the upload is gone or expired by the database clock for `ttlMs`. */
 export type PartialUploadCompletion = { ttlMs: number }
 
-export type SceneReplacementAuthorization = { mode: 'unrestricted-owner' } | { mode: 'scoped'; entityIds: string[] }
+export type SceneReplacementAuthorization =
+  | { mode: 'unrestricted-owner' }
+  | { mode: 'scoped'; entityIds: string[]; canManageSettings: boolean }
 
 export type WorldRuntimeMetadata = {
   entityIds: string[]
