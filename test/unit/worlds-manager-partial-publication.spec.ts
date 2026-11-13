@@ -24,6 +24,7 @@ describe('when the worlds manager publishes the completion of a partial upload',
       metadata: { scene: { parcels: ['0,0'], base: '0,0' } }
     }
     worldsManager = await createWorldsManagerComponent({
+      config: { getString: jest.fn().mockResolvedValue(undefined) },
       settingsPolicy: {
         toStorableTitle: () => null,
         toStorableDescription: () => null,

@@ -203,6 +203,7 @@ export async function initComponents(): Promise<AppComponents> {
   const pendingScenesRepository = await createPendingScenesRepository({ database })
 
   const worldsManager = await createWorldsManagerComponent({
+    config,
     settingsPolicy,
     coordinates,
     thumbnails,
