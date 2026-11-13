@@ -553,6 +553,13 @@ test('ScenesHandler', function ({ components, stubComponents }) {
   })
 
   describe('DELETE /world/:world_name/scenes/:coordinate', function () {
+    beforeEach(() => {
+      stubComponents.snsClient.publishMessages.mockResolvedValue({
+        successfulMessageIds: ['msg-id'],
+        failedEvents: []
+      })
+    })
+
     describe('when the user owns the world name', function () {
       let identity: Identity
       let worldName: string
@@ -582,11 +589,6 @@ test('ScenesHandler', function ({ components, stubComponents }) {
       it('should successfully undeploy the scene, remove it from the world and publish a WorldScenesUndeploymentEvent', async () => {
         const { localFetch } = components
         const { snsClient } = stubComponents
-
-        snsClient.publishMessages.mockResolvedValue({
-          successfulMessageIds: ['msg-id'],
-          failedEvents: []
-        })
 
         const response = await makeSignedRequest(localFetch, `/world/${worldName}/scenes/20,24`, identity)
 
