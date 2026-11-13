@@ -159,6 +159,7 @@ async function initComponents(): Promise<TestComponents> {
   const pendingScenesRepository = await createPendingScenesRepository({ database })
 
   const worldsManager = await createWorldsManagerComponent({
+    config,
     settingsPolicy,
     coordinates,
     logs,

@@ -196,6 +196,7 @@ function buildSettingsChangedPredicate(patch: WorldSettingsPatch): SQLStatement 
 }
 
 export async function createWorldsManagerComponent({
+  config,
   settingsPolicy,
   coordinates,
   logs,
@@ -207,6 +208,7 @@ export async function createWorldsManagerComponent({
   thumbnails
 }: Pick<
   AppComponents,
+  | 'config'
   | 'settingsPolicy'
   | 'coordinates'
   | 'logs'
@@ -218,6 +220,7 @@ export async function createWorldsManagerComponent({
   | 'thumbnails'
 >): Promise<IWorldsManager> {
   const logger = logs.getLogger('worlds-manager')
+  const migrationCaptureEnabled = (await config.getString('MIGRATION_WORLDS_CAPTURE_ENABLED')) === 'true'
   const {
     canonicalizeParcels,
     extractSpawnCoordinates,
@@ -236,6 +239,20 @@ export async function createWorldsManagerComponent({
   ) => Promise<DeploymentTransactionResult<T>>
 
   /**
+   * Acquire the optional capture lock before any native row or deployment lock.
+   * The source outbox statement triggers take this same transaction lock. Taking
+   * it after SELECT FOR UPDATE would invert lock order against captured jobs.
+   */
+  async function withWorldsTransaction<T>(operation: () => Promise<T>): Promise<T> {
+    return database.withAsyncContextTransaction(async () => {
+      if (migrationCaptureEnabled) {
+        await database.query(SQL`SELECT pg_advisory_xact_lock(179321, 2)`)
+      }
+      return operation()
+    })
+  }
+
+  /**
    * Runs deployment persistence on a dedicated connection which is destroyed on cancellation.
    * Closing the connection makes PostgreSQL roll back active transaction work. Cancellation is
    * disabled immediately before COMMIT, which is the deployment's explicit success boundary.
@@ -245,7 +262,7 @@ export async function createWorldsManagerComponent({
     operation: (query: DeploymentTransactionQuery) => Promise<void>
   ): Promise<void> {
     if (!signal) {
-      await database.withAsyncContextTransaction(() =>
+      await withWorldsTransaction(() =>
         operation(<T extends Record<string, unknown>>(statement: SQLStatement) => database.query<T>(statement))
       )
       return
@@ -268,6 +285,11 @@ export async function createWorldsManagerComponent({
     try {
       signal.throwIfAborted()
       await client.query('BEGIN')
+      if (migrationCaptureEnabled) {
+        signal.throwIfAborted()
+        await client.query(SQL`SELECT pg_advisory_xact_lock(179321, 2)`)
+        signal.throwIfAborted()
+      }
       const query: DeploymentTransactionQuery = async <T extends Record<string, unknown>>(statement: SQLStatement) => {
         signal.throwIfAborted()
         const result = await client.query<T>(statement)
@@ -783,7 +805,7 @@ export async function createWorldsManagerComponent({
     worldName: string,
     modifier: (currentAccess: AccessSetting) => AccessSetting
   ): Promise<AccessModificationResult> {
-    return await database.withAsyncContextTransaction(async () => {
+    return await withWorldsTransaction(async () => {
       const result = await database.query<{ access: AccessSetting }>(
         SQL`SELECT access FROM worlds WHERE name = ${worldName.toLowerCase()} FOR UPDATE`
       )
@@ -864,7 +886,7 @@ export async function createWorldsManagerComponent({
   async function undeployWorld(worldName: string): Promise<void> {
     const normalizedWorldName = worldName.toLowerCase()
 
-    await database.withAsyncContextTransaction(async () => {
+    await withWorldsTransaction(async () => {
       // Serialize all scene mutations for this world with deployScene and undeployScene.
       await database.query(SQL`SELECT name FROM worlds WHERE name = ${normalizedWorldName} FOR UPDATE`)
 
@@ -1057,7 +1079,7 @@ export async function createWorldsManagerComponent({
     const normalizedWorldName = worldName.toLowerCase()
     const canonicalParcels = canonicalizeParcels(parcels)
 
-    return await database.withAsyncContextTransaction(async () => {
+    return await withWorldsTransaction(async () => {
       // Serialize deployment and undeployment for this world. Deployment takes this same lock
       // through its worlds-table upsert before changing scenes or denormalized world state.
       const worldResult = await database.query<{ spawn_coordinates: string | null }>(
@@ -1128,7 +1150,7 @@ export async function createWorldsManagerComponent({
     owner: EthAddress,
     settings: WorldSettings
   ): Promise<UpdateWorldSettingsResult> {
-    return await database.withAsyncContextTransaction(async () => {
+    return await withWorldsTransaction(async () => {
       // A spawn coordinate is validated against the world's deployed shape, so the row lock has to
       // be held across validation and the write: deploy and undeploy take that same lock before
       // touching world_scenes. FOR UPDATE locks nothing when the row does not exist yet, so
